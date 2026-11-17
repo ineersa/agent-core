@@ -1,61 +1,48 @@
 # GitHub task workflow
 
-GitHub issues hold the current specification, implementation plan, decisions,
-test plan and actual QA results. The five-value single-select **Workflow** field
-is authoritative: `TODO`, `IN-PROGRESS`, `CODE-REVIEW`, `DONE`, `CANCELLED`.
-GitHub open/closed state is lifecycle metadata, not proof of local cleanup.
-There is no separate task repository, owner record, work log, fork history,
-reviewer form, mandatory artifact, or ARCHIVE status.
+GitHub issues hold specifications, plans, decisions, tests and QA results.
+The single-select **Workflow** field is authoritative: `TODO`,
+`IN-PROGRESS`, `CODE-REVIEW`, `DONE`, `CANCELLED`. Open/closed state does not prove
+local cleanup. There is no separate task repository, owner record, work log, fork
+history, reviewer form, mandatory artifact or ARCHIVE status.
 
-All GitHub operations use the installed authenticated `gh` CLI. Native linked
-branches and PRs provide development identity; task titles can change freely.
-Only small machine-local ownership/recovery checkpoints live under the Git
-common directory, shared by linked worktrees. They are not a second task store.
+Authenticated `gh` handles GitHub operations; linked branches/PRs identify work
+independently of mutable titles. Local ownership/recovery checkpoints in the Git
+common directory are shared by worktrees, not a task store.
 
 ## Project setup
 
-After installing and enabling the extension, ask **“set up task workflow”**.
-The bundled skill supplies setup guidance even before a repository is configured;
-task tools and commands remain unavailable until configuration is loaded.
-Follow the same steps manually below. Setup prepares the project, not a real task:
-do not create, migrate, transition or merge production tasks to demonstrate setup.
+After installing/enabling the extension, ask **“set up task workflow”** or follow
+the steps below. The bundled skill works before repository configuration; task
+tools/commands require loaded configuration. Setup must not create, migrate,
+transition or merge production tasks.
 
 ### 1. Inspect the project and prerequisites
 
-Start in a Git repository with a committed primary checkout, a GitHub repository
-and a configured remote. Install Git and a current `gh` CLI with issue-artifact
-support; use the existing `gh` authentication for the correct host. Inspect the
-remote, default/base branch, project instructions, CI, dependency installation,
-build and test commands before proposing settings or scripts. Do not assume a
-particular language, package manager or validation command.
+Require Git, a committed primary checkout, a GitHub repository/remote and current
+`gh` with issue-artifact support, authenticated for the correct host. Inspect the
+remote, base branch, project instructions, CI, dependency, build and test commands
+before proposing settings/scripts; do not assume a language, package manager or
+validation command.
 
-Preserve existing settings, templates and hook customizations. Determine what
-task-local resources the project needs and which resources cleanup may own;
-ask only about unresolved product/review policy, resource ownership or required
-authorization, not facts that can be read from the checkout. Credentials remain
-in `gh` authentication, never in project settings or scripts.
+Preserve settings, templates and hooks. Establish task-local resource needs and
+cleanup ownership. Ask only unresolved product/review/ownership or authorization
+questions, not observable checkout facts. Keep credentials in `gh`, never settings
+or scripts.
 
 ### 2. Prepare owner-level GitHub issue fields and permissions
 
-Use the repository owner's **issue fields**, not GitHub Projects fields or labels.
-For a personal repository the definitions belong to the personal account; for an
-organization repository they belong to the organization. The production default
-is a **single-select field named `Workflow`**, with these five options exactly:
+Use the personal/organization repository owner's **issue fields**, not Projects
+fields or labels. Default: single-select `Workflow` with exactly the five options
+listed above. Reuse a suitable existing field (e.g. `Hatfield Status`) by setting
+`workflow_field` to its exact name; do not rename or duplicate it. Leave unrelated
+fields (Priority, Effort, dates, etc.) untouched.
 
-`TODO`, `IN-PROGRESS`, `CODE-REVIEW`, `DONE`, `CANCELLED`.
-
-If the owner already has a suitable field with another name (for example,
-`Hatfield Status`), set `workflow_field` to that exact name and reuse it. Do not
-require a rename or create a duplicate Workflow field. Other fields such as
-GitHub's native Priority, Effort or dates are independent; leave them untouched.
-
-Colors are cosmetic; choose any available colors without making them a setup
-decision. Issue types are independent and are not a prerequisite for this
-workflow. Existing native Task/Bug/Feature types can be kept as-is; do not recreate
-them or add an Experiment type just to use the experiment Markdown template.
-Templates structure issue bodies, not Workflow statuses or issue types.
-Pin Workflow in the issue UI if useful for visibility, including on
-issues without a type; pinning is not required for runtime correctness.
+Colors are cosmetic; choose available colors without asking. Issue types are
+optional and independent: keep existing Task/Bug/Feature types; do not recreate
+them or add Experiment for a Markdown template. Templates structure bodies, not
+statuses/types. Optionally pin Workflow in the issue UI, even on untyped issues;
+runtime correctness does not require pinning.
 
 Manual setup is often the least-privilege route:
 
@@ -67,19 +54,15 @@ Manual setup is often the least-privilege route:
 See GitHub's [personal account UI announcement](https://github.blog/changelog/2026-11-11-issue-types-and-fields-are-available-for-personal-accounts).
 Do not replace unrelated fields/options or reset values on existing issues.
 
-Definition management and task writes have different permissions. With classic
-OAuth tokens, personal-owner **definition reads** need `read:user`; creating or
-updating those definitions needs the broader `user` scope. Organization
-definitions require the corresponding organization permissions. **Per-issue
-Workflow value operations**, ordinary issue edits and artifact operations use
-their repository/API permissions; owner-definition write access is not a
-prerequisite when the complete field already exists. Manually creating all five
-options lets initialization reuse them without writing owner definitions.
+Classic OAuth personal-owner **definition reads** require `read:user`; definition
+writes require `user`. Organization definitions need corresponding organization
+permissions. Per-issue Workflow writes, issue edits and artifacts need their
+repository/API permissions, not owner-definition write access when the complete
+field exists. Manually creating all five options avoids definition writes.
 See the [personal issue-field API permissions](https://docs.github.com/en/rest/users/issue-fields).
-Do not automatically refresh credentials or request broader account scopes.
-Explain the missing permission and manual setup alternative, then obtain human
-authorization for any credential change; manual setup still requires readable
-definitions and the repository permissions needed for normal task operations.
+Never automatically refresh credentials or broaden scopes. Explain missing
+permissions and manual setup, then obtain authorization for credential changes.
+Manual setup still requires readable definitions and normal repository permissions.
 
 ### 3. Configure the project, preserving existing settings
 
