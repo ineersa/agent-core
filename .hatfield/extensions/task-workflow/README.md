@@ -386,6 +386,37 @@ GitHub's reason. If removal succeeded but GitHub publication failed, retry remot
 finalization without recreating workspaces or re-merging. Subsequent execution
 must use the returned primary checkout rather than a removed directory.
 
+## Claude Code plugin
+
+The same package is a Claude Code plugin. It shares the project's
+`.hatfield/settings.yaml` (user `~/.hatfield/settings.yaml` < project), hooks,
+templates, GitHub Workflow field and Git-common-directory checkpoints with
+Hatfield, so either agent can continue a task the other started.
+
+```text
+/plugin marketplace add ineersa/agent-core
+/plugin install task-workflow@hatfield
+```
+
+Or, in one step: `/plugin install task-workflow --marketplace ineersa/agent-core`.
+
+Requirements: `php` (8.3+) and `composer` on `PATH`, plus the authenticated `gh`
+CLI. The first server start after installing or updating the plugin installs
+Composer dependencies into the plugin data directory, so that start can take a
+minute; reconnect with `/mcp` if it timed out.
+
+- Tools: the five task tools above under the `task-workflow` MCP server, plus
+  `run_command` for the Hatfield slash commands.
+- Commands: `/task-workflow:tasks [status] [page]` and
+  `/task-workflow:tasks-init`.
+- Skill: the bundled `task-workflow` skill; the setup guide and issue templates
+  are at the plugin root.
+- The server is started once per Claude Code session. After changing settings,
+  reconnect it with `/mcp`. Tool calls may run project hooks for up to their
+  configured timeouts; the plugin allows each call up to one hour.
+- Pressing Esc does not stop a running hook: the server finishes the transition
+  and its usual recovery state applies.
+
 ## Cutover and integration
 
 Finish legacy active tasks before switching an existing project. Import outstanding

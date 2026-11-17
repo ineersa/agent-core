@@ -36,7 +36,10 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
 {
     private LoggerInterface $logger;
 
-    public function __construct()
+    /**
+     * @param bool $installSkill Mirror the bundled skill into `.hatfield/skills` for Hatfield; hosts that ship the skill themselves (the Claude Code plugin) pass false
+     */
+    public function __construct(private readonly bool $installSkill = true)
     {
         $this->logger = new NullLogger();
     }
@@ -58,13 +61,15 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
         $git = new GitExecutor($exec);
         $worktrees = new WorktreeManager($git);
         $primary = $worktrees->primaryRoot($api->getCwd());
-        // The stable checkout owns installed guidance, including before configuration.
-        (new TaskWorkflowSkillInstaller($primary, \dirname(__DIR__), $this->logger))->install();
-        $current = $api->getCwd();
-        if ($current !== $primary) {
-            (new TaskWorkflowSkillInstaller($current, \dirname(__DIR__), $this->logger))->install(existingManagedOnly: true);
+        if ($this->installSkill) {
+            // The stable checkout owns installed guidance, including before configuration.
+            (new TaskWorkflowSkillInstaller($primary, \dirname(__DIR__), $this->logger))->install();
+            $current = $api->getCwd();
+            if ($current !== $primary) {
+                (new TaskWorkflowSkillInstaller($current, \dirname(__DIR__), $this->logger))->install(existingManagedOnly: true);
+            }
+            $api->registerSkill($primary.'/.hatfield/skills/'.TaskWorkflowSkillInstaller::SKILL_NAME);
         }
-        $api->registerSkill($primary.'/.hatfield/skills/'.TaskWorkflowSkillInstaller::SKILL_NAME);
         if ('' === $settings->repository) {
             $this->logger->warning('task_workflow.unconfigured', ['component' => 'task_workflow', 'event_type' => 'configuration_required']);
 

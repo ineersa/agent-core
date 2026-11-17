@@ -1,0 +1,17 @@
+{
+  "name": "hatfield",
+  "owner": {
+    "name": "ineersa"
+  },
+  "metadata": {
+    "description": "Hatfield extensions packaged as Claude Code plugins."
+  },
+  "plugins": [
+    {
+      "name": "task-workflow",
+      "source": "./.hatfield/extensions/task-workflow",
+      "description": "GitHub issue task workflow with project hooks, PR delivery and recoverable worktrees.",
+      "category": "development"
+    }
+  ]
+}
