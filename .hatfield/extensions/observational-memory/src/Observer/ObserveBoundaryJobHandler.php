@@ -29,10 +29,23 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
             'terminal_end_seq' => [new Assert\Type('integer'), new Assert\NotNull(), new Assert\Positive()],
             'terminal_status' => [new Assert\Choice(choices: ['completed', 'cancelled', 'failed']), new Assert\NotNull()],
         ]);
-        if (0 !== \count(Validation::createValidator()->validate($payload, $constraints))) {
+        $validator = Validation::createValidator();
+        if (0 !== \count($validator->validate($payload, $constraints))) {
+            // The envelope correlation survives malformed/old payloads, but its
+            // public contract only requires a nonempty string. Log identifiers,
+            // never arbitrary payload text or validation messages containing it.
+            $runId = null;
+            foreach ([$correlationId, $payload['run_id'] ?? null] as $candidate) {
+                if (\is_string($candidate) && 0 === \count($validator->validate($candidate, new Assert\Regex('/\A[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z/')))) {
+                    $runId = $candidate;
+                    break;
+                }
+            }
+            $endSeq = $payload['terminal_end_seq'] ?? null;
             $this->logger->warning('om.observe.invalid_job', [
                 'component' => 'observational_memory', 'event_type' => 'om.observe.invalid_job',
-                'run_id' => null, 'session_id' => null, 'job_id' => $jobId,
+                'run_id' => $runId, 'session_id' => $runId, 'job_id' => $jobId,
+                'end_seq' => \is_int($endSeq) && $endSeq > 0 ? $endSeq : null,
             ]);
 
             return;

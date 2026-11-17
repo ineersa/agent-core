@@ -5,12 +5,28 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
+use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
 
 final class ObservationalMemoryExtensionRegistrationTest extends OmTestCase
 {
+    public function testRegistrationInspectsGitExactlyOnce(): void
+    {
+        mkdir($this->directory.'/.git');
+        $exec = $this->createMock(ExecInterface::class);
+        $exec->expects($this->once())->method('exec')->willReturn(new ExecResultDTO($this->directory.'/.git'."\n".$this->directory.'/.git', '', 0));
+        $api = $this->createMock(ExtensionApiInterface::class);
+        $api->expects($this->once())->method('exec')->willReturn($exec);
+        $api->method('getCwd')->willReturn($this->directory);
+        $api->method('getSettings')->willReturn(['librarian' => ['url' => 'http://librarian.test/_mcp']]);
+        $api->expects($this->once())->method('registerAfterTurnCommitHook');
+        (new ObservationalMemoryExtension())->register($api);
+    }
+
     public function testOnlyViewAndUnchangedRemoteToolSchemasAreRegistered(): void
     {
         $api = $this->api();

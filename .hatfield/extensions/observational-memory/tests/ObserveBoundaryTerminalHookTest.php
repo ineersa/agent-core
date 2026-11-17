@@ -23,7 +23,7 @@ final class ObserveBoundaryTerminalHookTest extends OmTestCase
             return ObserveBoundaryTerminalHook::HANDLER_ID === $job->handlerId
                 && ['run_id' => 'run-1', 'terminal_end_seq' => 148, 'terminal_status' => $payload['reason'] ?? 'failed'] === $job->payload;
         }));
-        (new ObserveBoundaryTerminalHook($api, new NullLogger()))->onAfterTurnCommit(new AfterTurnCommitHookContextDTO('run-1', 2, $status, [new AfterTurnCommitEventSummaryDTO(147, 'tool_batch_committed', ['private' => 'not uploaded']), new AfterTurnCommitEventSummaryDTO(148, $type, $payload)], 0));
+        (new ObserveBoundaryTerminalHook($api, new NullLogger(), true))->onAfterTurnCommit(new AfterTurnCommitHookContextDTO('run-1', 2, $status, [new AfterTurnCommitEventSummaryDTO(147, 'tool_batch_committed', ['private' => 'not uploaded']), new AfterTurnCommitEventSummaryDTO(148, $type, $payload)], 0));
     }
 
     public static function boundaries(): iterable
@@ -37,25 +37,26 @@ final class ObserveBoundaryTerminalHookTest extends OmTestCase
     }
 
     #[DataProvider('excluded')]
-    public function testExcludedRunsNeverDispatch(bool $child, bool $worktree): void
+    public function testExcludedRunsNeverDispatch(bool $child, bool $projectAllowed): void
     {
-        $api = $this->api($child, $worktree);
+        $api = $this->api(child: $child);
         $api->expects($this->never())->method('dispatchExtensionAgentJob');
-        (new ObserveBoundaryTerminalHook($api, new NullLogger()))->onAfterTurnCommit(new AfterTurnCommitHookContextDTO('run-1', 1, 'completed', [new AfterTurnCommitEventSummaryDTO(9, 'agent_end', ['reason' => 'completed'])], 0));
+        (new ObserveBoundaryTerminalHook($api, new NullLogger(), $projectAllowed))->onAfterTurnCommit(new AfterTurnCommitHookContextDTO('run-1', 1, 'completed', [new AfterTurnCommitEventSummaryDTO(9, 'agent_end', ['reason' => 'completed'])], 0));
     }
 
     public static function excluded(): iterable
     {
-        yield 'child/fork' => [true, false];
-        yield 'linked worktree' => [false, true];
+        yield 'child/fork despite allowed project' => [true, true];
+        yield 'disallowed project' => [false, false];
     }
 
     public function testCheckoutInspectionStaysOutsideCommittedTurnPath(): void
     {
         $api = $this->api();
-        $api->expects($this->once())->method('getCwd');
+        $api->expects($this->never())->method('getCwd');
+        $api->expects($this->never())->method('exec');
         $api->expects($this->exactly(2))->method('dispatchExtensionAgentJob');
-        $hook = new ObserveBoundaryTerminalHook($api, new NullLogger());
+        $hook = new ObserveBoundaryTerminalHook($api, new NullLogger(), true);
         $context = new AfterTurnCommitHookContextDTO('run-1', 1, 'completed', [new AfterTurnCommitEventSummaryDTO(9, 'agent_end', ['reason' => 'completed'])], 0);
         $hook->onAfterTurnCommit($context);
         $hook->onAfterTurnCommit($context);
@@ -66,7 +67,7 @@ final class ObserveBoundaryTerminalHookTest extends OmTestCase
         $api = $this->api();
         $api->method('dispatchExtensionAgentJob')->willThrowException(new \RuntimeException('private'));
         $logger = new TestLogger();
-        (new ObserveBoundaryTerminalHook($api, $logger))->onAfterTurnCommit(new AfterTurnCommitHookContextDTO('run-1', 1, 'completed', [new AfterTurnCommitEventSummaryDTO(9, 'agent_end', ['reason' => 'completed'])], 0));
+        (new ObserveBoundaryTerminalHook($api, $logger, true))->onAfterTurnCommit(new AfterTurnCommitHookContextDTO('run-1', 1, 'completed', [new AfterTurnCommitEventSummaryDTO(9, 'agent_end', ['reason' => 'completed'])], 0));
         $this->assertCount(1, $logger->records);
         $this->assertSame('run-1', $logger->records[0]['context']['session_id']);
         $this->assertSame(9, $logger->records[0]['context']['end_seq']);

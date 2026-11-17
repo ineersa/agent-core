@@ -51,7 +51,8 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
 
     public function register(ExtensionApiInterface $api): void
     {
-        if (!(new LibrarianProjectPolicy($api->exec(), $this->logger))->allows($api->getCwd())) {
+        $projectAllowed = (new LibrarianProjectPolicy($api->exec(), $this->logger))->allows($api->getCwd());
+        if (!$projectAllowed) {
             return;
         }
         // Selection enables registration; each runtime entry point enforces main-only OM.
@@ -64,7 +65,7 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
         );
 
         $api->registerAfterTurnCommitHook(
-            new ObserveBoundaryTerminalHook($api, $this->logger),
+            new ObserveBoundaryTerminalHook($api, $this->logger, $projectAllowed),
         );
         // One public hook for CompactRun (watermark) and snapshot/fork (null watermark).
         $api->registerBeforeCompactionHook(

@@ -9,7 +9,6 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitEventSummaryDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
-use Ineersa\HatfieldExt\ObservationalMemory\Librarian\LibrarianProjectPolicy;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -21,15 +20,13 @@ final readonly class ObserveBoundaryTerminalHook implements AfterTurnCommitHookI
 {
     public const string HANDLER_ID = 'observational_memory.observe_boundary';
 
-    private bool $projectAllowed;
-
     public function __construct(
         private ExtensionApiInterface $api,
         private LoggerInterface $logger,
+        private bool $projectAllowed,
     ) {
-        // Resolve checkout policy once during registration, never by spawning Git
-        // on the committed turn's critical path. The worker rechecks before sending.
-        $this->projectAllowed = (new LibrarianProjectPolicy($api->exec(), $logger))->allows($api->getCwd());
+        // Reuse registration's checkout decision, never spawn Git on the
+        // committed-turn path. The worker independently rechecks before sending.
     }
 
     public function onAfterTurnCommit(AfterTurnCommitHookContextDTO $context): void

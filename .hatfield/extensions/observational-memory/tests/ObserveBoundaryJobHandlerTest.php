@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -13,6 +14,38 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 
 final class ObserveBoundaryJobHandlerTest extends OmTestCase
 {
+    /** @param array<string, mixed> $payload */
+    #[DataProvider('invalidCorrelations')]
+    public function testRejectedPayloadLogsOnlySafeCorrelation(array $payload, ?string $correlationId, ?string $expectedRun, ?int $expectedSeq): void
+    {
+        $logger = new TestLogger();
+        $http = new MockHttpClient();
+        $api = $this->api();
+        $api->expects($this->never())->method('isChildRun');
+        $api->expects($this->never())->method('getCwd');
+        (new ObserveBoundaryJobHandler($logger, $http))->handle($api, $payload, 'queued-job', $correlationId);
+        $this->assertSame(0, $http->getRequestsCount());
+        $this->assertSame([[
+            'level' => 'warning',
+            'message' => 'om.observe.invalid_job',
+            'context' => [
+                'component' => 'observational_memory', 'event_type' => 'om.observe.invalid_job',
+                'run_id' => $expectedRun, 'session_id' => $expectedRun, 'job_id' => 'queued-job',
+                'end_seq' => $expectedSeq,
+            ],
+        ]], $logger->records);
+    }
+
+    public static function invalidCorrelations(): iterable
+    {
+        yield 'extra field prefers envelope' => [['run_id' => 'payload-run', 'terminal_end_seq' => 148, 'terminal_status' => 'completed', 'old_field' => 'Bearer private-secret'], 'owner-run', 'owner-run', 148];
+        yield 'status with payload correlation' => [['run_id' => 'run-1', 'terminal_end_seq' => 9, 'terminal_status' => 'Bearer private-secret'], null, 'run-1', 9];
+        yield 'missing run without correlation' => [['terminal_end_seq' => 9, 'terminal_status' => 'completed'], null, null, 9];
+        yield 'invalid run type' => [['run_id' => ['secret'], 'terminal_end_seq' => '9', 'terminal_status' => 'completed'], null, null, null];
+        yield 'unsafe strings' => [['run_id' => 'Bearer private-secret', 'terminal_end_seq' => -1, 'terminal_status' => 'completed'], "unsafe\ncorrelation", null, null];
+        yield 'old payload with safe envelope' => [['boundary_key' => 'private-secret'], 'owner-run', 'owner-run', null];
+    }
+
     public function testOutageThenNextSignalUsesLatestBoundaryWithoutRetryOrContent(): void
     {
         $calls = [];
