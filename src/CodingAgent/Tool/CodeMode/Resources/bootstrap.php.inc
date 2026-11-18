@@ -97,6 +97,34 @@ if (!\function_exists('hatfield_code_mode_read')) {
     }
 }
 
+if (!\function_exists('notify_owner')) {
+    /** @return array<string, mixed> Submission is not consumption or acknowledgement. */
+    function notify_owner(string $message): array
+    {
+        global $connection;
+
+        // Refuse oversized payloads before JSON framing, which has its own cap.
+        if (\strlen($message) > 8192) {
+            return ['status' => 'refused', 'reason' => 'invalid_message', 'errors' => [['message' => 'Message must be at most 8192 bytes.']]];
+        }
+        // Invalid UTF-8 cannot cross the JSON transport for host validation.
+        if (1 !== preg_match('//u', $message)) {
+            return ['status' => 'refused', 'reason' => 'invalid_message', 'errors' => [['message' => 'Message must be valid UTF-8.']]];
+        }
+        if (!\is_resource($connection)) {
+            return ['status' => 'refused', 'reason' => 'owner_unavailable'];
+        }
+        $id = bin2hex(random_bytes(8));
+        hatfield_code_mode_write($connection, ['type' => 'notify_owner', 'id' => $id, 'message' => $message]);
+        $response = hatfield_code_mode_read($connection);
+        if (($response['id'] ?? null) !== $id) {
+            throw new RuntimeException('Code-mode host returned a mismatched response id.');
+        }
+
+        return $response['result'];
+    }
+}
+
 if (!\function_exists('tool')) {
     /**
      * Invoke an existing Hatfield tool through the host bridge.
