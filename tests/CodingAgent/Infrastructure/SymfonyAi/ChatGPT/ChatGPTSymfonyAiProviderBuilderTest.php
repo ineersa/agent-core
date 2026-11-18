@@ -15,11 +15,18 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\CodingAgent\Config\Ai\AiCatalog;
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Config\ReasoningOptionsResolver;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ChatGPT\ChatGPTSymfonyAiProviderBuilder;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture;
 use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
+use Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -33,6 +40,52 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
 {
+    public function testBundledGpt62ModelsSerializeSupportedEffortsAndFunctionTools(): void
+    {
+        $home = TestDirectoryIsolation::createProjectTempDir('gpt62-chatgpt');
+        try {
+            $settings = (new AiCatalog(\dirname(__DIR__, 5).'/config/ai-catalog.yaml', $home))->loadProviders()['ai'];
+            $settings['providers']['openai-codex']['enabled'] = true;
+            $ai = AiConfig::fromArray($settings);
+            $resolver = new ReasoningOptionsResolver(new HatfieldModelCatalog($ai));
+            foreach (['gpt-6.2-astra', 'gpt-6.2-sol'] as $id) {
+                foreach (['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as $level) {
+                    $reasoning = $resolver->resolve(new AiModelReference('openai-codex', $id), $level);
+                    $expected = \in_array($level, ['off', 'minimal'], true) ? [] : ['reasoning' => ['effort' => $level, 'summary' => 'auto']];
+                    $this->assertSame($expected, $reasoning);
+                    $client = new MockHttpClient(static function (string $method, string $url, array $options) use ($id, $expected): MockResponse {
+                        self::assertSame('POST', $method);
+                        self::assertSame('https://api.openai.com/v1/responses', $url);
+                        $body = HttpRequestBodyDecoder::decode($options);
+                        self::assertSame($id, $body['model']);
+                        if ([] === $expected) {
+                            self::assertArrayNotHasKey('effort', $body['reasoning'] ?? []);
+                        } else {
+                            self::assertSame($expected['reasoning']['effort'], $body['reasoning']['effort']);
+                        }
+                        foreach (['temperature', 'top_p', 'presence_penalty', 'frequency_penalty', 'tools'] as $key) {
+                            self::assertArrayNotHasKey($key, $body);
+                        }
+                        self::assertSame('additional_tools', $body['input'][0]['type']);
+                        self::assertSame('function', $body['input'][0]['tools'][0]['type']);
+                        self::assertSame('read_file', $body['input'][0]['tools'][0]['name']);
+
+                        return self::response([['type' => 'response.output_text.delta', 'delta' => 'done'], ['type' => 'response.completed', 'response' => ['status' => 'completed', 'output' => []]]]);
+                    });
+                    $adapter = $this->adapter($client, config: $ai->providers['openai-codex']);
+                    $result = $adapter->invoke(new ModelInvocationRequest('openai-codex/'.$id, new ModelInvocationInput(messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'Read fixture']])]), new ModelInvocationOptions(extraOptions: $reasoning + [
+                        'tools' => [['type' => 'function', 'name' => 'read_file', 'description' => 'Read fixture', 'parameters' => ['type' => 'object', 'properties' => []]]],
+                        'temperature' => 0.5, 'top_p' => 0.9, 'presence_penalty' => 1, 'frequency_penalty' => 1, 'prompt_cache_key' => 'gpt62-fixture',
+                    ])));
+                    $this->assertNull($result->error);
+                    $this->assertSame('done', $result->assistantMessage?->asText());
+                }
+            }
+        } finally {
+            TestDirectoryIsolation::removeDirectory($home);
+        }
+    }
+
     public function testFreshProviderBuildDoesNotRequireOrReadSavedGrant(): void
     {
         $storage = $this->createMock(AuthStorageInterface::class);
@@ -61,7 +114,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
             self::assertSame('https://api.openai.com/v1/responses', $url);
             self::assertSame(0.0, $options['max_duration']);
             self::assertSame(300.0, $options['timeout']);
-            $bodies[] = \Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder::decode($options);
+            $bodies[] = HttpRequestBodyDecoder::decode($options);
             $events = 1 === \count($bodies) ? $first : [['type' => 'response.output_text.delta', 'delta' => 'done'], ['type' => 'response.completed', 'response' => ['status' => 'completed', 'output' => []]]];
 
             return self::response($events);
@@ -213,7 +266,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         $events[] = ['type' => 'response.completed', 'response' => ['status' => 'completed', 'output' => $terminalMessages ? $expected : []]];
         $bodies = [];
         $client = new MockHttpClient(static function (string $method, string $url, array $options) use (&$bodies, $events): MockResponse {
-            $bodies[] = \Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder::decode($options);
+            $bodies[] = HttpRequestBodyDecoder::decode($options);
 
             return self::response(1 === \count($bodies) ? $events : [['type' => 'response.output_text.delta', 'delta' => 'done'], ['type' => 'response.completed', 'response' => ['status' => 'completed', 'output' => []]]]);
         });
@@ -221,7 +274,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         $result = $this->adapter($client)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [$user]), new ModelInvocationOptions(extraOptions: ['prompt_cache_key' => 'stable-cache-key'])));
         $this->assertNull($result->error);
         $this->assertNotNull($result->assistantMessage);
-        $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('chatgpt-cold-replay');
+        $directory = TestDirectoryIsolation::createProjectTempDir('chatgpt-cold-replay');
         try {
             $createStore = function () use ($directory): \Ineersa\CodingAgent\Session\SessionRunEventStore {
                 $sessions = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
@@ -253,7 +306,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
                 }
             }
         } finally {
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+            TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 
@@ -267,7 +320,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         return new AiProviderConfig('openai-codex', type: 'chatgpt', models: ['gpt-6.1-sol' => new AiModelDefinition('gpt-6.1-sol', toolCalling: true, reasoning: true)]);
     }
 
-    private function adapter(MockHttpClient $client, int $maxRetries = 0): LlmPlatformAdapter
+    private function adapter(MockHttpClient $client, int $maxRetries = 0, ?AiProviderConfig $config = null): LlmPlatformAdapter
     {
         $record = ChatGPTAuthFixture::record();
         $storage = $this->createStub(AuthStorageInterface::class);
@@ -275,7 +328,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         $builder = new ChatGPTSymfonyAiProviderBuilder(ChatGPTAuthFixture::service($storage, $client), $this->createStub(EventDispatcherInterface::class));
 
         return new LlmPlatformAdapter(new NullRunOperationalStatusReader(), new AgentMessageConverter(), new DynamicToolDescriptionProcessor(), new Platform((new \Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory(
-            new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig('default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), catalog: new \Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog(new \Ineersa\CodingAgent\Config\Ai\AiConfig(providers: ['openai-codex' => $this->config()]))),
+            new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig('default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), catalog: new HatfieldModelCatalog(new AiConfig(providers: ['openai-codex' => $config ?? $this->config()]))),
             $this->createStub(EventDispatcherInterface::class), [$builder], httpClient: $client,
         ))->createProviders()), [], [], null, null, new NullLogger(), AttributeSerializerValidatorTestFactory::denormalizer(), requestRetryPolicy: new LlmRequestRetryPolicy(maxRetries: $maxRetries, baseDelayMs: 0));
     }

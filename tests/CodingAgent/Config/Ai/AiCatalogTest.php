@@ -83,6 +83,23 @@ YAML);
         $this->assertSame('https://api.z.ai/api/coding/paas/v4', $ai->providers['zai']->baseUrl);
     }
 
+    public function testBundledGpt62ModelsPreserveCuratedMetadata(): void
+    {
+        $ai = AiConfig::fromArray((new AiCatalog(\dirname(__DIR__, 4).'/config/ai-catalog.yaml', $this->homeDir))->loadProviders()['ai']);
+        foreach (['astra' => [8.0, 40.0, 0.4, 10.0], 'sol' => [2.0, 10.0, 0.1, 2.5]] as $family => $cost) {
+            $model = $ai->providers['openai-codex']->models['gpt-6.2-'.$family];
+            $this->assertSame('GPT-6.2 '.ucfirst($family), $model->name);
+            $this->assertSame(272000, $model->contextWindow);
+            $this->assertSame(128000, $model->maxTokens);
+            $this->assertSame(['text', 'image'], $model->input);
+            $this->assertTrue($model->reasoning);
+            $this->assertTrue($model->toolCalling);
+            $this->assertTrue($model->compatibility?->pinContextWindow);
+            $this->assertSame(['minimal' => null, 'low' => 'low', 'medium' => 'medium', 'high' => 'high', 'xhigh' => 'xhigh', 'max' => 'max'], $model->thinkingLevelMap);
+            $this->assertSame($cost, [$model->cost?->input, $model->cost?->output, $model->cost?->cacheRead, $model->cost?->cacheWrite]);
+        }
+    }
+
     public function testBundledCatalogIncludesCurrentPiModels(): void
     {
         $catalog = new AiCatalog(

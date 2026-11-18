@@ -92,6 +92,34 @@ YAML);
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
+    public function testExistingCatalogRefreshAddsGpt62ModelsAndPreservesCuratedWindows(): void
+    {
+        copy(\dirname(__DIR__, 4).'/config/ai-catalog.yaml', $this->catalogPath);
+        $old = Yaml::parseFile($this->catalogPath);
+        --$old['version'];
+        $old['providers']['openai-codex']['enabled'] = true;
+        unset($old['providers']['openai-codex']['models']['gpt-6.2-astra'], $old['providers']['openai-codex']['models']['gpt-6.2-sol']);
+        file_put_contents($this->userCatalogPath, Yaml::dump($old, 8, 4));
+        $upstream = [];
+        foreach (['gpt-6.2-astra', 'gpt-6.2-sol'] as $id) {
+            // A changed, unpinned field proves upstream synchronization ran after rebase.
+            $upstream[$id] = ['limit' => ['context' => 1050000, 'output' => 64000]];
+        }
+        $client = new MockHttpClient(new MockResponse(json_encode(['openai' => ['models' => $upstream]], \JSON_THROW_ON_ERROR)));
+        $this->assertSame(Command::SUCCESS, $this->runCommand($client));
+        $updated = Yaml::parseFile($this->userCatalogPath);
+        $this->assertSame($old['version'] + 1, $updated['version']);
+        // Enablement overrides belong in settings; the catalog is rebased to defaults.
+        $this->assertFalse($updated['providers']['openai-codex']['enabled']);
+        $this->assertSame($old['providers']['openai-codex']['base_url'], $updated['providers']['openai-codex']['base_url']);
+        foreach (array_keys($upstream) as $id) {
+            $model = $updated['providers']['openai-codex']['models'][$id];
+            $this->assertSame(272000, $model['context_window']);
+            $this->assertTrue($model['compatibility']['pin_context_window']);
+            $this->assertSame(64000, $model['max_tokens']);
+        }
+    }
+
     public function testMistralMetadataRefreshPreservesNativeTransportAndCuratedModelList(): void
     {
         copy(\dirname(__DIR__, 4).'/config/ai-catalog.yaml', $this->catalogPath);
