@@ -102,9 +102,10 @@ YAML);
         file_put_contents($this->userCatalogPath, Yaml::dump($old, 8, 4));
         $upstream = [];
         foreach (['gpt-6.2-astra', 'gpt-6.2-sol'] as $id) {
-            $upstream[$id] = ['limit' => ['context' => 1050000, 'output' => 128000]];
+            // A changed, unpinned field proves upstream synchronization ran after rebase.
+            $upstream[$id] = ['limit' => ['context' => 1050000, 'output' => 64000]];
         }
-        $client = new MockHttpClient(new MockResponse(json_encode(['openai-codex' => ['models' => $upstream]], \JSON_THROW_ON_ERROR)));
+        $client = new MockHttpClient(new MockResponse(json_encode(['openai' => ['models' => $upstream]], \JSON_THROW_ON_ERROR)));
         $this->assertSame(Command::SUCCESS, $this->runCommand($client));
         $updated = Yaml::parseFile($this->userCatalogPath);
         $this->assertSame($old['version'] + 1, $updated['version']);
@@ -115,6 +116,7 @@ YAML);
             $model = $updated['providers']['openai-codex']['models'][$id];
             $this->assertSame(272000, $model['context_window']);
             $this->assertTrue($model['compatibility']['pin_context_window']);
+            $this->assertSame(64000, $model['max_tokens']);
         }
     }
 
