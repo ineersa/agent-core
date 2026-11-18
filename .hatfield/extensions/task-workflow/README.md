@@ -384,9 +384,9 @@ Hatfield, so either agent can continue a task the other started.
 Or, in one step: `/plugin install task-workflow --marketplace ineersa/agent-core`.
 
 Requirements: `php` (8.3+) and `composer` on `PATH`, plus the authenticated `gh`
-CLI. The first server start after installing or updating the plugin installs
-Composer dependencies into the plugin data directory, so that start can take a
-minute; reconnect with `/mcp` if it timed out.
+CLI. The first server start of each plugin version installs its own Composer
+dependencies into the plugin data directory, so that start can take a minute;
+reconnect with `/mcp` if it timed out.
 
 - Tools: the five task tools above under the `task-workflow` MCP server, plus
   `run_command` for the Hatfield slash commands.

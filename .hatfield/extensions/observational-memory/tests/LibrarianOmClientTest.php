@@ -33,9 +33,25 @@ final class LibrarianOmClientTest extends TestCase
             return new MockResponse('POST' === $method ? '{"ok":true,"contract_version":1,"status":"queued"}' : '{"ok":true,"contract_version":1,"text":"memory"}', ['http_code' => 'POST' === $method ? 202 : 200]);
         });
         $client = new LibrarianOmClient(new LibrarianSettingsDTO('https://librarian.test:8093/prefix/_mcp', 7, $token), '/canonical/project', new NullLogger(), $http);
-        $client->observe('session', 77, 'completed');
+        $client->observeHatfield('session', 77, 'completed');
         $this->assertSame('memory', $client->projection('session'));
         $this->assertSame(['https://librarian.test:8093/api/om/v1/observe', 'https://librarian.test:8093/api/om/v1/sessions/hatfield/session/projection'], $calls);
+    }
+
+    public function testClaudeCodeObserveIsContentFree(): void
+    {
+        $http = new MockHttpClient(static function (string $method, string $url, array $options): MockResponse {
+            self::assertSame('POST', $method);
+            self::assertSame('https://librarian.test/api/om/v1/observe', $url);
+            self::assertContains('X-Librarian-Project: /started/here', $options['headers']);
+            self::assertSame(['contract_version' => 1, 'source_kind' => 'claude_code', 'session_id' => 'session-uuid', 'end_seq' => 12], json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR));
+
+            return new MockResponse('{"ok":true,"contract_version":1,"status":"queued"}', ['http_code' => 202]);
+        });
+        $logger = new TestLogger();
+        (new LibrarianOmClient(new LibrarianSettingsDTO('https://librarian.test/_mcp', 7), '/started/here', $logger, $http))->observeClaudeCode('session-uuid', 12);
+        $this->assertSame(1, $http->getRequestsCount());
+        $this->assertSame([], $logger->records);
     }
 
     #[DataProvider('deletionResponses')]

@@ -8,8 +8,10 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use PHPUnit\Framework\TestCase;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 abstract class OmTestCase extends TestCase
 {
@@ -30,6 +32,11 @@ abstract class OmTestCase extends TestCase
     protected function settings(): OmSettings
     {
         return OmSettings::fromArray(['librarian' => ['url' => 'http://librarian.test:8093/prefix/_mcp']]);
+    }
+
+    protected function query(ExtensionApiInterface $api, ?HttpClientInterface $http = null): OmQueryService
+    {
+        return new OmQueryService($api->exec(), $api->getCwd(), $api->isChildRun(...), $this->settings(), librarianHttpClient: $http);
     }
 
     protected function api(bool $child = false, bool $worktree = false): ExtensionApiInterface

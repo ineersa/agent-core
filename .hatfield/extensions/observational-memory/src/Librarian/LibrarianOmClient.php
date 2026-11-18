@@ -28,9 +28,9 @@ final readonly class LibrarianOmClient
     ) {
     }
 
-    public function observe(string $runId, int $endSeq, string $status): void
+    public function observeHatfield(string $runId, int $endSeq, string $status): void
     {
-        $this->request('observe', $runId, $endSeq, [
+        $this->request('POST', '/observe', 202, 'observe', $runId, $endSeq, [
             'contract_version' => 1,
             'source_kind' => 'hatfield',
             'session_id' => $runId,
@@ -40,25 +40,41 @@ final readonly class LibrarianOmClient
         ]);
     }
 
+    /**
+     * Librarian reads the Claude transcript itself: end_seq is the count of
+     * complete transcript lines, and no conversation content is sent.
+     */
+    public function observeClaudeCode(string $sessionId, int $endSeq): void
+    {
+        $this->request('POST', '/observe', 202, 'observe', $sessionId, $endSeq, [
+            'contract_version' => 1,
+            'source_kind' => 'claude_code',
+            'session_id' => $sessionId,
+            'end_seq' => $endSeq,
+        ]);
+    }
+
     public function deleteSession(string $runId): void
     {
-        $this->request('delete', $runId);
+        $this->request('DELETE', '/sessions/hatfield/'.rawurlencode($runId), 200, 'delete', $runId);
     }
 
     public function projection(string $runId): ?string
     {
-        return $this->request('projection', $runId)?->text;
+        return $this->request('GET', '/sessions/hatfield/'.rawurlencode($runId).'/projection', 200, 'projection', $runId)?->text;
     }
 
-    /** @param array<string, mixed>|null $body */
-    private function request(string $operation, string $runId, ?int $endSeq = null, ?array $body = null): ?LibrarianResponseDTO
+    /**
+     * @param string                    $operation Validation group and log event name
+     * @param array<string, mixed>|null $body
+     */
+    private function request(string $method, string $path, int $expectedStatus, string $operation, string $sessionId, ?int $endSeq = null, ?array $body = null): ?LibrarianResponseDTO
     {
         $status = null;
         $response = null;
         try {
             $parts = parse_url($this->settings->url);
             $origin = $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
-            $path = 'observe' === $operation ? '/observe' : '/sessions/hatfield/'.rawurlencode($runId).('delete' === $operation ? '' : '/projection');
             $headers = ['X-Librarian-Project' => $this->projectRoot, 'Accept' => 'application/json'];
             if (null !== $this->settings->token) {
                 $headers['Authorization'] = 'Bearer '.$this->settings->token;
@@ -78,9 +94,9 @@ final readonly class LibrarianOmClient
                 $options['json'] = $body;
             }
             $http = $this->httpClient ?? new CurlHttpClient();
-            $response = $http->request('delete' === $operation ? 'DELETE' : (null === $body ? 'GET' : 'POST'), $origin.'/api/om/v1'.$path, $options);
+            $response = $http->request($method, $origin.'/api/om/v1'.$path, $options);
             $status = $response->getStatusCode();
-            if (('observe' === $operation ? 202 : 200) !== $status) {
+            if ($expectedStatus !== $status) {
                 throw new \UnexpectedValueException('Unexpected Librarian response status.');
             }
             // Stream with a second cap: never buffer an unbounded chunked response before validation.
@@ -104,8 +120,8 @@ final readonly class LibrarianOmClient
             $this->logger->warning('om.librarian.'.$operation.'_failed', [
                 'component' => 'observational_memory',
                 'event_type' => 'om.librarian.'.$operation.'_failed',
-                'run_id' => $runId,
-                'session_id' => $runId,
+                'run_id' => $sessionId,
+                'session_id' => $sessionId,
                 'end_seq' => $endSeq,
                 'http_status' => $status,
                 'exception_class' => $error::class,

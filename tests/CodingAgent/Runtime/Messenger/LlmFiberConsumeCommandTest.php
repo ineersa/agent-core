@@ -410,9 +410,10 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
 
         $this->assertSame(0, $status);
         $this->assertSame($concurrency, $capturedLimit);
+        // The banner wraps at the terminal width (80 columns without a TTY).
         $this->assertStringContainsString(
             \sprintf('Fiber concurrency %d', $concurrency),
-            $output->fetch(),
+            (string) preg_replace('/\s+/', ' ', $output->fetch()),
         );
     }
 
@@ -550,7 +551,8 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         foreach ($receivers as $receiver) {
             $this->assertSame(0, $receiver->keepalives, 'Settled deliveries must no longer receive keepalives.');
         }
-        $this->assertStringContainsString('Fiber concurrency '.('tool' === $role ? 'unlimited' : '6'), $output->fetch());
+        // The banner wraps at the terminal width (80 columns without a TTY).
+        $this->assertStringContainsString('Fiber concurrency '.('tool' === $role ? 'unlimited' : '6'), (string) preg_replace('/\s+/', ' ', $output->fetch()));
     }
 
     private function runSnapshotConsumer(int $messages, EventDispatcher $dispatcher, \Closure $handle): int

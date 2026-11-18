@@ -9,7 +9,6 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeCompactionHook;
-use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
@@ -32,7 +31,7 @@ final class OmBeforeCompactionHookTest extends OmTestCase
             new MockResponse('{"ok":true,"contract_version":1,"text":"first"}'),
             new MockResponse('{"ok":true,"contract_version":1,"text":"updated"}'),
         ]);
-        $query = new OmQueryService($api, $this->settings(), librarianHttpClient: $http);
+        $query = $this->query($api, $http);
         $hook = new OmBeforeCompactionHook($query, new NullLogger());
         $first = $hook->beforeCompaction($this->context());
         $second = $hook->beforeCompaction($this->context());
@@ -58,7 +57,7 @@ final class OmBeforeCompactionHookTest extends OmTestCase
 
             return new MockResponse($body, ['http_code' => $status]);
         });
-        $result = (new OmBeforeCompactionHook(new OmQueryService($this->api(), $this->settings(), librarianHttpClient: $http), new NullLogger()))->beforeCompaction($this->context());
+        $result = (new OmBeforeCompactionHook($this->query($this->api(), $http), new NullLogger()))->beforeCompaction($this->context());
         $this->assertFalse($result->cancels());
         $this->assertSame($replacement, $result->hasReplacementSummary());
         $this->assertSame($timeout ? 0 : 1, $http->getRequestsCount());
@@ -82,7 +81,7 @@ final class OmBeforeCompactionHookTest extends OmTestCase
     public function testExcludedContextsNeverRequest(bool $child, bool $worktree): void
     {
         $http = new MockHttpClient();
-        $result = (new OmBeforeCompactionHook(new OmQueryService($this->api($child, $worktree), $this->settings(), librarianHttpClient: $http), new NullLogger()))->beforeCompaction($this->context());
+        $result = (new OmBeforeCompactionHook($this->query($this->api($child, $worktree), $http), new NullLogger()))->beforeCompaction($this->context());
         $this->assertFalse($result->cancels());
         $this->assertFalse($result->hasReplacementSummary());
         $this->assertSame(0, $http->getRequestsCount());

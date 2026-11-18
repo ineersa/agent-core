@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tool;
 
 use HelgeSverre\Toon\Toon;
-use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 
@@ -18,7 +17,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
  * Cooperative cancel/timeout maps are returned as plain structured arrays (not TOON) so
  * ToolExecutor can preserve cancelled/timed_out control flags in domain details.
  */
-final class RecallToolHandler implements ContextualExtensionToolHandlerInterface
+final class RecallToolHandler implements OmToolHandlerInterface
 {
     public function __construct(
         private readonly OmQueryService $query,
@@ -26,6 +25,14 @@ final class RecallToolHandler implements ContextualExtensionToolHandlerInterface
     }
 
     public function __invoke(array $arguments, ToolInvocationContextDTO $context): mixed
+    {
+        $result = $this->result($arguments, $context);
+
+        // Keep cooperative interrupt maps as arrays for ToolExecutor control-flag promotion.
+        return true === ($result['cancelled'] ?? false) || true === ($result['timed_out'] ?? false) ? $result : Toon::encode($result);
+    }
+
+    public function result(array $arguments, ToolInvocationContextDTO $context): array
     {
         $deadlineNs = null;
         if (null !== $context->timeoutSeconds && $context->timeoutSeconds > 0) {
@@ -48,26 +55,19 @@ final class RecallToolHandler implements ContextualExtensionToolHandlerInterface
 
         $id = $arguments['id'] ?? null;
         if (!\is_string($id)) {
-            return Toon::encode([
+            return [
                 'ok' => false,
                 'error' => 'invalid_id',
                 'message' => 'id must be a lowercase hex string of 12 to 64 characters.',
-            ]);
+            ];
         }
 
-        $result = $this->query->recall(
+        return $this->query->recall(
             $context->runId,
             $id,
             $context->cancellationToken,
             $context->timeoutSeconds,
             $deadlineNs,
         );
-
-        // Keep cooperative interrupt maps as arrays for ToolExecutor control-flag promotion.
-        if (true === ($result['cancelled'] ?? false) || true === ($result['timed_out'] ?? false)) {
-            return $result;
-        }
-
-        return Toon::encode($result);
     }
 }

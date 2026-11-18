@@ -1,0 +1,24 @@
+{
+  "name": "observational-memory",
+  "description": "Hatfield's Librarian observational memory for Claude Code: turn observe signals plus memory_search and recall.",
+  "author": {
+    "name": "ineersa"
+  },
+  "homepage": "https://github.com/ineersa/hatfield-ext-observational-memory",
+  "repository": "https://github.com/ineersa/hatfield-ext-observational-memory",
+  "license": "MIT",
+  "keywords": [
+    "hatfield",
+    "librarian",
+    "memory",
+    "observational-memory"
+  ],
+  "mcpServers": {
+    "observational-memory": {
+      "command": "php",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/claude/bin/observational-memory-mcp"
+      ]
+    }
+  }
+}

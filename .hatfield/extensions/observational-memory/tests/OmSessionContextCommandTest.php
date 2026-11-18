@@ -7,7 +7,6 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Command\OmViewCommandHandler;
-use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmSessionContext;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -27,7 +26,7 @@ final class OmSessionContextCommandTest extends OmTestCase
 
             return new MockResponse('{"ok":true,"contract_version":1,"text":"remote memory"}');
         });
-        $handler = new OmViewCommandHandler(new OmQueryService($this->api(), $this->settings(), librarianHttpClient: $http), $session);
+        $handler = new OmViewCommandHandler($this->query($this->api(), $http), $session);
         $context = $this->createMock(CommandContextInterface::class);
         $context->expects($this->exactly(2))->method('notify')->with('remote memory', 'info');
         $handler->handle('', $context);
@@ -37,7 +36,7 @@ final class OmSessionContextCommandTest extends OmTestCase
 
     public function testMissingSessionShowsSafeError(): void
     {
-        $handler = new OmViewCommandHandler(new OmQueryService($this->api(), $this->settings()), new OmSessionContext());
+        $handler = new OmViewCommandHandler($this->query($this->api()), new OmSessionContext());
         $context = $this->createMock(CommandContextInterface::class);
         $context->expects($this->once())->method('notify')->with('OM view unavailable.', 'error');
         $handler->handle('', $context);

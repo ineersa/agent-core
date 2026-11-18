@@ -1,0 +1,24 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * Claude Code stdio MCP entry point: memory_search and recall over Librarian.
+ */
+
+require dirname(__DIR__).'/bootstrap.php';
+
+['pluginRoot' => $pluginRoot, 'projectDir' => $projectDir] = observationalMemoryBootstrap();
+
+use Ineersa\HatfieldExt\ObservationalMemory\Claude\ClaudeOmSettingsProvider;
+use Ineersa\HatfieldExt\ObservationalMemory\Claude\ObservationalMemoryMcpServerFactory;
+use Ineersa\HatfieldExt\ObservationalMemory\Claude\ProcessExec;
+use Ineersa\HatfieldExt\ObservationalMemory\Claude\StderrLogger;
+use Mcp\Server\Transport\StdioTransport;
+
+$logger = new StderrLogger();
+$manifest = json_decode((string) file_get_contents($pluginRoot.'/.claude-plugin/plugin.json'), true);
+$server = (new ObservationalMemoryMcpServerFactory(new ClaudeOmSettingsProvider(getenv('HOME') ?: null), new ProcessExec(), $logger))
+    ->create($projectDir, (string) ($manifest['version'] ?? 'dev'));
+$server->run(new StdioTransport(logger: $logger));

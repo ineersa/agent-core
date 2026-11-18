@@ -12,6 +12,12 @@
       "source": "./.hatfield/extensions/task-workflow",
       "description": "GitHub issue task workflow with project hooks, PR delivery and recoverable worktrees.",
       "category": "development"
+    },
+    {
+      "name": "observational-memory",
+      "source": "./.hatfield/extensions/observational-memory",
+      "description": "Librarian observational memory: content-free turn observe signals plus memory_search and recall.",
+      "category": "productivity"
     }
   ]
 }
