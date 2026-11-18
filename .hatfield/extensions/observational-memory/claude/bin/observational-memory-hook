@@ -12,12 +12,14 @@ declare(strict_types=1);
 
 require dirname(__DIR__).'/bootstrap.php';
 
-['projectDir' => $projectDir] = observationalMemoryBootstrap();
+['dataDir' => $dataDir, 'projectDir' => $projectDir] = observationalMemoryBootstrap();
 
 use Ineersa\HatfieldExt\ObservationalMemory\Claude\ClaudeObserveHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Claude\ClaudeOmSettingsProvider;
+use Ineersa\HatfieldExt\ObservationalMemory\Claude\ClaudeTranscriptLineCounter;
 use Ineersa\HatfieldExt\ObservationalMemory\Claude\ProcessExec;
 use Ineersa\HatfieldExt\ObservationalMemory\Claude\StderrLogger;
 
-(new ClaudeObserveHook(new ClaudeOmSettingsProvider(getenv('HOME') ?: null), new ProcessExec(), new StderrLogger()))
+$logger = new StderrLogger();
+(new ClaudeObserveHook(new ClaudeOmSettingsProvider(getenv('HOME') ?: null), new ClaudeTranscriptLineCounter($dataDir.'/transcript-cursors', $logger), new ProcessExec(), $logger))
     ->handle((string) stream_get_contents(STDIN), $projectDir);

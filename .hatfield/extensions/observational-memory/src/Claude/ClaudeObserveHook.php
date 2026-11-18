@@ -20,15 +20,18 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * Claude Code Stop/SessionEnd hook: one content-free observe signal.
  *
  * Librarian locates and reads the transcript itself, so the hook sends only
- * the session id and the number of complete transcript lines. It is best
+ * the session id and the number of complete transcript lines, counted
+ * incrementally across turns. It is best
  * effort: every failure is logged to stderr and the hook still succeeds.
  */
 final readonly class ClaudeObserveHook
 {
-    private const int READ_CHUNK_BYTES = 1_048_576;
+    // Cursors of sessions that ended without SessionEnd; Claude Code's default transcript retention.
+    private const int CURSOR_MAX_AGE_SECONDS = 30 * 86_400;
 
     public function __construct(
         private ClaudeOmSettingsProvider $settings,
+        private ClaudeTranscriptLineCounter $lines,
         private ExecInterface $exec,
         private LoggerInterface $logger,
         private ?HttpClientInterface $httpClient = null,
@@ -73,11 +76,14 @@ final readonly class ClaudeObserveHook
             if (!is_file($hook->transcript_path) || !(new LibrarianProjectPolicy($this->exec, $this->logger))->allows($root)) {
                 return;
             }
-            $endSeq = $this->completeLines($hook->transcript_path);
-            if (0 === $endSeq) {
-                return;
+            $endSeq = $this->lines->completeLines($sessionId, $hook->transcript_path);
+            if (0 !== $endSeq) {
+                (new LibrarianOmClient($settings->librarian, $root, $this->logger, $this->httpClient))->observeClaudeCode($sessionId, $endSeq);
             }
-            (new LibrarianOmClient($settings->librarian, $root, $this->logger, $this->httpClient))->observeClaudeCode($sessionId, $endSeq);
+            if ('SessionEnd' === $hook->hook_event_name) {
+                $this->lines->forget($sessionId);
+                $this->lines->prune(self::CURSOR_MAX_AGE_SECONDS);
+            }
         } catch (\Throwable $error) {
             // Intentional local degradation: the next turn's signal covers this one.
             $this->logger->warning('om.claude.observe_hook_failed', [
@@ -85,32 +91,6 @@ final readonly class ClaudeObserveHook
                 'run_id' => $sessionId, 'session_id' => $sessionId,
                 'exception_class' => $error::class,
             ]);
-        }
-    }
-
-    /**
-     * Librarian ignores an unterminated last line (still being written), so
-     * count newlines only. Streams: transcripts reach tens of megabytes.
-     */
-    private function completeLines(string $path): int
-    {
-        $handle = fopen($path, 'rb');
-        if (false === $handle) {
-            throw new \RuntimeException('Cannot open the Claude Code transcript.');
-        }
-        try {
-            $lines = 0;
-            while (!feof($handle)) {
-                $chunk = fread($handle, self::READ_CHUNK_BYTES);
-                if (false === $chunk) {
-                    throw new \RuntimeException('Cannot read the Claude Code transcript.');
-                }
-                $lines += substr_count($chunk, "\n");
-            }
-
-            return $lines;
-        } finally {
-            fclose($handle);
         }
     }
 }

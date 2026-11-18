@@ -12,7 +12,7 @@ declare(strict_types=1);
  * output and diagnostics go to stderr.
  */
 
-/** @return array{pluginRoot: string, projectDir: string} */
+/** @return array{pluginRoot: string, dataDir: string, projectDir: string} */
 function observationalMemoryBootstrap(): array
 {
     $pluginRoot = dirname(__DIR__);
@@ -26,7 +26,7 @@ function observationalMemoryBootstrap(): array
     }
     require observationalMemoryDependencies($pluginRoot, $dataDir);
 
-    return ['pluginRoot' => $pluginRoot, 'projectDir' => $projectDir];
+    return ['pluginRoot' => $pluginRoot, 'dataDir' => $dataDir, 'projectDir' => $projectDir];
 }
 
 function observationalMemoryDependencies(string $pluginRoot, string $dataDir): string

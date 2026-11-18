@@ -9,6 +9,7 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\HatfieldExt\ObservationalMemory\Claude\ClaudeObserveHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Claude\ClaudeOmSettingsProvider;
+use Ineersa\HatfieldExt\ObservationalMemory\Claude\ClaudeTranscriptLineCounter;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -53,6 +54,27 @@ final class ClaudeObserveHookTest extends OmTestCase
             ['contract_version' => 1, 'source_kind' => 'claude_code', 'session_id' => self::SESSION, 'end_seq' => 3],
             json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR),
         );
+    }
+
+    public function testStopKeepsTheSessionCursorAndSessionEndSendsTheFinalSignalAndDropsIt(): void
+    {
+        $endSeqs = [];
+        $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$endSeqs): MockResponse {
+            $endSeqs[] = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR)['end_seq'];
+
+            return new MockResponse('{"ok":true,"contract_version":1,"status":"queued"}', ['http_code' => 202]);
+        });
+        $transcript = $this->transcript("{}\n{}\n");
+        $hook = $this->hook($http, new TestLogger());
+        $cursor = $this->directory.'/cursors/'.self::SESSION.'.json';
+
+        $hook->handle($this->input($transcript), $this->root);
+        $this->assertFileExists($cursor);
+        file_put_contents($transcript, "{}\n", \FILE_APPEND);
+        $hook->handle($this->input($transcript, 'SessionEnd'), $this->root);
+
+        $this->assertSame([2, 3], $endSeqs);
+        $this->assertFileDoesNotExist($cursor);
     }
 
     #[DataProvider('inertCases')]
@@ -151,7 +173,7 @@ final class ClaudeObserveHookTest extends OmTestCase
         }
 
         // No HOME layer: only the fixture project's settings are read.
-        return new ClaudeObserveHook(new ClaudeOmSettingsProvider(null), $exec, $logger, $http);
+        return new ClaudeObserveHook(new ClaudeOmSettingsProvider(null), new ClaudeTranscriptLineCounter($this->directory.'/cursors', $logger), $exec, $logger, $http);
     }
 
     private function noRequests(): MockHttpClient
@@ -174,8 +196,8 @@ final class ClaudeObserveHookTest extends OmTestCase
         return $path;
     }
 
-    private function input(string $transcript): string
+    private function input(string $transcript, string $event = 'Stop'): string
     {
-        return json_encode(['session_id' => self::SESSION, 'transcript_path' => $transcript, 'cwd' => $this->root, 'hook_event_name' => 'Stop'], \JSON_THROW_ON_ERROR);
+        return json_encode(['session_id' => self::SESSION, 'transcript_path' => $transcript, 'cwd' => $this->root, 'hook_event_name' => $event], \JSON_THROW_ON_ERROR);
     }
 }

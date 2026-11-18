@@ -16,4 +16,7 @@ final class ClaudeHookInputDTO
     #[Assert\NotBlank]
     #[Assert\Regex('#\A/#')]
     public string $transcript_path = '';
+
+    /** Stop, SessionEnd, ... */
+    public string $hook_event_name = '';
 }

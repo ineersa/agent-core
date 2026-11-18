@@ -111,7 +111,10 @@ if it timed out.
 
 - **Memory generation:** async `Stop` and `SessionEnd` hooks send Librarian a
   content-free `claude_code` observe signal: the session id and the number of
-  complete transcript lines. Librarian reads the transcript itself and skips
+  complete transcript lines. The count is incremental: a per-session cursor in
+  the plugin data directory means each turn reads only the bytes appended since
+  the previous one. `SessionEnd` removes the cursor, and cursors of sessions
+  that ended without it are pruned after 30 days. Librarian reads the transcript itself and skips
   subagent (sidechain), meta and compact-summary records. The `Stop` signal
   covers every completed turn. `SessionEnd` hooks share a short budget, so the
   final signal is best effort. Hooks never block or fail the session; failures
