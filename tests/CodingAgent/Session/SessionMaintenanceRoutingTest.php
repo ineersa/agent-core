@@ -85,6 +85,7 @@ use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\SharedLockInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\Event\WorkerMessageReceivedEvent;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
@@ -1079,6 +1080,13 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $transport->send($command);
         $transport->send(new Envelope(new RepairSession($other, true, 'unrelated-repair')));
         $events = new EventDispatcher();
+        $deadline = new TimeoutCancellation(5);
+        $events->addListener(WorkerMessageReceivedEvent::class, static function (WorkerMessageReceivedEvent $event) use ($other, $entered, $deadline): void {
+            if ($event->getEnvelope()->getMessage()->runId === $other) {
+                // Admit the unrelated repair only once the first repair has tried the held lock.
+                $entered->getFuture()->await($deadline);
+            }
+        });
         $progressed = false;
         $failure = null;
         $onDispatch = function (Envelope $envelope) use ($other, $entered, $held, $refuse, &$reject, &$progressed): void {
@@ -1114,7 +1122,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         };
         $worker = new Worker(['run_control' => $transport], $bus, $events, messageExecutionStrategy: new FiberMessageExecutionStrategy($bus));
         try {
-            async(static fn () => $worker->run(['sleep' => 0, 'stop_when_empty' => true, 'fetch_size' => 2]))->await(new TimeoutCancellation(5));
+            async(static fn () => $worker->run(['sleep' => 0, 'stop_when_empty' => true, 'fetch_size' => 2]))->await($deadline);
             $this->assertTrue($progressed);
             if ($refuse) {
                 $this->assertNotNull($failure);
