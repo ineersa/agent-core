@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Query;
 
-use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Librarian\LibrarianClient;
 use Ineersa\HatfieldExt\ObservationalMemory\Librarian\LibrarianOmClient;
@@ -28,8 +28,14 @@ final class OmQueryService
     private ?LibrarianClient $librarian = null;
     private ?bool $externalAllowed = null;
 
+    /**
+     * @param string                 $cwd        Host project binding used to resolve the Librarian project root
+     * @param \Closure(string): bool $isChildRun Main-only policy: child runs never reach Librarian
+     */
     public function __construct(
-        private readonly ExtensionApiInterface $api,
+        private readonly ExecInterface $exec,
+        private readonly string $cwd,
+        private readonly \Closure $isChildRun,
         private readonly OmSettings $settings,
         private readonly LoggerInterface $logger = new NullLogger(),
         private readonly ?HttpClientInterface $librarianHttpClient = null,
@@ -38,12 +44,12 @@ final class OmQueryService
 
     public function usesLibrarian(): bool
     {
-        return $this->externalAllowed ??= (new LibrarianProjectPolicy($this->api->exec(), $this->logger))->allows($this->api->getCwd());
+        return $this->externalAllowed ??= (new LibrarianProjectPolicy($this->exec, $this->logger))->allows($this->cwd);
     }
 
     public function projection(string $runId): ?string
     {
-        if ($this->api->isChildRun($runId) || !$this->usesLibrarian()) {
+        if (($this->isChildRun)($runId) || !$this->usesLibrarian()) {
             return null;
         }
 
@@ -71,7 +77,7 @@ final class OmQueryService
         ?int $deadlineNs = null,
         ?string $runId = null,
     ): array {
-        if (null !== $runId && $this->api->isChildRun($runId)) {
+        if (null !== $runId && ($this->isChildRun)($runId)) {
             return ['ok' => false, 'error' => 'main_only', 'message' => 'Observational memory is available only in main runs.'];
         }
         $query = trim($query);
@@ -126,7 +132,7 @@ final class OmQueryService
         ?int $timeoutSeconds = null,
         ?int $deadlineNs = null,
     ): array {
-        if ($this->api->isChildRun($runId)) {
+        if (($this->isChildRun)($runId)) {
             return ['ok' => false, 'error' => 'main_only', 'message' => 'Observational memory is available only in main runs.'];
         }
         $id = trim($id);
@@ -148,9 +154,9 @@ final class OmQueryService
     private function projectRoot(): string
     {
         // The public CWD is the host project binding used to resolve session paths.
-        $root = realpath($this->api->getCwd());
+        $root = realpath($this->cwd);
 
-        return Path::canonicalize(false === $root ? $this->api->getCwd() : $root);
+        return Path::canonicalize(false === $root ? $this->cwd : $root);
     }
 
     private function external(): LibrarianClient

@@ -853,6 +853,7 @@ parameters:
       - SymfonyYaml
     # OM may use ExtensionApi + approved vendor facilities, including the official MCP client.
     # Vendor packages are not Deptrac layers; only forbid project-layer leakage.
+    # Its Claude Code plugin bridge also uses Process (Git checks) and Yaml (Hatfield settings).
     HatfieldExtObservationalMemory:
       - McpSdk
       - AppExtensionApi
@@ -860,6 +861,8 @@ parameters:
       - SymfonyAiPlatform
       - SymfonyHttpClient
       - SymfonyLock
+      - SymfonyProcess
+      - SymfonyYaml
     AppExtensionBuiltin:
       - AppExtensionApi
       - SymfonyValidator

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
-use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -16,7 +15,7 @@ final class OmQueryServiceTest extends OmTestCase
     public function testViewDistinguishesEmptyUnavailableAndExactContent(string $body, int $status, string $expected): void
     {
         $http = new MockHttpClient(new MockResponse($body, ['http_code' => $status]));
-        $query = new OmQueryService($this->api(), $this->settings(), librarianHttpClient: $http);
+        $query = $this->query($this->api(), $http);
         $this->assertSame($expected, $query->formatView('session'));
     }
 
@@ -32,7 +31,7 @@ final class OmQueryServiceTest extends OmTestCase
     public function testSearchValidationWithoutNetwork(string $query, ?string $after, ?string $before, ?int $limit, string $error): void
     {
         $http = new MockHttpClient();
-        $queryService = new OmQueryService($this->api(), $this->settings(), librarianHttpClient: $http);
+        $queryService = $this->query($this->api(), $http);
         $this->assertSame($error, $queryService->search($query, $after, $before, $limit)['error']);
         $this->assertSame(0, $http->getRequestsCount());
     }
@@ -48,12 +47,12 @@ final class OmQueryServiceTest extends OmTestCase
 
     public function testChildrenAndWorktreesNeverRetrieveOrProject(): void
     {
-        $child = new OmQueryService($this->api(child: true), $this->settings());
+        $child = $this->query($this->api(child: true));
         $this->assertSame('main_only', $child->search('query', runId: 'child')['error']);
         $this->assertSame('main_only', $child->recall('child', str_repeat('a', 12))['error']);
         $this->assertNull($child->projection('child'));
         $http = new MockHttpClient();
-        $worktree = new OmQueryService($this->api(worktree: true), $this->settings(), librarianHttpClient: $http);
+        $worktree = $this->query($this->api(worktree: true), $http);
         $this->assertSame('om_unavailable', $worktree->search('query')['error']);
         $this->assertSame('om_unavailable', $worktree->recall('main', str_repeat('a', 12))['error']);
         $this->assertNull($worktree->projection('main'));

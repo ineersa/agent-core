@@ -91,3 +91,55 @@ Other obsolete or unknown settings are rejected.
 After permanent local session deletion succeeds, the extension sends a synchronous, bounded `DELETE /api/om/v1/sessions/hatfield/{encodedId}` with no body, using the captured session's canonical CWD as `X-Librarian-Project` and the shared optional token. HTTP 200 with `{ok: true, contract_version: 1, deleted: boolean}` is success whether `deleted` is true or false. Captured children and linked-worktree targets are excluded; the currently attached session is never substituted. The deletion hook remains registered even in an excluded active checkout so an eligible target is evaluated using its own project.
 
 Cleanup is best effort: remote failure is logged without content or credentials and never reverses local deletion. There is no retry/outbox and no eventual-cleanup guarantee; unavailable Librarian can retain memory indefinitely. Late observe requests may recreate server-side session rows; preventing this is a Librarian-side responsibility, not guaranteed by this client.
+
+## Claude Code plugin
+
+The same package is a Claude Code plugin, so Claude Code sessions build and use
+the same Librarian memory as Hatfield sessions. It reads the Librarian settings
+above from the same files (user `~/.hatfield/settings.yaml` < project
+`.hatfield/settings.yaml`); the plugin manifest holds no URL or token.
+
+```text
+/plugin marketplace add ineersa/agent-core
+/plugin install observational-memory@hatfield
+```
+
+Requirements: `php` (8.5+) and `composer` on `PATH`. The first start after
+installing or updating the plugin installs Composer dependencies into the
+plugin data directory, so that start can take a minute; reconnect with `/mcp`
+if it timed out.
+
+- **Memory generation:** async `Stop` and `SessionEnd` hooks send Librarian a
+  content-free `claude_code` observe signal: the session id and the number of
+  complete transcript lines. Librarian reads the transcript itself and skips
+  subagent (sidechain), meta and compact-summary records. The `Stop` signal
+  covers every completed turn. `SessionEnd` hooks share a short budget, so the
+  final signal is best effort. Hooks never block or fail the session; failures
+  go to Claude Code's debug log.
+- **Retrieval:** the `observational-memory` MCP server exposes exactly
+  `memory_search` and `recall`, with the Hatfield schemas and results.
+- **Compaction:** Claude Code's own compaction is unchanged; there is no
+  projection or `/om-view`.
+
+Librarian locates a transcript as
+`<CLAUDE_PROJECTS_PATH>/<project root with every non-alphanumeric character replaced by '-'>/<session id>.jsonl`.
+The project root is the directory Claude Code was started in
+(`CLAUDE_PROJECT_DIR`), resolved through symlinks and sent as
+`X-Librarian-Project`. Hooks do nothing when Librarian is not configured, when
+Claude Code was started outside that root (for example in a subdirectory), or
+in linked Git worktrees.
+
+Set up:
+
+- **Librarian:** deploy a Librarian that reads Claude Code transcripts and
+  mount the Claude projects directory (`~/.claude/projects`) into it as
+  `CLAUDE_PROJECTS_PATH`.
+- **Turn off Claude's built-in auto memory** so it does not compete with
+  Librarian: set `"autoMemoryEnabled": false` in the project
+  `.claude/settings.json` (or user settings), or export
+  `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`.
+- **Keep transcripts as long as their memory:** raise `cleanupPeriodDays` in
+  Claude Code settings. Once Claude Code deletes a transcript, `recall` for its
+  memories returns `session_deleted`.
+- Start Claude Code in the project root. The server starts once per session;
+  after changing settings, reconnect it with `/mcp`.

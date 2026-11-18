@@ -1,0 +1,23 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * Claude Code Stop/SessionEnd hook: a content-free observe signal to Librarian.
+ *
+ * Runs async; it never writes to stdout and always exits 0 once bootstrapped,
+ * so it can neither block nor fail the session.
+ */
+
+require dirname(__DIR__).'/bootstrap.php';
+
+['projectDir' => $projectDir] = observationalMemoryBootstrap();
+
+use Ineersa\HatfieldExt\ObservationalMemory\Claude\ClaudeObserveHook;
+use Ineersa\HatfieldExt\ObservationalMemory\Claude\ClaudeOmSettingsProvider;
+use Ineersa\HatfieldExt\ObservationalMemory\Claude\ProcessExec;
+use Ineersa\HatfieldExt\ObservationalMemory\Claude\StderrLogger;
+
+(new ClaudeObserveHook(new ClaudeOmSettingsProvider(getenv('HOME') ?: null), new ProcessExec(), new StderrLogger()))
+    ->handle((string) stream_get_contents(STDIN), $projectDir);

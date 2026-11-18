@@ -58,7 +58,7 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
         $settings = OmSettings::fromApi($api);
         $resolved = realpath($api->getCwd());
         $root = Path::canonicalize(false === $resolved ? $api->getCwd() : $resolved);
-        (new LibrarianOmClient($settings->librarian, $root, $this->logger, $this->httpClient))->observe(
+        (new LibrarianOmClient($settings->librarian, $root, $this->logger, $this->httpClient))->observeHatfield(
             $runId, $payload['terminal_end_seq'], $payload['terminal_status'],
         );
     }
