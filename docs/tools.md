@@ -92,6 +92,17 @@ receive a cooperative budget, not a guarantee that synchronous code is preempted
 Stdout/stderr accompany the return value; large diagnostics use saved artifacts
 and normal output caps. Prefer a small final `return` to dumping intermediates.
 
+Use `notify_owner(string $message)` to submit an intermediate notice from a
+running script. The message must be nonblank UTF-8 and at most 8,192 bytes.
+The helper returns `['status' => 'submitted', 'notice_id' => ...]` or a
+structured refusal with `status: refused` and a `reason`. Submission does not
+promise delivery, consumption, or a response. It does not interrupt a
+foreground tool wait or replace the script's final result.
+
+The owner comes from the invocation, including for background, scheduled,
+nested, and child-owned scripts. This is not `notify_parent`: existing mailbox
+rules determine when the owner sees the notice and whether it is forwarded.
+
 ### Trust and unsupported operations
 
 Raw PHP filesystem/process functions bypass toolbox hooks and approvals. Use

@@ -28,6 +28,8 @@ use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeBackgroundCoordinationHandler;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
@@ -381,6 +383,33 @@ PHP));
             ['direct' => true, 'n' => 2],
             $this->runScript($bridge, "return ['direct' => true, 'n' => 2];"),
         );
+    }
+
+    public function testOwnerNoticesAreSubmittedBeforeTheScriptReturns(): void
+    {
+        $bus = new TestMessageBus();
+        $bridge = $this->bridgeWithToolbox(static fn (string $name): null => null, commandBus: $bus);
+        $runId = $this->ensurePreparedRegistration('code-mode-bridge-test');
+        $result = $this->runScript($bridge, <<<'PHP'
+            $first = notify_owner(str_repeat('é', 4096));
+            $second = notify_owner('still running');
+            $invalid = [notify_owner('  '), notify_owner("\xff"), notify_owner(str_repeat('é', 4097))];
+
+            return ['final', $first, $second, $invalid];
+            PHP, runId: $runId);
+
+        $this->assertCount(2, $bus->messages);
+        $this->assertSame('final', $result[0]);
+        $this->assertSame(array_fill(0, 3, ['status' => 'refused', 'reason' => 'invalid_message']), $result[3]);
+        foreach ($bus->messages as $index => $notice) {
+            $this->assertInstanceOf(DeliverBackgroundCompletionDTO::class, $notice);
+            $this->assertSame($runId, $notice->runId());
+            $this->assertSame('code-mode-bridge-test-1', $notice->origin['tool_call_id']);
+            $this->assertNull($notice->deferredId);
+            $this->assertSame(['status' => 'submitted', 'notice_id' => $notice->identity], $result[$index + 1]);
+        }
+        $this->assertNotSame($result[1]['notice_id'], $result[2]['notice_id']);
+        $this->assertSame(['status' => 'refused', 'reason' => 'owner_unavailable'], $bridge->execute('return notify_owner("no owner");'));
     }
 
     public function testExecuteToonHelpersDecodeAndRejectGarbage(): void
@@ -1171,7 +1200,7 @@ PHP));
     /**
      * @param callable(string): mixed $executor
      */
-    private function bridgeWithToolbox(callable $executor, ?OutputCap $outputCap = null): CodeModeHostBridge
+    private function bridgeWithToolbox(callable $executor, ?OutputCap $outputCap = null, ?TestMessageBus $commandBus = null): CodeModeHostBridge
     {
         $locator = new class($executor) implements \Psr\Container\ContainerInterface {
             public function __construct(private mixed $executor)
@@ -1216,7 +1245,7 @@ PHP));
             self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
-            self::getContainer()->get('agent.command.bus'),
+            $commandBus ?? self::getContainer()->get('agent.command.bus'),
         );
     }
 

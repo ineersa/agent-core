@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
@@ -38,6 +39,8 @@ use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeExcept
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\UuidV7;
+use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Validation;
 
 use function Amp\delay;
 
@@ -213,6 +216,13 @@ final readonly class CodeModeHostBridge
             }
 
             $type = $frame['type'] ?? null;
+            if ('notify_owner' === $type) {
+                CodeModeIpc::write($connection, [
+                    'id' => $frame['id'] ?? null,
+                    'result' => $this->notifyOwner($frame['message'] ?? null, $parentContext),
+                ], $writeWaiter);
+                continue;
+            }
             if ('tool' === $type) {
                 $this->handleToolRequest($connection, $frame, $parentContext, $cancelToken, $timeoutSeconds, $startedAtNs, $writeWaiter);
                 continue;
@@ -236,6 +246,32 @@ final readonly class CodeModeHostBridge
 
             throw new ToolCallException(\sprintf('Unsupported code-mode IPC frame type: %s.', get_debug_type($type)), retryable: false);
         }
+    }
+
+    /** @return array<string, mixed> */
+    private function notifyOwner(mixed $message, ?ToolContext $context): array
+    {
+        $violations = Validation::createValidator()->validate($message, new Assert\Sequentially([
+            new Assert\Type('string'),
+            new Assert\NotBlank(normalizer: 'trim'),
+            new Assert\Charset('UTF-8'),
+            new Assert\Length(max: 8192, countUnit: Assert\Length::COUNT_BYTES),
+        ]));
+        if (0 !== $violations->count()) {
+            return ['status' => 'refused', 'reason' => 'invalid_message'];
+        }
+        if (null === $context || '' === $context->runId()) {
+            return ['status' => 'refused', 'reason' => 'owner_unavailable'];
+        }
+
+        $identity = 'code-mode-notice:'.new UuidV7();
+        $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
+            $context->runId(), $identity,
+            \sprintf("Intermediate code_mode notice (run_id: %s, tool_call_id: %s).\n\n%s", $context->runId(), $context->toolCallId(), $message),
+            origin: ['tool_call_id' => $context->toolCallId(), 'retire_on_owner_cancel' => true],
+        ));
+
+        return ['status' => 'submitted', 'notice_id' => $identity];
     }
 
     /**
