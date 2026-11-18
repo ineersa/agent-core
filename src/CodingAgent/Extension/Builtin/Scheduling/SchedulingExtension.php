@@ -130,7 +130,7 @@ final class SchedulingExtension implements ConfigurableExtensionInterface, TuiEx
                 'The first execution is immediately eligible; next reports the next recurring occurrence.',
                 'Use action=list to inspect schedules or action=cancel with the returned id. Cancellation prevents future executions, not work already running.',
                 'Scheduled work is already asynchronous. Do not pass backgrounded=true or sleep/poll to wait for results; notifications arrive automatically.',
-                'Each invocation delivers a result to the conversation, including unchanged results. Prefer a background command for a one-shot completion watch; use schedules for repeated observations.',
+                'Use a schedule when you want a report from every run, even if nothing changed. For checks less than 10 minutes apart, prefer one bounded background watcher unless every report is wanted.',
                 'Approval-required actions and requests for human input are denied.',
             ],
             mainOnly: true,
