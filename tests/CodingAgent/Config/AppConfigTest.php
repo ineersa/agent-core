@@ -334,6 +334,7 @@ class AppConfigTest extends TestCase
 
         $config = $this->buildConfig();
 
+        $this->assertTrue($config->forks->enabled);
         $this->assertNull($config->forks->model);
         $this->assertNull($config->forks->thinkingLevel);
     }
@@ -359,6 +360,7 @@ class AppConfigTest extends TestCase
         yield 'forks sequential list' => [['forks' => ['a', 'b']], 'Invalid value for forks: expected mapping, got list'];
         yield 'forks explicit null' => [['forks' => null], 'Invalid value for forks: expected mapping, got null'];
         yield 'forks unknown key' => [['forks' => ['bogus' => 1]], 'Invalid key for forks: "bogus" is not supported'];
+        yield 'forks.enabled wrong type' => [['forks' => ['enabled' => 'false']], 'Invalid value for forks.enabled: expected boolean'];
         yield 'forks.model wrong type' => [['forks' => ['model' => 5]], 'Invalid value for forks.model'];
     }
 

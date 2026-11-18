@@ -152,6 +152,7 @@ a successful late result into a timeout failure.
 |---|---|---|
 | `tools.execution.default_mode` | `sequential` or `parallel` | `sequential` |
 | `tools.execution.max_parallelism` | Concurrent tool workers | `4` |
+| `forks.enabled` | Make the `fork` tool visible and callable; independent of named subagents | `true` |
 
 ### Output cap
 

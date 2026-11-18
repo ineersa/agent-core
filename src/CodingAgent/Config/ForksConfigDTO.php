@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 /**
- * Fork tool defaults and child extension selection. Not applied globally to parent sessions.
+ * Fork tool availability, launch defaults, and child extension selection.
  */
 final readonly class ForksConfigDTO
 {
@@ -13,6 +13,7 @@ final readonly class ForksConfigDTO
         public ?string $model = null,
         public ?string $thinkingLevel = null,
         public ChildExtensionsConfigDTO $extensions = new ChildExtensionsConfigDTO(),
+        public bool $enabled = true,
     ) {
     }
 
@@ -39,12 +40,17 @@ final readonly class ForksConfigDTO
             throw new \InvalidArgumentException('Invalid value for forks: expected mapping, got list.');
         }
 
-        $unknown = array_diff(array_keys($raw), ['model', 'thinking_level', 'extensions']);
+        $unknown = array_diff(array_keys($raw), ['enabled', 'model', 'thinking_level', 'extensions']);
         if ([] !== $unknown) {
             throw new \InvalidArgumentException(\sprintf('Invalid key for forks: "%s" is not supported.', reset($unknown)));
         }
 
+        if (\array_key_exists('enabled', $raw) && !\is_bool($raw['enabled'])) {
+            throw new \InvalidArgumentException(\sprintf('Invalid value for forks.enabled: expected boolean, got %s.', get_debug_type($raw['enabled'])));
+        }
+
         return new self(
+            enabled: $raw['enabled'] ?? true,
             model: self::parseOptionalScalar($raw, 'model', 'forks.model'),
             thinkingLevel: self::parseOptionalScalar($raw, 'thinking_level', 'forks.thinking_level'),
             extensions: \array_key_exists('extensions', $raw)

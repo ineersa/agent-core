@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
 use Ineersa\CodingAgent\Config\CodeModeConfig;
+use Ineersa\CodingAgent\Config\ForksConfigDTO;
 use Ineersa\CodingAgent\Utility\CommaSeparatedListParser;
 use Ineersa\CodingAgent\Utility\EnvironmentVariableReader;
 
@@ -14,8 +16,7 @@ use Ineersa\CodingAgent\Utility\EnvironmentVariableReader;
  * Populated by AgentCommand from CLI options, forwarded to controller argv + env,
  * and reapplied after extension loading in controller/worker processes.
  *
- * When tools.code_mode.enabled is false, code_mode is added to the effective
- * denylist so the model never sees it until an explicit settings opt-in.
+ * Settings-disabled tools join the effective denylist even if explicitly allowlisted.
  *
  * @internal
  */
@@ -34,6 +35,7 @@ final class ToolFilterRuntimeConfig
 
     public function __construct(
         private readonly CodeModeConfig $codeModeConfig = new CodeModeConfig(),
+        private readonly ForksConfigDTO $forksConfig = new ForksConfigDTO(),
     ) {
     }
 
@@ -155,6 +157,9 @@ final class ToolFilterRuntimeConfig
         $excluded = self::parseToolNameList($this->toolsExcluded);
         if (!$this->codeModeConfig->enabled) {
             $excluded[] = CodeModeTool::NAME;
+        }
+        if (!$this->forksConfig->enabled) {
+            $excluded[] = ForkToolHandler::NAME;
         }
 
         return array_values(array_unique($excluded));
