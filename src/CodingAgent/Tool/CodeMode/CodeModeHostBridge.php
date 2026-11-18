@@ -258,12 +258,7 @@ final readonly class CodeModeHostBridge
             new Assert\Length(max: 8192, countUnit: Assert\Length::COUNT_BYTES),
         ]));
         if (0 !== $violations->count()) {
-            $errors = [];
-            foreach ($violations as $violation) {
-                $errors[] = ['code' => $violation->getCode(), 'message' => (string) $violation->getMessage()];
-            }
-
-            return ['status' => 'refused', 'reason' => 'invalid_message', 'errors' => $errors];
+            return ['status' => 'refused', 'reason' => 'invalid_message'];
         }
         if (null === $context || '' === $context->runId()) {
             return ['status' => 'refused', 'reason' => 'owner_unavailable'];

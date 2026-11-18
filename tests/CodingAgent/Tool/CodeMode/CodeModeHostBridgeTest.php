@@ -395,12 +395,12 @@ PHP));
             $second = notify_owner('still running');
             $invalid = [notify_owner('  '), notify_owner("\xff"), notify_owner(str_repeat('é', 4097))];
 
-            return ['final', $first, $second, array_column($invalid, 'reason')];
+            return ['final', $first, $second, $invalid];
             PHP, runId: $runId);
 
         $this->assertCount(2, $bus->messages);
         $this->assertSame('final', $result[0]);
-        $this->assertSame(['invalid_message', 'invalid_message', 'invalid_message'], $result[3]);
+        $this->assertSame(array_fill(0, 3, ['status' => 'refused', 'reason' => 'invalid_message']), $result[3]);
         foreach ($bus->messages as $index => $notice) {
             $this->assertInstanceOf(DeliverBackgroundCompletionDTO::class, $notice);
             $this->assertSame($runId, $notice->runId());
@@ -409,6 +409,7 @@ PHP));
             $this->assertSame(['status' => 'submitted', 'notice_id' => $notice->identity], $result[$index + 1]);
         }
         $this->assertNotSame($result[1]['notice_id'], $result[2]['notice_id']);
+        $this->assertSame(['status' => 'refused', 'reason' => 'owner_unavailable'], $bridge->execute('return notify_owner("no owner");'));
     }
 
     public function testExecuteToonHelpersDecodeAndRejectGarbage(): void

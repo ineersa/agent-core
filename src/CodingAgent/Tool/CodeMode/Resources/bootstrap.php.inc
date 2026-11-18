@@ -103,13 +103,9 @@ if (!\function_exists('notify_owner')) {
     {
         global $connection;
 
-        // Refuse oversized payloads before JSON framing, which has its own cap.
-        if (\strlen($message) > 8192) {
-            return ['status' => 'refused', 'reason' => 'invalid_message', 'errors' => [['message' => 'Message must be at most 8192 bytes.']]];
-        }
-        // Invalid UTF-8 cannot cross the JSON transport for host validation.
-        if (1 !== preg_match('//u', $message)) {
-            return ['status' => 'refused', 'reason' => 'invalid_message', 'errors' => [['message' => 'Message must be valid UTF-8.']]];
+        // Refuse oversized and invalid UTF-8 payloads before JSON framing.
+        if (\strlen($message) > 8192 || 1 !== preg_match('//u', $message)) {
+            return ['status' => 'refused', 'reason' => 'invalid_message'];
         }
         if (!\is_resource($connection)) {
             return ['status' => 'refused', 'reason' => 'owner_unavailable'];
