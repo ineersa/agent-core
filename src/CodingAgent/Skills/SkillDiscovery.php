@@ -142,11 +142,16 @@ final class SkillDiscovery
         $this->skillsByCommandName = [];
         /** @var array<string, string> $seenNames name → first-seen skill dir */
         $seenNames = [];
+        $seenRoots = [];
 
         foreach ($searchPaths as $searchPath) {
             $foundRoots = $this->scanForSkillRoots($searchPath, 0);
 
             foreach ($foundRoots as $skillDir) {
+                if (isset($seenRoots[$skillDir])) {
+                    continue;
+                }
+                $seenRoots[$skillDir] = true;
                 $definition = $this->buildDefinition($skillDir);
                 if (null === $definition) {
                     continue;

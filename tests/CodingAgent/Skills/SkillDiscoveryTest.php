@@ -462,10 +462,12 @@ final class SkillDiscoveryTest extends TestCase
         file_put_contents($extensionSkillDir.'/SKILL.md', "---\nname: shared\ndescription: Extension skill\n---\n\nExtension body");
 
         $discovery = $this->createDiscovery(cwd: $this->tmpDir);
+        $discovery->registerSkill($projectSkillDir);
         $discovery->registerSkill($extensionSkillDir);
 
         $skills = $discovery->discover();
 
+        $this->assertSame([['winner' => $projectSkillDir, 'ignored' => $extensionSkillDir, 'name' => 'shared']], $discovery->getCollisions());
         $this->assertCount(1, $skills);
         $this->assertSame('shared', $skills[0]->name);
         $this->assertStringContainsString('.hatfield', $skills[0]->skillDirectory);
