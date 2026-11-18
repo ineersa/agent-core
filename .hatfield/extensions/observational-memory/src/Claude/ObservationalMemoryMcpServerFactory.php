@@ -40,7 +40,21 @@ final readonly class ObservationalMemoryMcpServerFactory
         $builder = Server::builder()
             ->setServerInfo('observational-memory', $version, 'Librarian observational memory from Hatfield')
             ->setLogger($this->logger);
-        $settings = $this->settings->settings($projectDir);
+        if (!ClaudeProjectRootPolicy::allows($projectDir)) {
+            return $builder->setInstructions('Observational memory is unavailable: Claude Code was started below the Git checkout root. Start it in the project root to use memory_search and recall.')->build();
+        }
+        try {
+            $settings = $this->settings->settings($projectDir);
+        } catch (\Throwable $error) {
+            // Start without tools rather than fail the server; the message may quote settings, so it is not logged.
+            $this->logger->error('om.claude.settings_invalid', [
+                'component' => 'observational_memory', 'event_type' => 'om.claude.settings_invalid',
+                'run_id' => self::RUN_ID, 'session_id' => self::RUN_ID,
+                'exception_class' => $error::class,
+            ]);
+
+            return $builder->setInstructions('Observational memory settings are invalid: fix `extensions.settings.observational_memory` in `~/.hatfield/settings.yaml` or the project `.hatfield/settings.yaml`, then reconnect this server with /mcp.')->build();
+        }
         if (null === $settings) {
             return $builder->setInstructions('Observational memory is not configured: set `extensions.settings.observational_memory.librarian.url` in `~/.hatfield/settings.yaml` or the project `.hatfield/settings.yaml`, then reconnect this server with /mcp.')->build();
         }

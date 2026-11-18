@@ -59,28 +59,52 @@ final class ClaudeObserveHookTest extends OmTestCase
     public function testDoesNothingOutsideItsScope(string $case): void
     {
         $transcript = $this->transcript("{}\n");
+        $projectDir = $this->root;
         $worktree = false;
         match ($case) {
             'unconfigured' => unlink($this->root.'/.hatfield/settings.yaml'),
-            // Claude Code started in a subdirectory files the session under that directory.
-            'started in subdirectory' => $transcript = $this->transcript("{}\n", $this->root.'/src'),
-            'other session file' => $transcript = \dirname($transcript).'/11111111-2222-4333-8444-555555555555.jsonl',
+            // Claude Code names the project, and files the transcript, after the start directory.
+            'started in subdirectory' => [mkdir($projectDir = $this->root.'/src'), $transcript = $this->transcript("{}\n", $projectDir)],
             'missing transcript' => unlink($transcript),
             'empty transcript' => file_put_contents($transcript, '{"partial"'),
             'linked worktree' => $worktree = true,
         };
         $logger = new TestLogger();
 
-        $this->hook($this->noRequests(), $logger, $worktree)->handle($this->input($transcript), $this->root);
+        $this->hook($this->noRequests(), $logger, $worktree)->handle($this->input($transcript), $projectDir);
 
         $this->assertSame([], $logger->records);
     }
 
     public static function inertCases(): iterable
     {
-        foreach (['unconfigured', 'started in subdirectory', 'other session file', 'missing transcript', 'empty transcript', 'linked worktree'] as $case) {
+        foreach (['unconfigured', 'started in subdirectory', 'missing transcript', 'empty transcript', 'linked worktree'] as $case) {
             yield $case => [$case];
         }
+    }
+
+    #[DataProvider('mismatchedTranscripts')]
+    public function testTranscriptOutsideTheEncodedProjectRootIsReported(string $case): void
+    {
+        $transcript = $this->transcript("{}\n");
+        $transcript = match ($case) {
+            // A symlinked start directory or a name Claude Code shortened: Librarian cannot find it either.
+            'other project directory' => $this->transcript("{}\n", $this->directory.'/symlinked'),
+            'other session file' => \dirname($transcript).'/11111111-2222-4333-8444-555555555555.jsonl',
+        };
+        $logger = new TestLogger();
+
+        $this->hook($this->noRequests(), $logger)->handle($this->input($transcript), $this->root);
+
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('om.claude.transcript_path_mismatch', $logger->records[0]['message']);
+        $this->assertSame(self::SESSION, $logger->records[0]['context']['session_id']);
+    }
+
+    public static function mismatchedTranscripts(): iterable
+    {
+        yield 'other project directory' => ['other project directory'];
+        yield 'other session file' => ['other session file'];
     }
 
     #[DataProvider('invalidInputs')]
@@ -98,6 +122,7 @@ final class ClaudeObserveHookTest extends OmTestCase
     public static function invalidInputs(): iterable
     {
         yield 'not json' => ['secret-prompt'];
+        yield 'missing session' => ['{"transcript_path":"/secret-prompt/.jsonl"}'];
         yield 'session is not a uuid' => ['{"session_id":"../secret-prompt","transcript_path":"/tmp/x.jsonl"}'];
         yield 'relative transcript' => ['{"session_id":"'.self::SESSION.'","transcript_path":"secret-prompt.jsonl"}'];
         yield 'wrong type' => ['{"session_id":"'.self::SESSION.'","transcript_path":["secret-prompt"]}'];

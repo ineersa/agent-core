@@ -54,15 +54,23 @@ final readonly class ClaudeObserveHook
                 throw new \UnexpectedValueException('Invalid Claude Code hook input.');
             }
             $sessionId = $hook->session_id;
-            // Librarian finds the transcript under the header root encoded the
-            // way Claude Code names project directories. A session started in
-            // a subdirectory lives elsewhere and must not be attributed here.
-            $encodedRoot = preg_replace('/[^A-Za-z0-9]/', '-', $root);
-            if (basename($hook->transcript_path) !== $sessionId.'.jsonl' || basename(\dirname($hook->transcript_path)) !== $encodedRoot
-                || !is_file($hook->transcript_path)) {
+            if (!ClaudeProjectRootPolicy::allows($root)) {
                 return;
             }
-            if (!(new LibrarianProjectPolicy($this->exec, $this->logger))->allows($root)) {
+            // Librarian finds the transcript under the header root encoded the
+            // way Claude Code names project directories. A mismatch (a symlinked
+            // start directory, or a name Claude Code shortened) means Librarian
+            // cannot find it either: report it instead of skipping silently.
+            $encodedRoot = preg_replace('/[^A-Za-z0-9]/', '-', $root);
+            if (basename($hook->transcript_path) !== $sessionId.'.jsonl' || basename(\dirname($hook->transcript_path)) !== $encodedRoot) {
+                $this->logger->warning('om.claude.transcript_path_mismatch', [
+                    'component' => 'observational_memory', 'event_type' => 'om.claude.transcript_path_mismatch',
+                    'run_id' => $sessionId, 'session_id' => $sessionId,
+                ]);
+
+                return;
+            }
+            if (!is_file($hook->transcript_path) || !(new LibrarianProjectPolicy($this->exec, $this->logger))->allows($root)) {
                 return;
             }
             $endSeq = $this->completeLines($hook->transcript_path);

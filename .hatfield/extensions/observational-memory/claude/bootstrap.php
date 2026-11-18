@@ -42,9 +42,6 @@ function observationalMemoryDependencies(string $pluginRoot, string $dataDir): s
             // Track the Extension API mirror's main, which is split from the same
             // monorepo commit as this plugin, not its latest (possibly older) tag.
             'ineersa/hatfield-extension-api' => 'dev-main',
-            // Claude bridge only; Hatfield hosts never load src/Claude.
-            'symfony/process' => '^7.3|^8.0',
-            'symfony/yaml' => '^7.3|^8.0',
         ],
         'repositories' => [['type' => 'path', 'url' => $pluginRoot, 'options' => ['symlink' => true]]],
         'minimum-stability' => 'dev',

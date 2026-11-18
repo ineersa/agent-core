@@ -11,6 +11,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Claude\ObservationalMemoryMcpServerF
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
 use Ineersa\HatfieldExt\ObservationalMemory\Tool\OmToolRegistrationFactory;
 use Mcp\Server\Transport\StdioTransport;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\MockHttpClient;
 
@@ -18,8 +19,7 @@ final class ObservationalMemoryMcpServerFactoryTest extends OmTestCase
 {
     public function testServesExactlyTheHatfieldRetrievalTools(): void
     {
-        mkdir($this->directory.'/project/.hatfield', 0o750, true);
-        file_put_contents($this->directory.'/project/.hatfield/settings.yaml', "extensions:\n    settings:\n        observational_memory:\n            librarian: {url: 'http://librarian.test/_mcp'}\n");
+        $this->project("observational_memory:\n            librarian: {url: 'http://librarian.test/_mcp'}");
 
         $responses = $this->exchange([
             ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list'],
@@ -39,14 +39,35 @@ final class ObservationalMemoryMcpServerFactoryTest extends OmTestCase
         $this->assertSame('invalid_query', Toon::decode($responses[3]['result']['content'][0]['text'])['error']);
     }
 
-    public function testUnconfiguredLibrarianExposesNoToolsAndPointsToSettings(): void
+    #[DataProvider('unavailableProjects')]
+    public function testUnavailableMemoryExposesNoToolsAndExplainsWhy(?string $settings, string $startDirectory, string $instructions): void
     {
-        mkdir($this->directory.'/project');
+        $this->project($settings);
+        if (!is_dir($this->directory.'/project/'.$startDirectory)) {
+            mkdir($this->directory.'/project/'.$startDirectory);
+        }
 
-        $responses = $this->exchange([['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']]);
+        $responses = $this->exchange([['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']], $this->directory.'/project/'.$startDirectory);
 
-        $this->assertStringContainsString('observational_memory.librarian.url', $responses[1]['result']['instructions']);
+        $this->assertStringContainsString($instructions, $responses[1]['result']['instructions']);
         $this->assertSame([], $responses[2]['result']['tools']);
+    }
+
+    public static function unavailableProjects(): iterable
+    {
+        yield 'unconfigured' => [null, '.', 'observational_memory.librarian.url'];
+        yield 'invalid settings' => ["observational_memory:\n            librarian: {url: 'ftp://librarian.test'}", '.', 'settings are invalid'];
+        yield 'started in subdirectory' => ["observational_memory:\n            librarian: {url: 'http://librarian.test/_mcp'}", 'src', 'started below the Git checkout root'];
+    }
+
+    private function project(?string $extensionSettings): void
+    {
+        // A checkout root of its own; otherwise this repository's .git makes it a subdirectory.
+        mkdir($this->directory.'/project/.git', 0o750, true);
+        if (null !== $extensionSettings) {
+            mkdir($this->directory.'/project/.hatfield');
+            file_put_contents($this->directory.'/project/.hatfield/settings.yaml', "extensions:\n    settings:\n        ".$extensionSettings."\n");
+        }
     }
 
     /**
@@ -54,7 +75,7 @@ final class ObservationalMemoryMcpServerFactoryTest extends OmTestCase
      *
      * @return array<int, array<string, mixed>> Responses keyed by request id
      */
-    private function exchange(array $requests): array
+    private function exchange(array $requests, ?string $projectDir = null): array
     {
         $messages = [
             ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'test', 'version' => '1']]],
@@ -75,7 +96,7 @@ final class ObservationalMemoryMcpServerFactoryTest extends OmTestCase
         });
         // No HOME layer: only the fixture project's settings are read.
         $factory = new ObservationalMemoryMcpServerFactory(new ClaudeOmSettingsProvider(null), $this->createStub(ExecInterface::class), new NullLogger(), $noRequests);
-        $factory->create($this->directory.'/project', 'test')->run(new StdioTransport($input, $output));
+        $factory->create($projectDir ?? $this->directory.'/project', 'test')->run(new StdioTransport($input, $output));
 
         // The transport closes both streams when input ends.
         $responses = [];

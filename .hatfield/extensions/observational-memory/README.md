@@ -125,9 +125,12 @@ Librarian locates a transcript as
 `<CLAUDE_PROJECTS_PATH>/<project root with every non-alphanumeric character replaced by '-'>/<session id>.jsonl`.
 The project root is the directory Claude Code was started in
 (`CLAUDE_PROJECT_DIR`), resolved through symlinks and sent as
-`X-Librarian-Project`. Hooks do nothing when Librarian is not configured, when
-Claude Code was started outside that root (for example in a subdirectory), or
-in linked Git worktrees.
+`X-Librarian-Project`. It must be the Git checkout root (or a directory outside
+Git): a session started in a subdirectory gets no memory tools and is not
+observed, so it never registers a stray subdirectory project. Hooks also do
+nothing when Librarian is not configured or in linked Git worktrees. If the
+transcript is not where Librarian will look (for example, a symlinked start
+directory), the hook logs `om.claude.transcript_path_mismatch` instead.
 
 Set up:
 
@@ -141,5 +144,5 @@ Set up:
 - **Keep transcripts as long as their memory:** raise `cleanupPeriodDays` in
   Claude Code settings. Once Claude Code deletes a transcript, `recall` for its
   memories returns `session_deleted`.
-- Start Claude Code in the project root. The server starts once per session;
+- Start Claude Code in the checkout root. The server starts once per session;
   after changing settings, reconnect it with `/mcp`.
