@@ -104,10 +104,12 @@ above from the same files (user `~/.hatfield/settings.yaml` < project
 /plugin install observational-memory@hatfield
 ```
 
-Requirements: `php` (8.5+) and `composer` on `PATH`. The first start after
-installing or updating the plugin installs Composer dependencies into the
-plugin data directory, so that start can take a minute; reconnect with `/mcp`
-if it timed out.
+Requirements: `php` (8.5+, with the `curl` extension) and `composer` on
+`PATH`. The first start of each plugin version installs Composer dependencies
+into its own directory under the plugin data directory, so that start can take
+a minute; reconnect with `/mcp` if it timed out. Sessions still running an
+older version keep using its installation; installations of versions Claude
+Code has removed are deleted at the next install.
 
 - **Memory generation:** async `Stop` and `SessionEnd` hooks send Librarian a
   content-free `claude_code` observe signal: the session id and the number of
@@ -121,11 +123,15 @@ if it timed out.
   go to Claude Code's debug log.
 - **Retrieval:** the `observational-memory` MCP server exposes exactly
   `memory_search` and `recall`, with the Hatfield schemas and results.
+  Results with `ok: false` (invalid arguments, Librarian unavailable, upstream
+  tool errors) are MCP tool errors.
 - **Compaction:** Claude Code's own compaction is unchanged; there is no
   projection or `/om-view`.
 
 Librarian locates a transcript as
 `<CLAUDE_PROJECTS_PATH>/<project root with every non-alphanumeric character replaced by '-'>/<session id>.jsonl`.
+As in Claude Code, a character outside the Basic Multilingual Plane (such as an
+emoji) becomes two dashes, because Claude Code replaces UTF-16 code units.
 The project root is the directory Claude Code was started in
 (`CLAUDE_PROJECT_DIR`), resolved through symlinks and sent as
 `X-Librarian-Project`. It must be the Git checkout root (or a directory outside

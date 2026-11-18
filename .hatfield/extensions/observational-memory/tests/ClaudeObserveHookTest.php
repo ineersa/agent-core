@@ -77,6 +77,39 @@ final class ClaudeObserveHookTest extends OmTestCase
         $this->assertFileDoesNotExist($cursor);
     }
 
+    /** @return iterable<string, array{string, string}> */
+    public static function unicodeRoots(): iterable
+    {
+        // One dash per UTF-16 code unit, as Claude Code's JavaScript encoder produces.
+        yield 'accented' => ['café', 'caf-'];
+        yield 'cyrillic' => ['проект', '------'];
+        yield 'outside the BMP' => ['a😀b', 'a--b'];
+    }
+
+    #[DataProvider('unicodeRoots')]
+    public function testMatchesClaudeCodeProjectNamesForUnicodeRoots(string $name, string $encodedName): void
+    {
+        $this->root = $this->directory.'/'.$name;
+        mkdir($this->root.'/.git', 0o750, true);
+        mkdir($this->root.'/.hatfield');
+        file_put_contents($this->root.'/.hatfield/settings.yaml', "extensions:\n    settings:\n        observational_memory:\n            librarian: {url: 'http://librarian.test:8093/_mcp', timeout_seconds: 5}\n");
+        $directory = $this->directory.'/claude/projects/'.preg_replace('/[^A-Za-z0-9]/', '-', $this->directory).'-'.$encodedName;
+        mkdir($directory, 0o750, true);
+        file_put_contents($transcript = $directory.'/'.self::SESSION.'.jsonl', "{}\n");
+        $requests = 0;
+        $http = new MockHttpClient(static function () use (&$requests): MockResponse {
+            ++$requests;
+
+            return new MockResponse('{"ok":true,"contract_version":1,"status":"queued"}', ['http_code' => 202]);
+        });
+        $logger = new TestLogger();
+
+        $this->hook($http, $logger)->handle($this->input($transcript), $this->root);
+
+        $this->assertSame([], $logger->records);
+        $this->assertSame(1, $requests);
+    }
+
     #[DataProvider('inertCases')]
     public function testDoesNothingOutsideItsScope(string $case): void
     {

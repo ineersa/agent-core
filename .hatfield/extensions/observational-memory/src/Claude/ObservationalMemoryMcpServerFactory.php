@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Claude;
 
+use HelgeSverre\Toon\Toon;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
+use Ineersa\HatfieldExt\ObservationalMemory\Tool\OmToolHandlerInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Tool\OmToolRegistrationFactory;
 use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\Request\CallToolRequest;
@@ -78,7 +80,11 @@ final readonly class ObservationalMemoryMcpServerFactory
         $request = $context->getRequest();
         $arguments = $request instanceof CallToolRequest ? $request->arguments : [];
         try {
-            $result = ($tool->handler)($arguments, new ToolInvocationContextDTO(self::RUN_ID, timeoutSeconds: $tool->timeoutSeconds));
+            $handler = $tool->handler;
+            if (!$handler instanceof OmToolHandlerInterface) {
+                throw new \LogicException('Observational memory tools expose structured results.');
+            }
+            $result = $handler->result($arguments, new ToolInvocationContextDTO(self::RUN_ID, timeoutSeconds: $tool->timeoutSeconds));
         } catch (\Throwable $exception) {
             // Report the failure to the model as a tool error; the server keeps serving.
             $this->logger->error('om.claude.tool_failed', [
@@ -89,11 +95,13 @@ final readonly class ObservationalMemoryMcpServerFactory
 
             return CallToolResult::error([new TextContent($tool->name.' failed.')]);
         }
-        // Handlers return TOON text, or a plain cancelled/timed_out map.
-        if (\is_string($result)) {
-            return new CallToolResult([new TextContent($result)]);
-        }
+        // The same TOON text Hatfield receives. Invalid arguments, Librarian
+        // failures and upstream tool errors (`ok: false` or `isError: true`),
+        // cancellation and timeouts are MCP tool errors.
+        $content = [new TextContent(Toon::encode($result))];
+        $failed = false === ($result['ok'] ?? null) || true === ($result['isError'] ?? false)
+            || true === ($result['cancelled'] ?? false) || true === ($result['timed_out'] ?? false);
 
-        return CallToolResult::error([new TextContent((string) json_encode($result, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE))]);
+        return $failed ? CallToolResult::error($content) : new CallToolResult($content);
     }
 }

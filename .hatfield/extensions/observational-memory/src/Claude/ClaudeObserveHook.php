@@ -64,8 +64,7 @@ final readonly class ClaudeObserveHook
             // way Claude Code names project directories. A mismatch (a symlinked
             // start directory, or a name Claude Code shortened) means Librarian
             // cannot find it either: report it instead of skipping silently.
-            $encodedRoot = preg_replace('/[^A-Za-z0-9]/', '-', $root);
-            if (basename($hook->transcript_path) !== $sessionId.'.jsonl' || basename(\dirname($hook->transcript_path)) !== $encodedRoot) {
+            if (basename($hook->transcript_path) !== $sessionId.'.jsonl' || basename(\dirname($hook->transcript_path)) !== self::claudeProjectName($root)) {
                 $this->logger->warning('om.claude.transcript_path_mismatch', [
                     'component' => 'observational_memory', 'event_type' => 'om.claude.transcript_path_mismatch',
                     'run_id' => $sessionId, 'session_id' => $sessionId,
@@ -92,5 +91,16 @@ final readonly class ClaudeObserveHook
                 'exception_class' => $error::class,
             ]);
         }
+    }
+
+    /**
+     * Claude Code's project directory name: a JavaScript `/[^a-zA-Z0-9]/g`
+     * replace, which works on UTF-16 code units. A character outside the
+     * Basic Multilingual Plane (four UTF-8 bytes) is two code units, so two
+     * dashes. Null for a root that is not valid UTF-8.
+     */
+    private static function claudeProjectName(string $root): ?string
+    {
+        return preg_replace_callback('/[^A-Za-z0-9]/u', static fn (array $match): string => 4 === \strlen($match[0]) ? '--' : '-', $root);
     }
 }
