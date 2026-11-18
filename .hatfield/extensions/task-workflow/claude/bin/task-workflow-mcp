@@ -7,8 +7,9 @@ declare(strict_types=1);
  * Claude Code stdio MCP entry point for the task-workflow plugin.
  *
  * The plugin directory is a read-only, versioned copy without vendor/. On first
- * start (and after every plugin update) this script installs the package's
- * Composer dependencies into the persistent plugin data directory, then serves
+ * start of each plugin version this script installs the package's Composer
+ * dependencies into its own directory under the persistent plugin data
+ * directory, then serves
  * MCP on stdin/stdout. stdout is reserved for the protocol: Composer output and
  * diagnostics go to stderr.
  */
@@ -18,8 +19,7 @@ $pluginRoot = dirname(__DIR__, 2);
 // else (unset, relative, an unexpanded placeholder) so nothing is installed
 // into, or resolved against, the current directory by accident.
 $dataDir = taskWorkflowAbsoluteEnv('CLAUDE_PLUGIN_DATA');
-$autoload = taskWorkflowDependencies($pluginRoot, $dataDir);
-require $autoload;
+require_once taskWorkflowDependencies($pluginRoot, $dataDir);
 
 use Ineersa\HatfieldExt\TaskWorkflow\Claude\StderrLogger;
 use Ineersa\HatfieldExt\TaskWorkflow\Claude\TaskWorkflowMcpServerFactory;
@@ -34,11 +34,15 @@ $manifest = json_decode((string) file_get_contents($pluginRoot.'/.claude-plugin/
 $server = (new TaskWorkflowMcpServerFactory($logger))->create($cwd, getenv('HOME') ?: null, (string) ($manifest['version'] ?? 'dev'));
 $server->run(new StdioTransport(logger: $logger));
 
+/**
+ * Each plugin version gets its own installation, keyed by a hash of its
+ * generated composer.json (which embeds the version-specific plugin root) and
+ * the package's requirements. After an update, running sessions keep the old
+ * plugin root: separate installations keep their MCP servers from
+ * re-installing over each other's vendor/.
+ */
 function taskWorkflowDependencies(string $pluginRoot, string $dataDir): string
 {
-    $autoload = $dataDir.'/vendor/autoload.php';
-    // The stamp covers this generated file, which embeds the plugin root path
-    // (it changes on every update), and the package's own requirements.
     $composerJson = [
         'name' => 'local/task-workflow-claude-plugin',
         'type' => 'project',
@@ -56,13 +60,16 @@ function taskWorkflowDependencies(string $pluginRoot, string $dataDir): string
         'prefer-stable' => true,
     ];
     $composerJsonText = json_encode($composerJson, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
-    $stamp = hash('sha256', $composerJsonText.file_get_contents($pluginRoot.'/composer.json'));
-    $stampFile = $dataDir.'/install.stamp';
-    if (is_file($autoload) && @file_get_contents($stampFile) === $stamp) {
+    $installs = $dataDir.'/install';
+    $installDir = $installs.'/'.hash('sha256', $composerJsonText.file_get_contents($pluginRoot.'/composer.json'));
+    $autoload = $installDir.'/vendor/autoload.php';
+    // Written last: a failed or interrupted install never looks complete.
+    $complete = $installDir.'/install.complete';
+    if (is_file($complete)) {
         return $autoload;
     }
 
-    if (!is_dir($dataDir) && !mkdir($dataDir, 0700, true) && !is_dir($dataDir)) {
+    if (!is_dir($installs) && !mkdir($installs, 0700, true) && !is_dir($installs)) {
         taskWorkflowFail('cannot create plugin data directory');
     }
     // Concurrent Claude sessions share the data directory; install once.
@@ -70,25 +77,36 @@ function taskWorkflowDependencies(string $pluginRoot, string $dataDir): string
     if (false === $lock || !flock($lock, LOCK_EX)) {
         taskWorkflowFail('cannot lock plugin data directory');
     }
-    if (is_file($autoload) && @file_get_contents($stampFile) === $stamp) {
+    if (is_file($complete)) {
         return $autoload;
     }
 
-    // A failed update must not leave a stamp that vouches for a mixed vendor/.
-    @unlink($stampFile);
-    file_put_contents($dataDir.'/composer.json', $composerJsonText);
+    if (!is_dir($installDir) && !mkdir($installDir, 0700) && !is_dir($installDir)) {
+        taskWorkflowFail('cannot create the installation directory');
+    }
+    file_put_contents($installDir.'/composer.json', $composerJsonText);
 
     $composer = getenv('COMPOSER_BINARY') ?: 'composer';
-    fwrite(STDERR, "task-workflow: installing Composer dependencies into {$dataDir}\n");
+    fwrite(STDERR, "task-workflow: installing Composer dependencies into {$installDir}\n");
     $process = proc_open(
-        [$composer, 'update', '--no-dev', '--no-interaction', '--no-progress', '--optimize-autoloader', '--working-dir='.$dataDir],
+        [$composer, 'update', '--no-dev', '--no-interaction', '--no-progress', '--optimize-autoloader', '--working-dir='.$installDir],
         [0 => ['file', '/dev/null', 'r'], 1 => STDERR, 2 => STDERR],
         $pipes,
     );
     if (!is_resource($process) || 0 !== proc_close($process) || !is_file($autoload)) {
-        taskWorkflowFail('composer update failed; run it manually in '.$dataDir);
+        taskWorkflowFail('composer update failed; run it manually in '.$installDir);
     }
-    file_put_contents($stampFile, $stamp);
+    file_put_contents($complete, '');
+
+    require_once $autoload;
+    // Installations of plugin versions Claude Code has removed are unusable:
+    // their vendor/ symlinks the package into the missing plugin root.
+    foreach (glob($installs.'/*/composer.json') ?: [] as $file) {
+        $url = json_decode((string) file_get_contents($file), true)['repositories'][0]['url'] ?? null;
+        if (is_string($url) && !is_dir($url)) {
+            (new Symfony\Component\Filesystem\Filesystem())->remove(dirname($file));
+        }
+    }
     flock($lock, LOCK_UN);
 
     return $autoload;

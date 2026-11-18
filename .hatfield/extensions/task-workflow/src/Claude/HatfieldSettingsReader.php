@@ -11,8 +11,9 @@ use Symfony\Component\Yaml\Yaml;
  * committed configuration serves both agents.
  *
  * Layering matches Hatfield's AppConfigLoader: user `~/.hatfield/settings.yaml`
- * < project `<cwd>/.hatfield/settings.yaml`; maps merge per key and a higher
- * layer's list replaces the lower list whole. Missing files contribute nothing.
+ * < project `<cwd>/.hatfield/settings.yaml`; maps merge per key, while a higher
+ * layer's list, empty map or scalar (including null) replaces the lower value
+ * whole. Missing files contribute nothing.
  */
 final readonly class HatfieldSettingsReader
 {
@@ -30,13 +31,16 @@ final readonly class HatfieldSettingsReader
             if (!is_file($file)) {
                 continue;
             }
-            $settings = Yaml::parseFile($file)['extensions']['settings'] ?? [];
-            if (\is_array($settings)) {
-                $merged = self::overlay($merged, $settings);
+            $layer = Yaml::parseFile($file);
+            if (\is_array($layer)) {
+                $merged = self::overlay($merged, $layer);
             }
         }
+        // Extract after merging: a project `settings: {}` or `settings: null`
+        // replaces the inherited node, as in Hatfield.
+        $settings = $merged['extensions']['settings'] ?? [];
 
-        return $merged;
+        return \is_array($settings) ? $settings : [];
     }
 
     /**
