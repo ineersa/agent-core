@@ -10,12 +10,14 @@ use Amp\DeferredCancellation;
 use Ineersa\SqliteQueue\Exception\TransportException as ClientTransportException;
 use Ineersa\SqliteQueue\Messenger\Transport;
 use Psr\Container\ContainerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\ConsoleEvents;
 use Symfony\Component\Console\Event\ConsoleCommandEvent;
 use Symfony\Component\Console\Event\ConsoleErrorEvent;
 use Symfony\Component\Console\Event\ConsoleSignalEvent;
 use Symfony\Component\Console\Event\ConsoleTerminateEvent;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\Event\WorkerRunningEvent;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
@@ -49,6 +51,9 @@ final class LlmFiberConsumeWaitSubscriber implements EventSubscriberInterface
 
     public function __construct(
         private readonly ContainerInterface $receiverLocator,
+        private readonly LoggerInterface $logger,
+        #[Autowire('%env(HATFIELD_SESSION_ID)%')]
+        private readonly string $sessionId,
     ) {
         $this->armedCommands = new \WeakMap();
         $this->stopsByWorker = new \WeakMap();
@@ -126,15 +131,19 @@ final class LlmFiberConsumeWaitSubscriber implements EventSubscriberInterface
 
         try {
             $wait(self::DEFAULT_WAIT_BUDGET_MILLISECONDS, $stop->getCancellation());
-        } catch (CancelledException) {
-            return;
-        } catch (TransportException|ClientTransportException $error) {
-            // Transport::wait wraps Amp cancellation as TransportException.
-            if ($error->getPrevious() instanceof CancelledException) {
+        } catch (CancelledException|TransportException|ClientTransportException $error) {
+            if ($this->isStopCancellation($stop, $error)) {
+                $this->logger->debug('llm_fiber_consume.queue_wait_cancelled', [
+                    'event_type' => 'llm_fiber_consume.queue_wait_cancelled',
+                    'component' => 'llm_fiber_consume',
+                    'session_id' => $this->sessionId,
+                    'transport_names' => $event->getWorker()->getMetadata()->getTransportNames(),
+                ]);
+
                 return;
             }
 
-            throw $error instanceof TransportException ? $error : new TransportException('Queue wait failed.', 0, $error);
+            throw $error instanceof ClientTransportException ? new TransportException('Queue wait failed.', 0, $error) : $error;
         }
     }
 
@@ -175,6 +184,21 @@ final class LlmFiberConsumeWaitSubscriber implements EventSubscriberInterface
     public function onConsoleError(ConsoleErrorEvent $event): void
     {
         $this->releaseCommand($event->getCommand());
+    }
+
+    private function isStopCancellation(DeferredCancellation $stop, \Throwable $error): bool
+    {
+        if (!$stop->isCancelled()) {
+            return false;
+        }
+
+        for ($current = $error; null !== $current; $current = $current->getPrevious()) {
+            if ($current instanceof CancelledException) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function takeArmedCommand(): ?Command
