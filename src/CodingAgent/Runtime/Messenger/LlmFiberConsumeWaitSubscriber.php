@@ -192,6 +192,7 @@ final class LlmFiberConsumeWaitSubscriber implements EventSubscriberInterface
             return false;
         }
 
+        // The queue client and Messenger transport can each wrap the original Amp cancellation.
         for ($current = $error; null !== $current; $current = $current->getPrevious()) {
             if ($current instanceof CancelledException) {
                 return true;
