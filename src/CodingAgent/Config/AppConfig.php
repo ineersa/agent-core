@@ -31,7 +31,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  *  - compaction CompactionConfig (auto_enabled, compact_after_tokens, keep_recent_tokens, model, thinking_level, provider_overrides, model_overrides)
  *  - context_budget_reminders ContextBudgetReminderConfig (early_input_tokens, urgent_remaining_tokens, disable_for_main, disable_for_forks, disable_for_subagents)
  *  - agents     AgentsConfig (enabled, paths)
- *  - forks      ForksConfigDTO (model, thinking_level)
+ *  - forks      ForksConfigDTO (enabled, model, thinking_level, extensions)
  *  - runtime    RuntimeConfigDTO (llm_concurrency)
  *
  * The raw array is kept for forward compatibility with config keys

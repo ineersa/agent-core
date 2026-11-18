@@ -7,6 +7,11 @@ namespace Ineersa\CodingAgent\Tests\Config;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ForksConfigDTO;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
+use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
+use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Platform\Result\ToolCall;
 
 /**
  * Container wiring regression for ForksConfigDTO.
@@ -29,6 +34,17 @@ final class ForksConfigServiceTest extends IsolatedKernelTestCase
         $this->assertSame($appConfig->forks, $forksConfig);
     }
 
+    public function testDisabledForkCannotBeListedOrCalledEvenWhenAllowlisted(): void
+    {
+        $container = self::getContainer();
+        $registry = $container->get(ToolRegistryInterface::class);
+        $container->get(ToolFilterRuntimeConfig::class)->applyFromCli('fork,subagent', '', $registry);
+        $this->assertSame(['subagent'], $registry->activeToolNames());
+
+        $this->expectException(ToolNotFoundException::class);
+        $container->get(ToolboxInterface::class)->execute(new ToolCall('test-fork', 'fork', ['task' => 'unavailable']));
+    }
+
     protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
     {
         file_put_contents(
@@ -38,6 +54,7 @@ final class ForksConfigServiceTest extends IsolatedKernelTestCase
 ai:
     default_model: null
 forks:
+    enabled: false
     model: deepseek/deepseek-v4-flash
     thinking_level: xhigh
 YAML

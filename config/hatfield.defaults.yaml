@@ -428,6 +428,7 @@ agents:
 #
 
 forks:
+    enabled: true
     model: null
     thinking_level: null
     # Child-run extension selection for forks.
