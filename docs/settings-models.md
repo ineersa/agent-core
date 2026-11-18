@@ -45,6 +45,25 @@ OpenCode restricts Muse by region and permits training on Contributor prompts
 and completions. `/usage` does not report Go subscription limits because the
 console endpoint requires separate browser-session credentials.
 
+### ChatGPT GPT-6.2 models
+
+Run `hatfield providers:update` to refresh an existing user catalog, then select
+`openai-codex/gpt-6.2-astra` (GPT-6.2 Astra) or
+`openai-codex/gpt-6.2-sol` (GPT-6.2 Sol). This does not switch your default model.
+Both support text/image input, function tools, and API reasoning efforts
+`low`, `medium`, `high`, `xhigh`, and `max`. A requested UI level of `off` or
+`minimal` omits the effort option; it does not disable reasoning or send
+`none`/`minimal` to the API.
+
+Hatfield pins both context windows to the curated **272,000-token** pricing tier
+and caps output at **128,000 tokens**. The upstream API model pages advertise a
+raw 1.05M-token window and premium pricing above 272K; these are not Hatfield's
+configured limits. Codex metadata also differs (Astra 272K, Sol 500K), so neither
+upstream API nor Codex windows should replace the curated cap during updates.
+See the official [Astra](https://developers.openai.com/api/docs/models/gpt-6.2-astra)
+and [Sol](https://developers.openai.com/api/docs/models/gpt-6.2-sol) model pages,
+and [Pi's Codex catalog](https://github.com/earendil-works/pi/blob/cead615b48b80d1c61eecab2f0b576d16eeaf4c5/packages/ai/catalog/providers/openai-codex.ts).
+
 ### Mistral and Vibe subscription keys
 
 Mistral uses Symfony AI's native Mistral bridge at `https://api.mistral.ai`, including
