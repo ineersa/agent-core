@@ -1,5 +1,7 @@
 ---
 name: reviewer
+model: mistral/zai-glm-5-3-flash
+thinking: high
 description: Fresh broad code review producing evidence-backed candidates for independent verification
 tools:
   - read

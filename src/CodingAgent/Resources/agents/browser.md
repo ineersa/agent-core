@@ -9,7 +9,8 @@ tools:
   - ls
 skills:
   - playwright-cli
-model: runpod/Qwen3.6-27B
+model: openai-codex/gpt-6.2-sol
+thinking: low
 ---
 
 You are the mandatory browser automation subagent for all browser interaction tasks.

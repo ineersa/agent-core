@@ -1,5 +1,7 @@
 ---
 name: verifier
+model: mistral/zai-glm-5-3-flash
+thinking: high
 description: Independently challenge code-review candidates against pinned code and return an evidence-backed disposition for each
 tools:
   - read
