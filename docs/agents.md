@@ -66,7 +66,7 @@ Load order (low → high precedence), non-recursive `*.md`:
 4. `<cwd>/.hatfield/agents/`
 5. `agents.paths`
 
-Bundled starters (`scout`, `reviewer`, `verifier`, `researcher`, `architect`, `browser`) install with:
+Bundled starters (`scout`, `reviewer`, `verifier`, `researcher`, `general-purpose`, `browser`) install with:
 
 ```bash
 hatfield agents:init
@@ -89,7 +89,7 @@ and safe starter-update instructions.
 
 ## Launch versus continue
 
-Use `subagent` when no existing child run matches the task and you need a new named-role investigation or review.
+Use `subagent` with `general-purpose` for a self-contained assignment such as investigating a bug, making a change, and validating it. Give it the facts it needs: it starts with its own prompt and project instructions, not the parent conversation or its compaction summary. It inherits the parent's model and thinking level and uses normal child tool permissions. Use `fork` instead when the work depends on the conversation so far.
 
 Use `agent_resume` when an existing child run in the same parent session already contains useful progress or an incomplete handoff. Resume the existing run instead of launching a duplicate child. Identify the run with the artifact/run identifier returned by the earlier launch; across parent sessions, launch a new child with the prior handoff as context.
 

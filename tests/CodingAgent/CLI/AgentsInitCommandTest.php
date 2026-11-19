@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\CLI;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
+use Ineersa\CodingAgent\Agent\Definition\SystemPromptModeEnum;
 use Ineersa\CodingAgent\CLI\AgentsInitCommand;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -42,7 +43,7 @@ final class AgentsInitCommandTest extends TestCase
         TestDirectoryIsolation::ensureDirectory($this->homeDir);
 
         $repoAgents = \dirname(__DIR__, 3).'/src/CodingAgent/Resources/agents';
-        foreach (['scout.md', 'reviewer.md', 'verifier.md', 'researcher.md', 'architect.md', 'browser.md'] as $file) {
+        foreach (['scout.md', 'reviewer.md', 'verifier.md', 'researcher.md', 'general-purpose.md', 'browser.md'] as $file) {
             $source = $repoAgents.'/'.$file;
             $this->assertFileExists($source, 'Bundled agent source missing: '.$source);
             (new Filesystem())->copy($source, $this->sourceDir.'/'.$file, true);
@@ -62,7 +63,7 @@ final class AgentsInitCommandTest extends TestCase
 
         $this->assertSame(Command::SUCCESS, $exitCode, $tester->getDisplay());
         $destination = $this->homeDir.'/.hatfield/agents';
-        foreach (['scout', 'reviewer', 'verifier', 'researcher', 'architect', 'browser'] as $name) {
+        foreach (['scout', 'reviewer', 'verifier', 'researcher', 'general-purpose', 'browser'] as $name) {
             $path = $destination.'/'.$name.'.md';
             $this->assertFileExists($path);
             $this->assertFileEquals($this->sourceDir.'/'.$name.'.md', $path);
@@ -77,8 +78,8 @@ final class AgentsInitCommandTest extends TestCase
         $destination = $this->homeDir.'/.hatfield/agents';
         TestDirectoryIsolation::ensureDirectory($destination);
         file_put_contents($destination.'/scout.md', "---\nname: scout\ndescription: stale\n---\n\nstale scout\n");
-        file_put_contents($destination.'/custom-user.md', "---\nname: custom-user\ndescription: keep me\n---\n\nuser owned\n");
-        $customBefore = (string) file_get_contents($destination.'/custom-user.md');
+        file_put_contents($destination.'/architect.md', "---\nname: architect\ndescription: keep me\n---\n\nuser owned\n");
+        $customBefore = (string) file_get_contents($destination.'/architect.md');
         $staleBefore = (string) file_get_contents($destination.'/scout.md');
 
         $tester = new CommandTester($this->createCommand());
@@ -94,9 +95,9 @@ final class AgentsInitCommandTest extends TestCase
         $this->assertFileDoesNotExist($destination.'/reviewer.md');
         $this->assertFileDoesNotExist($destination.'/verifier.md');
         $this->assertFileDoesNotExist($destination.'/researcher.md');
-        $this->assertFileDoesNotExist($destination.'/architect.md');
+        $this->assertFileDoesNotExist($destination.'/general-purpose.md');
         $this->assertFileDoesNotExist($destination.'/browser.md');
-        $this->assertSame($customBefore, (string) file_get_contents($destination.'/custom-user.md'));
+        $this->assertSame($customBefore, (string) file_get_contents($destination.'/architect.md'));
 
         $forceTester = new CommandTester($this->createCommand());
         $forceExit = $forceTester->execute(['--force' => true]);
@@ -105,16 +106,16 @@ final class AgentsInitCommandTest extends TestCase
         $this->assertFileEquals($this->sourceDir.'/reviewer.md', $destination.'/reviewer.md');
         $this->assertFileEquals($this->sourceDir.'/verifier.md', $destination.'/verifier.md');
         $this->assertFileEquals($this->sourceDir.'/researcher.md', $destination.'/researcher.md');
-        $this->assertFileEquals($this->sourceDir.'/architect.md', $destination.'/architect.md');
+        $this->assertFileEquals($this->sourceDir.'/general-purpose.md', $destination.'/general-purpose.md');
         $this->assertFileEquals($this->sourceDir.'/browser.md', $destination.'/browser.md');
-        $this->assertSame($customBefore, (string) file_get_contents($destination.'/custom-user.md'));
+        $this->assertSame($customBefore, (string) file_get_contents($destination.'/architect.md'));
     }
 
     #[Test]
     public function bundledDefinitionsAreParserValid(): void
     {
         $parser = $this->createParser();
-        foreach (['scout', 'reviewer', 'verifier', 'researcher', 'architect', 'browser'] as $name) {
+        foreach (['scout', 'reviewer', 'verifier', 'researcher', 'general-purpose', 'browser'] as $name) {
             $path = $this->sourceDir.'/'.$name.'.md';
             $dto = $parser->parseFile($path);
             $this->assertSame($name, $dto->name);
@@ -124,16 +125,28 @@ final class AgentsInitCommandTest extends TestCase
     }
 
     #[Test]
-    public function reviewAgentsInheritModelAndReasoningWithRestrictedInspectionTools(): void
+    public function reviewAgentsUsePinnedModelAndThinkingWithRestrictedInspectionTools(): void
     {
         foreach (['reviewer', 'verifier'] as $name) {
             $agent = $this->createParser()->parseFile($this->sourceDir.'/'.$name.'.md');
 
-            $this->assertNull($agent->model);
-            $this->assertNull($agent->thinking);
+            $this->assertSame('mistral/zai-glm-5-3-flash', $agent->model);
+            $this->assertSame('high', $agent->thinking);
             $this->assertSame(['read', 'bash', 'mcp:-'], $agent->tools);
             $this->assertTrue($agent->inheritProjectContext);
         }
+    }
+
+    #[Test]
+    public function generalPurposeInheritsExecutionDefaultsButUsesItsOwnPrompt(): void
+    {
+        $agent = $this->createParser()->parseFile($this->sourceDir.'/general-purpose.md');
+
+        $this->assertNull($agent->model);
+        $this->assertNull($agent->thinking);
+        $this->assertNull($agent->tools);
+        $this->assertTrue($agent->inheritProjectContext);
+        $this->assertSame(SystemPromptModeEnum::Replace, $agent->systemPromptMode);
     }
 
     private function createCommand(): AgentsInitCommand

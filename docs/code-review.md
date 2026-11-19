@@ -26,7 +26,7 @@ just reviewer/verifier; unrelated agent filenames remain untouched. Project agen
 definitions can override the installed starters. Restart Hatfield after updating
 so its catalog includes both roles and the refreshed instructions.
 
-Both review starters inherit the parent's model and reasoning by default; ordinary
+Both review starters use `mistral/zai-glm-5-3-flash` with `high` thinking; ordinary
 [agent frontmatter](agents.md) can override either role. They allow `read` and shell
 inspection, deny inherited MCP tools, and instruct the models not to modify files,
 run tests, install packages or publish results. Shell access is not an OS-enforced
