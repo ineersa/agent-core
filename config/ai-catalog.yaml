@@ -8,7 +8,7 @@
 # Refresh: hatfield providers:update
 # Interactive setup: bin/console setup
 
-version: 18
+version: 19
 
 providers:
     mistral:
