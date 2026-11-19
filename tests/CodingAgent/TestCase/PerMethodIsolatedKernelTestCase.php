@@ -34,7 +34,12 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  */
 abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
 {
+    protected const bool ISOLATE_HOME = false;
+
     private string $isolatedCwd;
+    private string $isolatedHome;
+    /** @var array{string|false, mixed, mixed}|null */
+    private ?array $previousHome = null;
     private string|false $originalCwd;
 
     /** @var list<callable> */
@@ -51,6 +56,14 @@ abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
 
         $this->isolatedCwd = $this->createIsolatedWorkingDirectory();
         TestDirectoryIsolation::createHatfieldTree($this->isolatedCwd);
+
+        if (static::ISOLATE_HOME) {
+            $this->isolatedHome = $this->isolatedCwd.'/home';
+            TestDirectoryIsolation::createHatfieldTree($this->isolatedHome);
+            $this->previousHome = [getenv('HOME'), $_ENV['HOME'] ?? null, $_SERVER['HOME'] ?? null];
+            putenv('HOME='.$this->isolatedHome);
+            $_ENV['HOME'] = $_SERVER['HOME'] = $this->isolatedHome;
+        }
 
         $this->originalCwd = getcwd();
         chdir($this->isolatedCwd);
@@ -90,6 +103,18 @@ abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
         self::$kernel = null;
         self::$class = null;
         self::$booted = false;
+
+        if (null !== $this->previousHome) {
+            [$process, $env, $server] = $this->previousHome;
+            putenv(false === $process ? 'HOME' : 'HOME='.$process);
+            unset($_ENV['HOME'], $_SERVER['HOME']);
+            if (null !== $env) {
+                $_ENV['HOME'] = $env;
+            }
+            if (null !== $server) {
+                $_SERVER['HOME'] = $server;
+            }
+        }
 
         // Clean up the isolated directory tree.
         if (isset($this->isolatedCwd) && is_dir($this->isolatedCwd)) {
@@ -146,6 +171,12 @@ abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
     }
 
     // ─── Utility ─────────────────────────────────────────────────
+
+    /** Returns the method-owned HOME when ISOLATE_HOME is enabled. */
+    protected function isolatedHome(): string
+    {
+        return $this->isolatedHome;
+    }
 
     /**
      * Returns the isolated project temp directory created during setUp().

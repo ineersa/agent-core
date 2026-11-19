@@ -90,6 +90,13 @@ final class AppConfig
         ValidatorInterface $validator,
     ): self {
         $data = $loader->load($resources->getDefaultsPath(), $cwd)->effective;
+
+        return self::fromSettingsData($data, $denormalizer, $cwd, $validator);
+    }
+
+    /** @param array<string, mixed> $data */
+    public static function fromSettingsData(array $data, DenormalizerInterface $denormalizer, string $cwd, ValidatorInterface $validator): self
+    {
         [$ai, $catalog, $staleDefaultModel] = self::resolveAiDefaultModel($data);
 
         return new self(
@@ -175,7 +182,7 @@ final class AppConfig
      * configured ref for the TUI startup warning; null when no fallback ran.
      *
      * Zero-provider boots no longer throw here — AgentCommand's enabled-provider
-     * gate owns that failure with the providers:setup hint.
+     * gate owns that failure with the setup hint.
      *
      * @param array<string, mixed> $data
      *

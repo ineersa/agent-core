@@ -27,6 +27,9 @@ namespace Ineersa\CodingAgent\Config\Ai;
  */
 final readonly class AiHttpConfig
 {
+    public const int DEFAULT_TIMEOUT = 30;
+    public const int DEFAULT_MAX_DURATION = 120;
+
     public function __construct(
         public ?int $timeout = null,
         public ?int $maxDuration = null,
@@ -34,6 +37,12 @@ final readonly class AiHttpConfig
         public ?int $baseDelayMs = null,
         public ?int $maxDelayMs = null,
     ) {
+        foreach (['timeout' => $timeout, 'max_duration' => $maxDuration, 'max_retries' => $maxRetries, 'base_delay_ms' => $baseDelayMs, 'max_delay_ms' => $maxDelayMs] as $key => $value) {
+            $minimum = \in_array($key, ['timeout', 'max_duration'], true) ? 1 : 0;
+            if (null !== $value && $value < $minimum) {
+                throw new \InvalidArgumentException(\sprintf('ai.http.%s must be at least %d.', $key, $minimum));
+            }
+        }
     }
 
     /**

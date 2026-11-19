@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\Tui\Setup\ProvidersSetupFlowInterface;
 
 /**
- * Headless providers:setup mutations. Owns sparse writes + in-run state;
+ * Headless setup mutations. Owns sparse writes + in-run state;
  * the TUI screen drives I/O against {@see ProvidersSetupFlowInterface}.
  */
 final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
@@ -76,11 +76,6 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
         }
 
         return new self($aiCatalog, $settingsWriter, $appConfig, $layer, $cwd);
-    }
-
-    public function catalogEmpty(): bool
-    {
-        return [] === $this->catalog;
     }
 
     public function providerRows(): array
@@ -157,6 +152,10 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             ];
         }
 
+        $rawModels = $this->appConfig->raw['ai']['providers'][$id]['models'] ?? null;
+        if (\is_array($rawModels) && !array_is_list($rawModels)) {
+            $models = $rawModels;
+        }
         $compatibility = $provider->compatibility;
 
         return [
@@ -194,6 +193,32 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             'enabled' => true,
         ]);
         $this->markEnabled($id, $this->modelIdsFromProvider($provider), $authCommand);
+    }
+
+    public function updateProviderField(string $id, string $field, mixed $value): void
+    {
+        $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id.'.'.$field, $value);
+        $this->wroteSomething = true;
+        if (null !== ($definition = $this->customDefinition($id))) {
+            $key = match ($field) {
+                'base_url' => 'baseUrl',
+                'completions_path' => 'completionsPath',
+                'api_key' => 'apiKey',
+                'compatibility.supports_developer_role' => 'supportsDeveloperRole',
+                'compatibility.thinking_format' => 'thinkingFormat',
+                'models' => 'models',
+                default => throw new \LogicException('Unsupported provider field.'),
+            };
+            $definition[$key] = $value;
+            $this->customDefinitionsThisRun[$id] = $definition;
+            if ('models' === $field) {
+                foreach ($this->configured as &$row) {
+                    if ($row['id'] === $id) {
+                        $row['models'] = array_keys($definition['models']);
+                    }
+                }
+            }
+        }
     }
 
     public function enableApiKey(string $id, string $apiKey): void

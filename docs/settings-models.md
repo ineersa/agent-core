@@ -11,7 +11,7 @@ Secrets (API keys) belong in `~/.hatfield/settings.yaml` using `env:VAR` syntax,
 Known providers (`mistral`, `zai`, `deepseek`, `opencode-go`, `openai-codex`, `grok-cli`) ship as the bundled
 `config/ai-catalog.yaml` (definitions present, `enabled: false`) and are copied to
 `~/.hatfield/ai-catalog.yaml` on first run. That user catalog is the source of
-provider/model defaults; enablement is manual (`providers:setup` or sparse settings).
+provider/model defaults; enablement is manual (`setup` or sparse settings).
 Settings `models:` overrides the catalog list wholesale. Full catalog behavior
 (rebase, deltas-only sync, version skew, hand-adding models): [ai-catalog.md](ai-catalog.md).
 
@@ -37,7 +37,7 @@ wholesale. Unknown provider ids (custom llama.cpp, RunPod, …) remain full defi
 in settings and pass through unchanged.
 
 OpenCode Go uses `OPENCODE_API_KEY` by default. Run `hatfield providers:update`
-and enable the provider with `hatfield providers:setup`. An explicit `api_key`
+and enable the provider with the Providers tab in `hatfield setup`. An explicit `api_key`
 setting overrides the default, including `env:` references.
 
 Muse uses the Responses endpoint; the other bundled models use chat completions.
@@ -68,7 +68,7 @@ and [Pi's Codex catalog](https://github.com/earendil-works/pi/blob/cead615b48b80
 
 Mistral uses Symfony AI's native Mistral bridge at `https://api.mistral.ai`, including
 Mistral-specific tool/message formatting and streamed thinking content. Run
-`hatfield providers:update`, then `hatfield providers:setup` and select **Mistral**.
+`hatfield providers:update`, then the Providers tab in `hatfield setup` and select **Mistral**.
 The default environment variable is `MISTRAL_API_KEY`; set it in the environment
 that launches Hatfield. A manually obtained Vibe/subscription API key or a regular
 Mistral API key can be supplied. Hatfield does not perform Mistral browser sign-in

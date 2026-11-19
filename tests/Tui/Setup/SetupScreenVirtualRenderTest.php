@@ -7,7 +7,6 @@ namespace Ineersa\Tui\Tests\Setup;
 use Ineersa\Tui\Setup\ProvidersSetupFlowInterface;
 use Ineersa\Tui\Setup\SetupScreen;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
@@ -21,6 +20,17 @@ use Symfony\Component\Tui\Tui;
 #[CoversClass(SetupScreen::class)]
 final class SetupScreenVirtualRenderTest extends TestCase
 {
+    #[Test]
+    public function emptyCatalogOffersCustomServer(): void
+    {
+        [$screen, $terminal, $tui] = $this->mount(new FakeProvidersSetupFlow(emptyCatalog: true));
+
+        $this->assertStringContainsString('No catalog providers available', $this->plain($terminal));
+        $this->assertStringContainsString('Other server', $this->plain($terminal));
+        $tui->handleInput("\r");
+        $this->assertSame('custom', $this->phase($screen));
+    }
+
     #[Test]
     public function freshPickerRendersCatalogProvidersOtherServerAndStatuses(): void
     {
@@ -43,7 +53,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('(enabled)', $text);
         $this->assertStringNotContainsString('not set up', $text);
         $this->assertSame('picker', $this->phase($screen));
-        $this->assertStringContainsString('↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit', $text);
+        $this->assertStringContainsString('↑/↓ select · Enter confirm · Esc exit', $text);
         $this->assertStringContainsString('┌', $text); // bordered panel
         $this->assertStringContainsString('│', $text);
     }
@@ -56,52 +66,22 @@ final class SetupScreenVirtualRenderTest extends TestCase
 
         $this->selectValue($screen, 'zai');
         $this->assertSame('action', $this->phase($screen));
-        $this->assertStringContainsString('Esc back · Ctrl+D quit', $this->plain($terminal));
+        $this->assertStringContainsString('Esc back', $this->plain($terminal));
 
         $this->selectValue($screen, 'configure');
         $this->assertSame('choice', $this->phase($screen)); // api where list
-        $this->assertStringContainsString('Esc back · Ctrl+D quit', $this->plain($terminal));
+        $this->assertStringContainsString('Esc back', $this->plain($terminal));
 
         $this->selectValue($screen, 'env');
         $this->assertSame('input', $this->phase($screen));
-        $this->assertStringContainsString('Enter submit · Esc back · Ctrl+D quit', $this->plain($terminal));
+        $this->assertStringContainsString('Enter submit · Esc back', $this->plain($terminal));
 
         [$screen, $terminal] = $this->mount(new FakeProvidersSetupFlow());
         $this->selectValue($screen, 'done');
         $this->assertSame('summary', $this->phase($screen));
         $text = $this->plain($terminal);
-        $this->assertStringContainsString('Esc exit · Ctrl+D quit', $text);
+        $this->assertStringContainsString('Esc exit', $text);
         $this->assertStringNotContainsString('Enter close', $text);
-    }
-
-    #[Test]
-    public function ctrlDFromPickerQuitsCleanly(): void
-    {
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal, $tui] = $this->mount($flow);
-
-        $tui->handleInput("\x04");
-
-        $this->assertSame('summary', $this->phase($screen));
-        $this->assertStringContainsString('AI Provider Setup', $this->plain($terminal));
-    }
-
-    #[Test]
-    public function ctrlDFromCustomInputResetsChromeOnSummary(): void
-    {
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal, $tui] = $this->mount($flow);
-
-        $this->selectValue($screen, 'custom');
-        $this->assertSame('custom', $this->phase($screen));
-        $this->assertStringContainsString('Add your own server', $this->plain($terminal));
-
-        $tui->handleInput("\x04");
-
-        $this->assertSame('summary', $this->phase($screen));
-        $text = $this->plain($terminal);
-        $this->assertStringContainsString('AI Provider Setup', $text);
-        $this->assertStringNotContainsString('Add your own server', $text);
     }
 
     #[Test]
@@ -122,7 +102,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertSame('choice', $this->phase($screen));
         $text = $this->plain($terminal);
         $this->assertStringContainsString('environment variable', $text);
-        $this->assertStringContainsString('Esc back · Ctrl+D quit', $text);
+        $this->assertStringContainsString('Esc back', $text);
     }
 
     #[Test]
@@ -235,7 +215,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $text = $this->plain($terminal);
         $this->assertSame('custom', $this->phase($screen));
         $this->assertStringContainsString('Add your own server', $text);
-        $this->assertStringContainsString('All options on one screen', $text);
+        $this->assertStringContainsString('Connection and model settings', $text);
         $this->assertSame(1, substr_count($text, 'Provider id')); // orphan-guard: clipped duplicate would repeat labels
         $this->assertStringContainsString('Server URL', $text);
         $this->assertStringContainsString('Completions path', $text);
@@ -249,8 +229,8 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringContainsString('Reasoning', $text);
         $this->assertStringContainsString('Developer role', $text);
         $this->assertStringContainsString('Reasoning format', $text);
-        $this->assertStringContainsString('Add model to list', $text);
-        $this->assertSame(1, substr_count($text, 'Save and enable')); // orphan-guard: exactly one save row
+        $this->assertStringContainsString('Create server with this model', $text);
+        $this->assertStringNotContainsString('Save and enable', $text);
         // Selected row description (first = Provider id)
         $this->assertStringContainsString('A short name to identify this provider', $text);
         $this->assertStringContainsString('Example: runpod', $text);
@@ -278,7 +258,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->changeSetting($screen, 'reasoning', 'no');
         $this->changeSetting($screen, 'supportsDeveloperRole', 'no');
         $this->changeSetting($screen, 'thinkingFormat', '');
-        $this->changeSetting($screen, 'save', '↵');
+        $this->changeSetting($screen, 'add_model', '↵');
 
         $this->assertSame('confirm', $this->phase($screen));
         $this->assertCount(1, $flow->savedCustoms);
@@ -296,35 +276,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $text = $this->plain($terminal);
         $this->assertStringContainsString('Continue', $text);
         $this->assertStringContainsString('Exit', $text);
-    }
-
-    #[Test]
-    public function customFormAddModelThenSaveKeepsBothModels(): void
-    {
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal] = $this->mount($flow);
-
-        $this->selectValue($screen, 'custom');
-        $this->changeSetting($screen, 'id', 'multi');
-        $this->changeSetting($screen, 'baseUrl', 'http://127.0.0.1:8080');
-        $this->changeSetting($screen, 'modelId', 'a');
-        $this->changeSetting($screen, 'modelName', 'A');
-        $this->changeSetting($screen, 'add_model', '↵');
-        $text = $this->plain($terminal);
-        $this->assertStringContainsString('a', $text); // saved models row
-        $this->changeSetting($screen, 'modelId', 'b');
-        $this->changeSetting($screen, 'modelName', 'B');
-        $this->changeSetting($screen, 'modalities', 'text+image');
-        $this->changeSetting($screen, 'reasoning', 'yes');
-        $this->changeSetting($screen, 'save', '↵');
-
-        $this->assertCount(1, $flow->savedCustoms);
-        $models = $flow->savedCustoms[0]['models'];
-        $this->assertArrayHasKey('a', $models);
-        $this->assertArrayHasKey('b', $models);
-        $this->assertSame(['text', 'image'], $models['b']['input']);
-        $this->assertTrue($models['b']['reasoning']);
-        $this->assertNotSame([], $models['b']['thinking_level_map']);
     }
 
     #[Test]
@@ -356,7 +307,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->changeSetting($screen, 'id', 'empty');
         $this->changeSetting($screen, 'baseUrl', 'http://127.0.0.1:8080');
         $this->changeSetting($screen, 'modelId', ''); // clear draft
-        $this->changeSetting($screen, 'save', '↵');
+        $this->changeSetting($screen, 'add_model', '↵');
 
         $this->assertSame('custom', $this->phase($screen));
         $this->assertStringContainsString('Add at least one model.', $this->errorText($screen));
@@ -372,8 +323,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->selectValue($screen, 'custom');
         $this->changeSetting($screen, 'id', 'nourl');
         $this->changeSetting($screen, 'baseUrl', '');
-        $this->changeSetting($screen, 'modelId', 'm');
-        $this->changeSetting($screen, 'save', '↵');
 
         $this->assertSame('custom', $this->phase($screen));
         $this->assertStringContainsString('Server URL is required.', $this->errorText($screen));
@@ -412,11 +361,85 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->changeSetting($screen, 'baseUrl', 'https://abc.proxy.runpod.net');
         $this->changeSetting($screen, 'modelId', 'llama');
         $this->changeSetting($screen, 'modelName', 'Llama');
-        $this->changeSetting($screen, 'save', '↵');
+        $this->changeSetting($screen, 'add_model', '↵');
 
         $this->assertCount(1, $flow->savedCustoms);
         $this->assertSame('runpod', $flow->savedCustoms[0]['id']);
         $this->assertSame('https://abc.proxy.runpod.net', $flow->savedCustoms[0]['baseUrl']);
+    }
+
+    #[Test]
+    public function existingModelIsPrefilledAndUpdatedWithoutReplacingItsMetadata(): void
+    {
+        $model = ['name' => 'Old name', 'max_tokens' => 333, 'tool_calling' => false];
+        $flow = new FakeProvidersSetupFlow(customs: ['local-server' => ['models' => ['same.id' => $model, 'sibling' => ['name' => 'Sibling']], 'enabled' => false]]);
+        [$screen, $terminal, $tui] = $this->mount($flow);
+        try {
+            $this->selectValue($screen, 'custom');
+            $this->selectValue($screen, 'local-server');
+            $this->selectValue($screen, 'edit');
+            $this->changeSetting($screen, 'modelsSaved', 'same.id');
+            $this->assertStringContainsString('Old name', $this->plain($terminal));
+            $this->changeSetting($screen, 'modelName', 'New name');
+            $this->changeSetting($screen, 'add_model', '↵');
+            $this->assertSame([['local-server', 'models', ['same.id' => array_replace($model, ['name' => 'New name']), 'sibling' => ['name' => 'Sibling']]]], $flow->fieldUpdates);
+            $this->changeSetting($screen, 'modelId', 'b');
+            $this->changeSetting($screen, 'modelName', 'Just added');
+            $this->changeSetting($screen, 'add_model', '↵');
+            // From the first row, open Saved models and choose the third model.
+            for ($row = 0; $row < 5; ++$row) {
+                $terminal->simulateInput("\x1b[B");
+            }
+            $terminal->simulateInput("\r");
+            $terminal->simulateInput("\x1b[B");
+            $terminal->simulateInput("\x1b[B");
+            $terminal->simulateInput("\r");
+            $tui->requestRender(force: true);
+            $tui->processRender();
+            $this->assertStringContainsString('Just added', $this->plain($terminal));
+            $this->changeSetting($screen, 'modelName', 'Updated B');
+            $this->changeSetting($screen, 'add_model', '↵');
+            $this->assertSame('Updated B', $flow->fieldUpdates[2][2]['b']['name']);
+            $this->assertFalse($flow->isEnabled('local-server'));
+        } finally {
+            $tui->stop();
+        }
+    }
+
+    #[Test]
+    public function escapeCancelsProviderFormsAndExitsFromThePicker(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal, $tui] = $this->mount($flow);
+        try {
+            $this->selectValue($screen, 'custom');
+            $terminal->simulateInput("\x1b");
+            $this->assertSame('picker', $this->phase($screen));
+
+            $this->selectValue($screen, 'custom');
+            $terminal->simulateInput("\r");
+            $terminal->simulateInput('changed');
+            $terminal->simulateInput("\r");
+            $terminal->simulateInput("\x1b");
+            $this->assertSame('picker', $this->phase($screen));
+            $this->assertSame([], $flow->savedCustoms);
+
+            $this->selectValue($screen, 'zai');
+            $this->selectValue($screen, 'env');
+            $terminal->simulateInput("\x1b");
+            $this->assertSame('picker', $this->phase($screen));
+            $this->selectValue($screen, 'zai');
+            $this->selectValue($screen, 'raw');
+            $terminal->simulateInput('fixture');
+            $terminal->simulateInput("\r"); // Second, empty credential field still has a draft.
+            $terminal->simulateInput("\x1b");
+            $this->assertSame('picker', $this->phase($screen));
+            $this->assertFalse($flow->isEnabled('zai'));
+            $terminal->simulateInput("\x1b");
+            $this->assertFalse($tui->isRunning());
+        } finally {
+            $tui->stop();
+        }
     }
 
     #[Test]
@@ -442,34 +465,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringContainsString('local', $text);
         $this->assertStringNotContainsString('changed', $text);
         $this->assertSame([], $flow->savedCustoms);
-    }
-
-    #[Test]
-    #[DataProvider('provideCtrlDSequences')]
-    public function ctrlDInsideOpenCustomSubmenuQuits(string $sequence): void
-    {
-        // SettingsListWidget.onInput(quitOnCtrlD) runs BEFORE submenu forward.
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal, $tui] = $this->mount($flow);
-
-        $this->selectValue($screen, 'custom');
-        $tui->handleInput("\r"); // open id submenu
-        $tui->processRender();
-        $tui->handleInput($sequence);
-
-        $this->assertSame('summary', $this->phase($screen));
-        $text = $this->plain($terminal);
-        $this->assertStringContainsString('AI Provider Setup', $text);
-        $this->assertStringNotContainsString('Add your own server', $text);
-    }
-
-    /**
-     * @return iterable<string, array{0: string}>
-     */
-    public static function provideCtrlDSequences(): iterable
-    {
-        yield 'legacy' => ["\x04"];
-        yield 'kitty' => ["\x1b[100;5u"];
     }
 
     #[Test]
@@ -520,7 +515,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringContainsString('✓ enabled', $text);
         $this->assertStringContainsString('✗ disabled', $text);
         $this->assertStringContainsString('Add a new server', $text);
-        $this->assertStringContainsString('Back', $text);
+        $this->assertStringNotContainsString('Back', $text);
     }
 
     #[Test]
@@ -576,7 +571,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function editCustomPrefillsSavedUrlAndPath(): void
+    public function editCustomPrefillsPublicFieldsAndPreservesHiddenKeyUntilExplicitClear(): void
     {
         $flow = new FakeProvidersSetupFlow(customs: [
             'runpod' => [
@@ -600,7 +595,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
                 'thinkingFormat' => '',
             ],
         ]);
-        [$screen, $terminal] = $this->mount($flow);
+        [$screen, $terminal, $tui] = $this->mount($flow);
 
         $this->selectValue($screen, 'custom');
         $this->selectValue($screen, 'runpod');
@@ -611,9 +606,19 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringContainsString('Edit your server', $text);
         $this->assertStringContainsString('https://abc.proxy.runpod.net', $text);
         $this->assertStringContainsString('/v1/chat/completions', $text);
-        $this->assertStringContainsString('env:RUNPOD_API_KEY', $text);
+        $this->assertStringNotContainsString('env:RUNPOD_API_KEY', $text);
         $this->assertStringContainsString('llama', $text);
         $this->assertStringContainsString('Locked while editing', $text);
+
+        for ($i = 0; $i < 3; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+        $tui->handleInput("\r"); // Open existing API key.
+        $tui->handleInput("\r"); // Empty confirmation leaves the credential untouched.
+        $this->assertSame([], $flow->fieldUpdates);
+        $tui->handleInput("\x1b[B"); // Select Clear API key.
+        $tui->handleInput("\r");
+        $this->assertSame([['runpod', 'api_key', null]], $flow->fieldUpdates);
     }
 
     #[Test]
@@ -765,6 +770,9 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
     public array $savedCustoms = [];
     /** @var list<string> */
     public array $removedCustoms = [];
+
+    /** @var list<array{string, string, mixed}> */
+    public array $fieldUpdates = [];
     /** @var array<string, bool> */
     private array $enabled;
 
@@ -792,7 +800,7 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
      * @param array<string, bool>                                                                                                                                                                                                  $enabled
      * @param array<string, array{id?: string, baseUrl?: string, completionsPath?: string, apiKey?: ?string, models?: array<string, array<string, mixed>>, supportsDeveloperRole?: bool, thinkingFormat?: string, enabled?: bool}> $customs
      */
-    public function __construct(array $enabled = [], array $customs = [], ?string $defaultModel = null)
+    public function __construct(array $enabled = [], array $customs = [], ?string $defaultModel = null, private readonly bool $emptyCatalog = false)
     {
         $this->enabled = $enabled;
         $this->defaultModel = $defaultModel;
@@ -817,6 +825,10 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
 
     public function providerRows(): array
     {
+        if ($this->emptyCatalog) {
+            return [];
+        }
+
         $catalog = [
             ['id' => 'zai', 'label' => 'Z.ai (GLM)', 'need' => 'needs an API key', 'kind' => 'apikey', 'authCommand' => null, 'models' => ['glm-5.3']],
             ['id' => 'deepseek', 'label' => 'DeepSeek', 'need' => 'needs an API key', 'kind' => 'apikey', 'authCommand' => null, 'models' => ['deepseek-v4-pro']],
@@ -875,6 +887,11 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
             default => [],
         };
         $this->configured[] = ['id' => $id, 'models' => $models, 'authCommand' => $auth];
+    }
+
+    public function updateProviderField(string $id, string $field, mixed $value): void
+    {
+        $this->fieldUpdates[] = [$id, $field, $value];
     }
 
     public function enableApiKey(string $id, string $apiKey): void

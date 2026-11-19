@@ -4,30 +4,29 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Setup;
 
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\TuiTheme;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SettingChangeEvent;
 use Symfony\Component\Tui\Event\SubmitEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Style\Border;
 use Symfony\Component\Tui\Style\Color;
 use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
-use Symfony\Component\Tui\Terminal\Terminal;
-use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
-use Symfony\Component\Tui\Widget\InputWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\SettingItem;
 use Symfony\Component\Tui\Widget\SettingsListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
- * Standalone providers:setup TUI — not coupled to ChatScreen / InteractiveMode.
+ * Standalone setup TUI — not coupled to ChatScreen / InteractiveMode.
  *
- * Booted by {@see \Ineersa\CodingAgent\CLI\Providers\ProvidersSetupCommand}
+ * Mounted by the unified setup application
  * against a {@see ProvidersSetupFlowInterface} implementation.
  */
 final class SetupScreen
@@ -49,26 +48,35 @@ final class SetupScreen
     private TextWidget $errorWidget;
     private TextWidget $footerWidget;
     private SelectListWidget $listWidget;
-    private InputWidget $inputWidget;
+    private SetupInputWidget $inputWidget;
     private SettingsListWidget $settingsWidget;
     private bool $mounted = false;
+
+    private ?string $selectedModel = null;
+    /** @var array<string, mixed> */
+    private array $modelBaseline = [];
 
     private string $phase = self::PHASE_PICKER;
     private ?string $activeProviderId = null;
     private string $formKind = '';
     /** @var array<string, mixed> */
     private array $formState = [];
+    /** @var array<string, mixed> */
+    private array $initialFormState = [];
     private ?string $pendingConfirm = null;
     /** Where action-menu Cancel returns: picker or servers submenu. */
     private string $actionReturn = self::PHASE_PICKER;
     private ?string $error = null;
-    private int $exitCode = 0;
+
+    private ?\Closure $back = null;
 
     public function __construct(
         private readonly ProvidersSetupFlowInterface $flow,
+        private readonly LoggerInterface $logger = new NullLogger(),
+        private readonly ?TuiTheme $theme = null,
     ) {
-        $this->titleWidget = new TextWidget('AI Provider Setup');
-        $this->titleWidget->setStyle(new Style(bold: true, color: Color::named('cyan')));
+        $this->titleWidget = new TextWidget('');
+        $this->titleWidget->setStyle(new Style(bold: true));
 
         $this->panelWidget = new ContainerWidget();
         $this->panelWidget->setStyle(new Style(
@@ -82,11 +90,8 @@ final class SetupScreen
         $this->errorWidget = new TextWidget('');
         $this->footerWidget = new TextWidget('');
         $this->listWidget = new SelectListWidget([], maxVisible: 12);
-        $this->inputWidget = new InputWidget();
+        $this->inputWidget = new SetupInputWidget();
         $this->settingsWidget = new SettingsListWidget([], maxVisible: 16);
-        $this->applyQuitSetupBindings($this->listWidget);
-        $this->applyQuitSetupBindings($this->inputWidget);
-        $this->applyQuitSetupBindings($this->settingsWidget);
 
         // Static panel chrome — list/input/settings are mounted by applyPhaseLayout().
         $this->panelWidget->add($this->stepWidget);
@@ -94,7 +99,7 @@ final class SetupScreen
         $this->panelWidget->add($this->errorWidget);
     }
 
-    public function mount(Tui $tui): void
+    public function mount(Tui $tui, ?ContainerWidget $container = null, ?\Closure $back = null): void
     {
         if ($this->mounted) {
             return;
@@ -102,20 +107,18 @@ final class SetupScreen
         $this->mounted = true;
         $this->tui = $tui;
 
-        $tui->add($this->titleWidget);
-        $tui->add($this->panelWidget);
-        $tui->add($this->footerWidget);
+        $this->back = $back;
+        $root = $container ?? $tui;
+        $root->add($this->titleWidget);
+        $root->add($this->panelWidget);
+        $root->add($this->footerWidget);
 
         $this->showPicker();
     }
 
-    public function run(?TerminalInterface $terminal = null): int
+    public function hasUnsubmittedInput(): bool
     {
-        $this->tui = new Tui(terminal: $terminal ?? new Terminal());
-        $this->mount($this->tui);
-        $this->tui->run();
-
-        return $this->exitCode;
+        return self::PHASE_INPUT === $this->phase || (self::PHASE_CUSTOM === $this->phase && $this->formState !== $this->initialFormState);
     }
 
     private function wireListListeners(): void
@@ -129,7 +132,7 @@ final class SetupScreen
             if ('' === $value) {
                 return;
             }
-            $this->onListSelect($value);
+            $this->attempt(fn () => $this->onListSelect($value));
         });
         $this->listWidget->onCancel(function (CancelEvent $_): void {
             if (\in_array($this->phase, [self::PHASE_PICKER, self::PHASE_SUMMARY], true)) {
@@ -143,7 +146,6 @@ final class SetupScreen
                 $this->showPicker();
             }
         });
-        $this->listWidget->onInput($this->quitOnCtrlD(...));
     }
 
     private function wireInputListeners(): void
@@ -151,12 +153,11 @@ final class SetupScreen
         $this->inputWidget->off(SubmitEvent::class);
         $this->inputWidget->off(CancelEvent::class);
         $this->inputWidget->onSubmit(function (SubmitEvent $_): void {
-            $this->onInputSubmit(trim($this->inputWidget->getValue()));
+            $this->attempt(fn () => $this->onInputSubmit(trim($this->inputWidget->getValue())));
         });
         $this->inputWidget->onCancel(function (CancelEvent $_): void {
             $this->showPicker();
         });
-        $this->inputWidget->onInput($this->quitOnCtrlD(...));
     }
 
     private function wireSettingsListeners(): void
@@ -164,36 +165,33 @@ final class SetupScreen
         $this->settingsWidget->off(SettingChangeEvent::class);
         $this->settingsWidget->off(CancelEvent::class);
         $this->settingsWidget->onChange(function (SettingChangeEvent $event): void {
-            $this->onCustomSettingChange($event->getId(), $event->getValue());
+            $this->attempt(fn () => $this->onCustomSettingChange($event->getId(), $event->getValue()));
         });
         $this->settingsWidget->onCancel(function (CancelEvent $_): void {
-            // Edit path always sets actionReturn=SERVERS; add path keeps PICKER.
-            if (self::PHASE_SERVERS === $this->actionReturn) {
-                $this->showServersSubmenu();
-
-                return;
-            }
-            $this->showPicker();
+            $this->discardCustomForm();
         });
-        $this->settingsWidget->onInput($this->quitOnCtrlD(...));
     }
 
-    private function quitOnCtrlD(string $data): bool
+    private function attempt(\Closure $action): void
     {
-        if ($this->listWidget->getKeybindings()->matches($data, 'quit_setup')) {
-            $this->finishSuccess();
-
-            return true;
+        try {
+            $action();
+        } catch (\Throwable $error) {
+            $this->logger->notice('provider.setup.refused', ['component' => 'setup', 'event_type' => 'provider.setup.refused', 'exception_class' => $error::class]);
+            $this->error = 'Action failed. Check provider configuration and the target YAML.';
+            $this->refreshError();
         }
-
-        return false;
     }
 
-    private function applyQuitSetupBindings(SelectListWidget|InputWidget|SettingsListWidget $widget): void
+    private function discardCustomForm(): void
     {
-        $widget->setKeybindings(new Keybindings([
-            'quit_setup' => [Key::ctrl('d')],
-        ]));
+        // Edit path always sets actionReturn=SERVERS; add path keeps PICKER.
+        if (self::PHASE_SERVERS === $this->actionReturn) {
+            $this->showServersSubmenu();
+
+            return;
+        }
+        $this->showPicker();
     }
 
     private function onListSelect(string $value): void
@@ -270,11 +268,6 @@ final class SetupScreen
 
     private function handleServersSelect(string $value): void
     {
-        if ('back' === $value) {
-            $this->showPicker();
-
-            return;
-        }
         if ('add' === $value) {
             $this->startCustom();
 
@@ -418,7 +411,7 @@ final class SetupScreen
     {
         $id = (string) ($this->formState['id'] ?? '');
         if ('raw' === $value) {
-            $this->beginInput('api_raw_key', 'Paste your API key (shown; confirm next)');
+            $this->beginInput('api_raw_key', 'Paste your API key (hidden; confirm next)');
 
             return;
         }
@@ -429,7 +422,7 @@ final class SetupScreen
     {
         $id = (string) ($this->formState['id'] ?? '');
         $apiKey = $this->flow->formatEnvApiKey('' !== $value ? $value : $this->suggestedEnvVar($id));
-        $this->flow->enableApiKey($id, $apiKey);
+        $this->applyCredential($id, $apiKey);
         $this->askContinue(\sprintf('%s enabled.', $this->labelFor($id))."\n(Everything else is preconfigured.)");
     }
 
@@ -449,8 +442,17 @@ final class SetupScreen
             throw new \InvalidArgumentException('Keys did not match — try again.');
         }
         $id = (string) ($this->formState['id'] ?? '');
-        $this->flow->enableApiKey($id, $raw);
+        $this->applyCredential($id, $raw);
         $this->askContinue(\sprintf('%s enabled.', $this->labelFor($id))."\n(Everything else is preconfigured.)");
+    }
+
+    private function applyCredential(string $id, string $value): void
+    {
+        if ($this->flow->isEnabled($id)) {
+            $this->flow->updateProviderField($id, 'api_key', $value);
+        } else {
+            $this->flow->enableApiKey($id, $value);
+        }
     }
 
     private function startCustom(): void
@@ -516,16 +518,17 @@ final class SetupScreen
 
     private function showCustomForm(): void
     {
+        $this->selectedModel = null;
+        $this->initialFormState = $this->formState;
         $this->phase = self::PHASE_CUSTOM;
         $this->formKind = '';
         $this->error = null;
         $this->applyChrome();
-        $this->hintWidget->setText('Edit any row. Enter opens editor or toggles. Save when ready.');
+        $this->hintWidget->setText('Confirm fields to apply changes. Esc goes back.');
         // Remove before reassign — ContainerWidget::remove() no-ops on a fresh
         // unattached instance, which would orphan the previously mounted form.
         $this->panelWidget->remove($this->settingsWidget);
         $this->settingsWidget = new SettingsListWidget($this->customSettingItems(), maxVisible: 16);
-        $this->applyQuitSetupBindings($this->settingsWidget);
         $this->refreshError();
         $this->refreshFooter();
         $this->applyPhaseLayout();
@@ -582,14 +585,16 @@ final class SetupScreen
             'apiKey',
             'API key',
             $apiKeyDisplay,
-            'Blank = none. Env var name (RUNPOD_API_KEY) or env:NAME, or paste a raw key (stored in settings).',
-            submenu: $this->textSubmenu(...),
+            'Use an environment reference or paste a raw key.',
+            submenu: static fn (): SettingsTextInputWidget => new SettingsTextInputWidget(secret: true),
         );
+        $items[] = new SettingItem('clearApiKey', 'Clear API key', '', values: ['clear']);
         $items[] = new SettingItem(
             'modelsSaved',
             'Saved models',
             $modelsDisplay,
-            'Models already on this provider. Add another below, then Save.',
+            'Select an existing model to edit, or enter a new model ID below.',
+            submenu: true === ($this->formState['editing'] ?? false) ? fn (): SelectListWidget => new SelectListWidget(array_map(static fn ($id): array => ['value' => (string) $id, 'label' => (string) $id], array_keys($this->formState['models']))) : null,
         );
         $items[] = new SettingItem(
             'modelId',
@@ -649,16 +654,9 @@ final class SetupScreen
         );
         $items[] = new SettingItem(
             'add_model',
-            'Add model to list',
+            true === $this->formState['editing'] ? 'Apply model' : 'Create server with this model',
             '↵',
-            'Commit the model fields above into Saved models, then clear them for another.',
-            values: ['↵'],
-        );
-        $items[] = new SettingItem(
-            'save',
-            'Save and enable',
-            '↵',
-            'Validate and write the full provider definition to your settings.',
+            'Confirm the model fields above.',
             values: ['↵'],
         );
 
@@ -674,12 +672,15 @@ final class SetupScreen
     private function onCustomSettingChange(string $id, string $value): void
     {
         $this->error = null;
+        $before = $this->formState;
         try {
             match ($id) {
                 'id' => $this->setCustomId($value),
-                'baseUrl' => $this->formState['baseUrl'] = rtrim(trim($value), '/'),
+                'baseUrl' => $this->formState['baseUrl'] = $this->normalizeServerUrl($value),
                 'completionsPath' => $this->formState['completionsPath'] = $this->normalizePath($value),
                 'apiKey' => $this->formState['apiKey'] = $this->normalizeApiKeyInput($value),
+                'clearApiKey' => $this->formState['apiKey'] = null,
+                'modelsSaved' => $this->selectExistingModel($value),
                 'modelId' => $this->setModelId($value),
                 'modelName' => $this->formState['modelName'] = trim($value),
                 'contextWindow' => $this->formState['contextWindow'] = $this->normalizePositiveInt($value, 'Context window', '128000'),
@@ -688,12 +689,31 @@ final class SetupScreen
                 'reasoning' => $this->formState['reasoning'] = $value,
                 'supportsDeveloperRole' => $this->formState['supportsDeveloperRole'] = 'yes' === $value,
                 'thinkingFormat' => $this->formState['thinkingFormat'] = trim($value),
-                'add_model' => $this->commitDraftModel(),
-                'save' => $this->saveCustomForm(),
+                'add_model' => $this->confirmModel(),
                 default => null,
             };
+            if (true === $before['editing'] && $before !== $this->formState && 'add_model' !== $id) {
+                $path = match ($id) {
+                    'baseUrl' => 'base_url',
+                    'completionsPath' => 'completions_path',
+                    'apiKey', 'clearApiKey' => 'api_key',
+                    'supportsDeveloperRole' => 'compatibility.supports_developer_role',
+                    'thinkingFormat' => 'compatibility.thinking_format',
+                    default => null,
+                };
+                if (null !== $path) {
+                    $this->flow->updateProviderField($before['id'], $path, $this->formState['clearApiKey' === $id ? 'apiKey' : $id]);
+                    $key = 'clearApiKey' === $id ? 'apiKey' : $id;
+                    $this->initialFormState[$key] = $this->formState[$key];
+                }
+            }
         } catch (\InvalidArgumentException $e) {
+            $this->formState = $before;
             $this->error = $e->getMessage();
+        } catch (\Throwable $error) {
+            $this->formState = $before;
+            $this->logger->notice('provider.setup.refused', ['component' => 'setup', 'event_type' => 'provider.setup.refused', 'exception_class' => $error::class]);
+            $this->error = 'Not saved. Check the target YAML.';
         }
         if (self::PHASE_CUSTOM !== $this->phase) {
             $this->refreshError();
@@ -703,14 +723,14 @@ final class SetupScreen
         if (null !== $this->error) {
             // Vendor submenu writes the rejected value onto the item before onChange;
             // restore from formState so the row stays coherent without a rebuild.
-            if (!\in_array($id, ['save', 'add_model', 'modalities', 'reasoning'], true)) {
+            if (!\in_array($id, ['add_model', 'modalities', 'reasoning'], true)) {
                 $this->settingsWidget->updateValue($id, $this->displayForSetting($id, $value));
             }
             $this->refreshError();
 
             return;
         }
-        if ('add_model' === $id) {
+        if (\in_array($id, ['add_model', 'modelsSaved'], true)) {
             $this->refreshCustomFormValuesAfterModelCommit();
             $this->refreshError();
 
@@ -739,7 +759,7 @@ final class SetupScreen
     {
         $apiKey = $this->formState['apiKey'] ?? null;
 
-        return \is_string($apiKey) && '' !== $apiKey ? $apiKey : '(none)';
+        return \is_string($apiKey) && '' !== $apiKey ? '(configured)' : '(none)';
     }
 
     private function refreshCustomFormValuesAfterModelCommit(): void
@@ -767,6 +787,22 @@ final class SetupScreen
         $this->formState['id'] = $id;
     }
 
+    private function selectExistingModel(string $id): void
+    {
+        $model = $this->formState['models'][$id];
+        $this->formState['modelId'] = $id;
+        $this->formState['modelName'] = (string) ($model['name'] ?? $id);
+        $this->formState['contextWindow'] = (string) ($model['context_window'] ?? 128000);
+        $this->formState['maxTokens'] = (string) ($model['max_tokens'] ?? 8192);
+        $this->formState['modalities'] = \in_array('image', $model['input'] ?? [], true) ? 'text+image' : 'text';
+        $this->formState['reasoning'] = true === ($model['reasoning'] ?? false) ? 'yes' : 'no';
+        $this->modelBaseline = $this->draftModelPayload($id);
+        $this->selectedModel = $id;
+        foreach (['modelId', 'modelName', 'contextWindow', 'maxTokens', 'modalities', 'reasoning'] as $key) {
+            $this->initialFormState[$key] = $this->formState[$key];
+        }
+    }
+
     private function setModelId(string $value): void
     {
         $modelId = trim($value);
@@ -774,6 +810,19 @@ final class SetupScreen
         if ('' !== $modelId && '' === trim((string) ($this->formState['modelName'] ?? ''))) {
             $this->formState['modelName'] = $modelId;
         }
+    }
+
+    private function normalizeServerUrl(string $value): string
+    {
+        $url = rtrim(trim($value), '/');
+        if ('' === $url) {
+            throw new \InvalidArgumentException('Server URL is required.');
+        }
+        if (false === filter_var($url, \FILTER_VALIDATE_URL) || !\in_array(parse_url($url, \PHP_URL_SCHEME), ['http', 'https'], true)) {
+            throw new \InvalidArgumentException('Enter a valid HTTP or HTTPS server URL.');
+        }
+
+        return $url;
     }
 
     private function normalizePath(string $value): string
@@ -861,6 +910,34 @@ final class SetupScreen
         ];
     }
 
+    private function confirmModel(): void
+    {
+        if (true !== $this->formState['editing']) {
+            $this->saveCustomForm();
+
+            return;
+        }
+        $id = (string) $this->formState['modelId'];
+        if ('' === $id || (isset($this->formState['models'][$id]) && $id !== $this->selectedModel)) {
+            throw new \InvalidArgumentException('Enter a new model ID.');
+        }
+        $models = $this->formState['models'];
+        $payload = $this->draftModelPayload($id);
+        if ($id === $this->selectedModel) {
+            $changed = array_filter($payload, fn (mixed $value, string $key): bool => $value !== ($this->modelBaseline[$key] ?? null), \ARRAY_FILTER_USE_BOTH);
+            $models[$id] = array_replace($models[$id], $changed);
+        } else {
+            $models[$id] = $payload;
+        }
+        if ($models !== $this->formState['models']) {
+            $this->flow->updateProviderField($this->formState['id'], 'models', $models);
+        }
+        $this->commitDraftModel();
+        $this->formState['models'] = $models;
+        $this->selectedModel = null;
+        $this->initialFormState = $this->formState;
+    }
+
     private function saveCustomForm(): void
     {
         $models = \is_array($this->formState['models'] ?? null) ? $this->formState['models'] : [];
@@ -941,6 +1018,14 @@ final class SetupScreen
             $lines[] = 'Nothing changed.';
         }
 
+        if (null !== $this->back) {
+            $this->showPicker();
+            $this->hintWidget->setText(implode("\n", $lines));
+            ($this->back)();
+
+            return;
+        }
+
         $this->phase = self::PHASE_SUMMARY;
         $this->formKind = '';
         $this->formState = [];
@@ -948,7 +1033,6 @@ final class SetupScreen
         $this->showList([
             ['value' => 'ok', 'label' => 'Done'],
         ]);
-        $this->exitCode = 0;
         if ($this->tui->isRunning()) {
             $this->tui->stop();
         }
@@ -962,8 +1046,11 @@ final class SetupScreen
         $this->activeProviderId = null;
         $this->pendingConfirm = null;
         $this->actionReturn = self::PHASE_PICKER;
-        $this->hintWidget->setText('Hatfield needs at least one AI provider to run.');
-        $this->showList($this->pickerItems());
+        $providers = $this->flow->providerRows();
+        $this->hintWidget->setText([] === $providers
+            ? 'No catalog providers available. Choose Other server to configure a custom endpoint.'
+            : 'Hatfield needs at least one AI provider to run.');
+        $this->showList($this->pickerItems($providers));
     }
 
     private function showServersSubmenu(): void
@@ -1003,12 +1090,14 @@ final class SetupScreen
     }
 
     /**
+     * @param list<array{id: string, label: string, need: string, status: string}> $providers
+     *
      * @return list<array{value: string, label: string, description?: string}>
      */
-    private function pickerItems(): array
+    private function pickerItems(array $providers): array
     {
         $items = [];
-        foreach ($this->flow->providerRows() as $row) {
+        foreach ($providers as $row) {
             $enabled = '✓ enabled' === $row['status'];
             $statusLabel = $enabled ? '✓ enabled' : '✗ disabled';
             $items[] = [
@@ -1058,7 +1147,6 @@ final class SetupScreen
             ];
         }
         $items[] = ['value' => 'add', 'label' => 'Add a new server'];
-        $items[] = ['value' => 'back', 'label' => 'Back'];
 
         return $items;
     }
@@ -1121,6 +1209,7 @@ final class SetupScreen
     private function beginInput(string $kind, string $prompt, string $default = ''): void
     {
         $this->formKind = $kind;
+        $this->inputWidget->secret = \in_array($kind, ['api_raw_key', 'api_raw_confirm'], true);
         $this->phase = self::PHASE_INPUT;
         $this->applyChrome();
         $this->hintWidget->setText($prompt);
@@ -1171,11 +1260,11 @@ final class SetupScreen
     private function refreshFooter(): void
     {
         $plain = match ($this->phase) {
-            self::PHASE_PICKER => '↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit',
-            self::PHASE_INPUT => 'Enter submit · Esc back · Ctrl+D quit',
-            self::PHASE_CUSTOM => '↑/↓ select · Enter edit/toggle · Esc back · Ctrl+D quit',
-            self::PHASE_SUMMARY => 'Esc exit · Ctrl+D quit',
-            default => '↑/↓ select · Enter confirm · Esc back · Ctrl+D quit',
+            self::PHASE_PICKER => '↑/↓ select · Enter confirm · Esc exit',
+            self::PHASE_INPUT => 'Enter submit · Esc back',
+            self::PHASE_CUSTOM => '↑/↓ select · Enter edit/toggle · Esc back',
+            self::PHASE_SUMMARY => 'Esc exit',
+            default => '↑/↓ select · Enter confirm · Esc back',
         };
         $this->footerWidget->setText((new Style(dim: true))->apply($plain));
     }
@@ -1187,12 +1276,12 @@ final class SetupScreen
                 true === ($this->formState['editing'] ?? false) ? 'Edit your server' : 'Add your own server'
             );
             $this->stepWidget->setText(
-                (new Style(dim: true))->apply('All options on one screen — edit any row, then save')
+                (new Style(dim: true))->apply('Connection and model settings')
             );
 
             return;
         }
-        $this->titleWidget->setText('AI Provider Setup');
+        $this->titleWidget->setText($this->theme?->color(ThemeColorEnum::Accent, 'AI Provider Setup') ?? 'AI Provider Setup');
         $this->stepWidget->setText('');
     }
 

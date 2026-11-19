@@ -62,7 +62,7 @@ Bash settings: `tools.background_process.path` (`.hatfield/tmp/bg`),
 
 ## Recurring work: `schedule`
 
-Enable the optional built-in extension with `hatfield extensions:setup`: select
+Enable the optional built-in extension with the Extensions tab in `hatfield setup`: select
 **Scheduling (built in)**, enable for the parent, save and restart Hatfield.
 No Composer package is needed. If `schedule` is absent from the current tool
 catalog, explain this prerequisite; do not assume availability or change settings

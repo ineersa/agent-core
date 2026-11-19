@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsDescriptions;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\SettingsValueResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -44,7 +45,10 @@ final class TuiSettingsShowVirtualTest extends TestCase
             $cwd = $tmp.'/project';
             TestDirectoryIsolation::ensureDirectory($home.'/.hatfield');
             TestDirectoryIsolation::createHatfieldTree($cwd);
-            file_put_contents($cwd.'/.hatfield/settings.yaml', Yaml::dump([
+            $settingsPath = $cwd.'/.hatfield/settings.yaml';
+            $this->assertSame($cwd.'/.hatfield', realpath(\dirname($settingsPath)));
+            $this->assertFalse(is_link($settingsPath));
+            file_put_contents($settingsPath, Yaml::dump([
                 'tui' => ['transcript' => ['thinking' => ['visible' => false]]],
             ], 6, 4));
 
@@ -57,6 +61,7 @@ final class TuiSettingsShowVirtualTest extends TestCase
                 $resources,
                 new AppConfig(tui: new TuiConfig(theme: 'cyberpunk'), logging: new LoggingConfig(), raw: $bootRaw, cwd: $cwd),
                 new SettingsValueResolver(PropertyAccess::createPropertyAccessorBuilder()->enableExceptionOnInvalidIndex()->getPropertyAccessor()),
+                new SettingsDescriptions(),
             );
             $catalog = new SlashCommandCatalog();
             $harness = new VirtualTuiHarness(sessionId: 'settings-show-virtual');

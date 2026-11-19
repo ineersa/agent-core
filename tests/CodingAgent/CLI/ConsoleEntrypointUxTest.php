@@ -57,9 +57,8 @@ final class ConsoleEntrypointUxTest extends TestCase
             'agents:init',
             'auth:chatgpt',
             'auth:grok',
-            'extensions:setup',
+            'setup',
             'providers:update',
-            'providers:setup',
             'completion:file-index:refresh',
             'log:clear',
             'log:files',
@@ -77,7 +76,7 @@ final class ConsoleEntrypointUxTest extends TestCase
             );
         }
 
-        foreach (['cache:clear', 'debug:container', 'doctrine:migrations:migrate', 'messenger:consume'] as $hidden) {
+        foreach (['cache:clear', 'debug:container', 'doctrine:migrations:migrate', 'messenger:consume', 'providers:setup', 'extensions:setup'] as $hidden) {
             $this->assertDoesNotMatchRegularExpression(
                 '/^'.preg_quote($hidden, '/').'\b/m',
                 $listOut,

@@ -657,6 +657,8 @@ parameters:
       - SymfonyYaml
 
     AppConfig:
+      - SymfonySerializer
+      - SymfonyValidator
       - AppSession
       - SymfonyTui
       - SymfonyConsole

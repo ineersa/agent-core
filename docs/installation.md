@@ -61,10 +61,10 @@ the previous executable.
 Provider definitions ship disabled. Open the setup screen explicitly:
 
 ```bash
-hatfield providers:setup
+hatfield setup
 ```
 
-Enable a provider and configure its credentials. Then start a session in your project:
+Use the Providers tab to enable a provider and configure its credentials. Settings and Extensions are available in the same app. It edits user settings by default; run `hatfield setup --project` from a project to edit that project instead. Then start a session in your project:
 
 ```bash
 cd /path/to/your/project
@@ -151,8 +151,8 @@ The gate runs before extension classes, the TUI session, controllers and consume
 start. Headless/controller commands, workers, child runs and `--no-interaction`
 invocations never check, prompt or update. Same-process `/reload` does not check
 again because PHP cannot replace already-declared classes; exit and launch a new
-Hatfield process to check again. `extensions:setup` retains its install/configure
-purpose and does not implicitly upgrade installed packages.
+Hatfield process to check again. Use the Extensions tab in `hatfield setup` to install and configure
+packages. It does not implicitly upgrade installed packages.
 
 ## Troubleshoot installation
 
@@ -166,7 +166,7 @@ purpose and does not implicitly upgrade installed packages.
 | Checksum mismatch | Check the download and release checksum. Do not bypass verification. |
 | Candidate smoke failed | Read the reported startup error. Correct PHP requirements or select a compatible release asset. |
 | Missing release asset | Check that the requested release published your platform's artifact. |
-| No usable model | Run `hatfield providers:setup`, then check `/model` and your credentials. |
+| No usable model | Open the Providers tab in `hatfield setup`, then check `/model` and your credentials. |
 
 See [settings](settings.md) for configuration precedence and [sessions](session-storage.md)
 for stored conversations and recovery limitations.

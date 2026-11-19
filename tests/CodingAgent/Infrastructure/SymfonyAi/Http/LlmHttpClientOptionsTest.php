@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\Http;
 
+use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpClientOptions;
 use PHPUnit\Framework\TestCase;
 
@@ -12,8 +13,8 @@ final class LlmHttpClientOptionsTest extends TestCase
     public function testConstructUsesDefaultsAndExplicitValues(): void
     {
         $defaults = new LlmHttpClientOptions();
-        $this->assertSame(LlmHttpClientOptions::DEFAULT_TIMEOUT, $defaults->timeout);
-        $this->assertSame(LlmHttpClientOptions::DEFAULT_MAX_DURATION, $defaults->maxDuration);
+        $this->assertSame(AiHttpConfig::DEFAULT_TIMEOUT, $defaults->timeout);
+        $this->assertSame(AiHttpConfig::DEFAULT_MAX_DURATION, $defaults->maxDuration);
 
         $explicit = new LlmHttpClientOptions(60, 300);
         $this->assertSame(60, $explicit->timeout);

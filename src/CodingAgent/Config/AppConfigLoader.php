@@ -111,6 +111,16 @@ final class AppConfigLoader
         $projectSettingsPath = rtrim($cwd, '/').'/.hatfield/settings.yaml';
         $projectRaw = $this->loadYamlFile($projectSettingsPath);
 
+        return $this->resolveLayers($cwd, $defaultsRaw, $userRaw, $projectRaw);
+    }
+
+    /**
+     * @param array<string, mixed> $defaultsRaw
+     * @param array<string, mixed> $userRaw
+     * @param array<string, mixed> $projectRaw
+     */
+    public function resolveLayers(string $cwd, array $defaultsRaw, array $userRaw, array $projectRaw): SettingsResolutionDTO
+    {
         $merged = $defaultsRaw;
         if ([] !== $userRaw) {
             $merged = $this->overlayConfig($merged, $userRaw);

@@ -55,7 +55,7 @@ Hatfield includes provider definitions but leaves them disabled. Open the provid
 setup screen to enable a provider and configure credentials:
 
 ```bash
-hatfield providers:setup
+hatfield setup
 ```
 
 Then start Hatfield in your project:

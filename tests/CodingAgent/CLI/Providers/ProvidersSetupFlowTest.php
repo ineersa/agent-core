@@ -630,12 +630,13 @@ YAML);
         );
 
         $flow->disable('local-llm');
+        $flow->updateProviderField('local-llm', 'base_url', 'http://127.0.0.1:9000');
 
         $settings = $this->parseUserSettings();
         $provider = $settings['ai']['providers']['local-llm'] ?? null;
         $this->assertIsArray($provider);
         $this->assertFalse($provider['enabled']);
-        $this->assertSame('http://127.0.0.1:8080', $provider['base_url']);
+        $this->assertSame('http://127.0.0.1:9000', $provider['base_url']);
         $this->assertSame('env:LOCAL_KEY', $provider['api_key']);
         $this->assertArrayHasKey('my-model', $provider['models']);
         $this->assertTrue($provider['compatibility']['supports_developer_role']);
@@ -644,7 +645,7 @@ YAML);
         $flow->enableCustom('local-llm');
         $settings = $this->parseUserSettings();
         $this->assertTrue($settings['ai']['providers']['local-llm']['enabled']);
-        $this->assertSame('http://127.0.0.1:8080', $settings['ai']['providers']['local-llm']['base_url']);
+        $this->assertSame('http://127.0.0.1:9000', $settings['ai']['providers']['local-llm']['base_url']);
     }
 
     private function createFlow(?AiConfig $ai = null, bool $project = false): ProvidersSetupFlow

@@ -18,8 +18,30 @@
 #   ~                     Home directory
 #   relative paths        Resolved against the settings file's containing directory
 
+# Choose the default model, reasoning and HTTP behavior.
+ai:
+    # Model used when starting a new session.
+    default_model: null
+    # Default reasoning effort for new sessions.
+    default_reasoning: null
+    # Ordered list of favorite provider/model references.
+    favorite_models: []
+    http:
+        # Idle request timeout in seconds.
+        timeout: null
+        # Total request duration limit in seconds.
+        max_duration: null
+        # Maximum number of attempts after a transient error.
+        max_retries: null
+        # Initial retry delay in milliseconds.
+        base_delay_ms: null
+        # Maximum retry delay in milliseconds.
+        max_delay_ms: null
+
 tui:
+    # Color theme used by the terminal interface.
     theme: cyberpunk
+    # Directories searched for custom themes.
     theme_paths:
         - '%kernel.project_dir%/config/themes'
         - '.hatfield/themes'
@@ -42,6 +64,7 @@ tui:
             diff_lines: 20
 
 sessions:
+    # Directory that stores session history and attachments.
     path: '.hatfield/sessions'
 
 # ---------------------------------------------------------------------------
@@ -76,6 +99,10 @@ compaction:
     # Thinking/reasoning level for summarization calls.
     # When null, the session's active thinking level is used.
     thinking_level: null
+    # Override compaction thresholds, models or reasoning by provider ID.
+    provider_overrides: []
+    # Override compaction thresholds, models or reasoning by model reference.
+    model_overrides: []
 
     # Per-provider override settings.
     # Each entry can set: compact_after_tokens, model, thinking_level.
@@ -113,8 +140,11 @@ context_budget_reminders:
     # Urgent wrap-up when remaining context drops strictly below this (sole reserve).
     urgent_remaining_tokens: 25000
 
+    # Suppress reminders in the main session.
     disable_for_main: true
+    # Suppress reminders in forked sessions.
     disable_for_forks: false
+    # Suppress reminders in named subagent sessions.
     disable_for_subagents: false
 
 # ---------------------------------------------------------------------------
@@ -225,6 +255,7 @@ tools:
 # hooks and approvals; any launcher sandbox (for example hatfield-safe /
 # bubblewrap) is inherited rather than created by this tool.
     code_mode:
+        # Allow scripts to orchestrate Hatfield tools.
         enabled: false
 
 # ---------------------------------------------------------------------------
@@ -249,6 +280,7 @@ tools:
 # enabled.
 #
 extensions:
+    # Extension classes enabled for the parent session.
     enabled:
         - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
 
@@ -277,6 +309,7 @@ extensions:
     #
     # Writes/edits outside the current working directory (can be allowlisted).
     #
+    # Extension-owned options keyed by extension name. May include credentials.
     settings:
         safe_guard:
             # Tool names used for matching (configurable to support custom tool aliases).
@@ -339,6 +372,7 @@ logging:
 # prompts:
 #   - '.hatfield/team-prompts'
 #   - '~/shared/prompts/review.md'
+# Additional prompt template files and directories.
 prompts: []
 
 # ---------------------------------------------------------------------------
@@ -378,6 +412,8 @@ runtime:
 agents:
     # Whether agent discovery is enabled.
     enabled: true
+    # Maximum time in seconds a named subagent may spend on one tool call.
+    subagent_tool_timeout_seconds: 86400
 
     # Durable deferred-batch deadline (seconds) for foreground subagent tool execution.
     # Schedules timeout interruption (DelayStamp + InterruptDeferredSubagentBatchMessage).
@@ -395,6 +431,7 @@ agents:
     # Omitted frontmatter extensions means no optional child extensions — never inherits
     # optional entries from global extensions.enabled.
     extensions:
+        # Extensions always available in this kind of child session.
         always_on:
             - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
 
@@ -404,6 +441,7 @@ agents:
     # paths:
     #     - ~/shared/agents/custom-reviewer.md
     #     - .hatfield/team-agents
+    # Additional agent definition files or directories.
     paths: []
 
 # ---------------------------------------------------------------------------
@@ -414,7 +452,7 @@ agents:
 # config/ai-catalog.yaml (bundled default). First load copies that file to
 # ~/.hatfield/ai-catalog.yaml; runtime reads the user copy. `hatfield providers:update`
 # rebases the user catalog onto the bundled default and syncs models.dev metadata.
-# Interactive enablement: `bin/console providers:setup` (see providers-setup-command).
+# Interactive enablement: `bin/console setup`.
 #
 # User/project settings stay sparse overlays for known providers, for example:
 #   ai:
@@ -428,13 +466,18 @@ agents:
 #
 
 forks:
+    # Let the assistant branch the conversation into a child run.
     enabled: true
+    # Model used for forks, or null to inherit the parent model.
     model: null
+    # Reasoning effort for forks, or null to inherit from the parent.
     thinking_level: null
     # Child-run extension selection for forks.
     # Effective allowlist = always_on ∪ enabled (stable first-seen).
     # Does not inherit optional entries from global extensions.enabled.
     extensions:
+        # Extensions always available in this kind of child session.
         always_on:
             - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+        # Optional extension classes available to forks.
         enabled: []

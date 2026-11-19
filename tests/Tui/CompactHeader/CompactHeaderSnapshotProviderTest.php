@@ -51,9 +51,6 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
     protected function setUp(): void
     {
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('compact-header-provider');
-        putenv('HOME='.$this->tmpDir);
-        $_ENV['HOME'] = $this->tmpDir;
-        $_SERVER['HOME'] = $this->tmpDir;
     }
 
     protected function tearDown(): void

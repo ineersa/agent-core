@@ -30,7 +30,7 @@ final class SettingsTextInputWidget extends SelectListWidget
     private Line $line;
     private string $prompt;
 
-    public function __construct(string $initial = '', string $prompt = '> ')
+    public function __construct(private readonly string $initial = '', string $prompt = '> ', private readonly bool $secret = false, private readonly bool $cancelUnchanged = false)
     {
         parent::__construct([]);
         $this->line = new Line($initial, \strlen($initial));
@@ -48,7 +48,6 @@ final class SettingsTextInputWidget extends SelectListWidget
     public function handleInput(string $data): void
     {
         // Do not touch parent KeybindingsTrait::$onInput (private to SelectListWidget).
-        // Ctrl+D quit is wired on the SettingsListWidget itself; Esc cancels this submenu.
 
         $pasted = $this->processBracketedPaste($data);
         if (null !== $pasted) {
@@ -66,9 +65,15 @@ final class SettingsTextInputWidget extends SelectListWidget
             return;
         }
         if ($kb->matches($data, 'select_confirm')) {
+            $value = $this->line->getText();
+            if (($this->secret && '' === trim($value)) || ($this->cancelUnchanged && $value === $this->initial)) {
+                $this->dispatch(new CancelEvent($this));
+
+                return;
+            }
             $this->dispatch(new SelectEvent($this, [
-                'value' => $this->line->getText(),
-                'label' => $this->line->getText(),
+                'value' => $value,
+                'label' => $this->secret ? '' : $value,
             ]));
 
             return;
@@ -102,6 +107,10 @@ final class SettingsTextInputWidget extends SelectListWidget
      */
     public function render(RenderContext $context): array
     {
+        if ($this->secret) {
+            return [AnsiUtils::truncateToWidth('Hidden input · Enter applies · Esc cancels', $context->getColumns(), '')];
+        }
+
         $width = max(0, $context->getColumns() - AnsiUtils::visibleWidth($this->prompt));
         $before = substr($this->line->getText(), 0, $this->line->getCursor());
         $after = substr($this->line->getText(), $this->line->getCursor());
