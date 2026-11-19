@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SetupSettingsService;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\Tui\Setup\CoreSettingsScreen;
 use Ineersa\Tui\Setup\ExtensionsSetupScreen;
 use Ineersa\Tui\Setup\SetupScreen;
@@ -30,8 +30,10 @@ use Symfony\Component\Tui\Widget\TextWidget;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Yaml\Yaml;
 
-final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
+final class UnifiedSetupScreenTest extends PerMethodIsolatedKernelTestCase
 {
+    protected const bool ISOLATE_HOME = true;
+
     public function testNavigationAndProjectOverrideSaveAndReset(): void
     {
         $container = self::getContainer();
@@ -42,6 +44,8 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
         $original = file_get_contents($path);
         $writer = $container->get(SettingsOverrideWriter::class);
         $userPath = $writer->layerPath(SettingsLayerEnum::User, $cwd);
+        $this->assertSame($this->isolatedHome().'/.hatfield', realpath(\dirname($userPath)));
+        $this->assertFalse(is_link($userPath));
         $originalUser = is_file($userPath) ? file_get_contents($userPath) : null;
         $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
         $provider = null;
@@ -177,10 +181,7 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
         $writer = $container->get(SettingsOverrideWriter::class);
         $project = $writer->layerPath(SettingsLayerEnum::Project, $cwd);
         $user = $writer->layerPath(SettingsLayerEnum::User, $cwd);
-        $home = getenv('HATFIELD_QA_TEST_HOME');
-        $this->assertIsString($home);
-        $this->assertNotSame('', $home);
-        $this->assertSame($home.'/.hatfield', realpath(\dirname($user)));
+        $this->assertSame($this->isolatedHome().'/.hatfield', realpath(\dirname($user)));
         $this->assertFalse(is_link($user));
         $this->assertSame($cwd.'/.hatfield', realpath(\dirname($project)));
         $this->assertFalse(is_link($project));
@@ -218,6 +219,8 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
         $this->assertSame($cwd.'/.hatfield', realpath(\dirname($project)));
         $this->assertFalse(is_link($project));
         $user = $writer->layerPath(SettingsLayerEnum::User, $cwd);
+        $this->assertSame($this->isolatedHome().'/.hatfield', realpath(\dirname($user)));
+        $this->assertFalse(is_link($user));
         $before = is_file($user) ? file_get_contents($user) : null;
         $writer->set(SettingsLayerEnum::Project, $cwd, 'ai.http.timeout', 42);
         $settings = $container->get(SetupSettingsService::class);

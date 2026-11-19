@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
 use Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowConfiguration;
 use Ineersa\Tui\Setup\ExtensionsSetupScreen;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
@@ -25,8 +25,10 @@ use Symfony\Component\Tui\Widget\SettingsListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 use Symfony\Component\Yaml\Yaml;
 
-final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
+final class ExtensionsSetupScreenTest extends PerMethodIsolatedKernelTestCase
 {
+    protected const bool ISOLATE_HOME = true;
+
     public function testDisablingParentClearsChildControlsAndSavesWithoutManualYamlEdits(): void
     {
         $flow = self::getContainer()->get(ExtensionsSetupFlow::class);
@@ -129,10 +131,7 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
             $writer = self::getContainer()->get(SettingsOverrideWriter::class);
             $cwd = $this->isolatedCwd();
             $user = $writer->layerPath(SettingsLayerEnum::User, $cwd);
-            $home = getenv('HATFIELD_QA_TEST_HOME');
-            $this->assertIsString($home);
-            $this->assertNotSame('', $home);
-            $this->assertSame($home.'/.hatfield', realpath(\dirname($user)));
+            $this->assertSame($this->isolatedHome().'/.hatfield', realpath(\dirname($user)));
             $this->assertFalse(is_link($user));
             $key = 'extensions.settings.task_workflow.hooks.setup';
             $inherited = ['script' => 'inherited.sh', 'timeout_seconds' => 21];
@@ -154,10 +153,12 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
         }
     }
 
-    protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
+    protected function afterKernelBoot(): void
     {
-        self::assertSame($classCwd, realpath($classCwd));
-        self::assertSame($classCwd.'/.hatfield', realpath($classCwd.'/.hatfield'));
+        $classCwd = $this->isolatedCwd();
+        $this->assertSame($classCwd, realpath($classCwd));
+        $this->assertSame($classCwd.'/.hatfield', realpath($classCwd.'/.hatfield'));
+        $this->assertFalse(is_link($classCwd.'/.hatfield/settings.yaml'));
         file_put_contents($classCwd.'/.hatfield/settings.yaml', Yaml::dump([
             'extensions' => [
                 'enabled' => [SafeGuardExtension::class, SchedulingExtension::class],
