@@ -75,7 +75,14 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
             $terminal->simulateInput("\x1b"); // Return focus to the tab header.
             $this->assertSame($tabs, $tui->getFocus());
             $terminal->simulateInput("\r"); // Re-enter without changing tabs.
-            $this->select($tui, 'forks');
+            $this->assertArrayNotHasKey('model', Yaml::parseFile($path)['compaction'] ?? []);
+            $this->select($tui, 'compaction');
+            $this->select($tui, 'compaction.model');
+            $this->select($tui, ':session'); // Use session default (explicit null).
+            $this->select($tui, 'Save');
+            $saved = Yaml::parseFile($path);
+            $this->assertArrayHasKey('model', $saved['compaction'] ?? []);
+            $this->assertNull($saved['compaction']['model']);
         } finally {
             $tui->stop();
         }

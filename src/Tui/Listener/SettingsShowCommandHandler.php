@@ -23,13 +23,14 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
         private readonly AppResourceLocator $resources,
         private readonly AppConfig $activeConfig,
         private readonly SettingsValueResolver $valueResolver,
+        private readonly SettingsDescriptions $settingsDescriptions,
     ) {
     }
 
     public function handle(SlashCommand $command): CommandResult
     {
         $resolution = $this->loader->load($this->resources->getDefaultsPath(), $this->activeConfig->cwd);
-        $descriptions = (new SettingsDescriptions())->extract($this->resources->getDefaultsPath(), $resolution->defaultsRaw);
+        $descriptions = $this->settingsDescriptions->extract($this->resources->getDefaultsPath(), $resolution->defaultsRaw);
         $filter = trim($command->args);
 
         return new TranscriptMessage(
