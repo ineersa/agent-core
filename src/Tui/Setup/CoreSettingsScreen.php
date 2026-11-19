@@ -12,69 +12,87 @@ use Ineersa\CodingAgent\Config\SetupSettingsService;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\SelectEvent;
+use Symfony\Component\Tui\Event\SelectionChangeEvent;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
-final readonly class CoreSettingsScreen
+final class CoreSettingsScreen
 {
     private const GROUPS = [
-        'tui' => ['tui.theme', 'tui.transcript.previews.expanded_by_default'],
-        'forks' => ['forks.enabled'],
-        'compaction' => ['compaction.auto_enabled', 'compaction.model', 'compaction.thinking_level'],
+        'Appearance' => ['tui.theme', 'tui.transcript.previews.expanded_by_default'],
+        'Delegation' => ['forks.enabled'],
+        'Compaction' => ['compaction.auto_enabled', 'compaction.model', 'compaction.thinking_level'],
     ];
 
+    private const HELP = [
+        'tui.theme' => ['Color theme', 'Choose the colors used by Hatfield.'],
+        'tui.transcript.previews.expanded_by_default' => ['Expand previews', 'Show tool output and diffs expanded by default.'],
+        'forks.enabled' => ['Allow forks', 'Let the assistant branch the conversation into a child run.'],
+        'compaction.auto_enabled' => ['Automatic compaction', 'Summarize older context as the conversation grows.'],
+        'compaction.model' => ['Compaction model', 'Choose which model summarizes older context.'],
+        'compaction.thinking_level' => ['Compaction reasoning', 'Choose how much reasoning the summarizer uses.'],
+    ];
+
+    private bool $draft = false;
+
     public function __construct(
-        private SetupSettingsService $settings,
-        private ThemeRegistry $themes,
-        private LoggerInterface $logger,
+        private readonly SetupSettingsService $settings,
+        private readonly ThemeRegistry $themes,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
-    public function mount(Tui $tui, ContainerWidget $pane, SettingsLayerEnum $layer, ProvidersSetupFlowInterface $providers, \Closure $back): void
+    public function hasDraft(): bool
     {
-        $show = static function (string $text, array $items, \Closure $pick, \Closure $cancel) use ($tui, $pane): void {
-            $list = new SelectListWidget($items, maxVisible: 9);
+        return $this->draft;
+    }
+
+    public function mount(Tui $tui, ContainerWidget $pane, SettingsLayerEnum $layer, ProvidersSetupFlowInterface $providers, \Closure $back, \Closure $heading): void
+    {
+        $show = static function (string $text, array $items, \Closure $pick, \Closure $cancel) use ($tui, $pane, $heading): void {
+            $descriptions = array_column($items, 'description', 'value');
+            $list = new SelectListWidget(array_map(static fn (array $item): array => ['value' => $item['value'], 'label' => $item['label']], $items), maxVisible: 9);
             $list->onSelect(static fn (SelectEvent $event) => $pick($event->getValue()));
             $list->onCancel($cancel);
-            $pane->clear()->add(new TextWidget($text))->add($list);
+            [$title, $details] = array_pad(explode("\n", $text, 2), 2, '');
+            $explanation = new TextWidget($descriptions[$list->getSelectedItem()['value'] ?? ''] ?? $details);
+            $list->onSelectionChange(static function (SelectionChangeEvent $event) use ($explanation, $descriptions, $details): void {
+                $explanation->setText($descriptions[$event->getValue()] ?? $details);
+            });
+            $pane->clear()->add($heading($title))->add($explanation)->add($list);
             $tui->setFocus($list);
         };
         $menu = function () use ($show, $layer, $providers, $back, &$menu): void {
-            $snapshot = $this->settings->load();
-            $help = $this->settings->descriptions($snapshot);
-            $groups = array_values(array_diff(array_keys($snapshot->defaultsRaw), ['ai', 'extensions']));
-            $show('Choose a settings group', self::items($groups), function (string $group) use ($show, $help, $layer, $providers, &$menu): void {
-                $paths = self::GROUPS[$group] ?? [];
-                foreach ($help as $path => $description) {
-                    if (str_starts_with($path, $group.'.') && !\in_array($path, $paths, true)) {
-                        $paths[] = $path;
+            $show("Preferences\nEdit common preferences here. For the complete inventory, use /settings-show.", self::items(array_keys(self::GROUPS)), function (string $group) use ($show, $layer, $providers, &$menu): void {
+                $section = function () use ($show, $group, $layer, $providers, &$menu, &$section): void {
+                    $snapshot = $this->settings->load();
+                    $items = [];
+                    foreach (self::GROUPS[$group] as $path) {
+                        [$label, $description] = self::HELP[$path];
+                        $value = self::display($this->settings->resolver->resolve($snapshot, $path));
+                        $items[] = ['value' => $path, 'label' => $label.' · '.$value, 'description' => $description];
                     }
-                }
-                $show($help[$group] ?? $group, self::items([...$paths, 'Back']), function (string $key) use ($show, $group, $help, $layer, $providers, &$menu): void {
-                    if ('Back' === $key) {
-                        $menu();
-                    } elseif (\in_array($key, self::GROUPS[$group] ?? [], true)) {
-                        $this->edit($show, $layer, $key, $help[$key] ?? '', $providers, $menu);
-                    } else {
-                        $show($key." · Read only\n".($help[$key] ?? ''), self::items(['Back']), $menu, $menu);
-                    }
-                }, $menu);
+                    $show($group."\nChoose a preference to edit.", $items, fn (string $key) => $this->edit($show, $layer, $key, $providers, $section), $menu);
+                };
+                $section();
             }, $back);
         };
         $menu();
     }
 
-    private function edit(\Closure $show, SettingsLayerEnum $layer, string $key, string $help, ProvidersSetupFlowInterface $providers, \Closure $back): void
+    private function edit(\Closure $show, SettingsLayerEnum $layer, string $key, ProvidersSetupFlowInterface $providers, \Closure $back): void
     {
+        $this->draft = false;
+        [$label, $help] = self::HELP[$key];
         $snapshot = $this->settings->load();
         $resolver = $this->settings->resolver;
         $local = SettingsLayerEnum::User === $layer ? $snapshot->userRaw : $snapshot->projectRaw;
         $localValue = $resolver->resolve(new SettingsResolutionDTO([], [], [], $local), $key);
         $effective = $resolver->resolve($snapshot, $key);
         $reset = $resolver->resolve($this->settings->withoutOverride($snapshot, $layer, $key), $key);
-        $details = $key."\n".$help."\nEffective: ".self::display($effective).' ('.($effective->layer->value ?? 'no source').')';
+        $details = $label."\n".$help."\nEffective: ".self::display($effective).' ('.($effective->layer->value ?? 'no source').')';
         $details .= "\nSelected scope: ".($localValue->exists ? self::display($localValue) : 'inherited');
         if (SettingsLayerEnum::User === $layer && SettingsLayerEnum::Project === $effective->layer) {
             $details .= ' · overridden by project';
@@ -92,21 +110,16 @@ final readonly class CoreSettingsScreen
         if ($localValue->exists) {
             $items[] = ['value' => ':reset', 'label' => 'Reset override → '.self::display($reset)];
         }
-        $items[] = ['value' => ':back', 'label' => 'Back'];
-        $show($details, $items, function (string $option) use ($show, $layer, $key, $back, $help, $providers): void {
-            if (':back' === $option) {
-                $back();
-
-                return;
-            }
-            $retry = fn () => $this->edit($show, $layer, $key, $help, $providers, $back);
+        $show($details, $items, function (string $option) use ($show, $layer, $key, $label, $back, $providers): void {
+            $this->draft = true;
+            $retry = fn () => $this->edit($show, $layer, $key, $providers, $back);
             $draft = match ($option) {
                 ':session', ':reset' => null,
                 'true' => true,
                 'false' => false,
                 default => $option,
             };
-            $show('Pending: '.$key.' → '.(':reset' === $option ? 'remove override' : $option), self::items(['Save', 'Discard']), function (string $answer) use ($show, $layer, $key, $option, $draft, $retry): void {
+            $show($label."\nPending: ".(':reset' === $option ? 'remove override' : $option), self::items(['Save', 'Discard']), function (string $answer) use ($show, $layer, $key, $option, $draft, $retry): void {
                 if ('Save' !== $answer) {
                     $retry();
 
@@ -119,7 +132,8 @@ final readonly class CoreSettingsScreen
                     $this->logger->notice('settings.setup.refused', ['component' => 'setup', 'event_type' => 'settings.setup.refused', 'exception_class' => $error::class]);
                     $message = 'Not saved. Check the setting and target YAML.';
                 }
-                $show($message, self::items(['Back']), $retry, $retry);
+                $this->draft = false;
+                $show($message."\nPress Enter to continue.", self::items(['Continue']), $retry, $retry);
             }, $retry);
         }, $back);
     }
@@ -140,6 +154,8 @@ final readonly class CoreSettingsScreen
      */
     private static function items(array $values): array
     {
-        return array_map(static fn (string $value): array => ['value' => $value, 'label' => $value], $values);
+        return array_map(static fn (string $value): array => ['value' => $value, 'label' => match ($value) {
+            'true' => 'On', 'false' => 'Off', default => $value,
+        }], $values);
     }
 }

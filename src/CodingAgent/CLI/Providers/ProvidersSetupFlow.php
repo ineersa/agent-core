@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\Tui\Setup\ProvidersSetupFlowInterface;
 
 /**
- * Headless providers:setup mutations. Owns sparse writes + in-run state;
+ * Headless setup mutations. Owns sparse writes + in-run state;
  * the TUI screen drives I/O against {@see ProvidersSetupFlowInterface}.
  */
 final class ProvidersSetupFlow implements ProvidersSetupFlowInterface

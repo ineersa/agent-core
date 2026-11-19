@@ -4,30 +4,29 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Setup;
 
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\TuiTheme;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SettingChangeEvent;
 use Symfony\Component\Tui\Event\SubmitEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Style\Border;
 use Symfony\Component\Tui\Style\Color;
 use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
-use Symfony\Component\Tui\Widget\InputWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\SettingItem;
 use Symfony\Component\Tui\Widget\SettingsListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
- * Standalone providers:setup TUI — not coupled to ChatScreen / InteractiveMode.
+ * Standalone setup TUI — not coupled to ChatScreen / InteractiveMode.
  *
- * Booted by {@see \Ineersa\CodingAgent\CLI\Providers\ProvidersSetupCommand}
+ * Mounted by the unified setup application
  * against a {@see ProvidersSetupFlowInterface} implementation.
  */
 final class SetupScreen
@@ -68,9 +67,10 @@ final class SetupScreen
     public function __construct(
         private readonly ProvidersSetupFlowInterface $flow,
         private readonly LoggerInterface $logger = new NullLogger(),
+        private readonly ?TuiTheme $theme = null,
     ) {
-        $this->titleWidget = new TextWidget('AI Provider Setup');
-        $this->titleWidget->setStyle(new Style(bold: true, color: Color::named('cyan')));
+        $this->titleWidget = new TextWidget('');
+        $this->titleWidget->setStyle(new Style(bold: true));
 
         $this->panelWidget = new ContainerWidget();
         $this->panelWidget->setStyle(new Style(
@@ -86,9 +86,6 @@ final class SetupScreen
         $this->listWidget = new SelectListWidget([], maxVisible: 12);
         $this->inputWidget = new SetupInputWidget();
         $this->settingsWidget = new SettingsListWidget([], maxVisible: 16);
-        $this->applyQuitSetupBindings($this->listWidget);
-        $this->applyQuitSetupBindings($this->inputWidget);
-        $this->applyQuitSetupBindings($this->settingsWidget);
 
         // Static panel chrome — list/input/settings are mounted by applyPhaseLayout().
         $this->panelWidget->add($this->stepWidget);
@@ -111,6 +108,11 @@ final class SetupScreen
         $root->add($this->footerWidget);
 
         $this->showPicker();
+    }
+
+    public function hasDraft(): bool
+    {
+        return self::PHASE_CUSTOM === $this->phase || self::PHASE_INPUT === $this->phase || self::PHASE_CONFIRM === $this->phase;
     }
 
     private function wireListListeners(): void
@@ -138,7 +140,6 @@ final class SetupScreen
                 $this->showPicker();
             }
         });
-        $this->listWidget->onInput($this->quitOnCtrlD(...));
     }
 
     private function wireInputListeners(): void
@@ -151,7 +152,6 @@ final class SetupScreen
         $this->inputWidget->onCancel(function (CancelEvent $_): void {
             $this->showPicker();
         });
-        $this->inputWidget->onInput($this->quitOnCtrlD(...));
     }
 
     private function wireSettingsListeners(): void
@@ -168,7 +168,6 @@ final class SetupScreen
                 $this->hintWidget->setText('Choose Save and enable or Discard changes.');
             }
         });
-        $this->settingsWidget->onInput($this->quitOnCtrlD(...));
     }
 
     private function attempt(\Closure $action): void
@@ -191,28 +190,6 @@ final class SetupScreen
             return;
         }
         $this->showPicker();
-    }
-
-    private function quitOnCtrlD(string $data): bool
-    {
-        if ($this->listWidget->getKeybindings()->matches($data, 'quit_setup')) {
-            if (null !== $this->back && self::PHASE_CUSTOM === $this->phase) {
-                $this->hintWidget->setText('Choose Save and enable or Discard changes.');
-            } else {
-                $this->finishSuccess();
-            }
-
-            return true;
-        }
-
-        return false;
-    }
-
-    private function applyQuitSetupBindings(SelectListWidget|InputWidget|SettingsListWidget $widget): void
-    {
-        $widget->setKeybindings(new Keybindings([
-            'quit_setup' => [Key::ctrl('d')],
-        ]));
     }
 
     private function onListSelect(string $value): void
@@ -289,11 +266,6 @@ final class SetupScreen
 
     private function handleServersSelect(string $value): void
     {
-        if ('back' === $value) {
-            $this->showPicker();
-
-            return;
-        }
         if ('add' === $value) {
             $this->startCustom();
 
@@ -544,7 +516,6 @@ final class SetupScreen
         // unattached instance, which would orphan the previously mounted form.
         $this->panelWidget->remove($this->settingsWidget);
         $this->settingsWidget = new SettingsListWidget($this->customSettingItems(), maxVisible: 16);
-        $this->applyQuitSetupBindings($this->settingsWidget);
         $this->refreshError();
         $this->refreshFooter();
         $this->applyPhaseLayout();
@@ -601,9 +572,10 @@ final class SetupScreen
             'apiKey',
             'API key',
             $apiKeyDisplay,
-            'Use an environment reference or paste a raw key. Ctrl+R in the editor clears it.',
+            'Use an environment reference or paste a raw key.',
             submenu: static fn (): SettingsTextInputWidget => new SettingsTextInputWidget(secret: true),
         );
+        $items[] = new SettingItem('clearApiKey', 'Clear API key', '', values: ['clear']);
         $items[] = new SettingItem(
             'modelsSaved',
             'Saved models',
@@ -701,6 +673,7 @@ final class SetupScreen
                 'baseUrl' => $this->formState['baseUrl'] = rtrim(trim($value), '/'),
                 'completionsPath' => $this->formState['completionsPath'] = $this->normalizePath($value),
                 'apiKey' => $this->formState['apiKey'] = $this->normalizeApiKeyInput($value),
+                'clearApiKey' => $this->formState['apiKey'] = null,
                 'modelId' => $this->setModelId($value),
                 'modelName' => $this->formState['modelName'] = trim($value),
                 'contextWindow' => $this->formState['contextWindow'] = $this->normalizePositiveInt($value, 'Context window', '128000'),
@@ -1092,7 +1065,6 @@ final class SetupScreen
             ];
         }
         $items[] = ['value' => 'add', 'label' => 'Add a new server'];
-        $items[] = ['value' => 'back', 'label' => 'Back'];
 
         return $items;
     }
@@ -1206,11 +1178,11 @@ final class SetupScreen
     private function refreshFooter(): void
     {
         $plain = match ($this->phase) {
-            self::PHASE_PICKER => '↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit',
-            self::PHASE_INPUT => 'Enter submit · Esc back · Ctrl+D quit',
-            self::PHASE_CUSTOM => '↑/↓ select · Enter edit/toggle · Esc back · Ctrl+D quit',
-            self::PHASE_SUMMARY => 'Esc exit · Ctrl+D quit',
-            default => '↑/↓ select · Enter confirm · Esc back · Ctrl+D quit',
+            self::PHASE_PICKER => '↑/↓ select · Enter confirm · Esc exit',
+            self::PHASE_INPUT => 'Enter submit · Esc back',
+            self::PHASE_CUSTOM => '↑/↓ select · Enter edit/toggle · Esc back',
+            self::PHASE_SUMMARY => 'Esc exit',
+            default => '↑/↓ select · Enter confirm · Esc back',
         };
         $this->footerWidget->setText((new Style(dim: true))->apply($plain));
     }
@@ -1227,7 +1199,7 @@ final class SetupScreen
 
             return;
         }
-        $this->titleWidget->setText('AI Provider Setup');
+        $this->titleWidget->setText($this->theme?->color(ThemeColorEnum::Accent, 'AI Provider Setup') ?? 'AI Provider Setup');
         $this->stepWidget->setText('');
     }
 

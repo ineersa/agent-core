@@ -90,8 +90,8 @@ command (rebases + syncs, then clears the skew).
 
 ## Interactive enablement
 
-`hatfield providers:setup` (or `bin/console providers:setup`) opens a standalone
-setup TUI for enabling providers and wiring credentials. It is **manual**. First
+Use the Providers tab in `hatfield setup` to enable providers and configure
+credentials. This is **manual**. First
 catalog bootstrap only copies the bundled file to `~/.hatfield/ai-catalog.yaml`;
 it does not enable providers or invent API keys. Sparse settings overlays such as
 `ai.providers.zai: { enabled: true, api_key: env:ZAI_API_KEY }` remain the

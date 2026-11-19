@@ -94,7 +94,7 @@ final class ExtensionsSetupFlow
                 }
                 $canonical = realpath($resolved);
                 if ($declared !== (false !== $canonical ? $canonical : Path::canonicalize($resolved))) {
-                    throw new \RuntimeException('Restart extensions:setup to configure the installed package. This process already loaded another copy of its extension class; settings were not changed.');
+                    throw new \RuntimeException('Restart hatfield setup to configure the installed package. This process already loaded another copy of its extension class; settings were not changed.');
                 }
                 break;
             }

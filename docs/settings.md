@@ -11,7 +11,8 @@ in home or project settings. Hatfield does **not** copy defaults into your home 
 ## Interactive setup
 
 Run `hatfield setup` for Settings, Providers, and Extensions. It defaults to user
-settings; `hatfield setup --project` selects project settings for the whole app.
+settings; `hatfield setup --project` opens in project scope. Press **F2** to switch
+scope, **Tab** or **Shift+Tab** to switch tabs, and **Esc** to go back or exit.
 The settings tab shows the effective source and lets you save or reset supported
 preferences without copying inherited defaults. Saving rewrites YAML and does not
 preserve comments or formatting. Start a new session to load the changes.
@@ -20,7 +21,7 @@ preserve comments or formatting. Start a new session to load the changes.
 
 Later sources win via structured overlay (`AppConfigLoader`):
 
-1. AI catalog (`~/.hatfield/ai-catalog.yaml`, bootstrapped from bundled `config/ai-catalog.yaml`; providers ship disabled until enabled via settings or `providers:setup`)
+1. AI catalog (`~/.hatfield/ai-catalog.yaml`, bootstrapped from bundled `config/ai-catalog.yaml`; providers ship disabled until enabled via settings or `setup`)
 2. Built-in defaults shipped with the install (`config/hatfield.defaults.yaml`)
 3. `~/.hatfield/settings.yaml`
 4. `<project>/.hatfield/settings.yaml`
@@ -36,7 +37,7 @@ Known providers in user/project settings are **sparse overlays** (for example
 `{ enabled: true, api_key: env:ZAI_API_KEY }`). Full model lists and connection
 defaults come from the AI catalog. Catalog bootstrap does **not** auto-enable
 providers. See [ai-catalog.md](ai-catalog.md) for the precedence diagram,
-`hatfield providers:update`, manual `providers:setup`, and version-skew warning.
+`hatfield providers:update`, manual `setup`, and version-skew warning.
 
 Use only keys you intend to change. Full snapshots of defaults are unnecessary.
 
@@ -237,7 +238,7 @@ Repeated settings reads and jobs do not emit migration warnings. Other unknown
 keys remain errors, and a valid `librarian.url` is still required. Ignoring old
 settings does not restore local storage or processing.
 
-Install/configure the package with `hatfield extensions:setup --user` for user-wide
+Install/configure the package with the Extensions tab in `hatfield setup` for user-wide
 settings, or under project `extensions`. Keep OM in `extensions.enabled` when
 replacing that list. See the package README for configuration and cutover gates: do
 not switch live memory ownership before Librarian deployment, SQLite-free discovery,
@@ -261,8 +262,7 @@ SQLite files are neither opened nor deleted by the thin client.
 ## `.hatfield/` policy
 
 Open the Extensions tab in `hatfield setup` to install and configure extensions.
-The `hatfield extensions:setup` shortcut opens that tab in project scope by
-default; pass `--user` to edit user settings instead. Installation alone does
+Use **F2** to switch between user and project scope. Installation alone does
 not enable an extension: use Configure and Save. Extension packages provide
 their own Symfony Config definitions.
 
@@ -298,6 +298,6 @@ castor docs:validate
 
 ### Optional scheduling extension
 
-The optional Scheduling extension is disabled by default. Run `hatfield extensions:setup`, select **Scheduling (built in)**, enable it for the parent, save, and start a new session. No Composer installation or scheduling settings are required. Disable it through the same form. Alternatively, add `Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension` to `extensions.enabled` before starting a new session.
+The optional Scheduling extension is disabled by default. Open the Extensions tab in `hatfield setup`, select **Scheduling (built in)**, enable it for the parent, save, and start a new session. No Composer installation or scheduling settings are required. Disable it through the same form. Alternatively, add `Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension` to `extensions.enabled` before starting a new session.
 
 While disabled, neither the main-only `schedule` tool nor the `/schedule` command is available; no scheduling sources or dispatch callbacks are registered. Agents must use the current tool catalog to check availability. If `schedule` is absent, explain this prerequisite rather than assuming availability or changing settings without user approval. See [recurring work](background-processes.md#recurring-work-schedule) for usage. Definitions belong to the current live controller and are not restored when Hatfield reopens.

@@ -16,7 +16,6 @@ final readonly class SetupSettingsService
         private SettingsOverrideWriter $writer,
         private DenormalizerInterface $denormalizer,
         private ValidatorInterface $validator,
-        private SettingsDescriptions $descriptions,
         public SettingsValueResolver $resolver,
     ) {
     }
@@ -26,10 +25,9 @@ final readonly class SetupSettingsService
         return $this->loader->load($this->resources->getDefaultsPath(), $this->app->cwd);
     }
 
-    /** @return array<string, string> */
-    public function descriptions(SettingsResolutionDTO $resolution): array
+    public function loadConfig(): AppConfig
     {
-        return $this->descriptions->extract($this->resources->getDefaultsPath(), $resolution->defaultsRaw);
+        return AppConfig::fromSettingsData($this->load()->effective, $this->denormalizer, $this->app->cwd, $this->validator);
     }
 
     public function path(SettingsLayerEnum $layer): string

@@ -42,14 +42,12 @@ final class SettingsTextInputWidget extends SelectListWidget
             'cursor_start' => [Key::HOME, 'ctrl+a'],
             'cursor_end' => [Key::END, 'ctrl+e'],
             'delete_char_forward' => [Key::DELETE],
-            'clear_hidden_value' => [Key::ctrl('r')],
         ]));
     }
 
     public function handleInput(string $data): void
     {
         // Do not touch parent KeybindingsTrait::$onInput (private to SelectListWidget).
-        // Ctrl+D quit is wired on the SettingsListWidget itself; Esc cancels this submenu.
 
         $pasted = $this->processBracketedPaste($data);
         if (null !== $pasted) {
@@ -66,10 +64,9 @@ final class SettingsTextInputWidget extends SelectListWidget
 
             return;
         }
-        $clear = $this->secret && $kb->matches($data, 'clear_hidden_value');
-        if ($clear || $kb->matches($data, 'select_confirm')) {
-            $value = $clear ? '' : $this->line->getText();
-            if ($this->secret && !$clear && '' === trim($value)) {
+        if ($kb->matches($data, 'select_confirm')) {
+            $value = $this->line->getText();
+            if ($this->secret && '' === trim($value)) {
                 $this->dispatch(new CancelEvent($this));
 
                 return;
@@ -111,7 +108,7 @@ final class SettingsTextInputWidget extends SelectListWidget
     public function render(RenderContext $context): array
     {
         if ($this->secret) {
-            return [AnsiUtils::truncateToWidth('Hidden input · Empty Enter keeps value · Ctrl+R clears', $context->getColumns(), '')];
+            return [AnsiUtils::truncateToWidth('Hidden input · Enter applies · Esc cancels', $context->getColumns(), '')];
         }
 
         $width = max(0, $context->getColumns() - AnsiUtils::visibleWidth($this->prompt));

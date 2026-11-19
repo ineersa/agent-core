@@ -39,7 +39,6 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
         (new \ReflectionMethod($screen, 'menu'))->invoke($screen);
         $tui->start();
         try {
-            $terminal->simulateInput("\x1b[B"); // Scope -> SafeGuard.
             $terminal->simulateInput("\r");
             $terminal->simulateInput("\r"); // Disable parent.
             $this->assertSame(['parent' => 'false', 'forks' => 'off', 'agents' => 'false'], $flow->members);
@@ -57,7 +56,7 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
             $terminal->simulateInput("\r"); // Open the masked allow_command_patterns field.
             $terminal->simulateInput("\r"); // Empty confirmation must not edit it.
             $this->assertSame('(configured)', $settings->getValue('allow_command_patterns'));
-            for ($row = 4; $row < \count($flow->nodes) + 3; ++$row) {
+            for ($row = 4; $row < \count($flow->nodes) + 3 + \count(array_filter($flow->nodes, static fn ($node): bool => !($node instanceof \Symfony\Component\Config\Definition\BooleanNode || $node instanceof \Symfony\Component\Config\Definition\EnumNode))); ++$row) {
                 $terminal->simulateInput("\x1b[B");
             }
             $terminal->simulateInput("\r"); // Save through the real screen callback and settings writer.

@@ -7,7 +7,6 @@ namespace Ineersa\Tui\Tests\Setup;
 use Ineersa\Tui\Setup\ProvidersSetupFlowInterface;
 use Ineersa\Tui\Setup\SetupScreen;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
@@ -54,7 +53,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('(enabled)', $text);
         $this->assertStringNotContainsString('not set up', $text);
         $this->assertSame('picker', $this->phase($screen));
-        $this->assertStringContainsString('↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit', $text);
+        $this->assertStringContainsString('↑/↓ select · Enter confirm · Esc exit', $text);
         $this->assertStringContainsString('┌', $text); // bordered panel
         $this->assertStringContainsString('│', $text);
     }
@@ -67,52 +66,22 @@ final class SetupScreenVirtualRenderTest extends TestCase
 
         $this->selectValue($screen, 'zai');
         $this->assertSame('action', $this->phase($screen));
-        $this->assertStringContainsString('Esc back · Ctrl+D quit', $this->plain($terminal));
+        $this->assertStringContainsString('Esc back', $this->plain($terminal));
 
         $this->selectValue($screen, 'configure');
         $this->assertSame('choice', $this->phase($screen)); // api where list
-        $this->assertStringContainsString('Esc back · Ctrl+D quit', $this->plain($terminal));
+        $this->assertStringContainsString('Esc back', $this->plain($terminal));
 
         $this->selectValue($screen, 'env');
         $this->assertSame('input', $this->phase($screen));
-        $this->assertStringContainsString('Enter submit · Esc back · Ctrl+D quit', $this->plain($terminal));
+        $this->assertStringContainsString('Enter submit · Esc back', $this->plain($terminal));
 
         [$screen, $terminal] = $this->mount(new FakeProvidersSetupFlow());
         $this->selectValue($screen, 'done');
         $this->assertSame('summary', $this->phase($screen));
         $text = $this->plain($terminal);
-        $this->assertStringContainsString('Esc exit · Ctrl+D quit', $text);
+        $this->assertStringContainsString('Esc exit', $text);
         $this->assertStringNotContainsString('Enter close', $text);
-    }
-
-    #[Test]
-    public function ctrlDFromPickerQuitsCleanly(): void
-    {
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal, $tui] = $this->mount($flow);
-
-        $tui->handleInput("\x04");
-
-        $this->assertSame('summary', $this->phase($screen));
-        $this->assertStringContainsString('AI Provider Setup', $this->plain($terminal));
-    }
-
-    #[Test]
-    public function ctrlDFromCustomInputResetsChromeOnSummary(): void
-    {
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal, $tui] = $this->mount($flow);
-
-        $this->selectValue($screen, 'custom');
-        $this->assertSame('custom', $this->phase($screen));
-        $this->assertStringContainsString('Add your own server', $this->plain($terminal));
-
-        $tui->handleInput("\x04");
-
-        $this->assertSame('summary', $this->phase($screen));
-        $text = $this->plain($terminal);
-        $this->assertStringContainsString('AI Provider Setup', $text);
-        $this->assertStringNotContainsString('Add your own server', $text);
     }
 
     #[Test]
@@ -133,7 +102,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertSame('choice', $this->phase($screen));
         $text = $this->plain($terminal);
         $this->assertStringContainsString('environment variable', $text);
-        $this->assertStringContainsString('Esc back · Ctrl+D quit', $text);
+        $this->assertStringContainsString('Esc back', $text);
     }
 
     #[Test]
@@ -456,34 +425,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    #[DataProvider('provideCtrlDSequences')]
-    public function ctrlDInsideOpenCustomSubmenuQuits(string $sequence): void
-    {
-        // SettingsListWidget.onInput(quitOnCtrlD) runs BEFORE submenu forward.
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal, $tui] = $this->mount($flow);
-
-        $this->selectValue($screen, 'custom');
-        $tui->handleInput("\r"); // open id submenu
-        $tui->processRender();
-        $tui->handleInput($sequence);
-
-        $this->assertSame('summary', $this->phase($screen));
-        $text = $this->plain($terminal);
-        $this->assertStringContainsString('AI Provider Setup', $text);
-        $this->assertStringNotContainsString('Add your own server', $text);
-    }
-
-    /**
-     * @return iterable<string, array{0: string}>
-     */
-    public static function provideCtrlDSequences(): iterable
-    {
-        yield 'legacy' => ["\x04"];
-        yield 'kitty' => ["\x1b[100;5u"];
-    }
-
-    #[Test]
     public function mainPickerWithCustomsShowsOtherServerNotCustomIds(): void
     {
         $flow = new FakeProvidersSetupFlow(customs: [
@@ -531,7 +472,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringContainsString('✓ enabled', $text);
         $this->assertStringContainsString('✗ disabled', $text);
         $this->assertStringContainsString('Add a new server', $text);
-        $this->assertStringContainsString('Back', $text);
+        $this->assertStringNotContainsString('Back', $text);
     }
 
     #[Test]
@@ -641,8 +582,8 @@ final class SetupScreenVirtualRenderTest extends TestCase
         for ($i = 0; $i < 3; ++$i) {
             $tui->handleInput("\x1b[B");
         }
+        $tui->handleInput("\x1b[B"); // Select Clear API key.
         $tui->handleInput("\r");
-        $tui->handleInput("\x12"); // Ctrl+R explicitly clears the key.
         $this->changeSetting($screen, 'save', '↵');
         $this->assertNull($flow->savedCustoms[1]['apiKey']);
     }

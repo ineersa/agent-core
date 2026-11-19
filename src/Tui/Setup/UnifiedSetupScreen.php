@@ -5,92 +5,114 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Setup;
 
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Event\InputEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
+use Symfony\Component\Tui\Style\Padding;
+use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Tui;
-use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
-use Symfony\Component\Tui\Widget\FocusableInterface;
-use Symfony\Component\Tui\Widget\ParentInterface;
+use Symfony\Component\Tui\Widget\SettingsListWidget;
 use Symfony\Component\Tui\Widget\TabItem;
 use Symfony\Component\Tui\Widget\TabsWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 final readonly class UnifiedSetupScreen
 {
-    public function __construct(
-        private CoreSettingsScreen $settings,
-        private SetupScreen $providers,
-        private ExtensionsSetupScreen $extensions,
-        private TuiTheme $theme,
-    ) {
+    public function __construct(private TuiTheme $theme)
+    {
     }
 
-    public function run(SettingsLayerEnum $layer, string $path, ProvidersSetupFlowInterface $flow, int $initial): void
+    /** @param \Closure(SettingsLayerEnum): array{string, CoreSettingsScreen, ProvidersSetupFlowInterface, SetupScreen, ExtensionsSetupScreen} $build */
+    public function mount(Tui $tui, SettingsLayerEnum $layer, \Closure $build): void
     {
-        // Pane exit is deliberate (Save or Discard); global focus cycling would bypass it.
-        $tui = new Tui(keybindings: new Keybindings(['focus_next' => [], 'focus_previous' => []]));
-        $this->mount($tui, $layer, $path, $flow, $initial);
-        $tui->run();
-    }
+        $body = new ContainerWidget();
+        $body->setStyle(new Style(padding: Padding::xy(2, 0), gap: 1));
+        $title = new TextWidget($this->theme->color(ThemeColorEnum::Accent, 'Hatfield setup'));
+        $title->setStyle(new Style(bold: true));
+        $target = new TextWidget('');
+        $warning = new TextWidget('');
+        $notice = new TextWidget('');
+        $tabSlot = new ContainerWidget();
+        $body->add($title)->add($target)->add($warning)->add($notice)->add($tabSlot);
+        $tui->add($body);
+        $tui->add(new TextWidget($this->theme->muted('Tab / Shift+Tab  Switch tab  ·  F2  Switch scope  ·  Esc  Back / Exit')));
 
-    public function mount(Tui $tui, SettingsLayerEnum $layer, string $path, ProvidersSetupFlowInterface $flow, int $initial): void
-    {
-        $settings = new ContainerWidget();
-        $providers = new ContainerWidget();
-        $extensions = new ContainerWidget();
-        $tabs = new TabsWidget([
-            new TabItem('settings', 'Settings', $settings),
-            new TabItem('providers', 'Providers', $providers),
-            new TabItem('extensions', 'Extensions', $extensions),
-        ]);
-        $back = static fn () => $tui->setFocus($tabs);
-        $this->settings->mount($tui, $settings, $layer, $flow, $back);
-        $this->providers->mount($tui, $providers, $back);
-        $this->extensions->mount($tui, $extensions, $back);
-        $tui->add(new TextWidget('Hatfield setup · '.$layer->name.' · '.$path));
-        $warning = 'Saving rewrites YAML and loses comments and formatting.';
-        if (SettingsLayerEnum::Project === $layer) {
-            $warning .= ' Use environment references for project credentials.';
-        }
-        $tui->add(new TextWidget($this->theme->warning($warning)));
-        $tui->add(new TextWidget($this->theme->muted('←/→ or Tab: switch tabs · Enter: open · Esc: back · Ctrl+D on tabs: exit')));
-        $tui->add($tabs);
-        $keys = new Keybindings(['quit' => [Key::ctrl('d'), Key::ESCAPE], 'enter' => [Key::ENTER]]);
-        $tabs->onInput(static function (string $key) use ($tui, $tabs, $keys): bool {
-            if ($keys->matches($key, 'quit')) {
-                $tui->stop();
-
-                return true;
-            }
-            if ($keys->matches($key, 'enter')) {
-                // The panes replace their current form as the user navigates; use the live tree.
-                $tui->setFocus(self::firstFocusable($tabs->getTabs()[$tabs->getActiveTabIndex()]->getContent()));
-
-                return true;
-            }
-
-            return false;
-        });
-        $tabs->setActiveTab($initial);
-        $back();
-    }
-
-    private static function firstFocusable(AbstractWidget $widget): ?AbstractWidget
-    {
-        if ($widget instanceof FocusableInterface) {
-            return $widget;
-        }
-        if ($widget instanceof ParentInterface) {
-            foreach ($widget->all() as $child) {
-                $found = self::firstFocusable($child);
-                if (null !== $found) {
-                    return $found;
+        $tabs = null;
+        $focus = [];
+        $canLeave = static fn (): bool => true;
+        $load = function (?int $index) use ($tui, $tabSlot, $target, $warning, $notice, $build, &$layer, &$tabs, &$focus, &$canLeave): void {
+            [$path, $settings, $flow, $providers, $extensions] = $build($layer);
+            $canLeave = static fn (): bool => !$settings->hasDraft() && !$providers->hasDraft() && !$extensions->hasDraft();
+            $exit = function () use ($tui, $notice, $canLeave): void {
+                if ($canLeave()) {
+                    $tui->stop();
+                } else {
+                    $notice->setText($this->theme->warning('Return to your open form and save or discard it before exiting.'));
                 }
+            };
+            $target->setText($this->theme->color(ThemeColorEnum::Accent, $layer->name).' scope  ·  '.$path);
+            $warning->setText($this->theme->warning('Saving rewrites YAML comments and formatting.'.(SettingsLayerEnum::Project === $layer ? ' Use environment references for credentials.' : '')));
+            $notice->setText('');
+            $panes = [new ContainerWidget(), new ContainerWidget(), new ContainerWidget()];
+            foreach ($panes as $pane) {
+                $pane->setStyle(new Style(padding: Padding::xy(2, 1), gap: 1));
             }
-        }
+            $tabs = new TabsWidget([
+                new TabItem('settings', 'Settings', $panes[0]),
+                new TabItem('providers', 'Providers', $panes[1]),
+                new TabItem('extensions', 'Extensions', $panes[2]),
+            ]);
+            $tabSlot->clear()->add($tabs);
+            // Mount each pane while attached so the native focus manager can accept its control.
+            for ($i = 0; $i < 3; ++$i) {
+                $tabs->setActiveTab($i);
+                match ($i) {
+                    0 => $settings->mount($tui, $panes[0], $layer, $flow, $exit, $this->heading(...)),
+                    1 => $providers->mount($tui, $panes[1], $exit),
+                    2 => $extensions->mount($tui, $panes[2], $exit),
+                };
+                $focus[$i] = $tui->getFocus();
+            }
+            $index ??= [] === $flow->configuredModelRefs() ? 1 : 0;
+            $tabs->setActiveTab($index);
+            $tui->setFocus($focus[$index]);
+        };
+        $load(null);
+        $keys = new Keybindings(['setup_next' => [Key::TAB], 'setup_previous' => ['shift+tab'], 'setup_scope' => [Key::F2]]);
+        $tui->addListener(function (InputEvent $event) use ($tui, $keys, $load, $notice, &$tabs, &$focus, &$layer, &$canLeave): void {
+            $key = $event->getData();
+            $scope = $keys->matches($key, 'setup_scope');
+            $next = $keys->matches($key, 'setup_next');
+            if (!$scope && !$next && !$keys->matches($key, 'setup_previous')) {
+                return;
+            }
+            $event->stopPropagation();
+            $current = $tui->getFocus();
+            $index = $tabs->getActiveTabIndex();
+            // Symfony detaches and closes a SettingsList submenu when its tab is hidden.
+            if ($current instanceof SettingsListWidget && [] !== $current->all()) {
+                $notice->setText($this->theme->warning('Confirm or cancel the open field first.'));
+            } elseif ($scope && !$canLeave()) {
+                $notice->setText($this->theme->warning('Save or discard open forms before switching scope.'));
+            } elseif ($scope) {
+                $layer = SettingsLayerEnum::User === $layer ? SettingsLayerEnum::Project : SettingsLayerEnum::User;
+                $load($index);
+            } else {
+                $notice->setText('');
+                $focus[$index] = $current;
+                $index = ($index + ($next ? 1 : 2)) % 3;
+                $tabs->setActiveTab($index);
+                $tui->setFocus($focus[$index]);
+            }
+            $tui->requestRender();
+        });
+    }
 
-        return null;
+    private function heading(string $text): TextWidget
+    {
+        return (new TextWidget($this->theme->color(ThemeColorEnum::Accent, $text)))->setStyle(new Style(bold: true));
     }
 }

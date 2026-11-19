@@ -77,7 +77,7 @@ with Symfony Config's `ConfigurationInterface`. Its tree root names the
 Set node attribute `hatfield.model_picker` to `true` for a generation-model picker.
 Configuration inspection does not call `register()`.
 
-`hatfield extensions:setup` lists built-ins and matching packages from Hatfield's
+the Extensions tab in `hatfield setup` lists built-ins and matching packages from Hatfield's
 own Composer `suggest` catalog, not every installed extension. For catalog packages,
 Composer `extra.hatfield.extension` identifies the entry class; it does not add an
 arbitrary package to setup. Configure other custom extensions manually through

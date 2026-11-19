@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Setup;
 
 use Ineersa\CodingAgent\CLI\Extensions\ExtensionsSetupFlow;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Config\Definition\BaseNode;
@@ -14,8 +15,7 @@ use Symfony\Component\Config\Definition\FloatNode;
 use Symfony\Component\Config\Definition\IntegerNode;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SettingChangeEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
+use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
@@ -42,9 +42,15 @@ final class ExtensionsSetupScreen
         $this->tui = $tui;
         $this->back = $back;
         $this->panel = new ContainerWidget();
-        $this->notice = new TextWidget('Install first; Configure + Save applies enablement.');
+        $this->notice = new TextWidget($this->theme->muted('Choose an extension to configure. Installing a package does not enable it.'));
+        $container->add((new TextWidget($this->theme->color(ThemeColorEnum::Accent, 'Manage extensions')))->setStyle(new Style(bold: true)));
         $container->add($this->notice)->add($this->panel);
         $this->menu();
+    }
+
+    public function hasDraft(): bool
+    {
+        return $this->editing;
     }
 
     private function leave(): void
@@ -60,15 +66,6 @@ final class ExtensionsSetupScreen
 
     private function show(SelectListWidget|SettingsListWidget $widget): void
     {
-        $widget->setKeybindings(new Keybindings(['quit_setup' => [Key::ctrl('d')]]));
-        $widget->onInput(function (string $key) use ($widget): bool {
-            if (!$widget->getKeybindings()->matches($key, 'quit_setup')) {
-                return false;
-            }
-            $this->leave();
-
-            return true;
-        });
         $this->panel->clear()->add($widget);
         $this->tui->setFocus($widget);
     }
@@ -87,14 +84,12 @@ final class ExtensionsSetupScreen
     private function menu(): void
     {
         $this->editing = false;
-        $items = [['value' => 'back', 'label' => 'Back']];
+        $items = [];
         foreach ($this->flow->packages() as $id => $row) {
-            $items[] = ['value' => $id, 'label' => $row['label'].($row['installed'] ? ' [installed; Configure]' : ' [not installed]')];
+            $items[] = ['value' => $id, 'label' => $row['label'], 'description' => $row['installed'] ? $this->theme->success('Installed · Configure') : $this->theme->muted('Available · Install')];
         }
         $this->choose($items, function (string $id): void {
-            if ('back' === $id) {
-                $this->leave();
-            } elseif (!$this->flow->packages()[$id]['installed']) {
+            if (!$this->flow->packages()[$id]['installed']) {
                 $this->choose([
                     ['value' => 'cancel', 'label' => 'Cancel installation'],
                     ['value' => 'install', 'label' => 'Install '.$id.' using Composer in '.$this->flow->layer->name.' scope'],
@@ -124,6 +119,7 @@ final class ExtensionsSetupScreen
         ];
         $initial = [];
         $hidden = [];
+        $clearActions = [];
         foreach ($this->flow->nodes as $path => $node) {
             $value = $this->flow->value($this->flow->settings, $path);
             if (null === $value && $node->hasDefaultValue()) {
@@ -146,17 +142,30 @@ final class ExtensionsSetupScreen
                 $hidden[$path] = true;
                 $submenu = static fn (): SettingsTextInputWidget => new SettingsTextInputWidget(secret: true);
                 $display = '' === $display ? '(not configured)' : '(configured)';
+                $clearActions['clear:'.$path] = $path;
             }
-            $items[] = new SettingItem($path, $path, $display, $node instanceof BaseNode ? $node->getInfo() : null, values: $choices, submenu: [] === $choices ? $submenu : null);
+            $label = ucfirst(str_replace('_', ' ', str_replace('.', ' / ', $path)));
+            $items[] = new SettingItem($path, $label, $display, $node instanceof BaseNode ? $node->getInfo() : null, values: $choices, submenu: [] === $choices ? $submenu : null);
+            if (isset($hidden[$path])) {
+                $items[] = new SettingItem('clear:'.$path, 'Clear '.$label, '', values: ['clear']);
+            }
         }
         $items[] = new SettingItem('save', 'Save configuration and enablement', '', values: ['save']);
         $items[] = new SettingItem('discard', 'Discard changes', '', values: ['discard']);
         $settings = new SettingsListWidget($items, maxVisible: 16);
         $edits = [];
-        $settings->onChange(function (SettingChangeEvent $event) use ($settings, $initial, $hidden, &$edits): void {
-            $this->attempt(function () use ($event, $settings, $initial, $hidden, &$edits): void {
+        $settings->onChange(function (SettingChangeEvent $event) use ($settings, $initial, $hidden, $clearActions, &$edits): void {
+            $this->attempt(function () use ($event, $settings, $initial, $hidden, $clearActions, &$edits): void {
                 $id = $event->getId();
                 $value = $event->getValue();
+                if (isset($clearActions[$id])) {
+                    $path = $clearActions[$id];
+                    $edits[$path] = '';
+                    $settings->updateValue($path, '(cleared in draft)');
+                    $settings->updateValue($id, '');
+
+                    return;
+                }
                 if ('discard' === $id) {
                     $this->menu();
                 } elseif ('save' === $id) {

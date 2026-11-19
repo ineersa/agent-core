@@ -182,7 +182,7 @@ final class AppConfig
      * configured ref for the TUI startup warning; null when no fallback ran.
      *
      * Zero-provider boots no longer throw here — AgentCommand's enabled-provider
-     * gate owns that failure with the providers:setup hint.
+     * gate owns that failure with the setup hint.
      *
      * @param array<string, mixed> $data
      *

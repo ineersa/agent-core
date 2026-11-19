@@ -136,7 +136,7 @@ Explicit user `/goal clear` or `/goal cancel` remains unconditional.
 ## Choose a model
 
 `/model` lists selectable models from your effective configuration. Provider definitions
-ship disabled, so configure them with `hatfield providers:setup` before model use.
+ship disabled, so configure them with the Providers tab in `hatfield setup` before model use.
 Ctrl+P cycles available models. Shift+Tab cycles reasoning levels.
 
 Available reasoning levels depend on the model. See [model settings](settings-models.md)

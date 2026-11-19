@@ -88,7 +88,7 @@ Keep `.hatfield/extensions/composer.json` with `config.prepend-autoloader: false
 Otherwise the extensions autoloader can shadow host packages such as `symfony/tui`.
 
 Built-in SafeGuard and Scheduling need no Composer package; use
-`hatfield extensions:setup` to select enablement. SafeGuard is in child always-on
+the Extensions tab in `hatfield setup` to select enablement. SafeGuard is in child always-on
 defaults; Scheduling is optional and disabled by default.
 Project packages (task-workflow, observational-memory) document setup and settings
 in **package-local README files** shipped with each extension repository/package.
