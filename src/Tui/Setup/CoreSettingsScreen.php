@@ -112,7 +112,9 @@ final class CoreSettingsScreen
                 submenu: $submenu,
             );
             if ($override->exists) {
-                $resets[] = ['value' => $key, 'label' => $label];
+                $afterReset = $this->settings->withoutOverride($snapshot, $layer, $key);
+                $revealed = $this->settings->resolver->resolve($afterReset, $key);
+                $resets[] = ['value' => $key, 'label' => $label, 'description' => 'After reset: '.self::display($revealed, $secret)];
             }
         }
         if ([] !== $resets) {
