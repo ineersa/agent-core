@@ -8,6 +8,14 @@ description: Settings precedence, file locations, core runtime keys, and environ
 Hatfield configuration is sparse YAML: built-in defaults apply until you override keys
 in home or project settings. Hatfield does **not** copy defaults into your home directory.
 
+## Interactive setup
+
+Run `hatfield setup` for Settings, Providers, and Extensions. It defaults to user
+settings; `hatfield setup --project` selects project settings for the whole app.
+The settings tab shows the effective source and lets you save or reset supported
+preferences without copying inherited defaults. Saving rewrites YAML and does not
+preserve comments or formatting. Start a new session to load the changes.
+
 ## Precedence
 
 Later sources win via structured overlay (`AppConfigLoader`):
@@ -252,7 +260,11 @@ SQLite files are neither opened nor deleted by the thin client.
 
 ## `.hatfield/` policy
 
-Run `hatfield extensions:setup` to install and configure Hatfield extensions. The native settings form defaults to project scope; choose user scope in the wizard or pass `--user`. Installation alone does not enable an extension: use Configure and Save. Extension packages provide their own Symfony Config definitions; Ctrl+D exits without saving pending edits.
+Open the Extensions tab in `hatfield setup` to install and configure extensions.
+The `hatfield extensions:setup` shortcut opens that tab in project scope by
+default; pass `--user` to edit user settings instead. Installation alone does
+not enable an extension: use Configure and Save. Extension packages provide
+their own Symfony Config definitions.
 
 Turning **Enabled for parent** off also turns that extension's fork and agent selections off in the form. Re-enabling the parent does not restore those selections automatically. Save to persist the choices; existing sessions need a restart to load them.
 

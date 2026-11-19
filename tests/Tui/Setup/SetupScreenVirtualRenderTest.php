@@ -611,7 +611,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringContainsString('Edit your server', $text);
         $this->assertStringContainsString('https://abc.proxy.runpod.net', $text);
         $this->assertStringContainsString('/v1/chat/completions', $text);
-        $this->assertStringContainsString('env:RUNPOD_API_KEY', $text);
+        $this->assertStringNotContainsString('env:RUNPOD_API_KEY', $text);
         $this->assertStringContainsString('llama', $text);
         $this->assertStringContainsString('Locked while editing', $text);
     }

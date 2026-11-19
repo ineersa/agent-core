@@ -30,7 +30,7 @@ final class SettingsTextInputWidget extends SelectListWidget
     private Line $line;
     private string $prompt;
 
-    public function __construct(string $initial = '', string $prompt = '> ')
+    public function __construct(string $initial = '', string $prompt = '> ', private readonly bool $secret = false)
     {
         parent::__construct([]);
         $this->line = new Line($initial, \strlen($initial));
@@ -102,6 +102,10 @@ final class SettingsTextInputWidget extends SelectListWidget
      */
     public function render(RenderContext $context): array
     {
+        if ($this->secret) {
+            return [AnsiUtils::truncateToWidth('Hidden input · Enter to accept', $context->getColumns(), '')];
+        }
+
         $width = max(0, $context->getColumns() - AnsiUtils::visibleWidth($this->prompt));
         $before = substr($this->line->getText(), 0, $this->line->getCursor());
         $after = substr($this->line->getText(), $this->line->getCursor());

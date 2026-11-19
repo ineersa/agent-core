@@ -61,10 +61,10 @@ the previous executable.
 Provider definitions ship disabled. Open the setup screen explicitly:
 
 ```bash
-hatfield providers:setup
+hatfield setup
 ```
 
-Enable a provider and configure its credentials. Then start a session in your project:
+Use the Providers tab to enable a provider and configure its credentials. Settings and Extensions are available in the same app. It edits user settings by default; run `hatfield setup --project` from a project to edit that project instead. Then start a session in your project:
 
 ```bash
 cd /path/to/your/project

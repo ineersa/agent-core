@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Setup;
 
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SettingChangeEvent;
@@ -14,8 +16,6 @@ use Symfony\Component\Tui\Style\Border;
 use Symfony\Component\Tui\Style\Color;
 use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
-use Symfony\Component\Tui\Terminal\Terminal;
-use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\InputWidget;
@@ -49,7 +49,7 @@ final class SetupScreen
     private TextWidget $errorWidget;
     private TextWidget $footerWidget;
     private SelectListWidget $listWidget;
-    private InputWidget $inputWidget;
+    private SetupInputWidget $inputWidget;
     private SettingsListWidget $settingsWidget;
     private bool $mounted = false;
 
@@ -62,10 +62,12 @@ final class SetupScreen
     /** Where action-menu Cancel returns: picker or servers submenu. */
     private string $actionReturn = self::PHASE_PICKER;
     private ?string $error = null;
-    private int $exitCode = 0;
+
+    private ?\Closure $back = null;
 
     public function __construct(
         private readonly ProvidersSetupFlowInterface $flow,
+        private readonly LoggerInterface $logger = new NullLogger(),
     ) {
         $this->titleWidget = new TextWidget('AI Provider Setup');
         $this->titleWidget->setStyle(new Style(bold: true, color: Color::named('cyan')));
@@ -82,7 +84,7 @@ final class SetupScreen
         $this->errorWidget = new TextWidget('');
         $this->footerWidget = new TextWidget('');
         $this->listWidget = new SelectListWidget([], maxVisible: 12);
-        $this->inputWidget = new InputWidget();
+        $this->inputWidget = new SetupInputWidget();
         $this->settingsWidget = new SettingsListWidget([], maxVisible: 16);
         $this->applyQuitSetupBindings($this->listWidget);
         $this->applyQuitSetupBindings($this->inputWidget);
@@ -94,7 +96,7 @@ final class SetupScreen
         $this->panelWidget->add($this->errorWidget);
     }
 
-    public function mount(Tui $tui): void
+    public function mount(Tui $tui, ?ContainerWidget $container = null, ?\Closure $back = null): void
     {
         if ($this->mounted) {
             return;
@@ -102,20 +104,13 @@ final class SetupScreen
         $this->mounted = true;
         $this->tui = $tui;
 
-        $tui->add($this->titleWidget);
-        $tui->add($this->panelWidget);
-        $tui->add($this->footerWidget);
+        $this->back = $back;
+        $root = $container ?? $tui;
+        $root->add($this->titleWidget);
+        $root->add($this->panelWidget);
+        $root->add($this->footerWidget);
 
         $this->showPicker();
-    }
-
-    public function run(?TerminalInterface $terminal = null): int
-    {
-        $this->tui = new Tui(terminal: $terminal ?? new Terminal());
-        $this->mount($this->tui);
-        $this->tui->run();
-
-        return $this->exitCode;
     }
 
     private function wireListListeners(): void
@@ -129,7 +124,7 @@ final class SetupScreen
             if ('' === $value) {
                 return;
             }
-            $this->onListSelect($value);
+            $this->attempt(fn () => $this->onListSelect($value));
         });
         $this->listWidget->onCancel(function (CancelEvent $_): void {
             if (\in_array($this->phase, [self::PHASE_PICKER, self::PHASE_SUMMARY], true)) {
@@ -151,7 +146,7 @@ final class SetupScreen
         $this->inputWidget->off(SubmitEvent::class);
         $this->inputWidget->off(CancelEvent::class);
         $this->inputWidget->onSubmit(function (SubmitEvent $_): void {
-            $this->onInputSubmit(trim($this->inputWidget->getValue()));
+            $this->attempt(fn () => $this->onInputSubmit(trim($this->inputWidget->getValue())));
         });
         $this->inputWidget->onCancel(function (CancelEvent $_): void {
             $this->showPicker();
@@ -164,24 +159,48 @@ final class SetupScreen
         $this->settingsWidget->off(SettingChangeEvent::class);
         $this->settingsWidget->off(CancelEvent::class);
         $this->settingsWidget->onChange(function (SettingChangeEvent $event): void {
-            $this->onCustomSettingChange($event->getId(), $event->getValue());
+            $this->attempt(fn () => $this->onCustomSettingChange($event->getId(), $event->getValue()));
         });
         $this->settingsWidget->onCancel(function (CancelEvent $_): void {
-            // Edit path always sets actionReturn=SERVERS; add path keeps PICKER.
-            if (self::PHASE_SERVERS === $this->actionReturn) {
-                $this->showServersSubmenu();
-
-                return;
+            if (null === $this->back) {
+                $this->discardCustomForm();
+            } else {
+                $this->hintWidget->setText('Choose Save and enable or Discard changes.');
             }
-            $this->showPicker();
         });
         $this->settingsWidget->onInput($this->quitOnCtrlD(...));
+    }
+
+    private function attempt(\Closure $action): void
+    {
+        try {
+            $action();
+        } catch (\Throwable $error) {
+            $this->logger->notice('provider.setup.refused', ['component' => 'setup', 'event_type' => 'provider.setup.refused', 'exception_class' => $error::class]);
+            $this->error = 'Action failed. Check provider configuration and the target YAML.';
+            $this->refreshError();
+        }
+    }
+
+    private function discardCustomForm(): void
+    {
+        // Edit path always sets actionReturn=SERVERS; add path keeps PICKER.
+        if (self::PHASE_SERVERS === $this->actionReturn) {
+            $this->showServersSubmenu();
+
+            return;
+        }
+        $this->showPicker();
     }
 
     private function quitOnCtrlD(string $data): bool
     {
         if ($this->listWidget->getKeybindings()->matches($data, 'quit_setup')) {
-            $this->finishSuccess();
+            if (null !== $this->back && self::PHASE_CUSTOM === $this->phase) {
+                $this->hintWidget->setText('Choose Save and enable or Discard changes.');
+            } else {
+                $this->finishSuccess();
+            }
 
             return true;
         }
@@ -418,7 +437,7 @@ final class SetupScreen
     {
         $id = (string) ($this->formState['id'] ?? '');
         if ('raw' === $value) {
-            $this->beginInput('api_raw_key', 'Paste your API key (shown; confirm next)');
+            $this->beginInput('api_raw_key', 'Paste your API key (hidden; confirm next)');
 
             return;
         }
@@ -583,7 +602,7 @@ final class SetupScreen
             'API key',
             $apiKeyDisplay,
             'Blank = none. Env var name (RUNPOD_API_KEY) or env:NAME, or paste a raw key (stored in settings).',
-            submenu: $this->textSubmenu(...),
+            submenu: static fn (): SettingsTextInputWidget => new SettingsTextInputWidget(secret: true),
         );
         $items[] = new SettingItem(
             'modelsSaved',
@@ -662,6 +681,8 @@ final class SetupScreen
             values: ['↵'],
         );
 
+        $items[] = new SettingItem('discard', 'Discard changes', '↵', values: ['↵']);
+
         return $items;
     }
 
@@ -690,6 +711,7 @@ final class SetupScreen
                 'thinkingFormat' => $this->formState['thinkingFormat'] = trim($value),
                 'add_model' => $this->commitDraftModel(),
                 'save' => $this->saveCustomForm(),
+                'discard' => $this->discardCustomForm(),
                 default => null,
             };
         } catch (\InvalidArgumentException $e) {
@@ -739,7 +761,7 @@ final class SetupScreen
     {
         $apiKey = $this->formState['apiKey'] ?? null;
 
-        return \is_string($apiKey) && '' !== $apiKey ? $apiKey : '(none)';
+        return \is_string($apiKey) && '' !== $apiKey ? '(configured)' : '(none)';
     }
 
     private function refreshCustomFormValuesAfterModelCommit(): void
@@ -941,6 +963,14 @@ final class SetupScreen
             $lines[] = 'Nothing changed.';
         }
 
+        if (null !== $this->back) {
+            $this->showPicker();
+            $this->hintWidget->setText(implode("\n", $lines));
+            ($this->back)();
+
+            return;
+        }
+
         $this->phase = self::PHASE_SUMMARY;
         $this->formKind = '';
         $this->formState = [];
@@ -948,7 +978,6 @@ final class SetupScreen
         $this->showList([
             ['value' => 'ok', 'label' => 'Done'],
         ]);
-        $this->exitCode = 0;
         if ($this->tui->isRunning()) {
             $this->tui->stop();
         }
@@ -1121,6 +1150,7 @@ final class SetupScreen
     private function beginInput(string $kind, string $prompt, string $default = ''): void
     {
         $this->formKind = $kind;
+        $this->inputWidget->secret = \in_array($kind, ['api_raw_key', 'api_raw_confirm'], true);
         $this->phase = self::PHASE_INPUT;
         $this->applyChrome();
         $this->hintWidget->setText($prompt);

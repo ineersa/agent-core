@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Setup;
 
 use Ineersa\CodingAgent\CLI\Extensions\ExtensionsSetupFlow;
-use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Config\Definition\BaseNode;
@@ -29,23 +28,32 @@ final class ExtensionsSetupScreen
     private ContainerWidget $panel;
     private TextWidget $notice;
 
+    private ?\Closure $back = null;
+    private bool $editing = false;
+
     public function __construct(private readonly ExtensionsSetupFlow $flow, private readonly TuiTheme $theme, private readonly LoggerInterface $logger)
     {
     }
 
-    public function run(): int
+    public function mount(Tui $tui, ContainerWidget $container, \Closure $back): void
     {
-        $this->tui = new Tui();
+        $this->tui = $tui;
+        $this->back = $back;
         $this->panel = new ContainerWidget();
-        $this->notice = new TextWidget('Install packages first; Configure + Save applies configuration and enablement.');
-        $this->tui->add(new TextWidget('Hatfield extensions:setup'));
-        $this->tui->add($this->notice);
-        $this->tui->add($this->panel);
-        $this->tui->add(new TextWidget('Enter: select/edit  Esc: cancel/back  Ctrl+D: exit without saving pending edits'));
+        $this->notice = new TextWidget('Install first; Configure + Save applies enablement.');
+        $container->add($this->notice)->add($this->panel);
         $this->menu();
-        $this->tui->run();
+    }
 
-        return 0;
+    private function leave(): void
+    {
+        if ($this->editing) {
+            $this->notice->setText('Choose Save configuration or Discard changes.');
+        } elseif (null !== $this->back) {
+            ($this->back)();
+        } else {
+            $this->tui->stop();
+        }
     }
 
     private function show(SelectListWidget|SettingsListWidget $widget): void
@@ -55,7 +63,7 @@ final class ExtensionsSetupScreen
             if (!$widget->getKeybindings()->matches($key, 'quit_setup')) {
                 return false;
             }
-            $this->tui->stop();
+            $this->leave();
 
             return true;
         });
@@ -76,22 +84,14 @@ final class ExtensionsSetupScreen
 
     private function menu(): void
     {
-        $items = [['value' => 'scope', 'label' => 'Scope: '.$this->flow->layer->name]];
+        $this->editing = false;
+        $items = [['value' => 'back', 'label' => 'Back']];
         foreach ($this->flow->packages() as $id => $row) {
             $items[] = ['value' => $id, 'label' => $row['label'].($row['installed'] ? ' [installed; Configure]' : ' [not installed]')];
         }
-        $items[] = ['value' => 'exit', 'label' => 'Exit'];
         $this->choose($items, function (string $id): void {
-            if ('exit' === $id) {
-                $this->tui->stop();
-            } elseif ('scope' === $id) {
-                $this->choose([
-                    ['value' => 'Project', 'label' => 'Project .hatfield/settings.yaml'],
-                    ['value' => 'User', 'label' => 'User ~/.hatfield/settings.yaml'],
-                ], function (string $value): void {
-                    $this->flow->layer = SettingsLayerEnum::from(strtolower($value));
-                    $this->menu();
-                }, $this->menu(...));
+            if ('back' === $id) {
+                $this->leave();
             } elseif (!$this->flow->packages()[$id]['installed']) {
                 $this->choose([
                     ['value' => 'cancel', 'label' => 'Cancel installation'],
@@ -108,12 +108,13 @@ final class ExtensionsSetupScreen
             } else {
                 $this->form($id);
             }
-        }, fn () => $this->tui->stop());
+        }, $this->leave(...));
     }
 
     private function form(string $package): void
     {
         $this->flow->select($package);
+        $this->editing = true;
         $items = [
             new SettingItem('parent', 'Enabled for parent', $this->flow->members['parent'], values: ['true', 'false']),
             new SettingItem('forks', 'Fork selection', $this->flow->members['forks'], values: ['off', 'enabled', 'always_on']),
@@ -134,16 +135,24 @@ final class ExtensionsSetupScreen
 
                 return new SelectListWidget(array_map(static fn (string $model): array => ['value' => $model, 'label' => $model], array_values(array_filter($models, static fn (string $id): bool => '' !== $id))), maxVisible: 12);
             } : static fn (string $current): SettingsTextInputWidget => new SettingsTextInputWidget($current);
+            // Arbitrary extension schema fields may contain secrets, including nested YAML.
+            if ([] === $choices && !$picker) {
+                $submenu = static fn (): SettingsTextInputWidget => new SettingsTextInputWidget(secret: true);
+                $display = '' === $display ? '(not configured)' : '(configured)';
+            }
             $items[] = new SettingItem($path, $path, $display, $node instanceof BaseNode ? $node->getInfo() : null, values: $choices, submenu: [] === $choices ? $submenu : null);
         }
         $items[] = new SettingItem('save', 'Save configuration and enablement', '', values: ['save']);
+        $items[] = new SettingItem('discard', 'Discard changes', '', values: ['discard']);
         $settings = new SettingsListWidget($items, maxVisible: 16);
         $edits = [];
         $settings->onChange(function (SettingChangeEvent $event) use ($settings, $initial, &$edits): void {
             $this->attempt(function () use ($event, $settings, $initial, &$edits): void {
                 $id = $event->getId();
                 $value = $event->getValue();
-                if ('save' === $id) {
+                if ('discard' === $id) {
+                    $this->menu();
+                } elseif ('save' === $id) {
                     $changed = $this->flow->save($edits);
                     $this->notice->setText($changed
                         ? 'Saved configuration. Parent enabled: '.$this->flow->members['parent'].'. Changes load next session.'
@@ -165,10 +174,12 @@ final class ExtensionsSetupScreen
                         $edits[$id] = $value;
                     }
                 }
-                $settings->updateValue($id, $value);
+                $node = $this->flow->nodes[$id] ?? null;
+                $hidden = $node instanceof BaseNode && !$node instanceof BooleanNode && !$node instanceof EnumNode && true !== $node->getAttribute('hatfield.model_picker', false);
+                $settings->updateValue($id, $hidden ? '(edited)' : $value);
             });
         });
-        $settings->onCancel($this->menu(...));
+        $settings->onCancel($this->leave(...));
         $this->show($settings);
     }
 
@@ -178,7 +189,7 @@ final class ExtensionsSetupScreen
             $action();
         } catch (\Throwable $error) {
             $this->logger->notice('extension.setup.refused', ['component' => 'extensions_setup', 'event_type' => 'extension.setup.refused', 'exception_class' => $error::class]);
-            $this->notice->setText($this->theme->error($error->getMessage()));
+            $this->notice->setText($this->theme->error('Action failed. Check the configuration or package availability.'));
         }
     }
 }

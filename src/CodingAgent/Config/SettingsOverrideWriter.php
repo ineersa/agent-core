@@ -41,6 +41,18 @@ final class SettingsOverrideWriter
         $this->assertWritableLayer($layer);
         $filePath = $this->layerPath($layer, $cwd);
         $settings = $this->readSettings($filePath);
+        $this->writeSettings($filePath, $this->withChanges($settings, $values, $remove, $filePath));
+    }
+
+    /**
+     * @param array<string, mixed> $settings
+     * @param array<string, mixed> $values
+     * @param list<string>         $remove
+     *
+     * @return array<string, mixed>
+     */
+    public function withChanges(array $settings, array $values, array $remove, string $filePath): array
+    {
         foreach ($remove as $path) {
             $settings = $this->withoutOverride($settings, $path);
         }
@@ -51,7 +63,8 @@ final class SettingsOverrideWriter
             $this->assertIntermediateParentsAreMappings($settings, $dottedPath, $filePath);
             $this->propertyAccessor->setValue($settings, $propertyPath, $value);
         }
-        $this->writeSettings($filePath, $settings);
+
+        return $settings;
     }
 
     /**
@@ -99,6 +112,15 @@ final class SettingsOverrideWriter
         $this->requirePropertyPath($dottedPath);
 
         return $this->removeWithEmptyParentPrune($settings, explode('.', $dottedPath));
+    }
+
+    public function layerPath(SettingsLayerEnum $layer, string $cwd): string
+    {
+        return match ($layer) {
+            SettingsLayerEnum::User => $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml',
+            SettingsLayerEnum::Project => rtrim($cwd, '/').'/.hatfield/settings.yaml',
+            SettingsLayerEnum::Defaults => throw new \InvalidArgumentException('Built-in defaults are not writable.'),
+        };
     }
 
     /**
@@ -190,15 +212,6 @@ final class SettingsOverrideWriter
 
             $current = $parent;
         }
-    }
-
-    private function layerPath(SettingsLayerEnum $layer, string $cwd): string
-    {
-        return match ($layer) {
-            SettingsLayerEnum::User => $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml',
-            SettingsLayerEnum::Project => rtrim($cwd, '/').'/.hatfield/settings.yaml',
-            SettingsLayerEnum::Defaults => throw new \InvalidArgumentException('Built-in defaults are not writable.'),
-        };
     }
 
     /**
