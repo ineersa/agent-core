@@ -8,12 +8,14 @@ use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\InputEvent;
+use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
+use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\SettingsListWidget;
 use Symfony\Component\Tui\Widget\TabItem;
 use Symfony\Component\Tui\Widget\TabsWidget;
@@ -34,22 +36,41 @@ final readonly class UnifiedSetupScreen
         $title->setStyle(new Style(bold: true));
         $target = new TextWidget('');
         $notice = new TextWidget('');
+        $confirmation = new ContainerWidget();
         $tabSlot = new ContainerWidget();
-        $body->add($title)->add($target)->add($notice)->add($tabSlot);
+        $body->add($title)->add($target)->add($notice)->add($confirmation)->add($tabSlot);
         $tui->add($body);
         $tui->add(new TextWidget($this->theme->muted('Tab / Shift+Tab  Switch tab  ·  F2  Switch scope  ·  Esc  Back / Exit')));
 
         $tabs = null;
         $focus = [];
         $canLeave = static fn (): bool => true;
-        $load = function (?int $index) use ($tui, $tabSlot, $target, $notice, $build, &$layer, &$tabs, &$focus, &$canLeave): void {
+        $load = function (?int $index) use ($tui, $tabSlot, $target, $notice, $confirmation, $build, &$layer, &$tabs, &$focus, &$canLeave): void {
             [$path, $settings, $flow, $providers, $extensions] = $build($layer);
-            $canLeave = static fn (): bool => !$settings->hasDraft() && !$providers->hasDraft() && !$extensions->hasDraft();
-            $exit = function () use ($tui, $notice, $canLeave): void {
+            $canLeave = static fn (): bool => !$providers->hasDraft() && !$extensions->hasDraft();
+            $exit = function () use ($tui, $confirmation, $canLeave): void {
                 if ($canLeave()) {
                     $tui->stop();
                 } else {
-                    $notice->setText($this->theme->warning('Return to your open form and save or discard it before exiting.'));
+                    $previous = $tui->getFocus();
+                    $list = new SelectListWidget([
+                        ['value' => 'stay', 'label' => 'Keep editing'],
+                        ['value' => 'exit', 'label' => 'Discard unsaved changes and exit'],
+                    ]);
+                    $close = static function () use ($confirmation, $tui, $previous): void {
+                        $confirmation->clear();
+                        $tui->setFocus($previous);
+                    };
+                    $list->onCancel($close);
+                    $list->onSelect(static function (SelectEvent $event) use ($close, $tui): void {
+                        if ('exit' === $event->getValue()) {
+                            $tui->stop();
+                        } else {
+                            $close();
+                        }
+                    });
+                    $confirmation->add($this->heading('Exit setup?'))->add($list);
+                    $tui->setFocus($list);
                 }
             };
             $target->setText($this->theme->color(ThemeColorEnum::Accent, $layer->name).' scope  ·  '.$path);
@@ -80,7 +101,7 @@ final readonly class UnifiedSetupScreen
         };
         $load(null);
         $keys = new Keybindings(['setup_next' => [Key::TAB], 'setup_previous' => ['shift+tab'], 'setup_scope' => [Key::F2]]);
-        $tui->addListener(function (InputEvent $event) use ($tui, $keys, $load, $notice, &$tabs, &$focus, &$layer, &$canLeave): void {
+        $tui->addListener(function (InputEvent $event) use ($tui, $keys, $load, $notice, $confirmation, &$tabs, &$focus, &$layer, &$canLeave): void {
             $key = $event->getData();
             $scope = $keys->matches($key, 'setup_scope');
             $next = $keys->matches($key, 'setup_next');
@@ -88,6 +109,9 @@ final readonly class UnifiedSetupScreen
                 return;
             }
             $event->stopPropagation();
+            if ([] !== $confirmation->all()) {
+                return;
+            }
             $current = $tui->getFocus();
             $index = $tabs->getActiveTabIndex();
             // Symfony detaches and closes a SettingsList submenu when its tab is hidden.

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http;
 
+use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
+
 /**
  * Timeout options for outbound LLM HTTP clients.
  *
@@ -13,9 +15,6 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http;
  */
 final class LlmHttpClientOptions
 {
-    public const int DEFAULT_TIMEOUT = 30;
-    public const int DEFAULT_MAX_DURATION = 120;
-
     public readonly int $timeout;
     public readonly int $maxDuration;
 
@@ -23,8 +22,8 @@ final class LlmHttpClientOptions
         ?int $timeout = null,
         ?int $maxDuration = null,
     ) {
-        $this->timeout = self::validatePositive($timeout, 'timeout') ?? self::DEFAULT_TIMEOUT;
-        $this->maxDuration = self::validatePositive($maxDuration, 'maxDuration') ?? self::DEFAULT_MAX_DURATION;
+        $this->timeout = self::validatePositive($timeout, 'timeout') ?? AiHttpConfig::DEFAULT_TIMEOUT;
+        $this->maxDuration = self::validatePositive($maxDuration, 'maxDuration') ?? AiHttpConfig::DEFAULT_MAX_DURATION;
     }
 
     /** @return array{timeout: int, max_duration: int} */

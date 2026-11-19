@@ -13,12 +13,12 @@ in home or project settings. Hatfield does **not** copy defaults into your home 
 Run `hatfield setup` for Settings, Providers, and Extensions. It defaults to user
 settings; `hatfield setup --project` opens in project scope. Press **F2** to switch
 scope, **Tab** or **Shift+Tab** to switch tabs, and **Esc** to go back or exit.
-The Settings tab shows the effective source and lets you save or reset an override without
-copying inherited defaults. Enter collections as one-line YAML (for example,
-`[~/team/prompts]`). Provider and extension maps can contain credentials, so
-their values and input are hidden. Prefer the Providers and Extensions tabs for
-guided configuration. Saving rewrites YAML and does not
-preserve comments or formatting. Start a new session to load the changes.
+In Settings, confirming a valid edit saves it to the selected scope immediately.
+Press **d** in a section to choose an override to remove from that scope.
+Use one-line YAML for collections, for example `[~/team/prompts]`.
+Provider definitions and extension configuration use their own tabs; specialist
+forms still ask you to save or discard their changes. Saving rewrites YAML and
+does not preserve comments or formatting. Start a new session to load changes.
 
 ## Precedence
 

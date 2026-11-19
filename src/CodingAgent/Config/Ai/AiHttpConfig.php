@@ -27,6 +27,9 @@ namespace Ineersa\CodingAgent\Config\Ai;
  */
 final readonly class AiHttpConfig
 {
+    public const int DEFAULT_TIMEOUT = 30;
+    public const int DEFAULT_MAX_DURATION = 120;
+
     public function __construct(
         public ?int $timeout = null,
         public ?int $maxDuration = null,

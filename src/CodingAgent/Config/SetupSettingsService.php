@@ -39,22 +39,18 @@ final readonly class SetupSettingsService
         /** @var array<string, mixed> $defaults */
         $defaults = Yaml::parseFile($path);
         $help = $this->descriptions->extract($path, $defaults);
-        // Dynamic maps are one editable setting, not a list of keys from the current user's file.
-        $maps = ['ai.providers', 'extensions.settings'];
-        $defaults['ai']['providers'] = [];
+        unset($defaults['ai']['providers'], $defaults['extensions']);
         $groups = [];
-        $walk = static function (array $data, string $prefix) use (&$walk, &$groups, $help, $maps): void {
+        $walk = static function (array $data, string $prefix) use (&$walk, &$groups, $help): void {
             foreach ($data as $key => $value) {
                 $path = $prefix.$key;
-                if (\is_array($value) && !array_is_list($value) && !\in_array($path, $maps, true)) {
+                if (\is_array($value) && !array_is_list($value)) {
                     $walk($value, $path.'.');
 
                     continue;
                 }
                 $group = explode('.', $path)[0];
-                $groups[$group][$path] = ['sample' => $value, 'help' => 'ai.providers' === $path
-                    ? 'Override provider definitions by ID. Use environment references for credentials.'
-                    : ($help[$path] ?? '')];
+                $groups[$group][$path] = ['sample' => $value, 'help' => $help[$path] ?? ''];
             }
         };
         $walk($defaults, '');
@@ -76,7 +72,7 @@ final readonly class SetupSettingsService
         $local = SettingsLayerEnum::User === $layer ? $before->userRaw : $before->projectRaw;
         // Hidden map editors accept patches, never a replacement assembled from
         // redacted values. Reset is the explicit way to remove a scope's map.
-        foreach (['ai.providers', 'extensions.settings', 'compaction.provider_overrides', 'compaction.model_overrides'] as $key) {
+        foreach (['compaction.provider_overrides', 'compaction.model_overrides'] as $key) {
             if (!isset($values[$key]) || !\is_array($values[$key])) {
                 continue;
             }
