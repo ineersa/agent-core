@@ -78,11 +78,6 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
         return new self($aiCatalog, $settingsWriter, $appConfig, $layer, $cwd);
     }
 
-    public function catalogEmpty(): bool
-    {
-        return [] === $this->catalog;
-    }
-
     public function providerRows(): array
     {
         $rows = [];

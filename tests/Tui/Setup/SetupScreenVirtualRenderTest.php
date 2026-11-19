@@ -22,6 +22,17 @@ use Symfony\Component\Tui\Tui;
 final class SetupScreenVirtualRenderTest extends TestCase
 {
     #[Test]
+    public function emptyCatalogOffersCustomServer(): void
+    {
+        [$screen, $terminal, $tui] = $this->mount(new FakeProvidersSetupFlow(emptyCatalog: true));
+
+        $this->assertStringContainsString('No catalog providers available', $this->plain($terminal));
+        $this->assertStringContainsString('Other server', $this->plain($terminal));
+        $tui->handleInput("\r");
+        $this->assertSame('custom', $this->phase($screen));
+    }
+
+    #[Test]
     public function freshPickerRendersCatalogProvidersOtherServerAndStatuses(): void
     {
         $flow = new FakeProvidersSetupFlow();
@@ -812,7 +823,7 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
      * @param array<string, bool>                                                                                                                                                                                                  $enabled
      * @param array<string, array{id?: string, baseUrl?: string, completionsPath?: string, apiKey?: ?string, models?: array<string, array<string, mixed>>, supportsDeveloperRole?: bool, thinkingFormat?: string, enabled?: bool}> $customs
      */
-    public function __construct(array $enabled = [], array $customs = [], ?string $defaultModel = null)
+    public function __construct(array $enabled = [], array $customs = [], ?string $defaultModel = null, private readonly bool $emptyCatalog = false)
     {
         $this->enabled = $enabled;
         $this->defaultModel = $defaultModel;
@@ -837,6 +848,10 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
 
     public function providerRows(): array
     {
+        if ($this->emptyCatalog) {
+            return [];
+        }
+
         $catalog = [
             ['id' => 'zai', 'label' => 'Z.ai (GLM)', 'need' => 'needs an API key', 'kind' => 'apikey', 'authCommand' => null, 'models' => ['glm-5.3']],
             ['id' => 'deepseek', 'label' => 'DeepSeek', 'need' => 'needs an API key', 'kind' => 'apikey', 'authCommand' => null, 'models' => ['deepseek-v4-pro']],

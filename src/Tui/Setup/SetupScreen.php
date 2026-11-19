@@ -991,8 +991,11 @@ final class SetupScreen
         $this->activeProviderId = null;
         $this->pendingConfirm = null;
         $this->actionReturn = self::PHASE_PICKER;
-        $this->hintWidget->setText('Hatfield needs at least one AI provider to run.');
-        $this->showList($this->pickerItems());
+        $providers = $this->flow->providerRows();
+        $this->hintWidget->setText([] === $providers
+            ? 'No catalog providers available. Choose Other server to configure a custom endpoint.'
+            : 'Hatfield needs at least one AI provider to run.');
+        $this->showList($this->pickerItems($providers));
     }
 
     private function showServersSubmenu(): void
@@ -1032,12 +1035,14 @@ final class SetupScreen
     }
 
     /**
+     * @param list<array{id: string, label: string, need: string, status: string}> $providers
+     *
      * @return list<array{value: string, label: string, description?: string}>
      */
-    private function pickerItems(): array
+    private function pickerItems(array $providers): array
     {
         $items = [];
-        foreach ($this->flow->providerRows() as $row) {
+        foreach ($providers as $row) {
             $enabled = '✓ enabled' === $row['status'];
             $statusLabel = $enabled ? '✓ enabled' : '✗ disabled';
             $items[] = [
