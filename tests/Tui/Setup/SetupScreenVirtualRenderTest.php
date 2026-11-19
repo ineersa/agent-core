@@ -215,7 +215,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $text = $this->plain($terminal);
         $this->assertSame('custom', $this->phase($screen));
         $this->assertStringContainsString('Add your own server', $text);
-        $this->assertStringContainsString('All options on one screen', $text);
+        $this->assertStringContainsString('Connection and model settings', $text);
         $this->assertSame(1, substr_count($text, 'Provider id')); // orphan-guard: clipped duplicate would repeat labels
         $this->assertStringContainsString('Server URL', $text);
         $this->assertStringContainsString('Completions path', $text);
@@ -229,8 +229,8 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringContainsString('Reasoning', $text);
         $this->assertStringContainsString('Developer role', $text);
         $this->assertStringContainsString('Reasoning format', $text);
-        $this->assertStringContainsString('Add model to list', $text);
-        $this->assertSame(1, substr_count($text, 'Save and enable')); // orphan-guard: exactly one save row
+        $this->assertStringContainsString('Create server with this model', $text);
+        $this->assertStringNotContainsString('Save and enable', $text);
         // Selected row description (first = Provider id)
         $this->assertStringContainsString('A short name to identify this provider', $text);
         $this->assertStringContainsString('Example: runpod', $text);
@@ -258,7 +258,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->changeSetting($screen, 'reasoning', 'no');
         $this->changeSetting($screen, 'supportsDeveloperRole', 'no');
         $this->changeSetting($screen, 'thinkingFormat', '');
-        $this->changeSetting($screen, 'save', '↵');
+        $this->changeSetting($screen, 'add_model', '↵');
 
         $this->assertSame('confirm', $this->phase($screen));
         $this->assertCount(1, $flow->savedCustoms);
@@ -276,35 +276,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $text = $this->plain($terminal);
         $this->assertStringContainsString('Continue', $text);
         $this->assertStringContainsString('Exit', $text);
-    }
-
-    #[Test]
-    public function customFormAddModelThenSaveKeepsBothModels(): void
-    {
-        $flow = new FakeProvidersSetupFlow();
-        [$screen, $terminal] = $this->mount($flow);
-
-        $this->selectValue($screen, 'custom');
-        $this->changeSetting($screen, 'id', 'multi');
-        $this->changeSetting($screen, 'baseUrl', 'http://127.0.0.1:8080');
-        $this->changeSetting($screen, 'modelId', 'a');
-        $this->changeSetting($screen, 'modelName', 'A');
-        $this->changeSetting($screen, 'add_model', '↵');
-        $text = $this->plain($terminal);
-        $this->assertStringContainsString('a', $text); // saved models row
-        $this->changeSetting($screen, 'modelId', 'b');
-        $this->changeSetting($screen, 'modelName', 'B');
-        $this->changeSetting($screen, 'modalities', 'text+image');
-        $this->changeSetting($screen, 'reasoning', 'yes');
-        $this->changeSetting($screen, 'save', '↵');
-
-        $this->assertCount(1, $flow->savedCustoms);
-        $models = $flow->savedCustoms[0]['models'];
-        $this->assertArrayHasKey('a', $models);
-        $this->assertArrayHasKey('b', $models);
-        $this->assertSame(['text', 'image'], $models['b']['input']);
-        $this->assertTrue($models['b']['reasoning']);
-        $this->assertNotSame([], $models['b']['thinking_level_map']);
     }
 
     #[Test]
@@ -336,7 +307,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->changeSetting($screen, 'id', 'empty');
         $this->changeSetting($screen, 'baseUrl', 'http://127.0.0.1:8080');
         $this->changeSetting($screen, 'modelId', ''); // clear draft
-        $this->changeSetting($screen, 'save', '↵');
+        $this->changeSetting($screen, 'add_model', '↵');
 
         $this->assertSame('custom', $this->phase($screen));
         $this->assertStringContainsString('Add at least one model.', $this->errorText($screen));
@@ -352,8 +323,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->selectValue($screen, 'custom');
         $this->changeSetting($screen, 'id', 'nourl');
         $this->changeSetting($screen, 'baseUrl', '');
-        $this->changeSetting($screen, 'modelId', 'm');
-        $this->changeSetting($screen, 'save', '↵');
 
         $this->assertSame('custom', $this->phase($screen));
         $this->assertStringContainsString('Server URL is required.', $this->errorText($screen));
@@ -392,11 +361,47 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->changeSetting($screen, 'baseUrl', 'https://abc.proxy.runpod.net');
         $this->changeSetting($screen, 'modelId', 'llama');
         $this->changeSetting($screen, 'modelName', 'Llama');
-        $this->changeSetting($screen, 'save', '↵');
+        $this->changeSetting($screen, 'add_model', '↵');
 
         $this->assertCount(1, $flow->savedCustoms);
         $this->assertSame('runpod', $flow->savedCustoms[0]['id']);
         $this->assertSame('https://abc.proxy.runpod.net', $flow->savedCustoms[0]['baseUrl']);
+    }
+
+    #[Test]
+    public function escapeCancelsProviderFormsAndExitsFromThePicker(): void
+    {
+        $flow = new FakeProvidersSetupFlow();
+        [$screen, $terminal, $tui] = $this->mount($flow);
+        try {
+            $this->selectValue($screen, 'custom');
+            $terminal->simulateInput("\x1b");
+            $this->assertSame('picker', $this->phase($screen));
+
+            $this->selectValue($screen, 'custom');
+            $terminal->simulateInput("\r");
+            $terminal->simulateInput('changed');
+            $terminal->simulateInput("\r");
+            $terminal->simulateInput("\x1b");
+            $this->assertSame('picker', $this->phase($screen));
+            $this->assertSame([], $flow->savedCustoms);
+
+            $this->selectValue($screen, 'zai');
+            $this->selectValue($screen, 'env');
+            $terminal->simulateInput("\x1b");
+            $this->assertSame('picker', $this->phase($screen));
+            $this->selectValue($screen, 'zai');
+            $this->selectValue($screen, 'raw');
+            $terminal->simulateInput('fixture');
+            $terminal->simulateInput("\r"); // Second, empty credential field still has a draft.
+            $terminal->simulateInput("\x1b");
+            $this->assertSame('picker', $this->phase($screen));
+            $this->assertFalse($flow->isEnabled('zai'));
+            $terminal->simulateInput("\x1b");
+            $this->assertFalse($tui->isRunning());
+        } finally {
+            $tui->stop();
+        }
     }
 
     #[Test]
@@ -571,21 +576,11 @@ final class SetupScreenVirtualRenderTest extends TestCase
             $tui->handleInput("\x1b[B");
         }
         $tui->handleInput("\r"); // Open existing API key.
-        $tui->handleInput("\r"); // Empty confirmation leaves the draft untouched.
-        $this->changeSetting($screen, 'save', '↵');
-        $this->assertSame('env:RUNPOD_API_KEY', $flow->savedCustoms[0]['apiKey']);
-        $this->selectValue($screen, 'yes');
-
-        $this->selectValue($screen, 'custom');
-        $this->selectValue($screen, 'runpod');
-        $this->selectValue($screen, 'edit');
-        for ($i = 0; $i < 3; ++$i) {
-            $tui->handleInput("\x1b[B");
-        }
+        $tui->handleInput("\r"); // Empty confirmation leaves the credential untouched.
+        $this->assertSame([], $flow->fieldUpdates);
         $tui->handleInput("\x1b[B"); // Select Clear API key.
         $tui->handleInput("\r");
-        $this->changeSetting($screen, 'save', '↵');
-        $this->assertNull($flow->savedCustoms[1]['apiKey']);
+        $this->assertSame([['runpod', 'api_key', null]], $flow->fieldUpdates);
     }
 
     #[Test]
@@ -737,6 +732,9 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
     public array $savedCustoms = [];
     /** @var list<string> */
     public array $removedCustoms = [];
+
+    /** @var list<array{string, string, mixed}> */
+    public array $fieldUpdates = [];
     /** @var array<string, bool> */
     private array $enabled;
 
@@ -851,6 +849,11 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
             default => [],
         };
         $this->configured[] = ['id' => $id, 'models' => $models, 'authCommand' => $auth];
+    }
+
+    public function updateProviderField(string $id, string $field, mixed $value): void
+    {
+        $this->fieldUpdates[] = [$id, $field, $value];
     }
 
     public function enableApiKey(string $id, string $apiKey): void

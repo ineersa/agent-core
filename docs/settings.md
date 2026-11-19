@@ -14,10 +14,14 @@ Run `hatfield setup` for Settings, Providers, and Extensions. It defaults to use
 settings; `hatfield setup --project` opens in project scope. Press **F2** to switch
 scope, **Tab** or **Shift+Tab** to switch tabs, and **Esc** to go back or exit.
 In Settings, confirming a valid edit saves it to the selected scope immediately.
-Press **d** in a section to choose an override to remove from that scope.
+**● Set here** means the selected scope has an override; **○ Not set here**
+means it does not. The markers describe where the setting is written, not
+which value takes precedence. When the footer shows **d**, press it to choose
+an override to remove from that scope.
 Use one-line YAML for collections, for example `[~/team/prompts]`.
-Provider definitions and extension configuration use their own tabs; specialist
-forms still ask you to save or discard their changes. Saving rewrites YAML and
+Providers and Extensions also save confirmed edits immediately. To create a
+custom server, fill in its connection and first model, then choose **Create server with this model**.
+Esc cancels an open editor or unfinished creation. Package installations still require confirmation. Saving rewrites YAML and
 does not preserve comments or formatting. Start a new session to load changes.
 
 ## Precedence

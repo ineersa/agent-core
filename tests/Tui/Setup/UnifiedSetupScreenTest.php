@@ -62,11 +62,19 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
                 $terminal->simulateInput("\t");
                 $extensions = $this->render($tui, $terminal);
                 $this->assertStringContainsString('Manage extensions', $extensions);
+                $this->assertStringContainsString('Observational Memory', $extensions);
+                if ($width >= 90) {
+                    $this->assertMatchesRegularExpression('/Observational Memory[^\r\n]*(Available|Installed)/', $extensions);
+                }
                 $this->assertStringNotContainsString('→ Back', $extensions);
                 $terminal->simulateInput("\t");
                 $terminal->simulateInput("\x1bOQ");
                 $this->assertStringContainsString('Project scope', $this->render($tui, $terminal));
                 $this->select($tui, 'sessions');
+                $text = $this->render($tui, $terminal);
+                $this->assertMatchesRegularExpression('/→ Path[^\r\n]*○/', $text);
+                $this->assertStringContainsString('● Set here  ○ Not set here', $text);
+                $this->assertStringNotContainsString('d · Remove', $text);
                 $this->field($tui, 'sessions.path');
                 $text = $this->render($tui, $terminal);
                 $this->assertStringContainsString('Directory that stores', $text);
@@ -79,10 +87,31 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
                 $terminal->simulateInput('d');
                 $terminal->simulateInput("\r");
                 $this->assertStringEndsWith('/d', Yaml::parseFile($path)['sessions']['path']);
+                $text = $this->render($tui, $terminal);
+                $this->assertMatchesRegularExpression('/→ Path[^\r\n]*●/', $text);
+                $this->assertMatchesRegularExpression('/d · Remove\s+from\s+this\s+scope/', $text);
                 $terminal->simulateInput('d');
                 $this->assertStringContainsString('Enter confirms', $this->render($tui, $terminal));
                 $terminal->simulateInput("\r");
                 $this->assertArrayNotHasKey('sessions', Yaml::parseFile($path));
+                $text = $this->render($tui, $terminal);
+                $this->assertMatchesRegularExpression('/→ Path[^\r\n]*○/', $text);
+                $this->assertStringNotContainsString('d · Remove', $text);
+                $terminal->simulateInput("\x1b");
+                $this->select($tui, 'compaction');
+                $this->field($tui, 'compaction.model');
+                $terminal->simulateInput("\r");
+                $local = Yaml::parseFile($path)['compaction'];
+                $this->assertArrayHasKey('model', $local);
+                $this->assertNull($local['model']);
+                $this->assertMatchesRegularExpression('/→ Model[^\r\n]*●/', $this->render($tui, $terminal));
+                $terminal->simulateInput("\x1bOQ");
+                $this->select($tui, 'compaction');
+                $this->assertMatchesRegularExpression('/Model[^\r\n]*○/', $this->render($tui, $terminal));
+                $terminal->simulateInput("\x1bOQ");
+                $this->select($tui, 'compaction');
+                $terminal->simulateInput('d');
+                $terminal->simulateInput("\r");
                 $terminal->simulateInput("\x1b");
                 $this->select($tui, 'prompts');
                 $before = file_get_contents($path);
@@ -106,13 +135,16 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
                 $terminal->simulateInput("\x1b");
                 $terminal->simulateInput("\x1b[Z"); // Extensions.
                 $this->select($tui, 'safe_guard');
-                $terminal->simulateInput("\r"); // Change parent enablement only in the specialist draft.
-                $terminal->simulateInput("\t"); // Hide the specialist form.
-                $terminal->simulateInput("\x1b");
-                $this->assertStringContainsString('Exit setup?', $this->render($tui, $terminal));
-                $terminal->simulateInput("\x1b[B");
-                $terminal->simulateInput("\r");
+                $terminal->simulateInput("\x1b"); // Browsing and cancelling do not write.
                 $this->assertSame($before, file_get_contents($path));
+                $this->select($tui, 'safe_guard');
+                $terminal->simulateInput("\r"); // Confirm parent enablement without a Save row.
+                $after = file_get_contents($path);
+                $this->assertNotSame($before, $after);
+                $terminal->simulateInput("\x1bOQ");
+                $this->assertStringContainsString('User scope', $this->render($tui, $terminal));
+                $terminal->simulateInput("\x1b");
+                $this->assertSame($after, file_get_contents($path));
                 $this->assertSame($originalUser, is_file($userPath) ? file_get_contents($userPath) : null);
                 $this->assertFalse($tui->isRunning());
             } finally {

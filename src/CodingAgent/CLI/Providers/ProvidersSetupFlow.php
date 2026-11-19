@@ -191,6 +191,25 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
         $this->markEnabled($id, $this->modelIdsFromProvider($provider), $authCommand);
     }
 
+    public function updateProviderField(string $id, string $field, mixed $value): void
+    {
+        $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id.'.'.$field, $value);
+        $this->wroteSomething = true;
+        if (null !== ($definition = $this->customDefinition($id))) {
+            $key = match ($field) {
+                'base_url' => 'baseUrl',
+                'completions_path' => 'completionsPath',
+                'api_key' => 'apiKey',
+                'compatibility.supports_developer_role' => 'supportsDeveloperRole',
+                'compatibility.thinking_format' => 'thinkingFormat',
+                'models' => 'models',
+                default => throw new \LogicException('Unsupported provider field.'),
+            };
+            $definition[$key] = $value;
+            $this->customDefinitionsThisRun[$id] = $definition;
+        }
+    }
+
     public function enableApiKey(string $id, string $apiKey): void
     {
         $provider = $this->requireCatalogProvider($id);

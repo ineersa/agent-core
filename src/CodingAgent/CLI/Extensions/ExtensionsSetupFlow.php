@@ -79,8 +79,6 @@ final class ExtensionsSetupFlow
     {
         $row = $this->packages()[$package];
         if (!\in_array($package, ['safe_guard', 'scheduling'], true)) {
-            // Regenerate existing loaders before dual-root loading; never update installed packages.
-            $this->installer->install($this->layer, $this->app->cwd, $package);
             $this->manager->loadAutoloaders();
         }
         $class = $row['class'];

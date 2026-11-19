@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\SettingsResolutionDTO;
 use Ineersa\CodingAgent\Config\SettingsValueDTO;
 use Ineersa\CodingAgent\Config\SetupSettingsService;
 use Ineersa\Tui\Theme\ThemeRegistry;
+use Ineersa\Tui\Theme\TuiTheme;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SettingChangeEvent;
@@ -20,7 +21,6 @@ use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\SettingItem;
-use Symfony\Component\Tui\Widget\SettingsListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 use Symfony\Component\Tui\Widget\Util\StringUtils;
 use Symfony\Component\Yaml\Yaml;
@@ -42,16 +42,16 @@ final class CoreSettingsScreen
     ) {
     }
 
-    public function mount(Tui $tui, ContainerWidget $pane, SettingsLayerEnum $layer, ProvidersSetupFlowInterface $providers, \Closure $back, \Closure $heading): void
+    public function mount(Tui $tui, ContainerWidget $pane, SettingsLayerEnum $layer, ProvidersSetupFlowInterface $providers, \Closure $back, \Closure $heading, TuiTheme $theme, \Closure $removeHint): void
     {
         $groups = $this->settings->inventory();
-        $menu = function () use ($tui, $pane, $layer, $groups, $back, $heading, $providers, &$menu): void {
+        $menu = function () use ($tui, $pane, $layer, $groups, $back, $heading, $providers, $theme, $removeHint, &$menu): void {
             $items = [];
             foreach ($groups as $group => $fields) {
                 $items[] = ['value' => $group, 'label' => self::label($group), 'description' => \count($fields).' settings'];
             }
             $list = new SelectListWidget($items, maxVisible: 10);
-            $list->onSelect(fn (SelectEvent $event) => $this->section($tui, $pane, $layer, $event->getValue(), $groups[$event->getValue()], $menu, $heading, $providers));
+            $list->onSelect(fn (SelectEvent $event) => $this->section($tui, $pane, $layer, $event->getValue(), $groups[$event->getValue()], $menu, $heading, $providers, $theme, $removeHint));
             $list->onCancel($back);
             $pane->clear()->add($heading('Preferences'))->add($list);
             $tui->setFocus($list);
@@ -60,14 +60,16 @@ final class CoreSettingsScreen
     }
 
     /** @param array<string, array{sample: mixed, help: string}> $fields */
-    private function section(Tui $tui, ContainerWidget $pane, SettingsLayerEnum $layer, string $group, array $fields, \Closure $menu, \Closure $heading, ProvidersSetupFlowInterface $providers, string $message = ''): void
+    private function section(Tui $tui, ContainerWidget $pane, SettingsLayerEnum $layer, string $group, array $fields, \Closure $menu, \Closure $heading, ProvidersSetupFlowInterface $providers, TuiTheme $theme, \Closure $removeHint): void
     {
         $snapshot = $this->settings->load();
         $items = [];
-        $status = new TextWidget($message);
+        $local = [];
+        $status = new TextWidget('');
         $context = new TextWidget('');
         foreach ($fields as $key => ['sample' => $sample, 'help' => $help]) {
             $effective = $this->settings->resolver->resolve($snapshot, $key);
+            $local[$key] = $this->localValue($snapshot, $layer, $key)->exists;
             $label = self::label(str_replace($group.'.', '', $key));
             $choices = match ($key) {
                 'tui.theme' => $this->themes->getNames(),
@@ -75,7 +77,8 @@ final class CoreSettingsScreen
                 'ai.default_reasoning', 'compaction.thinking_level', 'forks.thinking_level' => [self::inherit($key), ...ModelResolver::LEVELS],
                 default => [],
             };
-            $submenu = \is_bool($sample) ? null : function (string $current) use ($label, $help, $context, $choices, $key, $sample, $layer): SelectListWidget {
+            $submenu = \is_bool($sample) ? null : function (string $current) use ($label, $help, $context, $choices, $key, $sample, $layer, $removeHint, $tui): SelectListWidget {
+                $removeHint(false);
                 $context->setText($label."\n".$help.(isset(self::HTTP[$key]) ? ' Unit: '.self::HTTP[$key][1].'.' : '')."\nEnter applies · Esc cancels");
                 if ([] !== $choices) {
                     $editor = new SelectListWidget(array_map(static fn (string $choice): array => ['value' => $choice, 'label' => $choice], $choices));
@@ -95,15 +98,22 @@ final class CoreSettingsScreen
                         $context->setText($context->getText().' · One-line YAML'.($secret ? ' (hidden patch)' : ''));
                     }
                 }
-                $editor->onCancel(static function () use ($context): void { $context->setText(''); });
+                $editor->onCancel(static function () use ($context, $removeHint, $tui): void {
+                    $context->setText('');
+                    $focused = $tui->getFocus();
+                    $removeHint($focused instanceof ScopedSettingsListWidget && $focused->canRemove());
+                });
 
                 return $editor;
             };
             $items[] = new SettingItem($key, $label, self::display($key, $effective), $help,
                 values: \is_bool($sample) ? ['Off', 'On'] : [], submenu: $submenu);
         }
-        $widget = new SettingsListWidget($items, maxVisible: 12);
-        $persist = function (string $key, ?string $input) use ($widget, $fields, $status, $context, $layer, &$snapshot): void {
+        $widget = new ScopedSettingsListWidget($items, $theme);
+        foreach ($local as $key => $exists) {
+            $widget->setLocal($key, $exists);
+        }
+        $persist = function (string $key, ?string $input) use ($widget, $fields, $status, $context, $layer, $removeHint, $tui, &$snapshot): void {
             $context->setText('');
             try {
                 $values = [];
@@ -125,6 +135,8 @@ final class CoreSettingsScreen
                 $this->logger->notice('settings.setup.refused', ['component' => 'setup', 'event_type' => 'settings.setup.refused', 'exception_class' => $error::class]);
                 $status->setText('Not saved. Check the value and target settings.');
             }
+            $widget->setLocal($key, $this->localValue($snapshot, $layer, $key)->exists);
+            $removeHint($tui->getFocus() === $widget && $widget->canRemove());
             $widget->updateValue($key, self::display($key, $this->settings->resolver->resolve($snapshot, $key)));
         };
         $widget->onChange(static fn (SettingChangeEvent $event) => $persist($event->getId(), $event->getValue()));
@@ -163,7 +175,7 @@ final class CoreSettingsScreen
 
             return true;
         });
-        $pane->clear()->add($heading(self::label($group)))->add($status)->add($context)->add($removal)->add($widget)->add(new TextWidget('d · Remove from this scope'));
+        $pane->clear()->add($heading(self::label($group)))->add(new TextWidget($theme->success('●').' Set here  '.$theme->error('○').' Not set here'))->add($status)->add($context)->add($removal)->add($widget);
         $tui->setFocus($widget);
     }
 

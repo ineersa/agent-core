@@ -31,7 +31,6 @@ final class ExtensionsSetupScreen
     private TextWidget $notice;
 
     private ?\Closure $back = null;
-    private bool $editing = false;
 
     public function __construct(private readonly ExtensionsSetupFlow $flow, private readonly TuiTheme $theme, private readonly LoggerInterface $logger)
     {
@@ -48,16 +47,9 @@ final class ExtensionsSetupScreen
         $this->menu();
     }
 
-    public function hasDraft(): bool
-    {
-        return $this->editing;
-    }
-
     private function leave(): void
     {
-        if ($this->editing) {
-            $this->notice->setText('Choose Save configuration or Discard changes.');
-        } elseif (null !== $this->back) {
+        if (null !== $this->back) {
             ($this->back)();
         } else {
             $this->tui->stop();
@@ -83,10 +75,15 @@ final class ExtensionsSetupScreen
 
     private function menu(): void
     {
-        $this->editing = false;
         $items = [];
         foreach ($this->flow->packages() as $id => $row) {
-            $items[] = ['value' => $id, 'label' => $row['label'], 'description' => $row['installed'] ? $this->theme->success('Installed · Configure') : $this->theme->muted('Available · Install')];
+            $status = $row['installed'] ? $this->theme->success('Installed · Configure') : $this->theme->muted('Available · Install');
+            $package = str_starts_with($id, 'ineersa/hatfield-ext-');
+            $items[] = [
+                'value' => $id,
+                'label' => $package ? ucwords(str_replace('-', ' ', substr($id, \strlen('ineersa/hatfield-ext-')))) : $row['label'],
+                'description' => $package ? $status.' — '.$row['label'] : $status,
+            ];
         }
         $this->choose($items, function (string $id): void {
             if (!$this->flow->packages()[$id]['installed']) {
@@ -111,7 +108,6 @@ final class ExtensionsSetupScreen
     private function form(string $package): void
     {
         $this->flow->select($package);
-        $this->editing = true;
         $items = [
             new SettingItem('parent', 'Enabled for parent', $this->flow->members['parent'], values: ['true', 'false']),
             new SettingItem('forks', 'Fork selection', $this->flow->members['forks'], values: ['off', 'enabled', 'always_on']),
@@ -150,50 +146,52 @@ final class ExtensionsSetupScreen
                 $items[] = new SettingItem('clear:'.$path, 'Clear '.$label, '', values: ['clear']);
             }
         }
-        $items[] = new SettingItem('save', 'Save configuration and enablement', '', values: ['save']);
-        $items[] = new SettingItem('discard', 'Discard changes', '', values: ['discard']);
         $settings = new SettingsListWidget($items, maxVisible: 16);
-        $edits = [];
-        $settings->onChange(function (SettingChangeEvent $event) use ($settings, $initial, $hidden, $clearActions, &$edits): void {
-            $this->attempt(function () use ($event, $settings, $initial, $hidden, $clearActions, &$edits): void {
-                $id = $event->getId();
-                $value = $event->getValue();
-                if (isset($clearActions[$id])) {
-                    $path = $clearActions[$id];
-                    $edits[$path] = '';
-                    $settings->updateValue($path, '(cleared in draft)');
-                    $settings->updateValue($id, '');
-
+        $settings->onChange(function (SettingChangeEvent $event) use ($settings, &$initial, $hidden, $clearActions): void {
+            $id = $event->getId();
+            $value = $event->getValue();
+            $members = $this->flow->members;
+            $path = $clearActions[$id] ?? $id;
+            $clear = isset($clearActions[$id]);
+            $value = $clear ? '' : $value;
+            $before = $members[$path] ?? $initial[$path];
+            $display = static fn (string $text): string => isset($hidden[$path]) ? ('' === $text ? '(not configured)' : '(configured)') : $text;
+            try {
+                if ($before === $value) {
                     return;
                 }
-                if ('discard' === $id) {
-                    $this->menu();
-                } elseif ('save' === $id) {
-                    $changed = $this->flow->save($edits);
-                    $this->notice->setText($changed
-                        ? 'Saved configuration. Parent enabled: '.$this->flow->members['parent'].'. Changes load next session.'
-                        : 'No overrides changed; inherited configuration remains in effect. No settings file was written.');
-                    $this->menu();
-                } elseif (isset($this->flow->members[$id])) {
-                    $this->flow->members[$id] = $value;
-                    if ('parent' === $id && 'false' === $value) {
+                $edits = [];
+                if (isset($members[$path])) {
+                    $this->flow->members[$path] = $value;
+                    if ('parent' === $path && 'false' === $value) {
                         // Child-selected extensions must also be available in the parent.
-                        foreach (['forks' => 'off', 'agents' => 'false'] as $child => $disabled) {
-                            $this->flow->members[$child] = $disabled;
-                            $settings->updateValue($child, $disabled);
-                        }
+                        $this->flow->members['forks'] = 'off';
+                        $this->flow->members['agents'] = 'false';
                     }
                 } else {
-                    // Apply overlapping mapping/leaf edits in the user's latest edit order.
-                    unset($edits[$id]);
-                    if ($initial[$id] !== $value) {
-                        $edits[$id] = $value;
-                    }
+                    $edits[$path] = $value;
                 }
-                $settings->updateValue($id, isset($hidden[$id]) ? '(edited)' : $value);
-            });
+                $this->flow->save($edits);
+                if ([] !== $edits) {
+                    $initial[$path] = $value;
+                }
+                foreach ($this->flow->members as $key => $member) {
+                    $settings->updateValue($key, $member);
+                }
+                $this->notice->setText('Saved to '.$this->flow->layer->value.' scope. Changes load next session.');
+            } catch (\Throwable $error) {
+                $this->flow->members = $members;
+                $value = $before;
+                $this->logger->notice('extension.setup.refused', ['component' => 'extensions_setup', 'event_type' => 'extension.setup.refused', 'exception_class' => $error::class]);
+                $this->notice->setText($this->theme->error('Not saved. Check the setting or target YAML.'));
+            } finally {
+                $settings->updateValue($path, $display($value));
+                if ($clear) {
+                    $settings->updateValue($id, '');
+                }
+            }
         });
-        $settings->onCancel($this->leave(...));
+        $settings->onCancel($this->menu(...));
         $this->show($settings);
     }
 

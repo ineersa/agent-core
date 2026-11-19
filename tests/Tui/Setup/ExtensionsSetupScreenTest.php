@@ -56,11 +56,6 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
             $terminal->simulateInput("\r"); // Open the masked allow_command_patterns field.
             $terminal->simulateInput("\r"); // Empty confirmation must not edit it.
             $this->assertSame('(configured)', $settings->getValue('allow_command_patterns'));
-            for ($row = 4; $row < \count($flow->nodes) + 3 + \count(array_filter($flow->nodes, static fn ($node): bool => !($node instanceof \Symfony\Component\Config\Definition\BooleanNode || $node instanceof \Symfony\Component\Config\Definition\EnumNode))); ++$row) {
-                $terminal->simulateInput("\x1b[B");
-            }
-            $terminal->simulateInput("\r"); // Save through the real screen callback and settings writer.
-
             $saved = Yaml::parseFile($this->isolatedCwd().'/.hatfield/settings.yaml');
             $this->assertSame([SchedulingExtension::class], $saved['extensions']['enabled']);
             $this->assertSame([SchedulingExtension::class], $saved['forks']['extensions']['always_on']);
@@ -68,7 +63,7 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
             $this->assertFalse($saved['extensions']['settings']['safe_guard']['auto_deny_in_noninteractive']);
             $this->assertSame(['fixture-command'], $saved['extensions']['settings']['safe_guard']['allow_command_patterns']);
             $this->assertSame('.hatfield/unchanged-log', $saved['logging']['path']);
-            $this->assertStringContainsString('Saved configuration. Parent enabled: false.', $notice->getText());
+            $this->assertSame('Saved to project scope. Changes load next session.', $notice->getText());
 
             $layers = self::getContainer()->get(AppConfigLoader::class)->load(
                 self::getContainer()->get(AppResourceLocator::class)->getDefaultsPath(),

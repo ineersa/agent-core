@@ -57,6 +57,8 @@ final class SetupScreen
     private string $formKind = '';
     /** @var array<string, mixed> */
     private array $formState = [];
+    /** @var array<string, mixed> */
+    private array $initialFormState = [];
     private ?string $pendingConfirm = null;
     /** Where action-menu Cancel returns: picker or servers submenu. */
     private string $actionReturn = self::PHASE_PICKER;
@@ -110,9 +112,9 @@ final class SetupScreen
         $this->showPicker();
     }
 
-    public function hasDraft(): bool
+    public function hasUnsubmittedInput(): bool
     {
-        return self::PHASE_CUSTOM === $this->phase || self::PHASE_INPUT === $this->phase || self::PHASE_CONFIRM === $this->phase;
+        return self::PHASE_INPUT === $this->phase || (self::PHASE_CUSTOM === $this->phase && $this->formState !== $this->initialFormState);
     }
 
     private function wireListListeners(): void
@@ -162,11 +164,7 @@ final class SetupScreen
             $this->attempt(fn () => $this->onCustomSettingChange($event->getId(), $event->getValue()));
         });
         $this->settingsWidget->onCancel(function (CancelEvent $_): void {
-            if (null === $this->back) {
-                $this->discardCustomForm();
-            } else {
-                $this->hintWidget->setText('Choose Save and enable or Discard changes.');
-            }
+            $this->discardCustomForm();
         });
     }
 
@@ -420,7 +418,7 @@ final class SetupScreen
     {
         $id = (string) ($this->formState['id'] ?? '');
         $apiKey = $this->flow->formatEnvApiKey('' !== $value ? $value : $this->suggestedEnvVar($id));
-        $this->flow->enableApiKey($id, $apiKey);
+        $this->applyCredential($id, $apiKey);
         $this->askContinue(\sprintf('%s enabled.', $this->labelFor($id))."\n(Everything else is preconfigured.)");
     }
 
@@ -440,8 +438,17 @@ final class SetupScreen
             throw new \InvalidArgumentException('Keys did not match — try again.');
         }
         $id = (string) ($this->formState['id'] ?? '');
-        $this->flow->enableApiKey($id, $raw);
+        $this->applyCredential($id, $raw);
         $this->askContinue(\sprintf('%s enabled.', $this->labelFor($id))."\n(Everything else is preconfigured.)");
+    }
+
+    private function applyCredential(string $id, string $value): void
+    {
+        if ($this->flow->isEnabled($id)) {
+            $this->flow->updateProviderField($id, 'api_key', $value);
+        } else {
+            $this->flow->enableApiKey($id, $value);
+        }
     }
 
     private function startCustom(): void
@@ -507,11 +514,12 @@ final class SetupScreen
 
     private function showCustomForm(): void
     {
+        $this->initialFormState = $this->formState;
         $this->phase = self::PHASE_CUSTOM;
         $this->formKind = '';
         $this->error = null;
         $this->applyChrome();
-        $this->hintWidget->setText('Edit any row. Enter opens editor or toggles. Save when ready.');
+        $this->hintWidget->setText('Confirm fields to apply changes. Esc goes back.');
         // Remove before reassign — ContainerWidget::remove() no-ops on a fresh
         // unattached instance, which would orphan the previously mounted form.
         $this->panelWidget->remove($this->settingsWidget);
@@ -580,7 +588,7 @@ final class SetupScreen
             'modelsSaved',
             'Saved models',
             $modelsDisplay,
-            'Models already on this provider. Add another below, then Save.',
+            'Models already on this provider. Add another below.',
         );
         $items[] = new SettingItem(
             'modelId',
@@ -640,20 +648,11 @@ final class SetupScreen
         );
         $items[] = new SettingItem(
             'add_model',
-            'Add model to list',
+            true === $this->formState['editing'] ? 'Add model' : 'Create server with this model',
             '↵',
-            'Commit the model fields above into Saved models, then clear them for another.',
+            'Confirm the model fields above.',
             values: ['↵'],
         );
-        $items[] = new SettingItem(
-            'save',
-            'Save and enable',
-            '↵',
-            'Validate and write the full provider definition to your settings.',
-            values: ['↵'],
-        );
-
-        $items[] = new SettingItem('discard', 'Discard changes', '↵', values: ['↵']);
 
         return $items;
     }
@@ -667,10 +666,11 @@ final class SetupScreen
     private function onCustomSettingChange(string $id, string $value): void
     {
         $this->error = null;
+        $before = $this->formState;
         try {
             match ($id) {
                 'id' => $this->setCustomId($value),
-                'baseUrl' => $this->formState['baseUrl'] = rtrim(trim($value), '/'),
+                'baseUrl' => $this->formState['baseUrl'] = $this->normalizeServerUrl($value),
                 'completionsPath' => $this->formState['completionsPath'] = $this->normalizePath($value),
                 'apiKey' => $this->formState['apiKey'] = $this->normalizeApiKeyInput($value),
                 'clearApiKey' => $this->formState['apiKey'] = null,
@@ -682,13 +682,31 @@ final class SetupScreen
                 'reasoning' => $this->formState['reasoning'] = $value,
                 'supportsDeveloperRole' => $this->formState['supportsDeveloperRole'] = 'yes' === $value,
                 'thinkingFormat' => $this->formState['thinkingFormat'] = trim($value),
-                'add_model' => $this->commitDraftModel(),
-                'save' => $this->saveCustomForm(),
-                'discard' => $this->discardCustomForm(),
+                'add_model' => $this->confirmModel(),
                 default => null,
             };
+            if (true === $before['editing'] && $before !== $this->formState && 'add_model' !== $id) {
+                $path = match ($id) {
+                    'baseUrl' => 'base_url',
+                    'completionsPath' => 'completions_path',
+                    'apiKey', 'clearApiKey' => 'api_key',
+                    'supportsDeveloperRole' => 'compatibility.supports_developer_role',
+                    'thinkingFormat' => 'compatibility.thinking_format',
+                    default => null,
+                };
+                if (null !== $path) {
+                    $this->flow->updateProviderField($before['id'], $path, $this->formState['clearApiKey' === $id ? 'apiKey' : $id]);
+                    $key = 'clearApiKey' === $id ? 'apiKey' : $id;
+                    $this->initialFormState[$key] = $this->formState[$key];
+                }
+            }
         } catch (\InvalidArgumentException $e) {
+            $this->formState = $before;
             $this->error = $e->getMessage();
+        } catch (\Throwable $error) {
+            $this->formState = $before;
+            $this->logger->notice('provider.setup.refused', ['component' => 'setup', 'event_type' => 'provider.setup.refused', 'exception_class' => $error::class]);
+            $this->error = 'Not saved. Check the target YAML.';
         }
         if (self::PHASE_CUSTOM !== $this->phase) {
             $this->refreshError();
@@ -698,7 +716,7 @@ final class SetupScreen
         if (null !== $this->error) {
             // Vendor submenu writes the rejected value onto the item before onChange;
             // restore from formState so the row stays coherent without a rebuild.
-            if (!\in_array($id, ['save', 'add_model', 'modalities', 'reasoning'], true)) {
+            if (!\in_array($id, ['add_model', 'modalities', 'reasoning'], true)) {
                 $this->settingsWidget->updateValue($id, $this->displayForSetting($id, $value));
             }
             $this->refreshError();
@@ -769,6 +787,19 @@ final class SetupScreen
         if ('' !== $modelId && '' === trim((string) ($this->formState['modelName'] ?? ''))) {
             $this->formState['modelName'] = $modelId;
         }
+    }
+
+    private function normalizeServerUrl(string $value): string
+    {
+        $url = rtrim(trim($value), '/');
+        if ('' === $url) {
+            throw new \InvalidArgumentException('Server URL is required.');
+        }
+        if (false === filter_var($url, \FILTER_VALIDATE_URL) || !\in_array(parse_url($url, \PHP_URL_SCHEME), ['http', 'https'], true)) {
+            throw new \InvalidArgumentException('Enter a valid HTTP or HTTPS server URL.');
+        }
+
+        return $url;
     }
 
     private function normalizePath(string $value): string
@@ -854,6 +885,24 @@ final class SetupScreen
                 'cache_write' => 0,
             ],
         ];
+    }
+
+    private function confirmModel(): void
+    {
+        if (true !== $this->formState['editing']) {
+            $this->saveCustomForm();
+
+            return;
+        }
+        $id = (string) $this->formState['modelId'];
+        if ('' === $id || isset($this->formState['models'][$id])) {
+            throw new \InvalidArgumentException('Enter a new model ID.');
+        }
+        $models = $this->formState['models'];
+        $models[$id] = $this->draftModelPayload($id);
+        $this->flow->updateProviderField($this->formState['id'], 'models', $models);
+        $this->commitDraftModel();
+        $this->initialFormState = $this->formState;
     }
 
     private function saveCustomForm(): void
@@ -1194,7 +1243,7 @@ final class SetupScreen
                 true === ($this->formState['editing'] ?? false) ? 'Edit your server' : 'Add your own server'
             );
             $this->stepWidget->setText(
-                (new Style(dim: true))->apply('All options on one screen — edit any row, then save')
+                (new Style(dim: true))->apply('Connection and model settings')
             );
 
             return;
