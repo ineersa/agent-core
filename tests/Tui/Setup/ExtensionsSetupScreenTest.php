@@ -129,21 +129,6 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
         }
     }
 
-    private function editField(Tui $tui, VirtualTerminal $terminal, string $id, string $value): void
-    {
-        $settings = $tui->getFocus();
-        $this->assertInstanceOf(SettingsListWidget::class, $settings);
-        $items = (new \ReflectionProperty(SettingsListWidget::class, 'items'))->getValue($settings);
-        $index = array_search($id, array_map(static fn (SettingItem $item): string => $item->getId(), $items), true);
-        $this->assertIsInt($index);
-        (new \ReflectionProperty(SettingsListWidget::class, 'selectedIndex'))->setValue($settings, $index);
-        $terminal->simulateInput("\r");
-        $terminal->simulateInput("\x7f");
-        $terminal->simulateInput("\x7f");
-        $terminal->simulateInput($value);
-        $terminal->simulateInput("\r");
-    }
-
     protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
     {
         self::assertSame($classCwd, realpath($classCwd));
@@ -157,5 +142,20 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
             'agents' => ['extensions' => ['always_on' => [SafeGuardExtension::class, SchedulingExtension::class]]],
             'logging' => ['path' => '.hatfield/unchanged-log'],
         ], 6));
+    }
+
+    private function editField(Tui $tui, VirtualTerminal $terminal, string $id, string $value): void
+    {
+        $settings = $tui->getFocus();
+        $this->assertInstanceOf(SettingsListWidget::class, $settings);
+        $items = (new \ReflectionProperty(SettingsListWidget::class, 'items'))->getValue($settings);
+        $index = array_search($id, array_map(static fn (SettingItem $item): string => $item->getId(), $items), true);
+        $this->assertIsInt($index);
+        (new \ReflectionProperty(SettingsListWidget::class, 'selectedIndex'))->setValue($settings, $index);
+        $terminal->simulateInput("\r");
+        $terminal->simulateInput("\x7f");
+        $terminal->simulateInput("\x7f");
+        $terminal->simulateInput($value);
+        $terminal->simulateInput("\r");
     }
 }
