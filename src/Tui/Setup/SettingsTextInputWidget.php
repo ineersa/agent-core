@@ -42,6 +42,7 @@ final class SettingsTextInputWidget extends SelectListWidget
             'cursor_start' => [Key::HOME, 'ctrl+a'],
             'cursor_end' => [Key::END, 'ctrl+e'],
             'delete_char_forward' => [Key::DELETE],
+            'clear_hidden_value' => [Key::ctrl('r')],
         ]));
     }
 
@@ -65,10 +66,17 @@ final class SettingsTextInputWidget extends SelectListWidget
 
             return;
         }
-        if ($kb->matches($data, 'select_confirm')) {
+        $clear = $this->secret && $kb->matches($data, 'clear_hidden_value');
+        if ($clear || $kb->matches($data, 'select_confirm')) {
+            $value = $clear ? '' : $this->line->getText();
+            if ($this->secret && !$clear && '' === trim($value)) {
+                $this->dispatch(new CancelEvent($this));
+
+                return;
+            }
             $this->dispatch(new SelectEvent($this, [
-                'value' => $this->line->getText(),
-                'label' => $this->line->getText(),
+                'value' => $value,
+                'label' => $this->secret ? '' : $value,
             ]));
 
             return;
@@ -103,7 +111,7 @@ final class SettingsTextInputWidget extends SelectListWidget
     public function render(RenderContext $context): array
     {
         if ($this->secret) {
-            return [AnsiUtils::truncateToWidth('Hidden input · Enter to accept', $context->getColumns(), '')];
+            return [AnsiUtils::truncateToWidth('Hidden input · Empty Enter keeps value · Ctrl+R clears', $context->getColumns(), '')];
         }
 
         $width = max(0, $context->getColumns() - AnsiUtils::visibleWidth($this->prompt));

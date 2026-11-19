@@ -576,7 +576,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function editCustomPrefillsSavedUrlAndPath(): void
+    public function editCustomPrefillsPublicFieldsAndPreservesHiddenKeyUntilExplicitClear(): void
     {
         $flow = new FakeProvidersSetupFlow(customs: [
             'runpod' => [
@@ -600,7 +600,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
                 'thinkingFormat' => '',
             ],
         ]);
-        [$screen, $terminal] = $this->mount($flow);
+        [$screen, $terminal, $tui] = $this->mount($flow);
 
         $this->selectValue($screen, 'custom');
         $this->selectValue($screen, 'runpod');
@@ -614,6 +614,26 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('env:RUNPOD_API_KEY', $text);
         $this->assertStringContainsString('llama', $text);
         $this->assertStringContainsString('Locked while editing', $text);
+
+        for ($i = 0; $i < 3; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+        $tui->handleInput("\r"); // Open existing API key.
+        $tui->handleInput("\r"); // Empty confirmation leaves the draft untouched.
+        $this->changeSetting($screen, 'save', '↵');
+        $this->assertSame('env:RUNPOD_API_KEY', $flow->savedCustoms[0]['apiKey']);
+        $this->selectValue($screen, 'yes');
+
+        $this->selectValue($screen, 'custom');
+        $this->selectValue($screen, 'runpod');
+        $this->selectValue($screen, 'edit');
+        for ($i = 0; $i < 3; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+        $tui->handleInput("\r");
+        $tui->handleInput("\x12"); // Ctrl+R explicitly clears the key.
+        $this->changeSetting($screen, 'save', '↵');
+        $this->assertNull($flow->savedCustoms[1]['apiKey']);
     }
 
     #[Test]

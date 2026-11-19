@@ -10,6 +10,8 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\Config\Definition\BaseNode;
 use Symfony\Component\Config\Definition\BooleanNode;
 use Symfony\Component\Config\Definition\EnumNode;
+use Symfony\Component\Config\Definition\FloatNode;
+use Symfony\Component\Config\Definition\IntegerNode;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SettingChangeEvent;
 use Symfony\Component\Tui\Input\Key;
@@ -121,6 +123,7 @@ final class ExtensionsSetupScreen
             new SettingItem('agents', 'Always on for agents', $this->flow->members['agents'], values: ['true', 'false']),
         ];
         $initial = [];
+        $hidden = [];
         foreach ($this->flow->nodes as $path => $node) {
             $value = $this->flow->value($this->flow->settings, $path);
             if (null === $value && $node->hasDefaultValue()) {
@@ -135,8 +138,12 @@ final class ExtensionsSetupScreen
 
                 return new SelectListWidget(array_map(static fn (string $model): array => ['value' => $model, 'label' => $model], array_values(array_filter($models, static fn (string $id): bool => '' !== $id))), maxVisible: 12);
             } : static fn (string $current): SettingsTextInputWidget => new SettingsTextInputWidget($current);
-            // Arbitrary extension schema fields may contain secrets, including nested YAML.
-            if ([] === $choices && !$picker) {
+            // Untyped values, including nested YAML, may contain secrets. Never prefill
+            // a malformed on-disk string even when the schema declares a number.
+            $numeric = ($node instanceof IntegerNode || $node instanceof FloatNode)
+                && (null === $value || \is_int($value) || \is_float($value));
+            if ([] === $choices && !$picker && !$numeric) {
+                $hidden[$path] = true;
                 $submenu = static fn (): SettingsTextInputWidget => new SettingsTextInputWidget(secret: true);
                 $display = '' === $display ? '(not configured)' : '(configured)';
             }
@@ -146,8 +153,8 @@ final class ExtensionsSetupScreen
         $items[] = new SettingItem('discard', 'Discard changes', '', values: ['discard']);
         $settings = new SettingsListWidget($items, maxVisible: 16);
         $edits = [];
-        $settings->onChange(function (SettingChangeEvent $event) use ($settings, $initial, &$edits): void {
-            $this->attempt(function () use ($event, $settings, $initial, &$edits): void {
+        $settings->onChange(function (SettingChangeEvent $event) use ($settings, $initial, $hidden, &$edits): void {
+            $this->attempt(function () use ($event, $settings, $initial, $hidden, &$edits): void {
                 $id = $event->getId();
                 $value = $event->getValue();
                 if ('discard' === $id) {
@@ -174,9 +181,7 @@ final class ExtensionsSetupScreen
                         $edits[$id] = $value;
                     }
                 }
-                $node = $this->flow->nodes[$id] ?? null;
-                $hidden = $node instanceof BaseNode && !$node instanceof BooleanNode && !$node instanceof EnumNode && true !== $node->getAttribute('hatfield.model_picker', false);
-                $settings->updateValue($id, $hidden ? '(edited)' : $value);
+                $settings->updateValue($id, isset($hidden[$id]) ? '(edited)' : $value);
             });
         });
         $settings->onCancel($this->leave(...));

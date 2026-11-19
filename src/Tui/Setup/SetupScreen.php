@@ -601,7 +601,7 @@ final class SetupScreen
             'apiKey',
             'API key',
             $apiKeyDisplay,
-            'Blank = none. Env var name (RUNPOD_API_KEY) or env:NAME, or paste a raw key (stored in settings).',
+            'Use an environment reference or paste a raw key. Ctrl+R in the editor clears it.',
             submenu: static fn (): SettingsTextInputWidget => new SettingsTextInputWidget(secret: true),
         );
         $items[] = new SettingItem(

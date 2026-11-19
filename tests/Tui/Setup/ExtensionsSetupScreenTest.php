@@ -51,7 +51,13 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
             $terminal->simulateInput("\r"); // Re-enabling must not silently restore child choices.
             $this->assertSame(['parent' => 'true', 'forks' => 'off', 'agents' => 'false'], $flow->members);
             $terminal->simulateInput("\r");
-            for ($row = 0; $row < \count($flow->nodes) + 3; ++$row) {
+            for ($row = 0; $row < 4; ++$row) {
+                $terminal->simulateInput("\x1b[B");
+            }
+            $terminal->simulateInput("\r"); // Open the masked allow_command_patterns field.
+            $terminal->simulateInput("\r"); // Empty confirmation must not edit it.
+            $this->assertSame('(configured)', $settings->getValue('allow_command_patterns'));
+            for ($row = 4; $row < \count($flow->nodes) + 3; ++$row) {
                 $terminal->simulateInput("\x1b[B");
             }
             $terminal->simulateInput("\r"); // Save through the real screen callback and settings writer.
@@ -61,6 +67,7 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
             $this->assertSame([SchedulingExtension::class], $saved['forks']['extensions']['always_on']);
             $this->assertSame([SchedulingExtension::class], $saved['agents']['extensions']['always_on']);
             $this->assertFalse($saved['extensions']['settings']['safe_guard']['auto_deny_in_noninteractive']);
+            $this->assertSame(['fixture-command'], $saved['extensions']['settings']['safe_guard']['allow_command_patterns']);
             $this->assertSame('.hatfield/unchanged-log', $saved['logging']['path']);
             $this->assertStringContainsString('Saved configuration. Parent enabled: false.', $notice->getText());
 
@@ -83,7 +90,7 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
         file_put_contents($classCwd.'/.hatfield/settings.yaml', Yaml::dump([
             'extensions' => [
                 'enabled' => [SafeGuardExtension::class, SchedulingExtension::class],
-                'settings' => ['safe_guard' => ['auto_deny_in_noninteractive' => false]],
+                'settings' => ['safe_guard' => ['auto_deny_in_noninteractive' => false, 'allow_command_patterns' => ['fixture-command']]],
             ],
             'forks' => ['extensions' => ['always_on' => [SafeGuardExtension::class, SchedulingExtension::class]]],
             'agents' => ['extensions' => ['always_on' => [SafeGuardExtension::class, SchedulingExtension::class]]],

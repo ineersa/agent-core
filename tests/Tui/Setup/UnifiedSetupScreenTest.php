@@ -46,6 +46,9 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
             $tabs = $tui->getFocus();
             $this->assertInstanceOf(TabsWidget::class, $tabs);
             $this->assertSame('providers', $tabs->getActiveTabId());
+            $tui->requestRender(force: true);
+            $tui->processRender();
+            $this->assertStringContainsString('AI Provider Setup', $terminal->getOutput());
             $terminal->simulateInput("\x1b[C");
             $this->assertSame('extensions', $tabs->getActiveTabId());
             $terminal->simulateInput("\r");
@@ -67,6 +70,12 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
             $this->select($tui, ':reset');
             $this->select($tui, 'Save');
             $this->assertArrayNotHasKey('forks', Yaml::parseFile($path));
+            $this->select($tui, 'Back');
+            $terminal->simulateInput("\x1b"); // Rebuild the main Settings menu.
+            $terminal->simulateInput("\x1b"); // Return focus to the tab header.
+            $this->assertSame($tabs, $tui->getFocus());
+            $terminal->simulateInput("\r"); // Re-enter without changing tabs.
+            $this->select($tui, 'forks');
         } finally {
             $tui->stop();
         }
