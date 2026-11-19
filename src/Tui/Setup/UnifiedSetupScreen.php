@@ -33,17 +33,16 @@ final readonly class UnifiedSetupScreen
         $title = new TextWidget($this->theme->color(ThemeColorEnum::Accent, 'Hatfield setup'));
         $title->setStyle(new Style(bold: true));
         $target = new TextWidget('');
-        $warning = new TextWidget('');
         $notice = new TextWidget('');
         $tabSlot = new ContainerWidget();
-        $body->add($title)->add($target)->add($warning)->add($notice)->add($tabSlot);
+        $body->add($title)->add($target)->add($notice)->add($tabSlot);
         $tui->add($body);
         $tui->add(new TextWidget($this->theme->muted('Tab / Shift+Tab  Switch tab  ·  F2  Switch scope  ·  Esc  Back / Exit')));
 
         $tabs = null;
         $focus = [];
         $canLeave = static fn (): bool => true;
-        $load = function (?int $index) use ($tui, $tabSlot, $target, $warning, $notice, $build, &$layer, &$tabs, &$focus, &$canLeave): void {
+        $load = function (?int $index) use ($tui, $tabSlot, $target, $notice, $build, &$layer, &$tabs, &$focus, &$canLeave): void {
             [$path, $settings, $flow, $providers, $extensions] = $build($layer);
             $canLeave = static fn (): bool => !$settings->hasDraft() && !$providers->hasDraft() && !$extensions->hasDraft();
             $exit = function () use ($tui, $notice, $canLeave): void {
@@ -54,7 +53,6 @@ final readonly class UnifiedSetupScreen
                 }
             };
             $target->setText($this->theme->color(ThemeColorEnum::Accent, $layer->name).' scope  ·  '.$path);
-            $warning->setText($this->theme->warning('Saving rewrites YAML comments and formatting.'.(SettingsLayerEnum::Project === $layer ? ' Use environment references for credentials.' : '')));
             $notice->setText('');
             $panes = [new ContainerWidget(), new ContainerWidget(), new ContainerWidget()];
             foreach ($panes as $pane) {

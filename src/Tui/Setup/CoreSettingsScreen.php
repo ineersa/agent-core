@@ -12,35 +12,24 @@ use Ineersa\CodingAgent\Config\SetupSettingsService;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Event\SelectionChangeEvent;
+use Symfony\Component\Tui\Event\SettingChangeEvent;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
+use Symfony\Component\Tui\Widget\SettingItem;
+use Symfony\Component\Tui\Widget\SettingsListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
+use Symfony\Component\Tui\Widget\Util\StringUtils;
+use Symfony\Component\Yaml\Yaml;
 
 final class CoreSettingsScreen
 {
-    private const GROUPS = [
-        'Appearance' => ['tui.theme', 'tui.transcript.previews.expanded_by_default'],
-        'Delegation' => ['forks.enabled'],
-        'Compaction' => ['compaction.auto_enabled', 'compaction.model', 'compaction.thinking_level'],
-    ];
-
-    private const HELP = [
-        'tui.theme' => ['Color theme', 'Choose the colors used by Hatfield.'],
-        'tui.transcript.previews.expanded_by_default' => ['Expand previews', 'Show tool output and diffs expanded by default.'],
-        'forks.enabled' => ['Allow forks', 'Let the assistant branch the conversation into a child run.'],
-        'compaction.auto_enabled' => ['Automatic compaction', 'Summarize older context as the conversation grows.'],
-        'compaction.model' => ['Compaction model', 'Choose which model summarizes older context.'],
-        'compaction.thinking_level' => ['Compaction reasoning', 'Choose how much reasoning the summarizer uses.'],
-    ];
-
     private bool $draft = false;
 
     public function __construct(
         private readonly SetupSettingsService $settings,
-        private readonly ThemeRegistry $themes,
         private readonly LoggerInterface $logger,
+        private readonly ThemeRegistry $themes,
     ) {
     }
 
@@ -51,111 +40,190 @@ final class CoreSettingsScreen
 
     public function mount(Tui $tui, ContainerWidget $pane, SettingsLayerEnum $layer, ProvidersSetupFlowInterface $providers, \Closure $back, \Closure $heading): void
     {
-        $show = static function (string $text, array $items, \Closure $pick, \Closure $cancel) use ($tui, $pane, $heading): void {
-            $descriptions = array_column($items, 'description', 'value');
-            $list = new SelectListWidget(array_map(static fn (array $item): array => ['value' => $item['value'], 'label' => $item['label']], $items), maxVisible: 9);
-            $list->onSelect(static fn (SelectEvent $event) => $pick($event->getValue()));
-            $list->onCancel($cancel);
-            [$title, $details] = array_pad(explode("\n", $text, 2), 2, '');
-            $explanation = new TextWidget($descriptions[$list->getSelectedItem()['value'] ?? ''] ?? $details);
-            $list->onSelectionChange(static function (SelectionChangeEvent $event) use ($explanation, $descriptions, $details): void {
-                $explanation->setText($descriptions[$event->getValue()] ?? $details);
-            });
-            $pane->clear()->add($heading($title))->add($explanation)->add($list);
+        $groups = $this->settings->inventory();
+        $menu = function () use ($tui, $pane, $layer, $groups, $back, $heading, $providers, &$menu): void {
+            $items = [];
+            foreach ($groups as $group => $fields) {
+                $items[] = ['value' => $group, 'label' => self::label($group), 'description' => \count($fields).' settings'];
+            }
+            $list = new SelectListWidget($items, maxVisible: 10);
+            $list->onSelect(fn (SelectEvent $event) => $this->section($tui, $pane, $layer, $event->getValue(), $groups[$event->getValue()], $menu, $heading, $providers));
+            $list->onCancel($back);
+            $pane->clear()->add($heading('Preferences'))->add($list);
             $tui->setFocus($list);
-        };
-        $menu = function () use ($show, $layer, $providers, $back, &$menu): void {
-            $show("Preferences\nEdit common preferences here. For the complete inventory, use /settings-show.", self::items(array_keys(self::GROUPS)), function (string $group) use ($show, $layer, $providers, &$menu): void {
-                $section = function () use ($show, $group, $layer, $providers, &$menu, &$section): void {
-                    $snapshot = $this->settings->load();
-                    $items = [];
-                    foreach (self::GROUPS[$group] as $path) {
-                        [$label, $description] = self::HELP[$path];
-                        $value = self::display($this->settings->resolver->resolve($snapshot, $path));
-                        $items[] = ['value' => $path, 'label' => $label.' · '.$value, 'description' => $description];
-                    }
-                    $show($group."\nChoose a preference to edit.", $items, fn (string $key) => $this->edit($show, $layer, $key, $providers, $section), $menu);
-                };
-                $section();
-            }, $back);
         };
         $menu();
     }
 
-    private function edit(\Closure $show, SettingsLayerEnum $layer, string $key, ProvidersSetupFlowInterface $providers, \Closure $back): void
+    /** @param array<string, array{sample: mixed, help: string}> $fields */
+    private function section(Tui $tui, ContainerWidget $pane, SettingsLayerEnum $layer, string $group, array $fields, \Closure $menu, \Closure $heading, ProvidersSetupFlowInterface $providers, string $message = ''): void
     {
         $this->draft = false;
-        [$label, $help] = self::HELP[$key];
         $snapshot = $this->settings->load();
-        $resolver = $this->settings->resolver;
         $local = SettingsLayerEnum::User === $layer ? $snapshot->userRaw : $snapshot->projectRaw;
-        $localValue = $resolver->resolve(new SettingsResolutionDTO([], [], [], $local), $key);
-        $effective = $resolver->resolve($snapshot, $key);
-        $reset = $resolver->resolve($this->settings->withoutOverride($snapshot, $layer, $key), $key);
-        $details = $label."\n".$help."\nEffective: ".self::display($effective).' ('.($effective->layer->value ?? 'no source').')';
-        $details .= "\nSelected scope: ".($localValue->exists ? self::display($localValue) : 'inherited');
-        if (SettingsLayerEnum::User === $layer && SettingsLayerEnum::Project === $effective->layer) {
-            $details .= ' · overridden by project';
-        }
-        $choices = match ($key) {
-            'tui.theme' => $this->themes->getNames(),
-            'compaction.model' => $providers->configuredModelRefs(),
-            'compaction.thinking_level' => ModelResolver::LEVELS,
-            default => ['true', 'false'],
-        };
-        $items = self::items($choices);
-        if (\in_array($key, ['compaction.model', 'compaction.thinking_level'], true)) {
-            $items[] = ['value' => ':session', 'label' => 'Use session default (explicit null)'];
-        }
-        if ($localValue->exists) {
-            $items[] = ['value' => ':reset', 'label' => 'Reset override → '.self::display($reset)];
-        }
-        $show($details, $items, function (string $option) use ($show, $layer, $key, $label, $back, $providers): void {
-            $this->draft = true;
-            $retry = fn () => $this->edit($show, $layer, $key, $providers, $back);
-            $draft = match ($option) {
-                ':session', ':reset' => null,
-                'true' => true,
-                'false' => false,
-                default => $option,
+        $items = [];
+        $resets = [];
+        /** @var array<string, mixed> $values */
+        $values = [];
+        foreach ($fields as $key => ['sample' => $sample, 'help' => $help]) {
+            $effective = $this->settings->resolver->resolve($snapshot, $key);
+            $override = $this->settings->resolver->resolve(new SettingsResolutionDTO([], [], [], $local), $key);
+            $label = self::label(str_replace($group.'.', '', $key));
+            $source = $effective->composite ? 'merged layers' : ($effective->layer->value ?? 'unset');
+            $details = $help.' Effective source: '.$source.'.'.($override->exists ? ' Override in this scope.' : ' Inherited in this scope.');
+            $secret = self::masked($key);
+            $initial = '';
+            if (!$secret && $override->exists) {
+                $initial = self::encode($override->value, $sample);
+            } elseif (!$secret && !\is_array($sample) && $effective->exists) {
+                $initial = self::encode($effective->value, $sample);
+            }
+            $details .= \is_array($sample) ? ' Enter a one-line YAML collection.' : '';
+            if ($secret) {
+                $details .= ' Input is hidden. Entries update this scope’s map; Reset removes its override.';
+            }
+            $choices = match ($key) {
+                'tui.theme' => $this->themes->getNames(),
+                'ai.default_model', 'compaction.model', 'forks.model' => ['Inherit', ...$providers->configuredModelRefs()],
+                'ai.default_reasoning', 'compaction.thinking_level', 'forks.thinking_level' => ['Inherit', ...ModelResolver::LEVELS],
+                default => [],
             };
-            $show($label."\nPending: ".(':reset' === $option ? 'remove override' : $option), self::items(['Save', 'Discard']), function (string $answer) use ($show, $layer, $key, $option, $draft, $retry): void {
-                if ('Save' !== $answer) {
-                    $retry();
+            $submenu = null;
+            if ([] !== $choices) {
+                $submenu = static function () use ($choices, $key, $effective, &$values): SelectListWidget {
+                    $list = new SelectListWidget(array_map(static fn (string $choice): array => ['value' => $choice, 'label' => $choice], $choices));
+                    $current = \array_key_exists($key, $values) ? $values[$key] : $effective->value;
+                    $index = array_search($current ?? 'Inherit', $choices, true);
+                    if (false !== $index) {
+                        $list->setSelectedIndex($index);
+                    }
+
+                    return $list;
+                };
+            } elseif (!\is_bool($sample)) {
+                $submenu = static function () use ($initial, $secret, $sample, $key, &$values): SettingsTextInputWidget {
+                    $text = !$secret && \array_key_exists($key, $values) ? self::encode($values[$key], $sample) : $initial;
+
+                    return new SettingsTextInputWidget($text, secret: $secret);
+                };
+            }
+            $items[] = new SettingItem($key, $label, self::display($effective, $secret), trim($details),
+                values: \is_bool($sample) ? ['Off', 'On'] : [],
+                submenu: $submenu,
+            );
+            if ($override->exists) {
+                $resets[] = ['value' => $key, 'label' => $label];
+            }
+        }
+        if ([] !== $resets) {
+            $items[] = new SettingItem(':reset', 'Reset an override', '', 'Remove one setting from this scope without copying defaults.', submenu: static fn (): SelectListWidget => new SelectListWidget($resets));
+        }
+        $items[] = new SettingItem(':save', 'Save changes', '', values: ['Save']);
+        $items[] = new SettingItem(':discard', 'Discard changes', '', values: ['Discard']);
+        $widget = new SettingsListWidget($items, maxVisible: 12);
+        $status = new TextWidget($message);
+        $remove = [];
+        $invalid = [];
+        $reload = fn (string $message = '') => $this->section($tui, $pane, $layer, $group, $fields, $menu, $heading, $providers, $message);
+        $widget->onChange(function (SettingChangeEvent $event) use ($widget, $fields, $status, $layer, $reload, &$values, &$remove, &$invalid): void {
+            $id = $event->getId();
+            $value = $event->getValue();
+            try {
+                if (':discard' === $id) {
+                    $reload('Draft discarded.');
 
                     return;
                 }
-                try {
-                    $saved = $this->settings->save($layer, ':reset' === $option ? [] : [$key => $draft], ':reset' === $option ? [$key] : []);
-                    $message = $saved ? 'Saved. Changes apply next session.' : 'No changes. File was not written.';
-                } catch (\Throwable $error) {
-                    $this->logger->notice('settings.setup.refused', ['component' => 'setup', 'event_type' => 'settings.setup.refused', 'exception_class' => $error::class]);
-                    $message = 'Not saved. Check the setting and target YAML.';
+                if (':save' === $id) {
+                    $widget->updateValue($id, '');
+                    if ([] !== $invalid) {
+                        $status->setText('Correct invalid fields or discard the draft before saving.');
+
+                        return;
+                    }
+                    $saved = $this->settings->save($layer, $values, array_keys($remove));
+                    $reload($saved ? 'Saved. Changes apply next session.' : 'No changes. File was not written.');
+
+                    return;
                 }
-                $this->draft = false;
-                $show($message."\nPress Enter to continue.", self::items(['Continue']), $retry, $retry);
-            }, $retry);
-        }, $back);
+                if (':reset' === $id) {
+                    unset($values[$value], $invalid[$value]);
+                    $remove[$value] = true;
+                    $widget->updateValue($id, '');
+                    $widget->updateValue($value, 'Reset pending');
+                } else {
+                    // The vendor puts the raw submitted value on the row before emitting this event.
+                    $widget->updateValue($id, 'Invalid value');
+                    $invalid[$id] = true;
+                    $this->draft = true;
+                    $decoded = 'Inherit' === $value && null === $fields[$id]['sample'] ? null : self::decode($value, $fields[$id]['sample']);
+                    if (self::masked($id) && [] !== $decoded && array_is_list($decoded)) {
+                        throw new \InvalidArgumentException('Expected a mapping.');
+                    }
+                    $values[$id] = $decoded;
+                    $widget->updateValue($id, self::display(new SettingsValueDTO(exists: true, value: $decoded), self::masked($id)));
+                    unset($remove[$id], $invalid[$id]);
+                }
+                $this->draft = true;
+                $status->setText('Unsaved changes · Save or Discard');
+            } catch (\Throwable $error) {
+                $this->logger->notice('settings.setup.refused', ['component' => 'setup', 'event_type' => 'settings.setup.refused', 'exception_class' => $error::class]);
+                $status->setText('Not saved. Check the value and target settings, or discard this draft.');
+            }
+        });
+        $widget->onCancel(function () use ($status, $menu): void {
+            if ($this->draft) {
+                $status->setText('Save or discard your changes before leaving.');
+            } else {
+                $menu();
+            }
+        });
+        $pane->clear()->add($heading(self::label($group)))->add($status)->add($widget);
+        $tui->setFocus($widget);
     }
 
-    private static function display(SettingsValueDTO $value): string
+    private static function masked(string $key): bool
+    {
+        return \in_array($key, ['ai.providers', 'extensions.settings', 'compaction.provider_overrides', 'compaction.model_overrides'], true);
+    }
+
+    private static function label(string $key): string
+    {
+        return ucfirst(str_replace(['_', '.'], [' ', ' / '], $key));
+    }
+
+    private static function encode(mixed $value, mixed $sample): string
+    {
+        if (\is_string($sample)) {
+            return \is_string($value) ? StringUtils::stripControlBytes($value) : '';
+        }
+
+        return StringUtils::stripControlBytes(trim(Yaml::dump($value, 0)));
+    }
+
+    private static function decode(string $value, mixed $sample): mixed
+    {
+        if (\is_bool($sample)) {
+            return 'On' === $value;
+        }
+        $decoded = \is_string($sample) ? $value : Yaml::parse($value);
+        if ((\is_array($sample) && !\is_array($decoded)) || (\is_int($sample) && !\is_int($decoded))) {
+            throw new \InvalidArgumentException('Wrong value type.');
+        }
+
+        return $decoded;
+    }
+
+    private static function display(SettingsValueDTO $value, bool $secret): string
     {
         return match (true) {
-            !$value->exists => '(unset)',
-            null === $value->value => '(session default)',
+            !$value->exists => 'Unset',
+            $secret => [] === $value->value ? 'Empty' : 'Configured · hidden',
+            null === $value->value => 'Default',
             \is_bool($value->value) => $value->value ? 'On' : 'Off',
-            \is_string($value->value) => $value->value,
-            default => '(not displayed)',
+            \is_array($value->value) => \count($value->value).' entries',
+            \is_scalar($value->value) => StringUtils::stripControlBytes((string) $value->value),
+            default => 'Unsupported value',
         };
-    }
-
-    /** @param list<string> $values
-     * @return list<array{value: string, label: string}>
-     */
-    private static function items(array $values): array
-    {
-        return array_map(static fn (string $value): array => ['value' => $value, 'label' => match ($value) {
-            'true' => 'On', 'false' => 'Off', default => $value,
-        }], $values);
     }
 }

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Config;
 
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
+use Symfony\Component\Yaml\Yaml;
 
 final readonly class SetupSettingsService
 {
@@ -17,6 +18,7 @@ final readonly class SetupSettingsService
         private DenormalizerInterface $denormalizer,
         private ValidatorInterface $validator,
         public SettingsValueResolver $resolver,
+        private SettingsDescriptions $descriptions,
     ) {
     }
 
@@ -28,6 +30,36 @@ final readonly class SetupSettingsService
     public function loadConfig(): AppConfig
     {
         return AppConfig::fromSettingsData($this->load()->effective, $this->denormalizer, $this->app->cwd, $this->validator);
+    }
+
+    /** @return array<string, array<string, array{sample: mixed, help: string}>> */
+    public function inventory(): array
+    {
+        $path = $this->resources->getDefaultsPath();
+        /** @var array<string, mixed> $defaults */
+        $defaults = Yaml::parseFile($path);
+        $help = $this->descriptions->extract($path, $defaults);
+        // Dynamic maps are one editable setting, not a list of keys from the current user's file.
+        $maps = ['ai.providers', 'extensions.settings'];
+        $defaults['ai']['providers'] = [];
+        $groups = [];
+        $walk = static function (array $data, string $prefix) use (&$walk, &$groups, $help, $maps): void {
+            foreach ($data as $key => $value) {
+                $path = $prefix.$key;
+                if (\is_array($value) && !array_is_list($value) && !\in_array($path, $maps, true)) {
+                    $walk($value, $path.'.');
+
+                    continue;
+                }
+                $group = explode('.', $path)[0];
+                $groups[$group][$path] = ['sample' => $value, 'help' => 'ai.providers' === $path
+                    ? 'Override provider definitions by ID. Use environment references for credentials.'
+                    : ($help[$path] ?? '')];
+            }
+        };
+        $walk($defaults, '');
+
+        return $groups;
     }
 
     public function path(SettingsLayerEnum $layer): string
@@ -42,6 +74,18 @@ final readonly class SetupSettingsService
     {
         $before = $this->load();
         $local = SettingsLayerEnum::User === $layer ? $before->userRaw : $before->projectRaw;
+        // Hidden map editors accept patches, never a replacement assembled from
+        // redacted values. Reset is the explicit way to remove a scope's map.
+        foreach (['ai.providers', 'extensions.settings', 'compaction.provider_overrides', 'compaction.model_overrides'] as $key) {
+            if (!isset($values[$key]) || !\is_array($values[$key])) {
+                continue;
+            }
+            $current = $this->resolver->resolve(new SettingsResolutionDTO([], [], [], $local), $key)->value;
+            $values[$key] = $this->loader->overlayConfig(\is_array($current) ? $current : [], $values[$key], explode('.', $key));
+            if ([] === $values[$key]) {
+                unset($values[$key]);
+            }
+        }
         $candidate = $this->writer->withChanges($local, $values, $remove, $this->path($layer));
         if ($candidate === $local) {
             return false;
