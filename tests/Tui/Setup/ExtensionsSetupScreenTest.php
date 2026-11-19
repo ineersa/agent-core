@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Tests\Setup;
 use Ineersa\CodingAgent\CLI\Extensions\ExtensionsSetupFlow;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Ineersa\CodingAgent\Config\SettingsLayerEnum;
+use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
 use Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -124,6 +126,29 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
                 $this->assertSame(15, $saved['timeout_seconds']);
                 $this->assertSame($hook.'.sh', $saved['script']);
             }
+            $writer = self::getContainer()->get(SettingsOverrideWriter::class);
+            $cwd = $this->isolatedCwd();
+            $user = $writer->layerPath(SettingsLayerEnum::User, $cwd);
+            $home = getenv('HATFIELD_QA_TEST_HOME');
+            $this->assertIsString($home);
+            $this->assertNotSame('', $home);
+            $this->assertSame($home.'/.hatfield', realpath(\dirname($user)));
+            $this->assertFalse(is_link($user));
+            $key = 'extensions.settings.task_workflow.hooks.setup';
+            $inherited = ['script' => 'inherited.sh', 'timeout_seconds' => 21];
+            $writer->set(SettingsLayerEnum::User, $cwd, $key, $inherited);
+            try {
+                $userBefore = file_get_contents($user);
+                $this->activateField($tui, $terminal, 'clear:hooks.setup');
+                $hooks = Yaml::parseFile($path)['extensions']['settings']['task_workflow']['hooks'];
+                $this->assertArrayNotHasKey('setup', $hooks);
+                $this->assertSame('validate.sh', $hooks['validate']['script']);
+                $this->assertSame(15, $hooks['validate']['timeout_seconds']);
+                $this->assertSame($inherited, $flow->settings['hooks']['setup']);
+                $this->assertSame($userBefore, file_get_contents($user));
+            } finally {
+                $writer->remove(SettingsLayerEnum::User, $cwd, $key);
+            }
         } finally {
             $tui->stop();
         }
@@ -146,16 +171,21 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
 
     private function editField(Tui $tui, VirtualTerminal $terminal, string $id, string $value): void
     {
+        $this->activateField($tui, $terminal, $id);
+        $terminal->simulateInput("\x7f");
+        $terminal->simulateInput("\x7f");
+        $terminal->simulateInput($value);
+        $terminal->simulateInput("\r");
+    }
+
+    private function activateField(Tui $tui, VirtualTerminal $terminal, string $id): void
+    {
         $settings = $tui->getFocus();
         $this->assertInstanceOf(SettingsListWidget::class, $settings);
         $items = (new \ReflectionProperty(SettingsListWidget::class, 'items'))->getValue($settings);
         $index = array_search($id, array_map(static fn (SettingItem $item): string => $item->getId(), $items), true);
         $this->assertIsInt($index);
         (new \ReflectionProperty(SettingsListWidget::class, 'selectedIndex'))->setValue($settings, $index);
-        $terminal->simulateInput("\r");
-        $terminal->simulateInput("\x7f");
-        $terminal->simulateInput("\x7f");
-        $terminal->simulateInput($value);
         $terminal->simulateInput("\r");
     }
 }

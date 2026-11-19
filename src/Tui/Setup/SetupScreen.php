@@ -594,7 +594,7 @@ final class SetupScreen
             'Saved models',
             $modelsDisplay,
             'Select an existing model to edit, or enter a new model ID below.',
-            submenu: [] === $models ? null : static fn (): SelectListWidget => new SelectListWidget(array_map(static fn ($id): array => ['value' => (string) $id, 'label' => (string) $id], array_keys($models))),
+            submenu: true === ($this->formState['editing'] ?? false) ? fn (): SelectListWidget => new SelectListWidget(array_map(static fn ($id): array => ['value' => (string) $id, 'label' => (string) $id], array_keys($this->formState['models']))) : null,
         );
         $items[] = new SettingItem(
             'modelId',

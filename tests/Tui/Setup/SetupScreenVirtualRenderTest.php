@@ -383,6 +383,23 @@ final class SetupScreenVirtualRenderTest extends TestCase
             $this->changeSetting($screen, 'modelName', 'New name');
             $this->changeSetting($screen, 'add_model', '↵');
             $this->assertSame([['local-server', 'models', ['same.id' => array_replace($model, ['name' => 'New name']), 'sibling' => ['name' => 'Sibling']]]], $flow->fieldUpdates);
+            $this->changeSetting($screen, 'modelId', 'b');
+            $this->changeSetting($screen, 'modelName', 'Just added');
+            $this->changeSetting($screen, 'add_model', '↵');
+            // From the first row, open Saved models and choose the third model.
+            for ($row = 0; $row < 5; ++$row) {
+                $terminal->simulateInput("\x1b[B");
+            }
+            $terminal->simulateInput("\r");
+            $terminal->simulateInput("\x1b[B");
+            $terminal->simulateInput("\x1b[B");
+            $terminal->simulateInput("\r");
+            $tui->requestRender(force: true);
+            $tui->processRender();
+            $this->assertStringContainsString('Just added', $this->plain($terminal));
+            $this->changeSetting($screen, 'modelName', 'Updated B');
+            $this->changeSetting($screen, 'add_model', '↵');
+            $this->assertSame('Updated B', $flow->fieldUpdates[2][2]['b']['name']);
             $this->assertFalse($flow->isEnabled('local-server'));
         } finally {
             $tui->stop();

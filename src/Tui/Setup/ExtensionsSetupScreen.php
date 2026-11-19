@@ -180,6 +180,16 @@ final class ExtensionsSetupScreen
             $before = $members[$path] ?? $pending[$group][$path] ?? $initial[$path];
             $display = static fn (string $text): string => isset($hidden[$path]) ? ('' === $text ? '(not configured)' : '(configured)') : $text;
             try {
+                if ($clear && ($this->flow->nodes[$path] ?? null) instanceof ArrayNode) {
+                    $value = $before;
+                    $saved = $this->flow->clearMapping($path);
+                    $this->notice->setText($saved ? 'Removed override from this scope.' : 'No override in this scope.');
+                    if ($saved) {
+                        $this->showForm($package);
+                    }
+
+                    return;
+                }
                 if ($before === $value) {
                     return;
                 }

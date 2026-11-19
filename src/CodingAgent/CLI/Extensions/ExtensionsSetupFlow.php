@@ -136,6 +136,29 @@ final class ExtensionsSetupFlow
         return PropertyAccess::createPropertyAccessor()->getValue($values, '['.str_replace('.', '?][', $path).'?]');
     }
 
+    public function clearMapping(string $path): bool
+    {
+        $layers = $this->loader->load($this->resources->getDefaultsPath(), $this->app->cwd);
+        $local = SettingsLayerEnum::User === $this->layer ? $layers->userRaw : $layers->projectRaw;
+        $fullPath = 'extensions.settings.'.$this->key.'.'.$path;
+        $candidate = $this->writer->withoutOverride($local, $fullPath);
+        if ($candidate === $local) {
+            return false;
+        }
+
+        $settings = $this->snapshot($candidate)['extensions']['settings'][$this->key] ?? [];
+        $processor = new Processor();
+        $processor->processConfiguration($this->configuration, [$settings]);
+        if (SettingsLayerEnum::User === $this->layer && [] !== $layers->projectRaw) {
+            $effective = $this->loader->overlayConfig($this->snapshot($candidate), $layers->projectRaw);
+            $processor->processConfiguration($this->configuration, [$effective['extensions']['settings'][$this->key] ?? []]);
+        }
+        $this->writer->remove($this->layer, $this->app->cwd, $fullPath);
+        $this->settings = $settings;
+
+        return true;
+    }
+
     /** @param array<string, string> $edits Only keyboard-edited fields, never materialized defaults. */
     public function save(array $edits): bool
     {
