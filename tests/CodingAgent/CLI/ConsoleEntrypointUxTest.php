@@ -57,6 +57,7 @@ final class ConsoleEntrypointUxTest extends TestCase
             'agents:init',
             'auth:chatgpt',
             'auth:grok',
+            'setup',
             'extensions:setup',
             'providers:update',
             'providers:setup',

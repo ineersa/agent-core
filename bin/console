@@ -160,6 +160,7 @@ $createApplication = static function (Kernel $kernel) use ($isPhar): Application
         'agents:init' => true,
         'auth:chatgpt' => true,
         'auth:grok' => true,
+        'setup' => true,
         'extensions:setup' => true,
         'providers:update' => true,
         'providers:setup' => true,
