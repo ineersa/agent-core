@@ -369,6 +369,27 @@ final class SetupScreenVirtualRenderTest extends TestCase
     }
 
     #[Test]
+    public function existingModelIsPrefilledAndUpdatedWithoutReplacingItsMetadata(): void
+    {
+        $model = ['name' => 'Old name', 'max_tokens' => 333, 'tool_calling' => false];
+        $flow = new FakeProvidersSetupFlow(customs: ['local-server' => ['models' => ['same.id' => $model, 'sibling' => ['name' => 'Sibling']], 'enabled' => false]]);
+        [$screen, $terminal, $tui] = $this->mount($flow);
+        try {
+            $this->selectValue($screen, 'custom');
+            $this->selectValue($screen, 'local-server');
+            $this->selectValue($screen, 'edit');
+            $this->changeSetting($screen, 'modelsSaved', 'same.id');
+            $this->assertStringContainsString('Old name', $this->plain($terminal));
+            $this->changeSetting($screen, 'modelName', 'New name');
+            $this->changeSetting($screen, 'add_model', '↵');
+            $this->assertSame([['local-server', 'models', ['same.id' => array_replace($model, ['name' => 'New name']), 'sibling' => ['name' => 'Sibling']]]], $flow->fieldUpdates);
+            $this->assertFalse($flow->isEnabled('local-server'));
+        } finally {
+            $tui->stop();
+        }
+    }
+
+    #[Test]
     public function escapeCancelsProviderFormsAndExitsFromThePicker(): void
     {
         $flow = new FakeProvidersSetupFlow();

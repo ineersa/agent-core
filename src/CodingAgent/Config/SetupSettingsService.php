@@ -58,6 +58,16 @@ final readonly class SetupSettingsService
         return $groups;
     }
 
+    public function editValue(SettingsResolutionDTO $snapshot, SettingsLayerEnum $layer, string $key): SettingsValueDTO
+    {
+        $raw = $this->loader->overlayConfig($snapshot->defaultsRaw, $snapshot->userRaw);
+        if (SettingsLayerEnum::Project === $layer) {
+            $raw = $this->loader->overlayConfig($raw, $snapshot->projectRaw);
+        }
+
+        return $this->resolver->resolve(new SettingsResolutionDTO([], [], [], $raw), $key);
+    }
+
     public function path(SettingsLayerEnum $layer): string
     {
         return $this->writer->layerPath($layer, $this->app->cwd);

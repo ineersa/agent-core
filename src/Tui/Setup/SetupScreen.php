@@ -52,6 +52,10 @@ final class SetupScreen
     private SettingsListWidget $settingsWidget;
     private bool $mounted = false;
 
+    private ?string $selectedModel = null;
+    /** @var array<string, mixed> */
+    private array $modelBaseline = [];
+
     private string $phase = self::PHASE_PICKER;
     private ?string $activeProviderId = null;
     private string $formKind = '';
@@ -514,6 +518,7 @@ final class SetupScreen
 
     private function showCustomForm(): void
     {
+        $this->selectedModel = null;
         $this->initialFormState = $this->formState;
         $this->phase = self::PHASE_CUSTOM;
         $this->formKind = '';
@@ -588,7 +593,8 @@ final class SetupScreen
             'modelsSaved',
             'Saved models',
             $modelsDisplay,
-            'Models already on this provider. Add another below.',
+            'Select an existing model to edit, or enter a new model ID below.',
+            submenu: [] === $models ? null : static fn (): SelectListWidget => new SelectListWidget(array_map(static fn ($id): array => ['value' => (string) $id, 'label' => (string) $id], array_keys($models))),
         );
         $items[] = new SettingItem(
             'modelId',
@@ -648,7 +654,7 @@ final class SetupScreen
         );
         $items[] = new SettingItem(
             'add_model',
-            true === $this->formState['editing'] ? 'Add model' : 'Create server with this model',
+            true === $this->formState['editing'] ? 'Apply model' : 'Create server with this model',
             '↵',
             'Confirm the model fields above.',
             values: ['↵'],
@@ -674,6 +680,7 @@ final class SetupScreen
                 'completionsPath' => $this->formState['completionsPath'] = $this->normalizePath($value),
                 'apiKey' => $this->formState['apiKey'] = $this->normalizeApiKeyInput($value),
                 'clearApiKey' => $this->formState['apiKey'] = null,
+                'modelsSaved' => $this->selectExistingModel($value),
                 'modelId' => $this->setModelId($value),
                 'modelName' => $this->formState['modelName'] = trim($value),
                 'contextWindow' => $this->formState['contextWindow'] = $this->normalizePositiveInt($value, 'Context window', '128000'),
@@ -723,7 +730,7 @@ final class SetupScreen
 
             return;
         }
-        if ('add_model' === $id) {
+        if (\in_array($id, ['add_model', 'modelsSaved'], true)) {
             $this->refreshCustomFormValuesAfterModelCommit();
             $this->refreshError();
 
@@ -778,6 +785,22 @@ final class SetupScreen
         $id = strtolower(trim('' !== $value ? $value : 'local'));
         $this->flow->validateCustomId($id);
         $this->formState['id'] = $id;
+    }
+
+    private function selectExistingModel(string $id): void
+    {
+        $model = $this->formState['models'][$id];
+        $this->formState['modelId'] = $id;
+        $this->formState['modelName'] = (string) ($model['name'] ?? $id);
+        $this->formState['contextWindow'] = (string) ($model['context_window'] ?? 128000);
+        $this->formState['maxTokens'] = (string) ($model['max_tokens'] ?? 8192);
+        $this->formState['modalities'] = \in_array('image', $model['input'] ?? [], true) ? 'text+image' : 'text';
+        $this->formState['reasoning'] = true === ($model['reasoning'] ?? false) ? 'yes' : 'no';
+        $this->modelBaseline = $this->draftModelPayload($id);
+        $this->selectedModel = $id;
+        foreach (['modelId', 'modelName', 'contextWindow', 'maxTokens', 'modalities', 'reasoning'] as $key) {
+            $this->initialFormState[$key] = $this->formState[$key];
+        }
     }
 
     private function setModelId(string $value): void
@@ -895,13 +918,23 @@ final class SetupScreen
             return;
         }
         $id = (string) $this->formState['modelId'];
-        if ('' === $id || isset($this->formState['models'][$id])) {
+        if ('' === $id || (isset($this->formState['models'][$id]) && $id !== $this->selectedModel)) {
             throw new \InvalidArgumentException('Enter a new model ID.');
         }
         $models = $this->formState['models'];
-        $models[$id] = $this->draftModelPayload($id);
-        $this->flow->updateProviderField($this->formState['id'], 'models', $models);
+        $payload = $this->draftModelPayload($id);
+        if ($id === $this->selectedModel) {
+            $changed = array_filter($payload, fn (mixed $value, string $key): bool => $value !== ($this->modelBaseline[$key] ?? null), \ARRAY_FILTER_USE_BOTH);
+            $models[$id] = array_replace($models[$id], $changed);
+        } else {
+            $models[$id] = $payload;
+        }
+        if ($models !== $this->formState['models']) {
+            $this->flow->updateProviderField($this->formState['id'], 'models', $models);
+        }
         $this->commitDraftModel();
+        $this->formState['models'] = $models;
+        $this->selectedModel = null;
         $this->initialFormState = $this->formState;
     }
 

@@ -8,11 +8,13 @@ use Ineersa\CodingAgent\CLI\Extensions\ExtensionsSetupFlow;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Config\Definition\ArrayNode;
 use Symfony\Component\Config\Definition\BaseNode;
 use Symfony\Component\Config\Definition\BooleanNode;
 use Symfony\Component\Config\Definition\EnumNode;
 use Symfony\Component\Config\Definition\FloatNode;
 use Symfony\Component\Config\Definition\IntegerNode;
+use Symfony\Component\Config\Definition\PrototypedArrayNode;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SettingChangeEvent;
 use Symfony\Component\Tui\Style\Style;
@@ -108,6 +110,11 @@ final class ExtensionsSetupScreen
     private function form(string $package): void
     {
         $this->flow->select($package);
+        $this->showForm($package);
+    }
+
+    private function showForm(string $package): void
+    {
         $items = [
             new SettingItem('parent', 'Enabled for parent', $this->flow->members['parent'], values: ['true', 'false']),
             new SettingItem('forks', 'Fork selection', $this->flow->members['forks'], values: ['off', 'enabled', 'always_on']),
@@ -116,6 +123,17 @@ final class ExtensionsSetupScreen
         $initial = [];
         $hidden = [];
         $clearActions = [];
+        $required = [];
+        $pending = [];
+        foreach ($this->flow->nodes as $path => $node) {
+            if ($node instanceof ArrayNode && !$node instanceof PrototypedArrayNode && null === $this->flow->value($this->flow->settings, $path)) {
+                foreach ($node->getChildren() as $name => $child) {
+                    if ($child->isRequired() && !$child->hasDefaultValue()) {
+                        $required[$path][] = $path.'.'.$name;
+                    }
+                }
+            }
+        }
         foreach ($this->flow->nodes as $path => $node) {
             $value = $this->flow->value($this->flow->settings, $path);
             if (null === $value && $node->hasDefaultValue()) {
@@ -141,20 +159,25 @@ final class ExtensionsSetupScreen
                 $clearActions['clear:'.$path] = $path;
             }
             $label = ucfirst(str_replace('_', ' ', str_replace('.', ' / ', $path)));
-            $items[] = new SettingItem($path, $label, $display, $node instanceof BaseNode ? $node->getInfo() : null, values: $choices, submenu: [] === $choices ? $submenu : null);
+            $help = $node instanceof BaseNode ? $node->getInfo() : null;
+            if ($node instanceof ArrayNode && !$node instanceof PrototypedArrayNode) {
+                $help = trim(($help ?? '').' Enter one YAML mapping, or edit the child fields below.');
+            }
+            $items[] = new SettingItem($path, $label, $display, $help, values: $choices, submenu: [] === $choices ? $submenu : null);
             if (isset($hidden[$path])) {
                 $items[] = new SettingItem('clear:'.$path, 'Clear '.$label, '', values: ['clear']);
             }
         }
         $settings = new SettingsListWidget($items, maxVisible: 16);
-        $settings->onChange(function (SettingChangeEvent $event) use ($settings, &$initial, $hidden, $clearActions): void {
+        $settings->onChange(function (SettingChangeEvent $event) use ($settings, &$initial, $hidden, $clearActions, $package, &$required, &$pending): void {
             $id = $event->getId();
             $value = $event->getValue();
             $members = $this->flow->members;
             $path = $clearActions[$id] ?? $id;
             $clear = isset($clearActions[$id]);
             $value = $clear ? '' : $value;
-            $before = $members[$path] ?? $initial[$path];
+            $group = substr($path, 0, (int) strrpos($path, '.'));
+            $before = $members[$path] ?? $pending[$group][$path] ?? $initial[$path];
             $display = static fn (string $text): string => isset($hidden[$path]) ? ('' === $text ? '(not configured)' : '(configured)') : $text;
             try {
                 if ($before === $value) {
@@ -171,9 +194,30 @@ final class ExtensionsSetupScreen
                 } else {
                     $edits[$path] = $value;
                 }
+                if (isset($required[$group])) {
+                    $edits = array_replace($pending[$group] ?? [], $edits);
+                    if ($clear) {
+                        unset($edits[$path]);
+                    }
+                    if ([] !== array_diff($required[$group], array_keys($edits))) {
+                        $pending[$group] = $edits;
+                        $this->notice->setText('Not saved yet. Complete the required fields to create this object, or Esc to leave it unchanged.');
+
+                        return;
+                    }
+                }
                 $this->flow->save($edits);
+                if (isset($required[$group])) {
+                    unset($required[$group], $pending[$group]);
+                }
+                if (($this->flow->nodes[$path] ?? null) instanceof ArrayNode) {
+                    // Refresh the child rows after writing the compound value atomically.
+                    $this->form($package);
+
+                    return;
+                }
                 if ([] !== $edits) {
-                    $initial[$path] = $value;
+                    $initial = array_replace($initial, $edits);
                 }
                 foreach ($this->flow->members as $key => $member) {
                     $settings->updateValue($key, $member);
@@ -191,7 +235,10 @@ final class ExtensionsSetupScreen
                 }
             }
         });
-        $settings->onCancel($this->menu(...));
+        $settings->onCancel(function (): void {
+            $this->notice->setText('');
+            $this->menu();
+        });
         $this->show($settings);
     }
 

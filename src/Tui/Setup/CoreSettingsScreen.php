@@ -71,29 +71,29 @@ final class CoreSettingsScreen
             $effective = $this->settings->resolver->resolve($snapshot, $key);
             $local[$key] = $this->localValue($snapshot, $layer, $key)->exists;
             $label = self::label(str_replace($group.'.', '', $key));
-            $choices = match ($key) {
+            $edit = $this->settings->editValue($snapshot, $layer, $key);
+            $choices = fn (): array => match ($key) {
                 'tui.theme' => $this->themes->getNames(),
                 'ai.default_model', 'compaction.model', 'forks.model' => [self::inherit($key), ...$providers->configuredModelRefs()],
                 'ai.default_reasoning', 'compaction.thinking_level', 'forks.thinking_level' => [self::inherit($key), ...ModelResolver::LEVELS],
                 default => [],
             };
-            $submenu = \is_bool($sample) ? null : function (string $current) use ($label, $help, $context, $choices, $key, $sample, $layer, $removeHint, $tui): SelectListWidget {
+            $submenu = \is_bool($sample) ? null : function () use ($label, $help, $context, $choices, $key, $sample, $layer, $removeHint, $tui): SelectListWidget {
                 $removeHint(false);
                 $context->setText($label."\n".$help.(isset(self::HTTP[$key]) ? ' Unit: '.self::HTTP[$key][1].'.' : '')."\nEnter applies · Esc cancels");
-                if ([] !== $choices) {
-                    $editor = new SelectListWidget(array_map(static fn (string $choice): array => ['value' => $choice, 'label' => $choice], $choices));
-                    $index = array_search($current, $choices, true);
+                $options = $choices();
+                $edit = $this->settings->editValue($this->settings->load(), $layer, $key);
+                if ([] !== $options) {
+                    $editor = new SelectListWidget(array_map(static fn (string $choice): array => ['value' => $choice, 'label' => $choice], $options));
+                    $index = array_search(self::display($key, $edit), $options, true);
                     if (false !== $index) {
                         $editor->setSelectedIndex($index);
                     }
                 } else {
-                    $now = $this->settings->load();
-                    $override = $this->localValue($now, $layer, $key);
-                    $effective = $this->settings->resolver->resolve($now, $key);
-                    $value = $override->exists ? $override->value : ($effective->value ?? (self::HTTP[$key][0] ?? null));
+                    $value = $edit->value ?? (self::HTTP[$key][0] ?? null);
                     $secret = self::masked($key);
-                    $initial = $secret || (!$override->exists && \is_array($sample)) ? '' : self::encode($value, $sample);
-                    $editor = new SettingsTextInputWidget($initial, secret: $secret);
+                    $initial = $secret || (\is_array($sample) && !$this->localValue($this->settings->load(), $layer, $key)->exists) ? '' : self::encode($value, $sample);
+                    $editor = new SettingsTextInputWidget($initial, secret: $secret, cancelUnchanged: true);
                     if (\is_array($sample)) {
                         $context->setText($context->getText().' · One-line YAML'.($secret ? ' (hidden patch)' : ''));
                     }
@@ -106,7 +106,8 @@ final class CoreSettingsScreen
 
                 return $editor;
             };
-            $items[] = new SettingItem($key, $label, self::display($key, $effective), $help,
+            $items[] = new SettingItem($key, $label, self::display($key, \is_bool($sample) ? $edit : $effective),
+                $help.(\is_bool($sample) && SettingsLayerEnum::User === $layer && SettingsLayerEnum::Project === $effective->layer ? ' Project override masks this value.' : ''),
                 values: \is_bool($sample) ? ['Off', 'On'] : [], submenu: $submenu);
         }
         $widget = new ScopedSettingsListWidget($items, $theme);
@@ -137,7 +138,8 @@ final class CoreSettingsScreen
             }
             $widget->setLocal($key, $this->localValue($snapshot, $layer, $key)->exists);
             $removeHint($tui->getFocus() === $widget && $widget->canRemove());
-            $widget->updateValue($key, self::display($key, $this->settings->resolver->resolve($snapshot, $key)));
+            $display = \is_bool($fields[$key]['sample']) ? $this->settings->editValue($snapshot, $layer, $key) : $this->settings->resolver->resolve($snapshot, $key);
+            $widget->updateValue($key, self::display($key, $display));
         };
         $widget->onChange(static fn (SettingChangeEvent $event) => $persist($event->getId(), $event->getValue()));
         $widget->onCancel($menu);

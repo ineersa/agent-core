@@ -30,7 +30,7 @@ final class SettingsTextInputWidget extends SelectListWidget
     private Line $line;
     private string $prompt;
 
-    public function __construct(string $initial = '', string $prompt = '> ', private readonly bool $secret = false)
+    public function __construct(private readonly string $initial = '', string $prompt = '> ', private readonly bool $secret = false, private readonly bool $cancelUnchanged = false)
     {
         parent::__construct([]);
         $this->line = new Line($initial, \strlen($initial));
@@ -66,7 +66,7 @@ final class SettingsTextInputWidget extends SelectListWidget
         }
         if ($kb->matches($data, 'select_confirm')) {
             $value = $this->line->getText();
-            if ($this->secret && '' === trim($value)) {
+            if (($this->secret && '' === trim($value)) || ($this->cancelUnchanged && $value === $this->initial)) {
                 $this->dispatch(new CancelEvent($this));
 
                 return;

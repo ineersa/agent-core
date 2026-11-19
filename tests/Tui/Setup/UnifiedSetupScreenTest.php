@@ -23,8 +23,10 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SettingItem;
 use Symfony\Component\Tui\Widget\SettingsListWidget;
+use Symfony\Component\Tui\Widget\TextWidget;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Yaml\Yaml;
 
@@ -42,10 +44,11 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
         $userPath = $writer->layerPath(SettingsLayerEnum::User, $cwd);
         $originalUser = is_file($userPath) ? file_get_contents($userPath) : null;
         $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
+        $provider = null;
         foreach ([90, 48] as $width) {
             $terminal = new VirtualTerminal(columns: $width, rows: 30);
             $tui = new Tui(terminal: $terminal);
-            (new UnifiedSetupScreen($theme))->mount($tui, SettingsLayerEnum::User, static function (SettingsLayerEnum $scope) use ($container, $writer, $cwd, $theme): array {
+            (new UnifiedSetupScreen($theme))->mount($tui, SettingsLayerEnum::User, static function (SettingsLayerEnum $scope) use ($container, $writer, $cwd, $theme, &$provider): array {
                 $provider = ProvidersSetupFlow::for($container->get(AiCatalog::class), $writer, $container->get(AppConfig::class), SettingsLayerEnum::Project === $scope);
                 $extension = clone $container->get(ExtensionsSetupFlow::class);
                 $extension->layer = $scope;
@@ -79,6 +82,9 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
                 $text = $this->render($tui, $terminal);
                 $this->assertStringContainsString('Directory that stores', $text);
                 $this->assertStringContainsString('Enter applies', $text);
+                $terminal->simulateInput("\r");
+                $this->assertSame($original, file_get_contents($path), 'Unchanged inherited path does not become an override.');
+                $this->field($tui, 'sessions.path');
                 $terminal->simulateInput('d');
                 $terminal->simulateInput("\x1b");
                 $this->assertSame($original, file_get_contents($path));
@@ -132,6 +138,16 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
                 $this->assertInstanceOf(SettingsListWidget::class, $widget);
                 $this->assertSame('30 seconds (default)', $widget->getValue('ai.http.timeout'));
                 $this->assertSame('5 retries (default)', $widget->getValue('ai.http.max_retries'));
+                $this->assertInstanceOf(ProvidersSetupFlow::class, $provider);
+                $provider->saveCustom('live-fixture', 'http://localhost:8080', '/v1/chat/completions', null, ['first' => ['name' => 'First']], false, '');
+                $provider->updateProviderField('live-fixture', 'models', ['new-model' => ['name' => 'New']]);
+                $this->field($tui, 'ai.default_model');
+                $text = $this->render($tui, $terminal);
+                $this->assertStringContainsString('live-fixture/new-model', $text);
+                $this->assertStringNotContainsString('live-fixture/first', $text);
+                $terminal->simulateInput("\x1b");
+                $provider->removeCustom('live-fixture');
+                $before = file_get_contents($path);
                 $terminal->simulateInput("\x1b");
                 $terminal->simulateInput("\x1b[Z"); // Extensions.
                 $this->select($tui, 'safe_guard');
@@ -152,6 +168,66 @@ final class UnifiedSetupScreenTest extends IsolatedKernelTestCase
             }
             $original = file_get_contents($path);
         }
+    }
+
+    public function testMaskedUserBooleanTogglesInBothDirections(): void
+    {
+        $container = self::getContainer();
+        $cwd = $this->isolatedCwd();
+        $writer = $container->get(SettingsOverrideWriter::class);
+        $project = $writer->layerPath(SettingsLayerEnum::Project, $cwd);
+        $user = $writer->layerPath(SettingsLayerEnum::User, $cwd);
+        $home = getenv('HATFIELD_QA_TEST_HOME');
+        $this->assertIsString($home);
+        $this->assertNotSame('', $home);
+        $this->assertSame($home.'/.hatfield', realpath(\dirname($user)));
+        $this->assertFalse(is_link($user));
+        $this->assertSame($cwd.'/.hatfield', realpath(\dirname($project)));
+        $this->assertFalse(is_link($project));
+        $writer->set(SettingsLayerEnum::User, $cwd, 'forks.enabled', true);
+        $writer->set(SettingsLayerEnum::Project, $cwd, 'forks.enabled', false);
+        $terminal = new VirtualTerminal(columns: 120, rows: 30);
+        $tui = new Tui(terminal: $terminal);
+        $pane = new ContainerWidget();
+        $tui->add($pane);
+        $flow = ProvidersSetupFlow::for($container->get(AiCatalog::class), $writer, $container->get(AppConfig::class));
+        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
+        $container->get(CoreSettingsScreen::class)->mount($tui, $pane, SettingsLayerEnum::User, $flow, $tui->stop(...), static fn (string $text) => new TextWidget($text), $theme, static fn () => null);
+        $tui->start();
+        try {
+            $this->select($tui, 'forks');
+            $this->assertStringContainsString('Project override masks this value', $this->render($tui, $terminal));
+            $this->field($tui, 'forks.enabled');
+            $this->assertFalse(Yaml::parseFile($user)['forks']['enabled']);
+            $this->field($tui, 'forks.enabled');
+            $this->assertTrue(Yaml::parseFile($user)['forks']['enabled']);
+            $this->assertFalse(Yaml::parseFile($project)['forks']['enabled']);
+        } finally {
+            $tui->stop();
+            $writer->remove(SettingsLayerEnum::User, $cwd, 'forks.enabled');
+            $writer->remove(SettingsLayerEnum::Project, $cwd, 'forks.enabled');
+        }
+    }
+
+    public function testMaskedHttpEditIsStillValidated(): void
+    {
+        $container = self::getContainer();
+        $cwd = $this->isolatedCwd();
+        $writer = $container->get(SettingsOverrideWriter::class);
+        $project = $writer->layerPath(SettingsLayerEnum::Project, $cwd);
+        $this->assertSame($cwd.'/.hatfield', realpath(\dirname($project)));
+        $this->assertFalse(is_link($project));
+        $user = $writer->layerPath(SettingsLayerEnum::User, $cwd);
+        $before = is_file($user) ? file_get_contents($user) : null;
+        $writer->set(SettingsLayerEnum::Project, $cwd, 'ai.http.timeout', 42);
+        $settings = $container->get(SetupSettingsService::class);
+        try {
+            $settings->save(SettingsLayerEnum::User, ['ai.http.timeout' => 0], []);
+            $this->fail('A project override must not hide an invalid user value.');
+        } catch (\InvalidArgumentException $error) {
+            $this->assertStringContainsString('ai.http.timeout', $error->getMessage());
+        }
+        $this->assertSame($before, is_file($user) ? file_get_contents($user) : null);
     }
 
     public function testInventoryCoversSettingsNotPersonallyConfigured(): void

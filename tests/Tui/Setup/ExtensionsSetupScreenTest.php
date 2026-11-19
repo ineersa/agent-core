@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
 use Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowConfiguration;
 use Ineersa\Tui\Setup\ExtensionsSetupScreen;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
@@ -17,6 +18,7 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
+use Symfony\Component\Tui\Widget\SettingItem;
 use Symfony\Component\Tui\Widget\SettingsListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 use Symfony\Component\Yaml\Yaml;
@@ -75,6 +77,71 @@ final class ExtensionsSetupScreenTest extends IsolatedKernelTestCase
         } finally {
             $tui->stop();
         }
+    }
+
+    public function testMissingHookIsCreatedThroughIndividualFieldEditors(): void
+    {
+        $flow = clone self::getContainer()->get(ExtensionsSetupFlow::class);
+        $cfg = new TaskWorkflowConfiguration();
+        foreach (['configuration' => $cfg, 'class' => 'fixture-task-workflow', 'key' => 'task_workflow'] as $property => $value) {
+            (new \ReflectionProperty($flow, $property))->setValue($flow, $value);
+        }
+        $flow->members = ['parent' => 'false', 'forks' => 'off', 'agents' => 'false'];
+        (new \ReflectionMethod($flow, 'collectNodes'))->invoke($flow, $cfg->getConfigTreeBuilder()->buildTree());
+        $path = $this->isolatedCwd().'/.hatfield/settings.yaml';
+        $this->assertSame($this->isolatedCwd().'/.hatfield', realpath(\dirname($path)));
+        $this->assertFalse(is_link($path));
+        $terminal = new VirtualTerminal(columns: 120, rows: 40);
+        $tui = new Tui(terminal: $terminal);
+        $screen = new ExtensionsSetupScreen($flow, new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette()), new NullLogger());
+        $pane = new ContainerWidget();
+        $tui->add($pane);
+        $screen->mount($tui, $pane, $tui->stop(...));
+        $show = new \ReflectionMethod($screen, 'showForm');
+        $show->invoke($screen, 'fixture-task-workflow');
+        $tui->start();
+        try {
+            $before = file_get_contents($path);
+            $this->editField($tui, $terminal, 'hooks.cleanup.script', 'abandoned.sh');
+            $terminal->simulateInput("\x1b");
+            $this->assertSame($before, file_get_contents($path));
+            $show->invoke($screen, 'fixture-task-workflow');
+            foreach (['setup' => ['script', 'timeout_seconds'], 'validate' => ['timeout_seconds', 'script']] as $hook => $order) {
+                $before = file_get_contents($path);
+                $values = ['script' => $hook.'.sh', 'timeout_seconds' => '12'];
+                foreach ($order as $index => $field) {
+                    $this->editField($tui, $terminal, 'hooks.'.$hook.'.'.$field, $values[$field]);
+                    if (0 === $index) {
+                        $this->assertSame($before, file_get_contents($path));
+                    }
+                }
+                $hooks = Yaml::parseFile($path)['extensions']['settings']['task_workflow']['hooks'];
+                $this->assertSame($hook.'.sh', $hooks[$hook]['script']);
+                $this->assertSame(12, $hooks[$hook]['timeout_seconds']);
+                $this->assertArrayNotHasKey('cleanup', $hooks);
+                $this->editField($tui, $terminal, 'hooks.'.$hook.'.timeout_seconds', '15');
+                $saved = Yaml::parseFile($path)['extensions']['settings']['task_workflow']['hooks'][$hook];
+                $this->assertSame(15, $saved['timeout_seconds']);
+                $this->assertSame($hook.'.sh', $saved['script']);
+            }
+        } finally {
+            $tui->stop();
+        }
+    }
+
+    private function editField(Tui $tui, VirtualTerminal $terminal, string $id, string $value): void
+    {
+        $settings = $tui->getFocus();
+        $this->assertInstanceOf(SettingsListWidget::class, $settings);
+        $items = (new \ReflectionProperty(SettingsListWidget::class, 'items'))->getValue($settings);
+        $index = array_search($id, array_map(static fn (SettingItem $item): string => $item->getId(), $items), true);
+        $this->assertIsInt($index);
+        (new \ReflectionProperty(SettingsListWidget::class, 'selectedIndex'))->setValue($settings, $index);
+        $terminal->simulateInput("\r");
+        $terminal->simulateInput("\x7f");
+        $terminal->simulateInput("\x7f");
+        $terminal->simulateInput($value);
+        $terminal->simulateInput("\r");
     }
 
     protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void

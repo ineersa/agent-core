@@ -152,6 +152,10 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             ];
         }
 
+        $rawModels = $this->appConfig->raw['ai']['providers'][$id]['models'] ?? null;
+        if (\is_array($rawModels) && !array_is_list($rawModels)) {
+            $models = $rawModels;
+        }
         $compatibility = $provider->compatibility;
 
         return [
@@ -207,6 +211,13 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             };
             $definition[$key] = $value;
             $this->customDefinitionsThisRun[$id] = $definition;
+            if ('models' === $field) {
+                foreach ($this->configured as &$row) {
+                    if ($row['id'] === $id) {
+                        $row['models'] = array_keys($definition['models']);
+                    }
+                }
+            }
         }
     }
 
