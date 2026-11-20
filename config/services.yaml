@@ -757,7 +757,7 @@ services:
     alias: Ineersa\CodingAgent\Runtime\ChildRunTranscriptSnapshotProvider
 
   Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface:
-    alias: Ineersa\CodingAgent\Session\ChildAgentEventsPathResolver
+    alias: Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver
 
   Ineersa\Tui\Export\SessionEventsExportService: ~
 

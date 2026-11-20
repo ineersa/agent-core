@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -21,13 +22,13 @@ final readonly class EditToolCallDiffRenderer
     public function buildPatchBodyWidget(
         string $patch,
         TuiTheme $theme,
-        TranscriptDisplayConfig $displayConfig,
+        TuiTranscriptConfig $displayConfig,
         TranscriptDisplayState $displayState,
     ): ?TextWidget {
         $rawLines = explode("\n", str_replace(["\r\n", "\r"], "\n", $patch));
         $preview = $this->linePreview->apply(
             $rawLines,
-            $displayConfig->diffPreviewLines,
+            $displayConfig->previews->diffLines,
             displayState: $displayState,
         );
 

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Validation\EditFile;
 
-use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
+use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
 use Symfony\Component\Validator\Exception\UnexpectedTypeException;

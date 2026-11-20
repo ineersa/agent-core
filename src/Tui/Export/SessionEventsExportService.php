@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Export;
 
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\CodingAgent\Session\Export\EffectiveModelContextProjector;
 use Ineersa\CodingAgent\Session\Export\EffectiveModelContextSnapshot;
 use Ineersa\Tui\Command\TranscriptMessage;
@@ -235,7 +236,7 @@ HTML;
         foreach ($snapshot->messages as $message) {
             $html .= $this->renderMessage($message);
 
-            if ($toolsPending && 'system' === self::strFromArray($message, 'role')) {
+            if ($toolsPending && 'system' === $message->role) {
                 $html .= $toolDefinitionsHtml;
                 $toolsPending = false;
             }
@@ -358,18 +359,14 @@ HTML;
         return $html;
     }
 
-    /**
-     * @param array<string, mixed> $message
-     */
-    private function renderMessage(array $message): string
+    private function renderMessage(AgentMessage $message): string
     {
-        $role = self::strFromArray($message, 'role', 'unknown');
-        $metadata = \is_array($message['metadata'] ?? null) ? $message['metadata'] : [];
+        $role = $message->role;
+        $metadata = $message->metadata;
         $isCompactSummary = true === ($metadata['compact_summary'] ?? false);
-        $content = \is_array($message['content'] ?? null) ? $message['content'] : [];
         /** @var array<int, array<string, mixed>> $contentBlocks */
         $contentBlocks = [];
-        foreach ($content as $block) {
+        foreach ($message->content as $block) {
             if (\is_array($block)) {
                 $contentBlocks[] = $block;
             }
@@ -411,7 +408,7 @@ HTML;
         }
 
         $thinking = '';
-        $details = $message['details'] ?? null;
+        $details = $message->details;
         if (\is_array($details) && \is_string($details['thinking'] ?? null)) {
             $thinking = $details['thinking'];
         }
@@ -429,15 +426,15 @@ HTML;
 
         if ('tool' === $role) {
             $meta = [];
-            $toolName = self::strFromArray($message, 'tool_name');
-            $toolCallId = self::strFromArray($message, 'tool_call_id');
+            $toolName = $message->toolName ?? '';
+            $toolCallId = $message->toolCallId ?? '';
             if ('' !== $toolName) {
                 $meta[] = 'tool: '.$toolName;
             }
             if ('' !== $toolCallId) {
                 $meta[] = 'id: '.$toolCallId;
             }
-            if (true === ($message['is_error'] ?? false)) {
+            if ($message->isError) {
                 $meta[] = 'error';
             }
             if ([] !== $meta) {

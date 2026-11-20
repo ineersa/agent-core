@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Picker\SessionPickerController;
@@ -15,7 +16,6 @@ use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -78,7 +78,7 @@ final class SessionPickerControllerTest extends TestCase
             $this->createTheme(),
             'test-session',
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
     }

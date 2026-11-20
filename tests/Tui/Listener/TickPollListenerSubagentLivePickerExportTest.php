@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
@@ -17,6 +18,8 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
@@ -28,7 +31,6 @@ use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -97,7 +99,7 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
             new DefaultTheme(new ThemePalette('test')),
             $sessionId,
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
     }
@@ -109,6 +111,8 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
 
     private function pickerReportingOpen(TuiSessionState $state, ChatScreen $screen): SubagentLivePickerController
     {
+        $questionCoordinator = new QuestionCoordinator();
+        $questionController = new QuestionController($questionCoordinator, $screen);
         $picker = new SubagentLivePickerController(
             new Tui(),
             $screen,
@@ -118,6 +122,8 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             SessionEventsExportServiceFactory::create(),
+            $questionCoordinator,
+            $questionController,
         );
         $overlay = new \Ineersa\Tui\Picker\PickerOverlay();
         $overlayRef = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');

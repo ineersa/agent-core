@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptPreviewsConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Listener\PreviewExpansionInputListener;
@@ -12,7 +14,6 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -126,7 +127,7 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
         $blocks = $this->readExchangeBlocks($body);
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 8),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 8)),
             displayState: $displayState,
         );
         $harness->screen()->setTranscriptBlocks($blocks);
@@ -199,7 +200,7 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
             palette: $palette,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 8),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 8)),
             displayState: $displayState,
         );
         $harness->screen()->setTranscriptBlocks($blocks);
@@ -246,7 +247,7 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
         ]);
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 8),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 8)),
             displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
         );
         $harness->screen()->setTranscriptBlocks([
@@ -314,7 +315,7 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
         $harness = new VirtualTuiHarness(
             columns: 50,
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 8),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 8)),
             displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
         );
         $harness->screen()->setTranscriptBlocks([
@@ -462,7 +463,7 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
         ]);
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 1),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 1)),
             displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
         );
         $harness->screen()->setTranscriptBlocks([
@@ -526,7 +527,7 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
         ]);
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 8),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 8)),
             displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
         );
         $harness->screen()->setTranscriptBlocks([

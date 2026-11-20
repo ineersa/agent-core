@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -34,7 +35,7 @@ final readonly class TranscriptBlockWidgetFactory
     private readonly WriteToolCallContentRenderer $writeContentRenderer;
 
     public function __construct(
-        private readonly TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
+        private readonly TuiTranscriptConfig $displayConfig = new TuiTranscriptConfig(),
         private readonly TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         private readonly EditToolCallDiffRenderer $editDiffRenderer = new EditToolCallDiffRenderer(),
         private readonly TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),

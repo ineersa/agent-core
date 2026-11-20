@@ -12,6 +12,8 @@ use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptPreviewsConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
@@ -28,7 +30,6 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\Test;
@@ -128,7 +129,7 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
         $harness = new VirtualTuiHarness(
             sessionId: 'skill-read-card-session',
             palette: $palette,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 2)),
             displayState: $displayState,
         );
         $harness->screen()->setTranscriptBlocks($blocks);

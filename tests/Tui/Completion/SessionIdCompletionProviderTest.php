@@ -13,7 +13,6 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Tui\Completion\CompletionContext;
 use Ineersa\Tui\Completion\CompletionProviderRegistry;
 use Ineersa\Tui\Completion\CompletionSuggestion;
-use Ineersa\Tui\Completion\SessionCompletionSourceInterface;
 use Ineersa\Tui\Completion\SessionIdCompletionProvider;
 use Ineersa\Tui\Listener\CompletionListener;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -28,9 +27,7 @@ use Symfony\Component\Uid\UuidV7;
  *
  * Uses IsolatedKernelTestCase because HatfieldSessionStore and
  * HatfieldSessionRepository are final (cannot be mocked/stubbed).
- * Tests that only verify context matching (no listSessions() call)
- * work with a fresh source; tests that need session data create
- * sessions via the real store.
+ * Tests that need session data use the real store in an isolated project.
  *
  * @see IsolatedKernelTestCase for isolation and setup details
  */
@@ -39,7 +36,6 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
 {
     use TuiRuntimeContextBuilderTrait;
     private HatfieldSessionStore $sessionStore;
-    private SessionCompletionSourceInterface $sessionSource;
     private SessionIdCompletionProvider $provider;
 
     protected function setUp(): void
@@ -49,13 +45,10 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
         /** @var HatfieldSessionStore $store */
         $store = self::getContainer()->get(HatfieldSessionStore::class);
         $this->sessionStore = $store;
-        /** @var SessionCompletionSourceInterface $source */
-        $source = self::getContainer()->get(SessionCompletionSourceInterface::class);
-        $this->sessionSource = $source;
-        $this->provider = new SessionIdCompletionProvider($this->sessionSource);
+        $this->provider = new SessionIdCompletionProvider($store);
     }
 
-    // ── Context detection (no listSessions needed) ─────────────────────
+    // ── Context detection (no catalog query needed) ─────────────────────
 
     #[Test]
     public function virtualCompletionUsesBoundedCatalogQueryWithExactTitlesAndPrefix(): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -35,7 +36,7 @@ final class TranscriptMountedWidget extends ContainerWidget
 
     public function __construct(
         private readonly TuiTheme $theme,
-        TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
+        TuiTranscriptConfig $displayConfig = new TuiTranscriptConfig(),
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
     ) {
         $this->projector = new TranscriptVisualProjector(

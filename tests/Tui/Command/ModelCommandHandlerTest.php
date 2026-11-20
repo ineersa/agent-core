@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Tui\Tests\Listener;
+namespace Ineersa\Tui\Tests\Command;
 
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
@@ -15,11 +15,12 @@ use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Command\ModelCommandHandler;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
-use Ineersa\Tui\Listener\ModelCommandHandler;
 use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -44,11 +45,15 @@ class ModelCommandHandlerTest extends TestCase
     {
         parent::setUp();
 
-        $this->tempDir = sys_get_temp_dir().'/hatfield-model-cmd-test-'.uniqid('', true);
+        $this->tempDir = TestDirectoryIsolation::createProjectTempDir('test-model-command');
         $this->homeDir = $this->tempDir.'/home';
-        mkdir($this->homeDir, 0777, true);
-        mkdir($this->homeDir.'/.hatfield', 0777, true);
-        mkdir($this->tempDir.'/project/.hatfield/sessions', 0777, true);
+        $settingsDir = $this->homeDir.'/.hatfield';
+        TestDirectoryIsolation::ensureDirectory($settingsDir);
+        TestDirectoryIsolation::ensureDirectory($this->tempDir.'/project/.hatfield/sessions');
+
+        $this->assertSame($settingsDir, realpath($settingsDir));
+        $this->assertFalse(file_exists($settingsDir.'/settings.yaml'));
+        $this->assertFalse(is_link($settingsDir.'/settings.yaml'));
 
         // Create home settings with standard AI config
         file_put_contents(
@@ -76,7 +81,7 @@ class ModelCommandHandlerTest extends TestCase
 
     protected function tearDown(): void
     {
-        $this->removeDir($this->tempDir);
+        TestDirectoryIsolation::removeDirectory($this->tempDir);
         parent::tearDown();
     }
 
@@ -275,29 +280,6 @@ class ModelCommandHandlerTest extends TestCase
 
         $result = $handler->handle($this->slash('model'));
         $this->assertInstanceOf(NoOp::class, $result);
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
-
-        rmdir($dir);
     }
 
     private function makeAppConfig(array $aiData): AppConfig

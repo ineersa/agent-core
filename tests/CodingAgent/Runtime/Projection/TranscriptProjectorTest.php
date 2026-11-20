@@ -315,7 +315,7 @@ final class TranscriptProjectorTest extends TestCase
     public function testThinkingBlockDoesNotEncodeDisplayCollapseByDefault(): void
     {
         // Projection should not encode display collapse policy.  Display collapse
-        // is a local rendering concern owned by TranscriptDisplayConfig, not the
+        // is a local rendering concern owned by TuiTranscriptConfig, not the
         // canonical projection DTO.
         $this->accept('assistant.thinking_started', [
             'message_id' => 'a1', 'block_id' => 'th1',

@@ -4,16 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
+
 /**
  * Canonical filesystem path resolver for parent-scoped agent artifacts under session storage.
  *
  * Relative layout matches agent artifact storage ({@code artifacts/agents/<artifactId>/…}).
- * Runtime {@see ChildAgentEventsPathResolver} and AppAgent stores resolve paths via this class
- * so TUI/runtime never depend on AppAgent-specific path facades.
+ * Child-run pickers and agent artifact stores share this resolver so their paths
+ * cannot diverge.
  *
  * Does NOT create directories — callers mkdir when writing files.
  */
-final class SessionAgentArtifactPathResolver
+final class SessionAgentArtifactPathResolver implements ChildAgentEventsPathResolverInterface
 {
     /** Directory permission for artifact storage directories. */
     public const int DIR_PERMISSIONS = 0755;
@@ -61,14 +63,14 @@ final class SessionAgentArtifactPathResolver
         return $this->sessionsBasePath.'/'.$parentRunId.'/'.$relative;
     }
 
-    public function eventsPath(string $parentRunId, string $artifactId): string
+    public function eventsPath(string $parentSessionId, string $artifactId): string
     {
-        $this->validatePathComponent($parentRunId, 'parentRunId');
+        $this->validatePathComponent($parentSessionId, 'parentRunId');
         $this->validatePathComponent($artifactId, 'artifactId');
 
         $relative = $this->relativeArtifactDir($artifactId).'/events.jsonl';
 
-        return $this->sessionsBasePath.'/'.$parentRunId.'/'.$relative;
+        return $this->sessionsBasePath.'/'.$parentSessionId.'/'.$relative;
     }
 
     /**

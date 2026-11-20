@@ -164,12 +164,10 @@ final class TuiSessionCompositionFactory
             $this->childSnapshotProvider,
             $this->childEventsPathResolver,
             $this->exportService,
+            $questionCoordinator,
+            $questionController,
             onHumanInputRequested: static function (RuntimeEvent $event) use ($eventHandler, $client, $questionCoordinator, $state, $screen): void {
                 $eventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
-            },
-            onLeavingChildRun: static function (string $childRunId) use ($questionCoordinator, $questionController): void {
-                $questionCoordinator->removeForRun($childRunId);
-                $questionController->close();
             },
         );
 

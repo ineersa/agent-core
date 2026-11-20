@@ -202,7 +202,7 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
         // non-streaming, not collapsed AssistantThinking block so resume
         // shows the same thinking content the user saw in the live TUI.
         // (Display collapse is a local rendering policy, not a projection
-        // concern — see TranscriptDisplayConfig::thinkingVisible.)
+        // concern — see tui.transcript.thinking.visible.)
         //
         // Thinking is created FIRST so it appears before assistant text
         // and tool-call blocks, matching live projection order.

@@ -22,9 +22,11 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
+use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
+use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
@@ -67,6 +69,8 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
             new ChildRunTranscriptSnapshotDTO([], [], 0),
         );
 
+        $questionCoordinator = new QuestionCoordinator();
+        $questionController = new QuestionController($questionCoordinator, $harness->screen());
         $picker = new SubagentLivePickerController(
             $harness->tui(),
             $harness->screen(),
@@ -76,6 +80,8 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             SessionEventsExportServiceFactory::create(),
+            $questionCoordinator,
+            $questionController,
         );
 
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'enterLiveView');
@@ -157,22 +163,26 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
         $onHuman = static function (RuntimeEvent $event) use ($handler, $client, $coordinator, $state, $harness): void {
             $handler->handleHumanInputRequested($event, $client, $coordinator, $state, $harness->screen());
         };
-        $onLeaving = static function (string $runId) use ($coordinator): void {
-            $coordinator->removeForRun($runId);
-        };
+        $controller = new QuestionController($coordinator, $harness->screen());
 
-        $snapshotProvider = new FixedChildRunTranscriptSnapshotProvider($snapshot);
+        $snapshotProvider = $this->createMock(ChildRunTranscriptSnapshotProviderInterface::class);
+        $snapshotProvider->expects($this->exactly(3))->method('snapshot')->willReturnMap([
+            [$childRunId, $snapshot],
+            ['child-other', new ChildRunTranscriptSnapshotDTO([], [], 0)],
+        ]);
+        $poller = new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
         $picker = new SubagentLivePickerController(
             $harness->tui(),
             $harness->screen(),
             $state,
             $client,
-            new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
+            $poller,
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             SessionEventsExportServiceFactory::create(),
+            $coordinator,
+            $controller,
             onHumanInputRequested: $onHuman,
-            onLeavingChildRun: $onLeaving,
         );
 
         $enter = new \ReflectionMethod(SubagentLivePickerController::class, 'enterLiveView');
@@ -185,8 +195,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
         $this->assertTrue($coordinator->hasRequest($requestId));
 
         // Production leave: silent remove + exit (cache keeps transcript + lastSeq + replayEvents).
-        $onLeaving($childRunId);
-        $state->subagentLiveView->exit();
+        SubagentLiveMainReturn::returnToMain($state, $harness->screen(), $coordinator, $controller, $poller, $client);
         $this->assertFalse($state->subagentLiveView->active);
         $this->assertFalse($coordinator->actionRequired());
         $this->assertFalse($coordinator->hasRequest($requestId));
@@ -201,7 +210,24 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
         $this->assertSame($childRunId, $coordinator->activeRequest()?->runId);
         $this->assertTrue($coordinator->hasRequest($requestId));
         $this->assertSame(5, $state->subagentLiveView->childLastSeq);
-        $this->assertSame(2, $snapshotProvider->calls);
+
+        $request = $coordinator->activeRequest();
+        $this->assertNotNull($request);
+        $controller->open($request);
+        $other = new SubagentLiveChildDTO('child-other', 'art-other', 'reviewer', SubagentLiveStatusEnum::Completed, 'other task', 2, 'deepseek/deepseek-v4-flash', 'medium');
+        $enter->invoke($picker, $other, $state, $harness->screen());
+
+        $this->assertTrue($state->subagentLiveView->active);
+        $this->assertSame('child-other', $state->subagentLiveView->selected?->agentRunId);
+        $this->assertFalse($coordinator->hasRequest($requestId));
+        $this->assertFalse($controller->isOpen());
+        $this->assertSame([
+            'begin:'.$childRunId,
+            'end:'.$childRunId,
+            'begin:'.$childRunId,
+            'end:'.$childRunId,
+            'begin:child-other',
+        ], $client->calls);
     }
 }
 

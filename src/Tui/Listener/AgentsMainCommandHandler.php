@@ -30,18 +30,7 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
 
     public function handle(SlashCommand $command): CommandResult
     {
-        if (!$this->state->subagentLiveView->active) {
-            return new NoOp();
-        }
-
-        $selected = $this->state->subagentLiveView->selected;
-        if (null !== $selected) {
-            $this->questionCoordinator->removeForRun($selected->agentRunId);
-            $this->questionController->close();
-        }
-
-        SubagentLiveMainReturn::returnToMain($this->state, $this->screen, $this->client);
-        $this->childPoller->resetProjection();
+        SubagentLiveMainReturn::returnToMain($this->state, $this->screen, $this->questionCoordinator, $this->questionController, $this->childPoller, $this->client);
 
         return new NoOp();
     }

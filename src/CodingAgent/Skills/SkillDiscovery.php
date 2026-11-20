@@ -8,7 +8,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
-use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Yaml\Yaml;

@@ -14,6 +14,8 @@ use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptPreviewsConfig;
 use Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
@@ -30,7 +32,6 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Application\InteractiveMode;
 use Ineersa\Tui\Application\SessionInitializer;
-use Ineersa\Tui\Application\TranscriptDisplayConfigMapper;
 use Ineersa\Tui\Application\TuiSessionCompositionFactory;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Editor\PromptEditor;
@@ -89,10 +90,11 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
         $snapshot = $this->throwingSnapshot($calls);
         $errorLog = $this->redirectErrorLog();
         $ended = [];
+        $initialPreviewState = [];
         $mode = $this->createInteractiveMode($snapshot, [
-            new class($ended) implements TuiListenerRegistrar {
+            new class($ended, $initialPreviewState) implements TuiListenerRegistrar {
                 /** @param list<string> $ended */
-                public function __construct(private array &$ended)
+                public function __construct(private array &$ended, private array &$initialPreviewState)
                 {
                 }
 
@@ -100,6 +102,7 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
                 {
                     $tui = $context->tui;
                     $ended = &$this->ended;
+                    $this->initialPreviewState[] = $context->state->transcriptDisplayState->previewableBlocksExpanded;
                     $context->lifecycle->subscribe(static function (TuiSessionLifecycleEventTypeEnum $type) use (&$ended): void {
                         if (TuiSessionLifecycleEventTypeEnum::SessionEnded === $type) {
                             $ended[] = 'ended';
@@ -127,6 +130,7 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
 
             $this->assertSame(0, $exit);
             $this->assertSame(['ended'], $ended);
+            $this->assertSame([false], $initialPreviewState);
             $this->assertGreaterThanOrEqual(2, $calls, 'Mount and shutdown checkpoints must still be attempted');
         } finally {
             $this->restoreErrorLog($errorLog);
@@ -139,9 +143,10 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
         $snapshot = $this->throwingSnapshot($calls);
         $errorLog = $this->redirectErrorLog();
         $iterations = 0;
+        $initialPreviewStates = [];
         $mode = $this->createInteractiveMode($snapshot, [
-            new class($iterations) implements TuiListenerRegistrar {
-                public function __construct(private int &$iterations)
+            new class($iterations, $initialPreviewStates) implements TuiListenerRegistrar {
+                public function __construct(private int &$iterations, private array &$initialPreviewStates)
                 {
                 }
 
@@ -149,6 +154,9 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
                 {
                     $tui = $context->tui;
                     $switch = $context->sessionServices->switch;
+                    $displayState = $context->state->transcriptDisplayState;
+                    $this->initialPreviewStates[] = $displayState->previewableBlocksExpanded;
+                    $displayState->previewableBlocksExpanded = false;
                     $context->ticks->add(function () use ($tui, $switch): ?bool {
                         ++$this->iterations;
                         if (1 === $this->iterations) {
@@ -163,7 +171,7 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
                 }
             },
             new QuitListener(),
-        ]);
+        ], new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(expandedByDefault: true)));
 
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->once())->method('shutdown');
@@ -176,6 +184,7 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
 
             $this->assertSame(0, $exit);
             $this->assertGreaterThanOrEqual(2, $iterations);
+            $this->assertSame([true, true], $initialPreviewStates);
             $this->assertGreaterThanOrEqual(3, $calls, 'Mount+shutdown on first session and mount on second must attempt checkpoints');
         } finally {
             $this->restoreErrorLog($errorLog);
@@ -230,12 +239,13 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
     private function createInteractiveMode(
         ProcessMemorySnapshotLogger $snapshot,
         array $extraRegistrars,
+        TuiTranscriptConfig $transcript = new TuiTranscriptConfig(),
     ): InteractiveMode {
         $cwd = TestDirectoryIsolation::createProjectTempDir('interactive-mem-');
         $this->tempDirs[] = $cwd;
-        TestDirectoryIsolation::createHatfieldTree($cwd);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
         $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
+            tui: new TuiConfig(theme: 'default', transcript: $transcript),
             logging: new LoggingConfig(),
             sessions: new SessionsConfig(),
             cwd: $cwd,
@@ -297,7 +307,6 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
             appConfig: $appConfig,
-            transcriptConfigMapper: new TranscriptDisplayConfigMapper(),
             historyProvider: $historyProvider,
             commandCatalog: new SlashCommandCatalog(),
             catalogRegistrars: [],

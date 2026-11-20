@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Tui\Completion;
+namespace Ineersa\CodingAgent\CLI\DTO;
 
 /**
  * A single file or directory entry in the file mention index.

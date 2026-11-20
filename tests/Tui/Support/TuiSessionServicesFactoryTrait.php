@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
@@ -44,7 +45,6 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -95,7 +95,7 @@ trait TuiSessionServicesFactoryTrait
             new DefaultTheme(new ThemePalette('test')),
             $state->sessionId,
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
         $client ??= $this->createStub(AgentSessionClient::class);
@@ -161,6 +161,8 @@ trait TuiSessionServicesFactoryTrait
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             SessionEventsExportServiceFactory::create(),
+            $questionCoordinator,
+            $questionController,
         );
 
         return new TuiSessionServices(

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Style\Padding;
@@ -25,7 +27,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
  * User / assistant / visible thinking → {@see MarkdownWidget}.
  * Host-tagged automatic messages → {@see AutomaticMessageWidget}, including
  * child tasks whose model-facing role remains user.
- * Hidden thinking → compact placeholder from {@see TranscriptDisplayConfig} only,
+ * Hidden thinking → compact placeholder from {@see TuiTranscriptConfig} only,
  * not {@see TranscriptBlock::$collapsed}.
  * Question blocks → compact markdown prompt/answer transcript record (HITL).
  * System blocks → severity/lifecycle prefix + color, optional markdown or
@@ -39,7 +41,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
 final readonly class TranscriptBlockRenderer
 {
     public function __construct(
-        private readonly TranscriptDisplayConfig $displayConfig,
+        private readonly TuiTranscriptConfig $displayConfig,
         private readonly TranscriptDisplayState $displayState,
         private readonly MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
     ) {
@@ -58,8 +60,8 @@ final readonly class TranscriptBlockRenderer
             return new AutomaticMessageWidget($block, $this->displayState, $theme, $this->markdown);
         }
 
-        // Hidden thinking: compact placeholder; uses TranscriptDisplayConfig only, NOT TranscriptBlock::collapsed.
-        if ($this->isThinkingBlock($block) && !$this->displayConfig->thinkingVisible) {
+        // Hidden thinking: compact placeholder; uses TuiTranscriptConfig only, NOT TranscriptBlock::collapsed.
+        if ($this->isThinkingBlock($block) && !$this->displayConfig->thinking->visible) {
             $line = \sprintf('%s Thinking', TranscriptGlyphs::GLYPH_ASSISTANT_THINKING);
 
             return new TextWidget($theme->color(ThemeColorEnum::ThinkingText, $line));
@@ -189,36 +191,13 @@ final readonly class TranscriptBlockRenderer
             $groups = [];
         }
 
-        /** @var array<string, list<array{keys: list<string>, action: string, description: string}>> $normalized */
-        $normalized = [];
-        foreach ($groups as $context => $bindings) {
-            if (!\is_string($context) || !\is_array($bindings)) {
-                continue;
-            }
-            $rows = [];
-            foreach ($bindings as $binding) {
-                if (!\is_array($binding)) {
-                    continue;
-                }
-                $keys = $binding['keys'] ?? [];
-                if (!\is_array($keys)) {
-                    $keys = [];
-                }
-                $rows[] = [
-                    'keys' => array_values(array_filter($keys, static fn (mixed $k): bool => \is_string($k))),
-                    'action' => \is_string($binding['action'] ?? null) ? $binding['action'] : '',
-                    'description' => \is_string($binding['description'] ?? null) ? $binding['description'] : '',
-                ];
-            }
-            $normalized[$context] = $rows;
-        }
-
+        /** @var array<string, list<HotkeyBindingDTO>> $groups */
         $emptyMessage = $block->meta['empty_message'] ?? '';
         if (!\is_string($emptyMessage)) {
             $emptyMessage = '';
         }
 
-        return new HotkeyTableWidget($normalized, $emptyMessage);
+        return new HotkeyTableWidget($groups, $emptyMessage);
     }
 
     private function systemStreamingSuffix(TranscriptBlock $block): string
@@ -378,7 +357,7 @@ final readonly class TranscriptBlockRenderer
      */
     private function applyThinkingStyle(Style $style): Style
     {
-        return match ($this->displayConfig->thinkingStyle) {
+        return match ($this->displayConfig->thinking->style) {
             'dim_italic' => $style->withDim(true)->withItalic(true),
             'dim' => $style->withDim(true),
             'italic' => $style->withItalic(true),

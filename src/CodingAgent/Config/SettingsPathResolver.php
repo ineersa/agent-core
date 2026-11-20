@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 
 /**
  * Resolves path patterns in Hatfield settings to absolute filesystem paths.

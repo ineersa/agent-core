@@ -13,6 +13,9 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptPreviewsConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptThinkingConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
@@ -45,7 +48,6 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -1004,7 +1006,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     {
         // When thinking visible=false, raw content must NOT appear.
         // Only the placeholder "  ⋯ Thinking" should render.
-        $config = new TranscriptDisplayConfig(thinkingVisible: false);
+        $config = new TuiTranscriptConfig(thinking: new TuiTranscriptThinkingConfig(visible: false));
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
             displayConfig: $config,
@@ -1033,7 +1035,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     #[Test]
     public function testCollapsedFlagDoesNotHideThinkingWhenConfigVisible(): void
     {
-        // Thinking visibility is driven by TranscriptDisplayConfig, NOT
+        // Thinking visibility is driven by TuiTranscriptConfig, NOT
         // by TranscriptBlock::collapsed. With default config (visible=true),
         // a collapsed block must still show its content.
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
@@ -1060,7 +1062,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     public function testCollapsedFlagDoesNotRevealThinkingWhenConfigHidden(): void
     {
         // Even with collapsed=true, if config says hidden, content is hidden.
-        $config = new TranscriptDisplayConfig(thinkingVisible: false);
+        $config = new TuiTranscriptConfig(thinking: new TuiTranscriptThinkingConfig(visible: false));
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
             displayConfig: $config,
@@ -1323,7 +1325,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
             palette: $palette,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 2)),
         );
         $harness->screen()->setTranscriptBlocks([
             new TranscriptBlock(
@@ -1365,7 +1367,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $body = implode("\n", ['v0', 'v1', 'v2', 'v3', 'v4']);
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 2)),
         );
         $harness->screen()->setTranscriptBlocks([
             new TranscriptBlock(
@@ -1394,7 +1396,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $body = implode("\n", ['full0', 'full1', 'full2']);
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 1),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 1)),
             displayState: new TranscriptDisplayState(previewableBlocksExpanded: true),
         );
         $harness->screen()->setTranscriptBlocks([
@@ -1426,7 +1428,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 ', array_merge(['---', '+++', '@@'], $patchLines));
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(diffPreviewLines: 3),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(diffLines: 3)),
             displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
         );
         $harness->screen()->setTranscriptBlocks([
@@ -1463,7 +1465,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 ', array_merge(['---', '+++', '@@'], $patchLines));
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(diffPreviewLines: 2),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(diffLines: 2)),
             displayState: new TranscriptDisplayState(previewableBlocksExpanded: true),
         );
         $harness->screen()->setTranscriptBlocks([
@@ -1736,7 +1738,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $body = implode("\n", ['line0', 'line1', 'line2', 'line3']);
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
-            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
+            displayConfig: new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 2)),
         );
         $harness->screen()->setTranscriptBlocks([
             new TranscriptBlock(

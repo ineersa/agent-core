@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
-use Ineersa\Tui\Setup\ProvidersSetupFlowInterface;
 
 /**
  * Headless setup mutations. Owns sparse writes + in-run state;

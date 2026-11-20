@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\Tui\Command\CommandMetadata;
+use Ineersa\Tui\Command\ModelCommandHandler;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;

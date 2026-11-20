@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
@@ -54,7 +55,7 @@ final class TranscriptVisualProjector
     private array $visualKeyByPrimaryId = [];
 
     public function __construct(
-        TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
+        TuiTranscriptConfig $displayConfig = new TuiTranscriptConfig(),
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         ?TranscriptBlockWidgetFactory $factory = null,
     ) {

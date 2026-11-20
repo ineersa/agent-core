@@ -2,13 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Tui\Setup;
+namespace Ineersa\CodingAgent\CLI\Providers;
 
 /**
- * Headless provider-setup mutations + queries for {@see SetupScreen}.
- *
- * Lives in the Tui layer so SetupScreen never imports CodingAgent. The
- * AppCli implementation wires AiCatalog / SettingsOverrideWriter / AppConfig.
+ * Headless provider-setup mutations and queries used by the interactive setup screens.
  */
 interface ProvidersSetupFlowInterface
 {

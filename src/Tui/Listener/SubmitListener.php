@@ -13,7 +13,6 @@ use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\DispatchShellCommand;
 use Ineersa\Tui\Command\ExitApplication;
-use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
 use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
@@ -244,7 +243,7 @@ final class SubmitListener implements TuiListenerRegistrar
 
         if ($result instanceof HotkeyTableData) {
             // Structured hotkey metadata only — HotkeyTableWidget renders at display time.
-            // Plain empty text keeps events.jsonl free of pre-rendered ANSI.
+            // This local transcript block is not a canonical event.
             $seq = \count($state->transcript) + 1;
             $block = $blockFactory->system(
                 runId: $state->sessionId,
@@ -253,7 +252,7 @@ final class SubmitListener implements TuiListenerRegistrar
                 style: 'hotkey-table',
             );
             $state->appendTranscriptBlock($block->with(meta: array_merge($block->meta, [
-                'hotkey_groups' => self::hotkeyGroupsToArrays($result->groups),
+                'hotkey_groups' => $result->groups,
                 'empty_message' => $result->emptyMessage,
             ])));
             $screen->setTranscriptBlocks($state->transcript);
@@ -759,33 +758,5 @@ final class SubmitListener implements TuiListenerRegistrar
             'error' => $blockFactory->error($state->sessionId, $result->text, $seq),
             default => $blockFactory->system($state->sessionId, $result->text, $seq, $result->style),
         };
-    }
-
-    // ─── Hotkey table data adapter ────────────────────────────────────
-
-    /**
-     * Convert HotkeyTableData's grouped HotkeyBindingDTOs to plain arrays for
-     * transcript meta (TuiListener → TuiTranscript). Shape is intentional plain
-     * arrays so TuiTranscript never imports HotkeyBindingDTO (Deptrac).
-     *
-     * @param array<string, list<HotkeyBindingDTO>> $groups
-     *
-     * @return array<string, list<array{keys: list<string>, action: string, description: string}>>
-     */
-    private static function hotkeyGroupsToArrays(array $groups): array
-    {
-        $result = [];
-        foreach ($groups as $context => $bindings) {
-            $result[$context] = array_map(
-                static fn (HotkeyBindingDTO $b): array => [
-                    'keys' => $b->keys,
-                    'action' => $b->action,
-                    'description' => $b->description,
-                ],
-                $bindings,
-            );
-        }
-
-        return $result;
     }
 }

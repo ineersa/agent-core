@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Session\Export;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Session\Export\EffectiveModelContextProjector;
@@ -74,14 +75,14 @@ final class EffectiveModelContextProjectorTest extends TestCase
         ]);
 
         $snapshot = $this->projector()->project($jsonl, 'run-1');
-        $roles = array_map(static fn (array $m): string => (string) ($m['role'] ?? ''), $snapshot->messages);
+        $roles = array_map(static fn (AgentMessage $message): string => $message->role, $snapshot->messages);
 
         $this->assertSame(['system', 'user-context', 'user', 'assistant', 'tool'], $roles);
         $this->assertSame(['bash', 'read'], $snapshot->availableTools);
         $this->assertSame(99, $snapshot->availableToolsSchemaTokensEstimate);
         $this->assertNull($snapshot->compaction);
-        $this->assertSame('bash', $snapshot->messages[3]['metadata']['tool_calls'][0]['name'] ?? null);
-        $this->assertSame('c1', $snapshot->messages[4]['tool_call_id'] ?? null);
+        $this->assertSame('bash', $snapshot->messages[3]->metadata['tool_calls'][0]['name'] ?? null);
+        $this->assertSame('c1', $snapshot->messages[4]->toolCallId);
     }
 
     #[Test]
@@ -148,8 +149,7 @@ final class EffectiveModelContextProjectorTest extends TestCase
         $texts = [];
         foreach ($snapshot->messages as $message) {
             $parts = [];
-            $content = \is_array($message['content'] ?? null) ? $message['content'] : [];
-            foreach ($content as $block) {
+            foreach ($message->content as $block) {
                 if (\is_array($block) && isset($block['text'])) {
                     $parts[] = (string) $block['text'];
                 }
@@ -163,7 +163,7 @@ final class EffectiveModelContextProjectorTest extends TestCase
         $this->assertStringContainsString('condensed memories', $joined);
         $this->assertStringContainsString('NEW_USER', $joined);
         $this->assertStringContainsString('NEW_ASSISTANT', $joined);
-        $this->assertTrue($snapshot->messages[1]['metadata']['compact_summary'] ?? false);
+        $this->assertTrue($snapshot->messages[1]->metadata['compact_summary'] ?? false);
         $this->assertSame('observational_memory', $snapshot->compaction['hook_metadata']['om_source'] ?? null);
         $this->assertSame($summary, $snapshot->compaction['summary_text'] ?? null);
         $this->assertSame(['read'], $snapshot->availableTools);

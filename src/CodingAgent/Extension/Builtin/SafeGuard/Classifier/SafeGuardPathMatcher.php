@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier;
 
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
-use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 
 /**
  * Faithful PHP port of Pi's path matching logic from policy.ts and safe-guard.ts.

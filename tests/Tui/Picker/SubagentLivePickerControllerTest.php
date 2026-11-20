@@ -24,6 +24,8 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
@@ -443,6 +445,8 @@ final class SubagentLivePickerControllerTest extends TestCase
             ->with('child-run-snap')
             ->willReturn(new ChildRunTranscriptSnapshotDTO([$block], [], 4));
 
+        $questionCoordinator = new QuestionCoordinator();
+        $questionController = new QuestionController($questionCoordinator, $harness->screen());
         $picker = new SubagentLivePickerController(
             $harness->tui(),
             $harness->screen(),
@@ -452,6 +456,8 @@ final class SubagentLivePickerControllerTest extends TestCase
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             SessionEventsExportServiceFactory::create(),
+            $questionCoordinator,
+            $questionController,
         );
 
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'enterLiveView');
@@ -817,6 +823,9 @@ final class SubagentLivePickerControllerTest extends TestCase
             $client->method('backgroundWork')->willReturn(new BackgroundWorkSnapshotDTO([], []));
         }
 
+        $questionCoordinator = new QuestionCoordinator();
+        $questionController = new QuestionController($questionCoordinator, $harness->screen());
+
         return new SubagentLivePickerController(
             $harness->tui(),
             $harness->screen(),
@@ -826,6 +835,8 @@ final class SubagentLivePickerControllerTest extends TestCase
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             SessionEventsExportServiceFactory::create(),
+            $questionCoordinator,
+            $questionController,
         );
     }
 
@@ -927,6 +938,9 @@ final class SubagentLivePickerControllerTest extends TestCase
         $client = $this->createStub(AgentSessionClient::class);
         $client->method('backgroundWork')->willReturn(new BackgroundWorkSnapshotDTO([], []));
 
+        $questionCoordinator = new QuestionCoordinator();
+        $questionController = new QuestionController($questionCoordinator, $harness->screen());
+
         return new SubagentLivePickerController(
             $harness->tui(),
             $harness->screen(),
@@ -936,6 +950,8 @@ final class SubagentLivePickerControllerTest extends TestCase
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->childEventsPathResolver(),
             SessionEventsExportServiceFactory::create(),
+            $questionCoordinator,
+            $questionController,
         );
     }
 

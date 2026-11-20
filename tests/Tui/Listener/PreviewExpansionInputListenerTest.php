@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptPreviewsConfig;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -18,7 +20,6 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Transcript\HotkeyTableWidget;
 use Ineersa\Tui\Transcript\ThemeStyleSheetFactory;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -50,9 +51,8 @@ final class PreviewExpansionInputListenerTest extends TestCase
     #[DataProvider('provideCtrlOSequences')]
     public function ctrlOTogglesLongToolExchangePreviewOnRealInputPath(string $sequence): void
     {
-        $displayConfig = new TranscriptDisplayConfig(
-            toolResultPreviewLines: 2,
-            diffPreviewLines: 2,
+        $displayConfig = new TuiTranscriptConfig(
+            previews: new TuiTranscriptPreviewsConfig(toolResultLines: 2, diffLines: 2),
         );
         $displayState = new TranscriptDisplayState(previewableBlocksExpanded: false);
         $harness = new VirtualTuiHarness(
@@ -209,19 +209,7 @@ final class PreviewExpansionInputListenerTest extends TestCase
         }
         $this->assertTrue($found, 'Hotkey catalog must include ctrl+o binding');
 
-        $groupsForWidget = [];
-        foreach ($groups as $context => $bindings) {
-            $groupsForWidget[$context] = array_map(
-                static fn ($b): array => [
-                    'keys' => $b->keys,
-                    'action' => $b->action,
-                    'description' => $b->description,
-                ],
-                $bindings,
-            );
-        }
-
-        $widget = new HotkeyTableWidget($groupsForWidget);
+        $widget = new HotkeyTableWidget($groups);
         $root = new ContainerWidget();
         $root->add($widget);
         $lines = (new Renderer(
@@ -235,7 +223,7 @@ final class PreviewExpansionInputListenerTest extends TestCase
     #[Test]
     public function ctrlOExpandsSubagentHandoffMarkdownOnRealInputPath(): void
     {
-        $displayConfig = new TranscriptDisplayConfig(toolResultPreviewLines: 2);
+        $displayConfig = new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 2));
         $displayState = new TranscriptDisplayState(previewableBlocksExpanded: false);
         $harness = new VirtualTuiHarness(
             sessionId: 'subagent-handoff-preview',
@@ -305,7 +293,7 @@ line9';
     #[Test]
     public function ctrlOTogglesLiveViewChildTranscriptWithoutSwappingToMain(): void
     {
-        $displayConfig = new TranscriptDisplayConfig(toolResultPreviewLines: 2);
+        $displayConfig = new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: 2));
         $displayState = new TranscriptDisplayState(previewableBlocksExpanded: false);
         $harness = new VirtualTuiHarness(
             sessionId: 'live-preview-toggle-session',

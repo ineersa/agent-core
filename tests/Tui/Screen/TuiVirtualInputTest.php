@@ -7,7 +7,6 @@ namespace Ineersa\Tui\Tests\Screen;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\DispatchShellCommand;
-use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
 use Ineersa\Tui\Command\SlashCommandCatalog;
@@ -232,18 +231,6 @@ final class TuiVirtualInputTest extends TestCase
         TuiSessionState $state,
         VirtualTuiHarness $harness,
     ): void {
-        $groups = [];
-        foreach ($result->groups as $context => $bindings) {
-            $groups[$context] = array_map(
-                static fn (HotkeyBindingDTO $binding): array => [
-                    'keys' => $binding->keys,
-                    'action' => $binding->action,
-                    'description' => $binding->description,
-                ],
-                $bindings,
-            );
-        }
-
         $factory = new TranscriptBlockFactory();
         $block = $factory->system(
             runId: $state->sessionId,
@@ -252,7 +239,7 @@ final class TuiVirtualInputTest extends TestCase
             style: 'hotkey-table',
         );
         $state->transcript[] = $block->with(meta: array_merge($block->meta, [
-            'hotkey_groups' => $groups,
+            'hotkey_groups' => $result->groups,
             'empty_message' => $result->emptyMessage,
         ]));
         $harness->screen()->setTranscriptBlocks($state->transcript);

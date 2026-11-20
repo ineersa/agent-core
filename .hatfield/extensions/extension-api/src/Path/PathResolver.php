@@ -2,17 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Path;
+namespace Ineersa\Hatfield\ExtensionApi\Path;
 
 /**
  * Resolve a filesystem path to an absolute, normalized form.
  *
- * Intended for use by CodingAgent file tools (read, write, edit, view_image).
- * This is a standalone static utility with no dependencies on other Hatfield
- * services, AgentCore, or Tui.
- *
- * For settings-path resolution with placeholder expansion (e.g.
- * %kernel.project_dir%), see Ineersa\CodingAgent\Config\SettingsPathResolver.
+ * Lexical normalization only: does not inspect the filesystem or resolve symlinks.
  *
  * Resolution order:
  *  1. Empty path → returns $cwd.
@@ -22,9 +17,6 @@ namespace Ineersa\CodingAgent\Path;
  *  4. Relative path (does not start with `/`) → joined against $cwd.
  *  5. $cwd must be absolute when provided; relative $cwd is rejected.
  *  6. Normalized: `.` and `..` segments, duplicate separators collapsed.
- *
- * @see \Ineersa\CodingAgent\Config\SettingsPathResolver for settings-oriented
- *      path resolution with placeholder expansion.
  */
 final class PathResolver
 {
@@ -183,15 +175,13 @@ final class PathResolver
     /**
      * Get the current user's home directory.
      *
-     * Resolution order (matching SettingsPathResolver):
+     * Resolution order:
      *  1. $HOME environment variable
      *  2. $USERPROFILE environment variable (Windows)
      *  3. posix_getpwuid() system call
      *
      * Throws when no home directory can be resolved; tools should fail loudly
      * instead of silently writing under a fallback directory.
-     *
-     * @see \Ineersa\CodingAgent\Config\SettingsPathResolver for details
      */
     private static function getHomeDirectory(): string
     {

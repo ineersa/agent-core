@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Setup;
 
+use Ineersa\CodingAgent\CLI\Providers\ProvidersSetupFlowInterface;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Psr\Log\LoggerInterface;

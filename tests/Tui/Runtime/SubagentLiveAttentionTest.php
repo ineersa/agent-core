@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Runtime;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
@@ -16,7 +17,6 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\TestCase;
 
@@ -46,7 +46,7 @@ final class SubagentLiveAttentionTest extends TestCase
             new DefaultTheme(new ThemePalette('test')),
             'parent-session',
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
         $screen->setStatus('subagent_live', '⚠ Subagent scout needs your input — /agents-live');
@@ -69,7 +69,7 @@ final class SubagentLiveAttentionTest extends TestCase
             new DefaultTheme(new ThemePalette('test')),
             'parent-session',
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
         $screen->setStatus('subagent_live', '⚠ Subagent scout needs your input — /agents-live');
@@ -95,7 +95,7 @@ final class SubagentLiveAttentionTest extends TestCase
             new DefaultTheme(new ThemePalette('test')),
             'parent-session',
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
 
@@ -114,7 +114,7 @@ final class SubagentLiveAttentionTest extends TestCase
             new DefaultTheme(new ThemePalette('test')),
             'parent-session',
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
         $screen->setStatus('agents-live', 'Subagent live: scout [running] — stale after exit.');
@@ -137,7 +137,7 @@ final class SubagentLiveAttentionTest extends TestCase
             new DefaultTheme(new ThemePalette('test')),
             'parent-session',
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
         $screen->setStatus('agents-live', 'Subagent live: scout [waiting_human] — stale.');
@@ -170,7 +170,7 @@ final class SubagentLiveAttentionTest extends TestCase
             new DefaultTheme(new ThemePalette('test')),
             'parent-session',
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
         $screen->setStatus('agents-live', 'Subagent live: scout [running] — type to steer next step; /agents-main to return.');

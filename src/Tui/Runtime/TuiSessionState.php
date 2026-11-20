@@ -11,7 +11,6 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 
 /**
@@ -165,7 +164,7 @@ final class TuiSessionState
     /**
      * Live/session-only mutable display state for the transcript.
      *
-     * Initialized from TranscriptDisplayConfig.previewsExpandedByDefault
+     * Initialized from TuiTranscriptConfig.previews->expandedByDefault
      * at TUI startup. Ctrl+O ({@see \Ineersa\Tui\Listener\PreviewExpansionInputListener}) toggles
      * previewableBlocksExpanded at runtime for this session only.
      * Not persisted to settings or session metadata.

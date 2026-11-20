@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Widget\AbstractWidget;
@@ -23,7 +24,7 @@ final class HotkeyTableWidget extends AbstractWidget
     private const int INDENT = 2;
 
     /**
-     * @param array<string, list<array{keys: list<string>, action: string, description: string}>> $groups
+     * @param array<string, list<HotkeyBindingDTO>> $groups
      */
     public function __construct(
         private readonly array $groups,
@@ -117,7 +118,7 @@ final class HotkeyTableWidget extends AbstractWidget
     }
 
     /**
-     * @param list<array{keys: list<string>, action: string, description: string}> $bindings
+     * @param list<HotkeyBindingDTO> $bindings
      *
      * @return list<string>
      */
@@ -129,13 +130,13 @@ final class HotkeyTableWidget extends AbstractWidget
         foreach ($bindings as $binding) {
             $keysStr = implode(', ', array_map(
                 static fn (string $k): string => self::formatKeyDisplay($k),
-                $binding['keys'],
+                $binding->keys,
             ));
-            $desc = $binding['description'];
+            $desc = $binding->description;
             if ('' !== $desc) {
                 $hasDesc = true;
             }
-            $rows[] = [$keysStr, $binding['action'], $desc];
+            $rows[] = [$keysStr, $binding->action, $desc];
         }
 
         $keyHeader = 'Keys';

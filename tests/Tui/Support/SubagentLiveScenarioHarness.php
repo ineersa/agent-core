@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\EventListener\RuntimeExceptionPolicySubscriber;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
@@ -49,7 +50,6 @@ use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -117,7 +117,7 @@ final class SubagentLiveScenarioHarness
             $theme,
             $parentSessionId,
             $promptEditor,
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState());
 
         $catalog = new SlashCommandCatalog();
