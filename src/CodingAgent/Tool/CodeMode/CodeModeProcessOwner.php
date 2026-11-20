@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\CodeMode;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\CodingAgent\Entity\CodeModeCallRepository;
 use Ineersa\CodingAgent\Entity\CodeModeReportedReturnRepository;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -13,16 +15,16 @@ use Symfony\Component\Filesystem\Filesystem;
 /** Owns native launch evidence independently of any tool consumer. */
 final readonly class CodeModeProcessOwner
 {
-    public function __construct(private ProcessLifecycle $lifecycle, private CodeModeReportedReturnRepository $returns, private CodeModeCallRepository $calls, private Filesystem $filesystem = new Filesystem())
+    public function __construct(private ProcessLifecycle $lifecycle, private CodeModeReportedReturnRepository $returns, private CodeModeCallRepository $calls, private ToolPayloadStoreInterface $payloads, private Filesystem $filesystem = new Filesystem())
     {
     }
 
     /** @param array{invocationId: string, callId: string, rootId: string, timeout: ?int}|null $parent */
-    public function launch(string $runId, string $invocationId, string $workspace, string $command, int $startedAtNs, bool $controllerSettles = false, ?array $parent = null): CodeModeOwnedProcess
+    public function launch(string $runId, string $invocationId, string $workspace, string $command, int $startedAtNs, bool $controllerSettles = false, ?array $parent = null, ?\Closure $admit = null): CodeModeOwnedProcess
     {
         $prefix = $this->prefix($runId).hash('sha256', $invocationId);
 
-        return $this->lifecycle->withSidecarLock($prefix.'.status', function () use ($prefix, $workspace, $command, $startedAtNs, $invocationId, $controllerSettles, $parent): CodeModeOwnedProcess {
+        return $this->lifecycle->withSidecarLock($prefix.'.status', function () use ($prefix, $workspace, $command, $startedAtNs, $invocationId, $controllerSettles, $parent, $admit): CodeModeOwnedProcess {
             if (file_exists($prefix.'.workspace') || is_link($prefix.'.workspace') || file_exists($prefix.'.pid')
                 || file_exists($prefix.'.status') || file_exists($prefix.'.log') || !$this->lifecycle->ownsSidecarPaths($prefix.'.log', $prefix.'.status')) {
                 throw new ToolCallException('Code-mode invocation already has launch evidence; refusing to start it again.', retryable: false);
@@ -30,6 +32,7 @@ final readonly class CodeModeProcessOwner
             // Publish ownership before starting the native wrapper. If the consumer
             // dies before recording readiness, session cleanup can still find it.
             $this->filesystem->dumpFile($prefix.'.workspace', json_encode(['workspace' => $workspace, 'startedAtNs' => $startedAtNs, 'invocationId' => $invocationId, 'controllerSettles' => $controllerSettles, 'parent' => $parent], \JSON_THROW_ON_ERROR));
+            $admit?->__invoke();
             $launch = $this->lifecycle->launchProcess($command, $prefix.'.pid', $prefix.'.log', $prefix.'.status');
 
             return new CodeModeOwnedProcess($this->lifecycle, $prefix.'.status', $launch['pid']);
@@ -136,7 +139,14 @@ final readonly class CodeModeProcessOwner
                     ? 'Code-mode invocation interrupted: '.$interruption.'.' : 'Code-mode invocation timed out.'];
             }
 
-            return $this->returns->reply($id) ?? ['ok' => false, 'error' => 'Code-mode subprocess exited without returning a value.'];
+            $reference = $this->returns->reply($id);
+            if (null === $reference) {
+                return ['ok' => false, 'error' => 'Code-mode subprocess exited without returning a value.'];
+            }
+            $result = $this->payloads->read($reference);
+
+            return $result instanceof ToolCallResult && \is_array($result->result)
+                ? $result->result : ['ok' => false, 'error' => 'Invalid code-mode return payload.'];
         });
     }
 

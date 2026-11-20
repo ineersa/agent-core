@@ -22,14 +22,21 @@ function hatfield_code_mode_broker_call(string $operation, string $name, array $
     $kernel->getContainer()->get('hatfield.code_mode.execution_bus')->dispatch(
         new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO($invocationId, $id, $name, $arguments, $operation, $rootId),
     );
-    $calls = $kernel->getContainer()->get(\Ineersa\CodingAgent\Entity\CodeModeCallRepository::class);
+    $payloads = $kernel->getContainer()->get('hatfield.code_mode.payload_store');
     while (true) {
         foreach ($broker->get() as $delivery) {
+            $message = $delivery->getMessage();
+            if (!$message instanceof \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeReplyDTO || $message->callId !== $id) {
+                $broker->ack($delivery);
+                continue;
+            }
+            $result = $payloads->read($message->payload);
             $broker->ack($delivery);
-        }
-        $reply = $calls->reply($invocationId, $id);
-        if (null !== $reply) {
-            if (true === ($reply['ok'] ?? null)) {
+            if (!$result instanceof \Ineersa\AgentCore\Domain\Message\ToolCallResult || !\is_array($result->result)) {
+                throw new RuntimeException('Invalid code-mode reply payload.');
+            }
+            $reply = $result->result;
+            if (true === ($reply['ok'] ?? false)) {
                 return $reply['result'] ?? null;
             }
             throw new RuntimeException($reply['error'] ?? 'Code-mode call failed.');
@@ -41,10 +48,12 @@ function hatfield_code_mode_broker_call(string $operation, string $name, array $
 /** @param array<string, mixed> $frame */
 function hatfield_code_mode_terminal(array $frame): void
 {
-    global $kernel, $invocationId;
+    global $kernel, $invocationId, $rootId;
     unset($frame['type']);
+    /** @var \Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory $replies */
+    $replies = $kernel->getContainer()->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory::class);
     $kernel->getContainer()->get(\Ineersa\CodingAgent\Entity\CodeModeReportedReturnRepository::class)
-        ->record($invocationId, $frame);
+        ->record($invocationId, $replies->publishReturn($invocationId, $rootId, $frame));
 }
 
 if (!\function_exists('notify_owner')) {
@@ -189,12 +198,13 @@ $invocationId = getenv('HATFIELD_CODE_MODE_INVOCATION');
 $rootId = getenv('HATFIELD_CODE_MODE_ROOT') ?: $invocationId;
 $kernel = new \Ineersa\CodingAgent\Kernel(getenv('APP_ENV') ?: 'prod', false);
 $kernel->boot();
-$broker = $kernel->getContainer()->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory::class)->create($invocationId);
-// The launcher exposes this gate only after canonical readiness commits.
-while (!is_file(__DIR__.'/ready')) {
-    clearstatcache(true, __DIR__.'/ready');
-    usleep(10_000);
+/** @var \Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory $replies */
+$replies = $kernel->getContainer()->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory::class);
+if (!$replies->isAdmitted($invocationId, $rootId)) {
+    fwrite(\STDERR, "Code-mode launch is no longer admitted.\n");
+    exit(1);
 }
+$broker = $replies->create($invocationId);
 
 register_shutdown_function(static function (): void {
     $error = error_get_last();

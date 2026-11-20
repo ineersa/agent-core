@@ -28,6 +28,7 @@ parameters:
         - .hatfield/extensions/
         - migrations/
         - bin/console
+        - src/CodingAgent/Tool/CodeMode/Resources/bootstrap.php.inc
     scanFiles:
         - .castor.stub.php
         - .castor/helpers.php

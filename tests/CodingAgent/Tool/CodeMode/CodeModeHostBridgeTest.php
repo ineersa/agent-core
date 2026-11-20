@@ -78,8 +78,9 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             // Deliberately do not service the queue until the launcher has returned.
             $fixture = $this->tmpDir.'/nested-read.txt';
             file_put_contents($fixture, 'broker nested read');
-            $script = 'return tool("read", ["path" => '.var_export($fixture, true).']);';
-            $script = 'return tool("code_mode", ["script" => '.var_export($script, true).']);';
+            $script = 'echo tool("read", ["path" => '.var_export($fixture, true).']); echo str_repeat("X", 8192)."OMITTED_TAIL"; fwrite(STDERR, "child diagnostic"); throw new RuntimeException("child failed");';
+            $script = 'try { tool("read", ["invalid list"]); } catch (RuntimeException $error) { $refusal = $error->getMessage(); }'
+                .' try { tool("code_mode", ["script" => '.var_export($script, true).']); } catch (RuntimeException $error) { $child = $error->getMessage(); } return [$refusal ?? null, $child ?? null];';
             $outcome = $accessor->with($context, static fn (): mixed => $tool(new CodeModeArgumentsDTO($script, 5)));
             $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
             $this->assertTrue($client->wait('code_mode_requests', 3000));
@@ -116,7 +117,8 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
 
                 return $handled;
             };
-            [$outerRequest, $readRequest] = $consume(2);
+            [$invalidRequest, $outerRequest, $readRequest] = $consume(3);
+            $this->assertInstanceOf(CodeModeCallRequestDTO::class, $invalidRequest);
             $this->assertInstanceOf(CodeModeCallRequestDTO::class, $outerRequest);
             $this->assertInstanceOf(CodeModeCallRequestDTO::class, $readRequest);
             $this->assertSame($outcome->deferredId, $outerRequest->invocationId);
@@ -127,11 +129,15 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $calls = $container->get(\Ineersa\CodingAgent\Entity\CodeModeCallRepository::class);
             $retained = $calls->reply($readRequest->invocationId, $readRequest->callId);
             $this->assertNotNull($retained);
+            $this->assertSame('result', $retained->kind);
+            $payload = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class)->read($retained);
+            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ToolCallResult::class, $payload);
+            $this->assertStringContainsString('broker nested read', json_encode($payload->result, \JSON_THROW_ON_ERROR));
             // Controlled worker turnover and redelivery of the exact request.
             file_put_contents($fixture, 'must not read the replacement bytes');
             $transport->send(new Envelope($readRequest));
             $consume(1);
-            $this->assertSame($retained, $calls->reply($readRequest->invocationId, $readRequest->callId));
+            $this->assertEquals($retained, $calls->reply($readRequest->invocationId, $readRequest->callId));
             $observer = $container->get(\Ineersa\CodingAgent\Runtime\Controller\CodeModeTerminalObserver::class);
             // The controller reconciles the committed reply with native exit evidence.
             $deadline = hrtime(true) + 3_000_000_000;
@@ -145,7 +151,13 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             } while (hrtime(true) < $deadline);
             $this->assertNotNull($terminal);
             $this->assertTrue($terminal['ok'], $terminal['error'] ?? 'Expected a successful nested read.');
-            $this->assertStringContainsString('broker nested read', json_encode($terminal['result'], \JSON_THROW_ON_ERROR));
+            $this->assertSame('Invalid code-mode call request.', $terminal['result'][0] ?? null);
+            $this->assertStringContainsString('broker nested read', $terminal['result'][1]);
+            $this->assertStringContainsString('child failed', $terminal['result'][1]);
+            $this->assertStringContainsString('child diagnostic', $terminal['result'][1]);
+            $this->assertStringContainsString('[diagnostics truncated]', $terminal['result'][1]);
+            $this->assertStringNotContainsString('OMITTED_TAIL', $terminal['result'][1]);
+            $this->assertStringNotContainsString($record['workspace'], $terminal['result'][1]);
         } finally {
             if (null === $previous) {
                 unset($_SERVER[$endpoint]);

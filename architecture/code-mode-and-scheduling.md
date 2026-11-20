@@ -18,17 +18,18 @@ sequenceDiagram
     participant Owner as Controller completion poller
     participant RC as run_control
     Worker->>PHP: Launch with invocation identity and controller settlement authority
-    Worker->>Worker: Mark ready and return deferred outcome; release slot
+    Worker->>Worker: Record ownership and commit admission before starting PHP
+    Worker->>Worker: Return deferred outcome; release slot
     PHP->>Broker: Publish code_mode_requests with invocation and call IDs
     Broker->>Worker: Deliver request to available shared slot
     Worker->>Worker: Claim call, run existing toolbox, retain reply
-    Worker->>Broker: Publish wake-up to invocation reply queue
-    Broker-->>PHP: Wake-up; PHP reads retained result by call ID
-    PHP->>Owner: Commit reported return by invocation ID
+    Worker->>Broker: Publish managed result reference to invocation reply queue
+    Broker-->>PHP: Correlated reply with managed tool payload reference
+    PHP->>Owner: Publish managed return and commit its reference by invocation ID
     Owner->>RC: Publish deferred completion
 ```
 
-The reply wake-up is not the result. Redelivery of a settled request can reuse
+The reply envelope carries a reference, not the result payload. Redelivery of a settled request can reuse
 its retained result; an execution claim without a result is ambiguous and is
 not replayed. These records do not restore a lost PHP stack or allow an
 invocation to survive session shutdown. Owner notices use separate identities
@@ -50,16 +51,17 @@ are refused by the bridge.
 Direct `backgrounded: true` uses the existing deferred completion lifecycle.
 Canonical launches run in separate native process groups with invocation-keyed
 sidecars. The controller can observe completion, stop the group, and clean its
-workspace independently of the launching consumer. `bg_status` controls Bash
+workspace independently of the launching consumer. PHP checks committed root
+admission and, for a child, its exact prelaunch reservation once at startup.
+There is no launcher-owned readiness file or bootstrap wait. `bg_status` controls Bash
 jobs, not PHP scripts.
 
 A brokered `tool('code_mode', ...)` launches another session-owned PHP process
 and releases the request slot. The child record identifies the parent invocation
-and call. The controller replaces the pending child entry in the shared Doctrine call repository
-with the retained result before sending a wake-up. Calls without canonical or brokered parent correlation, or without a live
+and call. The controller publishes a correlated reply and records its managed reference against the reserved child. Failed-child replies include bounded diagnostic previews, not paths or attachments to the child streams. An exited caller does not itself request a native stop of the child. Calls without canonical or brokered parent correlation, or without a live
 session broker, are refused before launch.
 
-Nested requests are claimed by a unique invocation/call key before tool execution. No database transaction spans the tool effect. A live claimant suppresses duplicate execution; a dead claimant without a result yields a retained unknown-outcome error. PHP reads committed replies from the same repository.
+Nested requests are claimed by a unique invocation/call key before tool execution. No database transaction spans the tool effect. The existing process-sidecar lock facility suppresses duplicate execution while a claimant is alive and releases on worker exit. A persisted claim without a reference or reserved child yields a managed unknown-outcome error. Doctrine stores only reply references; both nested results and PHP returns live in the managed tool payload store. The worker publishes a managed tool result and sends its reference on the invocation reply queue. PHP waits for the matching call ID and reads the referenced result from the payload store.
 
 ## Scheduling
 

@@ -81,13 +81,9 @@ final readonly class CodeModeHostBridge
             }
             $this->startProcess($workspace, $token, $this->formatMemoryLimit($memoryLimitMb), $context->runId(), $id, $endpoint, $parent);
             $owned = true;
-            if (null === $parent) {
-                $this->deferred->markReady($id);
-                if ($backgrounded) {
-                    $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($context->runId(), $id, $context->toolCallId()));
-                }
+            if (null === $parent && $backgrounded) {
+                $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($context->runId(), $id, $context->toolCallId()));
             }
-            $this->filesystem->dumpFile($workspace['dir'].'/ready', '');
 
             return new DeferredToolCompletionOutcome($id);
         } catch (\Throwable $error) {
@@ -308,7 +304,8 @@ final readonly class CodeModeHostBridge
         foreach ($environment as $name => $value) {
             $assignments .= $name.'='.escapeshellarg($value).' ';
         }
-        $this->processOwner->launch($runId, $invocationId, $workspace['dir'], 'cd '.escapeshellarg($cwd).' && '.$assignments.$shell, $workspace['startedAtNs'], controllerSettles: true, parent: $parent);
+        $this->processOwner->launch($runId, $invocationId, $workspace['dir'], 'cd '.escapeshellarg($cwd).' && '.$assignments.$shell, $workspace['startedAtNs'], controllerSettles: true, parent: $parent,
+            admit: null === $parent ? fn () => $this->deferred->markReady($invocationId) : null);
     }
 
     private function formatMemoryLimit(int $memoryLimitMb): string

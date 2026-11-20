@@ -33,7 +33,13 @@ final class CodeModeProcessOwnerTest extends IsolatedKernelTestCase
             $workspace = $root.'/workspace';
             $fs->mkdir($workspace);
             $returns = self::getContainer()->get(CodeModeReportedReturnRepository::class);
-            $owner = new CodeModeProcessOwner(new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $root), new NullLogger(), new LockFactory(new FlockStore($root))), $returns, self::getContainer()->get(\Ineersa\CodingAgent\Entity\CodeModeCallRepository::class));
+            $payloads = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class);
+            $runId = self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('code-mode terminal reference');
+            $record = static function () use ($payloads, $runId, $returns): void {
+                $result = new \Ineersa\AgentCore\Domain\Message\ToolCallResult($runId, 1, 'step', 1, 'key', 'terminal', 0, ['ok' => true, 'result' => 42]);
+                $returns->record('invocation', $payloads->publish($result));
+            };
+            $owner = new CodeModeProcessOwner(new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $root), new NullLogger(), new LockFactory(new FlockStore($root))), $returns, self::getContainer()->get(\Ineersa\CodingAgent\Entity\CodeModeCallRepository::class), $payloads);
             $prefix = $root.'/code-mode-'.hash('sha256', 'run').'-'.hash('sha256', 'invocation');
             $fs->dumpFile($prefix.'.workspace', json_encode([
                 'workspace' => $workspace,
@@ -52,7 +58,7 @@ final class CodeModeProcessOwnerTest extends IsolatedKernelTestCase
             $fs->dumpFile($childPrefix.'.status', "0\n");
             $this->assertTrue($owner->hasExited('run', 'child'));
             if ('return-first' === $case) {
-                $returns->record('invocation', ['ok' => true, 'result' => 42]);
+                $record();
                 $this->assertNull($owner->observeTerminal('run', 'invocation', null, null));
             }
             if ('stop' === $case || 'expired' === $case) {
@@ -61,7 +67,7 @@ final class CodeModeProcessOwnerTest extends IsolatedKernelTestCase
                 $fs->dumpFile($prefix.'.status', "0\n");
             }
             if ('exit-first' === $case) {
-                $returns->record('invocation', ['ok' => true, 'result' => 42]);
+                $record();
             }
             $expected = match ($case) {
                 'return-first', 'exit-first' => ['ok' => true, 'result' => 42],

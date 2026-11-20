@@ -1384,5 +1384,6 @@ services:
   Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory:
     public: true
 
-  Ineersa\CodingAgent\Entity\CodeModeCallRepository:
+  hatfield.code_mode.payload_store:
+    alias: Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface
     public: true

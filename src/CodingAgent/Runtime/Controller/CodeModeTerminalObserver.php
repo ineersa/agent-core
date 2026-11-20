@@ -16,12 +16,10 @@ use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnostics;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeProcessOwner;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory;
-use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeReplyReadyDTO;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
-use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class CodeModeTerminalObserver
@@ -61,21 +59,22 @@ final readonly class CodeModeTerminalObserver
         if (null !== $parent) {
             $root = $this->deferred->findMetadataByDeferredId($parent['rootId']);
             $destination = $this->processes->invocation($runId, $parent['invocationId']);
-            $stop = null === $root || 'pending' !== $root->status ? 'owner settled' : $root->interruptionReason;
-            if (!is_file($invocation['workspace'].'/ready') && null !== $this->calls->reply($parent['invocationId'], $parent['callId'])) {
-                $stop = 'child launch failed';
-            }
+            // The session still owns this process if its caller exits. Only
+            // explicit interruption or the inherited deadlines can stop it.
+            $stop = $root?->interruptionReason;
             $call = $this->deferred->findByDeferredId($parent['rootId']);
             $explicit = $call?->arguments['timeout_seconds'] ?? null;
             $deadline = $this->processes->deadline($runId, $id, null !== $root?->backgroundedAt, \is_int($explicit) ? $explicit : null, $call?->timeoutSeconds);
             $reply = $this->processes->observeTerminal($runId, $id, $deadline, $stop);
-            if (null !== $reply && null !== $destination && $this->calls->completeChild($parent['invocationId'], $parent['callId'], $id, $reply)) {
-                $transport = $this->replies->create($parent['invocationId']);
-                try {
-                    $transport->send(new Envelope(new CodeModeReplyReadyDTO()));
-                } finally {
-                    $transport->close();
+            if (null !== $reply && null !== $destination && null !== $root
+                && null === $this->calls->reply($parent['invocationId'], $parent['callId'])) {
+                if (!$reply['ok']) {
+                    $capture = new CodeModeDiagnosticCapture($this->outputCap, $runId, $invocation['workspace']);
+                    $reply['error'] = $capture->boundedFailure($reply['error'] ?? 'Code-mode child failed.');
                 }
+                $reference = $this->replies->publish($parent['invocationId'], $parent['callId'], $root->reference, $reply);
+                $this->replies->send($parent['invocationId'], $parent['callId'], $reference);
+                $this->calls->completeChild($parent['invocationId'], $parent['callId'], $id, $reference);
             }
 
             return;
