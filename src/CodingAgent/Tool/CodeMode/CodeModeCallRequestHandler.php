@@ -13,11 +13,12 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
-use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
+use Ineersa\CodingAgent\Entity\CodeModeCallRepository;
 use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO;
-use Ineersa\SqliteQueue\Client;
+use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeReplyReadyDTO;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -33,9 +34,9 @@ final readonly class CodeModeCallRequestHandler
         private RunOperationalStatusReaderInterface $status,
         private StackToolExecutionContextAccessor $contexts,
         private CodeModeNestedToolExecutor $executor,
-        private CodeModeCallJournal $journal,
+        private CodeModeCallRepository $calls,
         #[Autowire(service: 'agent.command.bus')] private MessageBusInterface $commands,
-        #[Autowire('%env(HATFIELD_SQLITE_QUEUE_ENDPOINT)%')] private string $endpoint,
+        private CodeModeReplyTransportFactory $replies,
     ) {
     }
 
@@ -58,22 +59,14 @@ final readonly class CodeModeCallRequestHandler
             throw new UnrecoverableMessageHandlingException('Code-mode invocation evidence does not match the canonical call.');
         }
         $wire = ['operation' => $request->operation, 'name' => $request->name, 'arguments' => $request->arguments];
-        CodeModeIpc::encode($wire);
-        $reply = $this->journal->settle($process['workspace'], $request->callId, $wire, function () use ($request, $call, $process, $rootId): array {
+        $reply = $this->calls->settle($request->invocationId, $request->callId, $wire, function () use ($request, $call, $rootId): array {
             try {
                 $explicit = $call->args['timeout_seconds'] ?? null;
-                $token = new CodeModeCancellationToken(new RunCancellationToken($this->status, $call->runId()), $this->deferred, $rootId, \is_int($explicit) ? $explicit : null, $request->invocationId, $request->callId, $rootId);
+                $token = new CodeModeCancellationToken(new RunCancellationToken($this->status, $call->runId()), $this->deferred, $rootId, \is_int($explicit) ? $explicit : null, $request->invocationId, $request->callId, $rootId,
+                    fn (bool $backgrounded): bool => $this->processes->hasExited($call->runId(), $request->invocationId)
+                        || ($this->processes->deadline($call->runId(), $request->invocationId, $backgrounded, \is_int($explicit) ? $explicit : null, $call->timeoutSeconds) ?? \PHP_INT_MAX) <= hrtime(true));
                 if ($token->isCancellationRequested()) {
-                    return ['ok' => false, 'error' => 'Code-mode invocation cancelled.'];
-                }
-                $foreground = \is_int($explicit) ? $explicit : CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS;
-                if (null !== $call->timeoutSeconds && $call->timeoutSeconds > 0) {
-                    $foreground = min($foreground, $call->timeoutSeconds);
-                }
-                $limit = $process['parent']['limit'] ?? $token->wallLimit($foreground);
-                $remaining = null === $limit ? null : $limit - intdiv(hrtime(true) - $process['startedAtNs'], 1_000_000_000);
-                if (null !== $remaining && $remaining <= 0) {
-                    return ['ok' => false, 'error' => 'Code-mode invocation timed out.'];
+                    return ['ok' => false, 'error' => 'Code-mode invocation cancelled or expired.'];
                 }
                 if ('notice' === $request->operation) {
                     $message = $request->arguments['message'] ?? null;
@@ -91,9 +84,9 @@ final readonly class CodeModeCallRequestHandler
                 if (CodeModeUnsupportedTools::contains($request->name)) {
                     return ['ok' => false, 'error' => CodeModeUnsupportedTools::rejectionMessage($request->name)];
                 }
-                $owner = new ToolContext($call->runId(), $call->turnNo(), $call->toolCallId, 'code_mode', $token, $remaining, $call->orderIndex, stepId: $call->stepId(), parentModel: $call->parentModel);
+                $owner = new ToolContext($call->runId(), $call->turnNo(), $call->toolCallId, 'code_mode', $token, null, $call->orderIndex, stepId: $call->stepId(), parentModel: $call->parentModel);
                 $id = 'code-mode-'.hash('sha256', $request->invocationId.':'.$request->callId);
-                $value = $this->contexts->with($owner, fn (): mixed => $this->executor->execute($id, $request->name, $request->arguments, $owner, $token, $remaining));
+                $value = $this->contexts->with($owner, fn (): mixed => $this->executor->execute($id, $request->name, $request->arguments, $owner, $token, null));
                 if ($value instanceof DeferredToolCompletionOutcome) {
                     return ['child' => $value->deferredId];
                 }
@@ -111,14 +104,26 @@ final readonly class CodeModeCallRequestHandler
                 return ['ok' => false, 'error' => mb_check_encoding($message, 'UTF-8') ? $message : CodeModeValueCodec::MALFORMED_MESSAGE];
             }
         });
-        if (isset($reply['child'])) {
+        if (null === $reply) {
             return;
         }
-        $client = Client::connect($this->endpoint);
+        if (isset($reply['child'])) {
+            $childId = $reply['child'];
+            $child = \is_string($childId) ? $this->processes->invocation($call->runId(), $childId) : null;
+            if (!\is_string($childId) || (null !== $child && is_file($child['workspace'].'/ready'))) {
+                return;
+            }
+            // Redelivery after a dead claimant cannot determine whether launch
+            // crossed the native boundary. Never start another copy.
+            $this->calls->completeChild($request->invocationId, $request->callId, $childId, [
+                'ok' => false, 'error' => 'Code-mode child launch outcome is unknown; refusing to start it again.',
+            ]);
+        }
+        $transport = $this->replies->create($request->invocationId);
         try {
-            $client->send('code_mode_reply.'.$request->invocationId, json_encode(['id' => $request->callId, ...$reply], \JSON_THROW_ON_ERROR));
+            $transport->send(new Envelope(new CodeModeReplyReadyDTO($request->callId)));
         } finally {
-            $client->close();
+            $transport->close();
         }
     }
 }

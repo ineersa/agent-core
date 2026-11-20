@@ -1372,3 +1372,17 @@ services:
   Ineersa\CodingAgent\Application\Pipeline\SubagentProgressCoordinationHandler:
     arguments:
       $commandBus: '@agent.command.bus'
+
+  # The detached PHP host commits its return before native shutdown.
+  Ineersa\CodingAgent\Entity\CodeModeReportedReturnRepository:
+    public: true
+
+  hatfield.code_mode.execution_bus:
+    alias: agent.execution.bus
+    public: true
+
+  Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory:
+    public: true
+
+  Ineersa\CodingAgent\Entity\CodeModeCallRepository:
+    public: true

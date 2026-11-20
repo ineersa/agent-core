@@ -80,8 +80,13 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             }
             $this->assertCount(4, file($this->tempDir.'/requests.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES), 'Ordinary work reaches the model before either host returns.');
             if ($stop) {
+                fwrite($releases['one'], "finish\n");
+                fflush($releases['one']);
+                $this->waitForFile('one.shutdown');
                 $this->writeCommand(['v' => 1, 'id' => 'stop', 'type' => 'stop_code_mode', 'runId' => $this->runId,
                     'payload' => ['deferred_id' => $invocations['one'], 'tool_call_id' => 'one']]);
+                $status = '.hatfield/tmp/bg/code-mode-'.hash('sha256', $this->runId).'-'.hash('sha256', $invocations['one']).'.status';
+                $this->waitForFile($status);
             } else {
                 fwrite($releases['one'], "finish\n");
                 fflush($releases['one']);
@@ -89,11 +94,19 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             $this->assertDirectoryExists($identities['two']['workspace'], 'The other host is still retained when ordinary work progresses.');
             $this->assertFileDoesNotExist($this->tempDir.'/two.after');
             if (!$stop) {
-                $first = $this->waitForEvent('model.notification', 5);
+                try {
+                    $first = $this->waitForEvent('model.notification', 5);
+                } catch (\PHPUnit\Framework\AssertionFailedError $error) {
+                    $files = array_map('basename', glob($identities['one']['workspace'].'/*') ?: []);
+                    $stderr = @file_get_contents($identities['one']['workspace'].'/stderr.log', length: 2048);
+                    $this->fail($error->getMessage()."\nFirst invocation files: ".implode(', ', $files)."\nScript passed nested call: ".(is_file($this->tempDir.'/one.after') ? 'yes' : 'no')."\nPHP stderr: ".$stderr);
+                }
+                $this->assertStringContainsString('STDOUT_MARKER', json_encode($first['payload'], \JSON_THROW_ON_ERROR));
+                $this->assertStringContainsString('STDERR_MARKER', json_encode($first['payload'], \JSON_THROW_ON_ERROR));
                 $this->assertSame($invocations['one'], $first['payload']['metadata']['background_completion']['invocation_id']);
             } else {
                 $this->assertCount(4, file($this->tempDir.'/requests.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES), 'Only the completed read, not the stopped host, advances the model.');
-                $this->assertFileDoesNotExist($this->tempDir.'/one.after');
+                $this->assertFileExists($this->tempDir.'/one.after');
             }
             fwrite($releases['two'], "finish\n");
             fflush($releases['two']);
@@ -105,11 +118,16 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
                 $this->assertNull($metadata['invocation_id'] ?? null);
             }
             $second = $this->waitForEvent('model.notification', 5);
+            $this->assertStringContainsString('Output capped', json_encode($second['payload'], \JSON_THROW_ON_ERROR));
+            $this->assertStringNotContainsString(str_repeat('OVERSIZED_MARKER', 10), json_encode($second['payload'], \JSON_THROW_ON_ERROR));
             $this->assertSame('two', $second['payload']['metadata']['background_completion']['tool_call_id']);
             foreach ($stop ? ['two'] : ['one', 'two'] as $id) {
                 $after = json_decode(file_get_contents($this->tempDir.'/'.$id.'.after'), true, 32, \JSON_THROW_ON_ERROR);
                 $this->assertSame($identities[$id], $after['identity'], 'PID, invocation, workspace and script-local state survive detachment.');
                 $this->assertStringContainsString('NESTED_'.$id, $after['nested']);
+            }
+            if ($stop) {
+                $this->assertFileDoesNotExist($this->tempDir.'/one.shutdown-finished');
             }
             $this->assertSame($invocations['two'], $second['payload']['metadata']['background_completion']['invocation_id']);
             $canonical = array_map(static fn (string $line): array => json_decode($line, true, 512, \JSON_THROW_ON_ERROR), file($this->tempDir.'/.hatfield/sessions/'.$this->runId.'/events.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES));
@@ -137,9 +155,16 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
         foreach (['one', 'two'] as $id) {
             $prefix = var_export($this->tempDir.'/'.$id, true);
             $command = ': > '.escapeshellarg($this->tempDir.'/'.$id.'.ready').'; IFS= read -r release < '.escapeshellarg($this->tempDir.'/release-'.$id).'; printf '.escapeshellarg('NESTED_'.$id);
-            $script = '$identity = ["pid" => getmypid(), "workspace" => __DIR__, "invocation" => getenv("HATFIELD_CODE_MODE_INVOCATION"), "local" => '.var_export($id, true).']; file_put_contents('.$prefix.'.".before", json_encode($identity)); $nested = tool("bash", '.var_export(['command' => $command], true).'); file_put_contents('.$prefix.'.".after", json_encode(["identity" => ["pid" => getmypid(), "workspace" => __DIR__, "invocation" => getenv("HATFIELD_CODE_MODE_INVOCATION"), "local" => $identity["local"]], "nested" => $nested])); return $identity["local"];';
+            $script = '$identity = ["pid" => getmypid(), "workspace" => __DIR__, "invocation" => getenv("HATFIELD_CODE_MODE_INVOCATION"), "local" => '.var_export($id, true).']; file_put_contents('.$prefix.'.".before", json_encode($identity)); $nested = tool("bash", '.var_export(['command' => $command], true).'); file_put_contents('.$prefix.'.".after", json_encode(["identity" => ["pid" => getmypid(), "workspace" => __DIR__, "invocation" => getenv("HATFIELD_CODE_MODE_INVOCATION"), "local" => $identity["local"]], "nested" => $nested])); echo "STDOUT_MARKER"; fwrite(STDERR, "STDERR_MARKER"); return $identity["local"];';
+            if ('one' === $id && 'targeted stop' === $this->dataName()) {
+                // The hook runs after the return commits. The second FIFO read has no release.
+                $script = 'register_shutdown_function(static function (): void { $hold = fopen('.var_export($this->tempDir.'/release-one', true).', "rb"); touch('.$prefix.'.".shutdown"); fgets($hold); touch('.$prefix.'.".shutdown-finished"); }); '.$script;
+            }
             if ('two' === $id && 'model launch' === $this->dataName()) {
                 $script = str_replace('return $identity["local"];', 'notify_owner("PROGRESS_TWO"); return $identity["local"];', $script);
+            }
+            if ('two' === $id) {
+                $script = str_replace('return $identity["local"];', 'return str_repeat("OVERSIZED_MARKER", 6000);', $script);
             }
             $calls[] = [$id, 'code_mode', ['script' => $script, 'backgrounded' => 'model launch' === $this->dataName()]];
         }

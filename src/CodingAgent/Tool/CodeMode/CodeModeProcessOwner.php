@@ -5,17 +5,19 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\CodeMode;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\CodingAgent\Entity\CodeModeCallRepository;
+use Ineersa\CodingAgent\Entity\CodeModeReportedReturnRepository;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Symfony\Component\Filesystem\Filesystem;
 
 /** Owns native launch evidence independently of any tool consumer. */
 final readonly class CodeModeProcessOwner
 {
-    public function __construct(private ProcessLifecycle $lifecycle, private Filesystem $filesystem = new Filesystem())
+    public function __construct(private ProcessLifecycle $lifecycle, private CodeModeReportedReturnRepository $returns, private CodeModeCallRepository $calls, private Filesystem $filesystem = new Filesystem())
     {
     }
 
-    /** @param array{invocationId: string, callId: string, rootId: string, limit: int}|null $parent */
+    /** @param array{invocationId: string, callId: string, rootId: string, timeout: ?int}|null $parent */
     public function launch(string $runId, string $invocationId, string $workspace, string $command, int $startedAtNs, bool $controllerSettles = false, ?array $parent = null): CodeModeOwnedProcess
     {
         $prefix = $this->prefix($runId).hash('sha256', $invocationId);
@@ -34,7 +36,7 @@ final readonly class CodeModeProcessOwner
         });
     }
 
-    /** @return array{workspace: string, startedAtNs: int, controllerSettles: bool, parent: ?array{invocationId: string, callId: string, rootId: string, limit: int}}|null */
+    /** @return array{workspace: string, startedAtNs: int, controllerSettles: bool, parent: ?array{invocationId: string, callId: string, rootId: string, timeout: ?int}}|null */
     public function invocation(string $runId, string $invocationId): ?array
     {
         $marker = $this->prefix($runId).hash('sha256', $invocationId).'.workspace';
@@ -67,43 +69,74 @@ final readonly class CodeModeProcessOwner
         }
     }
 
+    /** The inherited foreground budget is evaluated against each original launch, never snapshotted at a nested call. */
+    public function deadline(string $runId, string $id, bool $backgrounded, ?int $rootTimeout, ?int $launcherTimeout): ?int
+    {
+        $deadline = null;
+        $visited = [];
+        do {
+            $process = $this->invocation($runId, $id);
+            if (null === $process || isset($visited[$id])) {
+                return 0;
+            }
+            $visited[$id] = true;
+            $parent = $process['parent'];
+            $limit = null === $parent ? $rootTimeout : $parent['timeout'];
+            if (!$backgrounded) {
+                $limit ??= \Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS;
+                if (null === $parent && null !== $launcherTimeout && $launcherTimeout > 0) {
+                    $limit = min($limit, $launcherTimeout);
+                }
+            }
+            if (null !== $limit) {
+                $start = $process['startedAtNs'];
+                $candidate = $limit > intdiv(\PHP_INT_MAX - $start, 1_000_000_000) ? \PHP_INT_MAX : $start + $limit * 1_000_000_000;
+                $deadline = min($deadline ?? \PHP_INT_MAX, $candidate);
+            }
+            $id = $parent['invocationId'] ?? null;
+        } while (null !== $id);
+
+        return $deadline;
+    }
+
+    public function hasExited(string $runId, string $id): bool
+    {
+        $status = $this->prefix($runId).hash('sha256', $id).'.status';
+        $pid = $this->lifecycle->readPidFile($status);
+
+        return null !== $this->lifecycle->readStatusFile($status) || (null !== $pid && !$this->lifecycle->isAlive($pid));
+    }
+
     /** @return array{ok: bool, result?: mixed, error?: string}|null */
-    public function observeTerminal(string $runId, string $id, ?int $wallSeconds, ?string $interruption): ?array
+    public function observeTerminal(string $runId, string $id, ?int $deadline, ?string $interruption): ?array
     {
         $status = $this->prefix($runId).hash('sha256', $id).'.status';
 
-        return $this->lifecycle->withSidecarLock($status, function () use ($runId, $id, $wallSeconds, $interruption, $status): ?array {
+        return $this->lifecycle->withSidecarLock($status, function () use ($runId, $id, $deadline, $interruption, $status): ?array {
             $invocation = $this->invocation($runId, $id);
             if (null === $invocation || !$invocation['controllerSettles'] || !$this->lifecycle->ownsSidecarPaths(substr($status, 0, -7).'.log', $status)) {
                 return null;
             }
-            $terminal = $invocation['workspace'].'/terminal.json';
-            if (is_file($terminal) && !is_link($terminal)) {
-                $frame = json_decode($this->filesystem->readFile($terminal), true, flags: \JSON_THROW_ON_ERROR);
-                if (!\is_array($frame) || !\is_bool($frame['ok'] ?? null)) {
-                    throw new \RuntimeException('Invalid retained code-mode terminal result.');
-                }
-
-                return true === $frame['ok'] ? ['ok' => true, 'result' => CodeModeValueCodec::assertEncodable($frame['result'] ?? null, 'Code-mode terminal result')]
-                    : ['ok' => false, 'error' => \is_string($frame['error'] ?? null) ? $frame['error'] : 'Code-mode failed.'];
-            }
             $pid = $this->lifecycle->readPidFile($status);
             $exit = $this->lifecycle->readStatusFile($status);
-            $running = null !== $pid && null === $exit && $this->lifecycle->isAlive($pid);
-            $expired = null !== $wallSeconds && intdiv(hrtime(true) - $invocation['startedAtNs'], 1_000_000_000) >= $wallSeconds;
-            if (null === $interruption && !$expired && (null === $exit && (null === $pid || $running))) {
+            $running = null !== $pid && (null === $exit || -1 === $exit) && $this->lifecycle->isAlive($pid);
+            $expired = null !== $deadline && hrtime(true) >= $deadline;
+            if ($running) {
+                if (null === $exit && (null !== $interruption || $expired)) {
+                    $this->lifecycle->stopProcess($pid, $pid, $status);
+                }
+
                 return null;
             }
-            $error = null !== $interruption ? 'Code-mode invocation interrupted: '.$interruption.'.'
-                : ($expired ? 'Code-mode invocation timed out.' : 'Code-mode subprocess exited without returning a value.');
-            $frame = ['ok' => false, 'error' => $error];
-            if ($running) {
-                $this->lifecycle->stopProcess($pid, $pid, $status);
+            if (null === $exit && null === $pid) {
+                return null;
             }
-            // Materialize the decision before publication, including synthetic failures.
-            $this->filesystem->dumpFile($terminal, json_encode($frame, \JSON_THROW_ON_ERROR));
+            if (null !== $interruption || ($expired && (null === $exit || $exit < 0 || $exit >= 128))) {
+                return ['ok' => false, 'error' => null !== $interruption
+                    ? 'Code-mode invocation interrupted: '.$interruption.'.' : 'Code-mode invocation timed out.'];
+            }
 
-            return $frame;
+            return $this->returns->reply($id) ?? ['ok' => false, 'error' => 'Code-mode subprocess exited without returning a value.'];
         });
     }
 
@@ -136,6 +169,10 @@ final readonly class CodeModeProcessOwner
                     $this->filesystem->remove($workspace);
                 }
                 if ($this->lifecycle->deleteLockedRecordSidecars($prefix.'.log', $statusPath)) {
+                    if (\is_array($record) && \is_string($record['invocationId'] ?? null)) {
+                        $this->returns->remove($record['invocationId']);
+                        $this->calls->remove($record['invocationId']);
+                    }
                     $this->filesystem->remove($marker);
                 }
             });

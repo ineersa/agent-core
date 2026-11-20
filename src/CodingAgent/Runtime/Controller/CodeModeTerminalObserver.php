@@ -6,12 +6,22 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
-use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
-use Ineersa\CodingAgent\Tool\CodeMode\CodeModeCallJournal;
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\CodingAgent\Entity\CodeModeCallRepository;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticCapture;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnostics;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeProcessOwner;
-use Ineersa\SqliteQueue\Client;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory;
+use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeReplyReadyDTO;
+use Ineersa\CodingAgent\Tool\OutputCap;
+use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class CodeModeTerminalObserver
@@ -21,8 +31,12 @@ final readonly class CodeModeTerminalObserver
         private DeferredToolCompletionRepositoryInterface $deferred,
         #[Autowire(service: 'agent.command.bus')] private MessageBusInterface $commandBus,
         private LoggerInterface $logger,
-        private CodeModeCallJournal $journal,
-        #[Autowire('%env(HATFIELD_SQLITE_QUEUE_ENDPOINT)%')] private string $endpoint,
+        private CodeModeCallRepository $calls,
+        private CodeModeReplyTransportFactory $replies,
+        private OutputCap $outputCap,
+        private ToolPayloadStoreInterface $payloads,
+        private CodeModeDiagnosticsToolResultProcessor $diagnostics,
+        private OutputCapToolResultProcessor $capResults,
     ) {
     }
 
@@ -48,13 +62,19 @@ final readonly class CodeModeTerminalObserver
             $root = $this->deferred->findMetadataByDeferredId($parent['rootId']);
             $destination = $this->processes->invocation($runId, $parent['invocationId']);
             $stop = null === $root || 'pending' !== $root->status ? 'owner settled' : $root->interruptionReason;
-            $reply = $this->processes->observeTerminal($runId, $id, $parent['limit'], $stop);
-            if (null !== $reply && null !== $destination && $this->journal->completeChild($destination['workspace'], $parent['callId'], $id, $reply)) {
-                $client = Client::connect($this->endpoint);
+            if (!is_file($invocation['workspace'].'/ready') && null !== $this->calls->reply($parent['invocationId'], $parent['callId'])) {
+                $stop = 'child launch failed';
+            }
+            $call = $this->deferred->findByDeferredId($parent['rootId']);
+            $explicit = $call?->arguments['timeout_seconds'] ?? null;
+            $deadline = $this->processes->deadline($runId, $id, null !== $root?->backgroundedAt, \is_int($explicit) ? $explicit : null, $call?->timeoutSeconds);
+            $reply = $this->processes->observeTerminal($runId, $id, $deadline, $stop);
+            if (null !== $reply && null !== $destination && $this->calls->completeChild($parent['invocationId'], $parent['callId'], $id, $reply)) {
+                $transport = $this->replies->create($parent['invocationId']);
                 try {
-                    $client->send('code_mode_reply.'.$parent['invocationId'], json_encode(['id' => $parent['callId'], ...$reply], \JSON_THROW_ON_ERROR));
+                    $transport->send(new Envelope(new CodeModeReplyReadyDTO($parent['callId'])));
                 } finally {
-                    $client->close();
+                    $transport->close();
                 }
             }
 
@@ -70,20 +90,29 @@ final readonly class CodeModeTerminalObserver
         }
         $explicit = $call->arguments['timeout_seconds'] ?? null;
         $explicit = \is_int($explicit) ? $explicit : null;
-        $limit = $explicit;
-        if (null === $metadata->backgroundedAt) {
-            $limit ??= CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS;
-            if (null !== $call->timeoutSeconds && $call->timeoutSeconds > 0) {
-                $limit = min($limit, $call->timeoutSeconds);
-            }
-        }
-        $reply = $this->processes->observeTerminal($runId, $id, $limit, $metadata->interruptionReason);
+        $deadline = $this->processes->deadline($runId, $id, null !== $metadata->backgroundedAt, $explicit, $call->timeoutSeconds);
+        $reply = $this->processes->observeTerminal($runId, $id, $deadline, $metadata->interruptionReason);
         if (null === $reply) {
             return;
         }
-        $text = $reply['ok'] ? json_encode($reply['result'] ?? null, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE) : ($reply['error'] ?? 'Code-mode failed.');
+        $tool = new ToolCall($call->toolCallId, $call->toolName, $call->arguments, $call->orderIndex, $runId);
+        $capture = new CodeModeDiagnosticCapture($this->outputCap, $runId, $invocation['workspace'],
+            fn (callable $write): string => $this->payloads->saveAttachment($runId, $call->toolCallId, $write));
+        try {
+            $diagnostics = $capture->prepare(3); // Lines before user code in the materialized script.
+        } catch (MalformedToolResultException $error) {
+            $reply = ['ok' => false, 'error' => $error->getMessage()];
+            $diagnostics = [];
+        }
+        $result = $reply['ok']
+            ? $this->diagnostics->process(new ToolResult($call->toolCallId, $call->toolName, [], ['raw_result' => [
+                'code_mode_value' => $reply['result'] ?? null,
+                'code_mode_diagnostics' => $diagnostics,
+            ]]), $tool)
+            : new ToolResult($call->toolCallId, $call->toolName, [['type' => 'text', 'text' => CodeModeDiagnostics::appendToMessage($reply['error'] ?? 'Code-mode failed.', $diagnostics)]], isError: true);
+        $result = $this->capResults->process($result, $tool);
         // The usual deferred transport persists the canonical result and the
         // run-control admission path settles duplicate sends by correlation.
-        $this->commandBus->dispatch(ToolCallResultFactory::fromDeferredCorrelationAndCompletion($call, [['type' => 'text', 'text' => $text]], null, !$reply['ok'], null));
+        $this->commandBus->dispatch(ToolCallResultFactory::fromDeferredCorrelationAndCompletion($call, $result->content, $result->details, $result->isError));
     }
 }

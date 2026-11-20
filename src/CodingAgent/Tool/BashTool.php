@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\NativeBashObservationDTO;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeCancellationToken;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
@@ -51,12 +52,13 @@ final class BashTool implements HatfieldToolProviderInterface
             $sessionId = $context?->runId();
             $cancelToken = $context?->cancellationToken();
             $parentTimeout = $context?->timeoutSeconds();
-            if (null !== $parentTimeout && $parentTimeout > 0) {
+            if (!$cancelToken instanceof CodeModeCancellationToken && null !== $parentTimeout && $parentTimeout > 0) {
                 $timeout = min($timeout, $parentTimeout);
             }
             $now = hrtime(true);
             $deadline = $this->deadline($now, $timeout);
-            $backgroundDeadline = null === $arguments->timeout ? null : $this->deadline($now, $arguments->timeout);
+            $backgroundTimeout = $arguments->timeout ?? $this->config->maxTimeoutSeconds;
+            $backgroundDeadline = null === $backgroundTimeout ? null : $this->deadline($now, $backgroundTimeout);
 
             $outerInvocation = 1 === $this->contextAccessor->depth();
             $topLevelModel = null !== $context?->stepId() && $outerInvocation;
@@ -212,7 +214,7 @@ final class BashTool implements HatfieldToolProviderInterface
 
     private function resolveTimeout(BashArgumentsDTO $arguments): int
     {
-        return $arguments->timeout ?? $this->config->defaultTimeoutSeconds;
+        return $arguments->timeout ?? min($this->config->defaultTimeoutSeconds, $this->config->maxTimeoutSeconds ?? \PHP_INT_MAX);
     }
 
     private function cancelNative(

@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
-use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
@@ -16,7 +15,7 @@ use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
  *
  * Implements HatfieldToolProviderInterface for automatic registration.
  * Nested tool calls are delegated to RegistryBackedToolbox through an owned
- * PHP subprocess and a minimal bootstrap (no application autoloader).
+ * PHP subprocess using the session broker.
  *
  * Disabled by default via tools.code_mode.enabled. Direct PHP filesystem and
  * process calls are available inside the script and bypass toolbox hooks.
@@ -32,30 +31,14 @@ final class CodeModeTool implements HatfieldToolProviderInterface
     ) {
     }
 
-    /**
-     * Execute the code_mode tool.
-     *
-     * @return mixed Final script return value
-     */
-    public function __invoke(#[MapToolArguments] CodeModeArgumentsDTO $arguments): mixed
+    public function __invoke(#[MapToolArguments] CodeModeArgumentsDTO $arguments): DeferredToolCompletionOutcome
     {
-        $result = $this->hostBridge->execute(
+        return $this->hostBridge->execute(
             $arguments->script,
             $arguments->timeout_seconds,
             $arguments->memory_limit_mb,
             $arguments->backgrounded,
         );
-
-        if ($result instanceof DeferredToolCompletionOutcome) {
-            return $result;
-        }
-
-        // Convert the host-only wrapper once to closed terminal data before
-        // generic result processing. No wrapper object is stored in raw_result.
-        return [
-            'code_mode_value' => $result instanceof CodeModeExecutionResult ? $result->result : $result,
-            'code_mode_diagnostics' => $result instanceof CodeModeExecutionResult ? $result->diagnostics : [],
-        ];
     }
 
     public function definition(): ToolDefinitionDTO

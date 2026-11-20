@@ -458,8 +458,12 @@ final class BashToolTest extends IsolatedKernelTestCase
      * Acceptance first keeps the acknowledgment and native job when cancel
      * arrives afterward through ToolExecutor.
      */
-    public function testBackgroundAcceptanceSurvivesLaterCancellation(): void
+    #[TestWith([null])]
+    #[TestWith([120])]
+    public function testBackgroundAcceptanceSurvivesLaterCancellation(?int $maximum): void
     {
+        $this->bashConfig = new BashToolConfig(maxTimeoutSeconds: $maximum);
+        $before = hrtime(true);
         $this->createManager();
         $fifo = $this->tmpDir.'/accept-first-release';
         $this->assertTrue(posix_mkfifo($fifo, 0600));
@@ -504,7 +508,12 @@ final class BashToolTest extends IsolatedKernelTestCase
             $records = $this->recordsForSession($this->sessionId);
             $this->assertCount(1, $records);
             $this->assertNotNull($records[0]->backgroundedAt);
-            $this->assertNull($records[0]->deadlineNanoseconds);
+            if (null === $maximum) {
+                $this->assertNull($records[0]->deadlineNanoseconds);
+            } else {
+                $this->assertGreaterThanOrEqual($before + $maximum * 1_000_000_000, $records[0]->deadlineNanoseconds);
+                $this->assertLessThanOrEqual(hrtime(true) + $maximum * 1_000_000_000, $records[0]->deadlineNanoseconds);
+            }
             $this->assertNull($records[0]->finishedAt);
             $this->assertNotNull($records[0]->pid);
             $this->assertTrue(posix_kill($records[0]->pid, 0), 'Accepted background job must keep running after later cancellation.');

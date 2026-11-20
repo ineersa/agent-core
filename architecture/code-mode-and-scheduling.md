@@ -24,7 +24,7 @@ sequenceDiagram
     Worker->>Worker: Claim call, run existing toolbox, retain reply
     Worker->>Broker: Publish wake-up to invocation reply queue
     Broker-->>PHP: Wake-up; PHP reads retained result by call ID
-    PHP->>Owner: Atomically persist terminal.json for observation
+    PHP->>Owner: Commit reported return by invocation ID
     Owner->>RC: Publish deferred completion
 ```
 
@@ -55,9 +55,11 @@ jobs, not PHP scripts.
 
 A brokered `tool('code_mode', ...)` launches another session-owned PHP process
 and releases the request slot. The child record identifies the parent invocation
-and call. The controller replaces the pending child entry in the parent journal
-with the retained result before sending a wake-up. Calls without canonical or
-brokered parent correlation still use the private socket.
+and call. The controller replaces the pending child entry in the shared Doctrine call repository
+with the retained result before sending a wake-up. Calls without canonical or brokered parent correlation, or without a live
+session broker, are refused before launch.
+
+Nested requests are claimed by a unique invocation/call key before tool execution. No database transaction spans the tool effect. A live claimant suppresses duplicate execution; a dead claimant without a result yields a retained unknown-outcome error. PHP reads committed replies from the same repository.
 
 ## Scheduling
 

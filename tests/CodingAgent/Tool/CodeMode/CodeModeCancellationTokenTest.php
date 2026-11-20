@@ -37,4 +37,24 @@ final class CodeModeCancellationTokenTest extends TestCase
         $this->assertSame($explicitTimeout, $token->wallLimit(1));
         $this->assertTrue($token->isCancellationRequested());
     }
+
+    public function testBlockedWorkChecksInvocationAgainBeforeItsEffect(): void
+    {
+        $parent = $this->createStub(CancellationTokenInterface::class);
+        $reference = new ToolPayloadReferenceDTO('correlation', 'run', 1, 'step', 1, 'key', 'call', 0, 'code_mode', str_repeat('a', 64), 1);
+        $repository = $this->createStub(DeferredToolCompletionRepositoryInterface::class);
+        $repository->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('id', $reference, 'pending'));
+        $unavailable = false;
+        $token = new CodeModeCancellationToken($parent, $repository, 'id', invocationUnavailable: static function () use (&$unavailable): bool { return $unavailable; });
+        $work = new \Fiber(static function () use ($token): bool {
+            \Fiber::suspend();
+
+            return !$token->isCancellationRequested();
+        });
+        $this->assertFalse($token->isCancellationRequested());
+        $work->start();
+        $unavailable = true;
+        $work->resume();
+        $this->assertFalse($work->getReturn());
+    }
 }

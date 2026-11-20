@@ -5,8 +5,7 @@ declare(strict_types=1);
 /**
  * Minimal code-mode script bootstrap.
  *
- * Loads only this file and the user script. No application autoloader.
- * Communicates with the Hatfield host over a Unix socket using length-prefixed JSON.
+ * Boots the configured Messenger services in the session-owned PHP process.
  *
  * Side effects run only when this file is the CLI entrypoint. Accidental includes
  * (for example packaging/DI class scans) must stay inert.
@@ -15,166 +14,48 @@ declare(strict_types=1);
  * The host materializes a real filesystem copy before spawning PHP CLI.
  */
 
-if (!\defined('HATFIELD_CODE_MODE_MAX_FRAME_BYTES')) {
-    \define('HATFIELD_CODE_MODE_MAX_FRAME_BYTES', 8_388_608);
-}
-
-if (!\function_exists('hatfield_code_mode_write')) {
-    /**
-     * @param resource             $stream
-     * @param array<string, mixed> $payload
-     */
-    function hatfield_code_mode_write(mixed $stream, array $payload): void
-    {
-        $payload = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::assertEncodable($payload, 'Code-mode frame');
-        $json = json_encode($payload, \JSON_THROW_ON_ERROR);
-        $length = \strlen($json);
-        if ($length > HATFIELD_CODE_MODE_MAX_FRAME_BYTES) {
-            throw new RuntimeException(\sprintf('Code-mode IPC frame exceeds %d bytes.', HATFIELD_CODE_MODE_MAX_FRAME_BYTES));
-        }
-
-        $packet = pack('N', $length).$json;
-        $offset = 0;
-        $total = \strlen($packet);
-        while ($offset < $total) {
-            $written = fwrite($stream, substr($packet, $offset));
-            if (false === $written || 0 === $written) {
-                throw new RuntimeException('Failed to write code-mode IPC frame.');
-            }
-            $offset += $written;
-        }
-    }
-}
-
-if (!\function_exists('hatfield_code_mode_read')) {
-    /**
-     * @param resource $stream
-     *
-     * @return array<string, mixed>
-     */
-    function hatfield_code_mode_read(mixed $stream): array
-    {
-        $header = '';
-        while (\strlen($header) < 4) {
-            $chunk = fread($stream, 4 - \strlen($header));
-            if (false === $chunk || '' === $chunk) {
-                if (stream_get_meta_data($stream)['timed_out']) {
-                    throw new RuntimeException('Timed out while reading code-mode IPC header.');
-                }
-                throw new RuntimeException(feof($stream) ? 'Unexpected EOF while reading code-mode IPC header.' : 'Failed to read code-mode IPC header.');
-            }
-            $header .= $chunk;
-        }
-
-        $unpacked = unpack('Nlength', $header);
-        if (false === $unpacked) {
-            throw new RuntimeException('Failed to decode code-mode IPC frame length.');
-        }
-
-        $length = (int) $unpacked['length'];
-        if ($length < 1 || $length > HATFIELD_CODE_MODE_MAX_FRAME_BYTES) {
-            throw new RuntimeException(\sprintf('Invalid code-mode IPC frame length: %d.', $length));
-        }
-
-        $body = '';
-        while (\strlen($body) < $length) {
-            $chunk = fread($stream, $length - \strlen($body));
-            if (false === $chunk || '' === $chunk) {
-                if (stream_get_meta_data($stream)['timed_out']) {
-                    throw new RuntimeException('Timed out while reading code-mode IPC body.');
-                }
-                throw new RuntimeException(feof($stream) ? 'Unexpected EOF while reading code-mode IPC body.' : 'Failed to read code-mode IPC body.');
-            }
-            $body .= $chunk;
-        }
-
-        $decoded = json_decode($body, true, 512, \JSON_THROW_ON_ERROR);
-        if (!\is_array($decoded)) {
-            throw new RuntimeException('Code-mode IPC frame must decode to a JSON object.');
-        }
-
-        return $decoded;
-    }
-}
-
 /** @param array<string, mixed> $arguments */
 function hatfield_code_mode_broker_call(string $operation, string $name, array $arguments): mixed
 {
-    global $broker, $invocationId, $rootId;
+    global $broker, $invocationId, $rootId, $kernel;
     $id = bin2hex(random_bytes(8));
-    $body = ['invocation_id' => $invocationId, 'call_id' => $id, 'name' => $name, 'arguments' => $arguments, 'operation' => $operation, 'root_id' => $rootId];
-    $broker->send('code_mode_requests', json_encode($body, JSON_THROW_ON_ERROR), json_encode(['type' => \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO::class], JSON_THROW_ON_ERROR));
-    $queue = 'code_mode_reply.'.$invocationId;
-    $path = __DIR__.'/call-'.hash('sha256', $id).'.json';
+    $kernel->getContainer()->get('hatfield.code_mode.execution_bus')->dispatch(
+        new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO($invocationId, $id, $name, $arguments, $operation, $rootId),
+    );
+    $calls = $kernel->getContainer()->get(\Ineersa\CodingAgent\Entity\CodeModeCallRepository::class);
     while (true) {
-        $delivery = $broker->receive($queue);
-        if (null !== $delivery) {
-            $broker->acknowledge($delivery->receipt);
+        foreach ($broker->get() as $delivery) {
+            $broker->ack($delivery);
         }
-        clearstatcache(true, $path);
-        if (is_file($path)) {
-            $record = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
-            $reply = $record['reply'] ?? null;
-            if (is_array($reply) && !isset($reply['child'])) {
-                if (true === ($reply['ok'] ?? null)) {
-                    return $reply['result'] ?? null;
-                }
-                throw new RuntimeException($reply['error'] ?? 'Code-mode call failed.');
+        $reply = $calls->reply($invocationId, $id);
+        if (null !== $reply) {
+            if (true === ($reply['ok'] ?? null)) {
+                return $reply['result'] ?? null;
             }
+            throw new RuntimeException($reply['error'] ?? 'Code-mode call failed.');
         }
-        $broker->wait($queue, 1000);
+        $broker->wait(1000, new \Amp\NullCancellation());
     }
 }
 
 /** @param array<string, mixed> $frame */
 function hatfield_code_mode_terminal(array $frame): void
 {
-    global $broker, $connection;
-    if (null === $broker) {
-        hatfield_code_mode_write($connection, $frame);
-        return;
-    }
-    // Publish once, atomically; the controller may have already recorded a stop.
-    $temporary = __DIR__.'/terminal-'.bin2hex(random_bytes(8)).'.tmp';
-    $json = json_encode($frame, JSON_THROW_ON_ERROR);
-    try {
-        if (file_put_contents($temporary, $json) !== strlen($json)) {
-            throw new RuntimeException('Could not write code-mode terminal result.');
-        }
-        if (!@link($temporary, __DIR__.'/terminal.json') && !is_file(__DIR__.'/terminal.json')) {
-            throw new RuntimeException('Could not publish code-mode terminal result.');
-        }
-    } finally {
-        if (is_file($temporary)) {
-            unlink($temporary);
-        }
-    }
+    global $kernel, $invocationId;
+    unset($frame['type']);
+    $kernel->getContainer()->get(\Ineersa\CodingAgent\Entity\CodeModeReportedReturnRepository::class)
+        ->record($invocationId, $frame);
 }
 
 if (!\function_exists('notify_owner')) {
     /** @return array<string, mixed> Submission is not consumption or acknowledgement. */
     function notify_owner(string $message): array
     {
-        global $connection, $broker;
-
-        // Refuse oversized and invalid UTF-8 payloads before JSON framing.
+        // Refuse oversized and invalid UTF-8 payloads before dispatch.
         if (\strlen($message) > 8192 || 1 !== preg_match('//u', $message)) {
             return ['status' => 'refused', 'reason' => 'invalid_message'];
         }
-        if (null !== $broker) {
-            return hatfield_code_mode_broker_call('notice', 'notify_owner', ['message' => $message]);
-        }
-        if (!\is_resource($connection)) {
-            return ['status' => 'refused', 'reason' => 'owner_unavailable'];
-        }
-        $id = bin2hex(random_bytes(8));
-        hatfield_code_mode_write($connection, ['type' => 'notify_owner', 'id' => $id, 'message' => $message]);
-        $response = hatfield_code_mode_read($connection);
-        if (($response['id'] ?? null) !== $id) {
-            throw new RuntimeException('Code-mode host returned a mismatched response id.');
-        }
-
-        return $response['result'];
+        return hatfield_code_mode_broker_call('notice', 'notify_owner', ['message' => $message]);
     }
 }
 
@@ -188,13 +69,6 @@ if (!\function_exists('tool')) {
     {
         if (\func_num_args() > 2) {
             throw new InvalidArgumentException('tool() accepts at most two arguments: tool(string $name, array $arguments = []).');
-        }
-
-        /** @var resource|null $connection */
-        global $connection, $broker;
-
-        if (null === $broker && !\is_resource($connection)) {
-            throw new RuntimeException('Code-mode host connection is not available.');
         }
 
         if ('' === trim($name)) {
@@ -216,29 +90,7 @@ if (!\function_exists('tool')) {
             ));
         }
 
-        if (null !== $broker) {
-            return hatfield_code_mode_broker_call('tool', $name, $arguments);
-        }
-
-        $id = bin2hex(random_bytes(8));
-        hatfield_code_mode_write($connection, [
-            'type' => 'tool',
-            'id' => $id,
-            'name' => $name,
-            'arguments' => $arguments,
-        ]);
-
-        $response = hatfield_code_mode_read($connection);
-        if (($response['id'] ?? null) !== $id) {
-            throw new RuntimeException('Code-mode host returned a mismatched response id.');
-        }
-
-        if (($response['ok'] ?? false) === true) {
-            return $response['result'] ?? null;
-        }
-
-        $message = \is_string($response['error'] ?? null) ? $response['error'] : 'Tool call failed.';
-        throw new RuntimeException($message);
+        return hatfield_code_mode_broker_call('tool', $name, $arguments);
     }
 }
 
@@ -296,13 +148,7 @@ if (false === $self || false === $main || $self !== $main) {
     return;
 }
 
-$socketPath = getenv('HATFIELD_CODE_MODE_SOCKET');
 $scriptPath = getenv('HATFIELD_CODE_MODE_SCRIPT');
-
-if (!\is_string($socketPath) || '' === $socketPath) {
-    fwrite(\STDERR, "HATFIELD_CODE_MODE_SOCKET is required.\n");
-    exit(2);
-}
 
 if (!\is_string($scriptPath) || '' === $scriptPath) {
     fwrite(\STDERR, "HATFIELD_CODE_MODE_SCRIPT is required.\n");
@@ -338,34 +184,19 @@ ini_set('log_errors', '1');
 ini_set('error_log', '');
 error_reporting(E_ALL);
 
-$endpoint = getenv('HATFIELD_CODE_MODE_BROKER');
-$broker = null;
-$connection = null;
-if (is_string($endpoint) && '' !== $endpoint) {
-    require getenv('HATFIELD_CODE_MODE_AUTOLOAD');
-    $invocationId = getenv('HATFIELD_CODE_MODE_INVOCATION');
-    $rootId = getenv('HATFIELD_CODE_MODE_ROOT') ?: $invocationId;
-    $broker = \Ineersa\SqliteQueue\Client::connect($endpoint);
-    // The launcher exposes this gate only after canonical readiness commits.
-    while (!is_file(__DIR__.'/ready')) {
-        clearstatcache(true, __DIR__.'/ready');
-        usleep(10_000);
-    }
-} else {
-    $connection = @stream_socket_client('unix://'.$socketPath, $errno, $errstr, 5.0);
-    if (false === $connection) {
-        fwrite(\STDERR, \sprintf("Failed to connect to code-mode host: [%d] %s\n", $errno, $errstr));
-        exit(2);
-    }
-
-    stream_set_blocking($connection, true);
-    // The host owns invocation deadlines and cancellation and stops this process.
-    // A separate PHP socket timeout would prematurely fail valid nested tool calls.
-    stream_set_timeout($connection, -1);
-
+require getenv('HATFIELD_CODE_MODE_AUTOLOAD');
+$invocationId = getenv('HATFIELD_CODE_MODE_INVOCATION');
+$rootId = getenv('HATFIELD_CODE_MODE_ROOT') ?: $invocationId;
+$kernel = new \Ineersa\CodingAgent\Kernel(getenv('APP_ENV') ?: 'prod', false);
+$kernel->boot();
+$broker = $kernel->getContainer()->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory::class)->create($invocationId);
+// The launcher exposes this gate only after canonical readiness commits.
+while (!is_file(__DIR__.'/ready')) {
+    clearstatcache(true, __DIR__.'/ready');
+    usleep(10_000);
 }
 
-register_shutdown_function(static function () use (&$connection): void {
+register_shutdown_function(static function (): void {
     $error = error_get_last();
     if (null === $error) {
         return;

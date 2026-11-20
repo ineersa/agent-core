@@ -5,20 +5,22 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Entity\CodeModeReportedReturnRepository;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeProcessOwner;
 use PHPUnit\Framework\Attributes\TestWith;
-use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
 /** @covers \Ineersa\CodingAgent\Tool\CodeMode\CodeModeProcessOwner */
-final class CodeModeProcessOwnerTest extends TestCase
+final class CodeModeProcessOwnerTest extends IsolatedKernelTestCase
 {
-    #[TestWith(['return'])]
+    #[TestWith(['return-first'])]
+    #[TestWith(['exit-first'])]
     #[TestWith(['exit'])]
     #[TestWith(['expired'])]
     #[TestWith(['stop'])]
@@ -30,7 +32,8 @@ final class CodeModeProcessOwnerTest extends TestCase
             $fs = new Filesystem();
             $workspace = $root.'/workspace';
             $fs->mkdir($workspace);
-            $owner = new CodeModeProcessOwner(new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $root), new NullLogger(), new LockFactory(new FlockStore($root))));
+            $returns = self::getContainer()->get(CodeModeReportedReturnRepository::class);
+            $owner = new CodeModeProcessOwner(new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $root), new NullLogger(), new LockFactory(new FlockStore($root))), $returns, self::getContainer()->get(\Ineersa\CodingAgent\Entity\CodeModeCallRepository::class));
             $prefix = $root.'/code-mode-'.hash('sha256', 'run').'-'.hash('sha256', 'invocation');
             $fs->dumpFile($prefix.'.workspace', json_encode([
                 'workspace' => $workspace,
@@ -38,14 +41,30 @@ final class CodeModeProcessOwnerTest extends TestCase
                 'invocationId' => 'invocation',
                 'controllerSettles' => 'legacy' !== $case,
             ], \JSON_THROW_ON_ERROR));
-            if ('exit' === $case) {
+            $childPrefix = $root.'/code-mode-'.hash('sha256', 'run').'-'.hash('sha256', 'child');
+            $fs->dumpFile($childPrefix.'.workspace', json_encode([
+                'workspace' => $workspace, 'startedAtNs' => hrtime(true),
+                'parent' => ['invocationId' => 'invocation', 'timeout' => 30],
+            ], \JSON_THROW_ON_ERROR));
+            $this->assertLessThan(hrtime(true), $owner->deadline('run', 'child', false, null, 1));
+            $this->assertGreaterThan(hrtime(true), $owner->deadline('run', 'child', true, null, 1));
+            $this->assertFalse($owner->hasExited('run', 'child'));
+            $fs->dumpFile($childPrefix.'.status', "0\n");
+            $this->assertTrue($owner->hasExited('run', 'child'));
+            if ('return-first' === $case) {
+                $returns->record('invocation', ['ok' => true, 'result' => 42]);
+                $this->assertNull($owner->observeTerminal('run', 'invocation', null, null));
+            }
+            if ('stop' === $case || 'expired' === $case) {
+                $fs->dumpFile($prefix.'.status', "143\n");
+            } elseif ('legacy' !== $case) {
                 $fs->dumpFile($prefix.'.status', "0\n");
             }
-            if ('return' === $case) {
-                $fs->dumpFile($workspace.'/terminal.json', '{"ok":true,"result":42}');
+            if ('exit-first' === $case) {
+                $returns->record('invocation', ['ok' => true, 'result' => 42]);
             }
             $expected = match ($case) {
-                'return' => ['ok' => true, 'result' => 42],
+                'return-first', 'exit-first' => ['ok' => true, 'result' => 42],
                 'exit' => ['ok' => false, 'error' => 'Code-mode subprocess exited without returning a value.'],
                 'expired' => ['ok' => false, 'error' => 'Code-mode invocation timed out.'],
                 'stop' => ['ok' => false, 'error' => 'Code-mode invocation interrupted: stopped.'],
@@ -53,7 +72,6 @@ final class CodeModeProcessOwnerTest extends TestCase
             };
             $this->assertSame('legacy' === $case ? [] : ['invocation'], iterator_to_array($owner->controllerInvocationIds('run')));
             $this->assertSame($expected, $owner->observeTerminal('run', 'invocation', 'expired' === $case ? 5 : null, 'stop' === $case ? 'stopped' : null));
-            $this->assertSame($expected, $owner->observeTerminal('run', 'invocation', null, null));
         } finally {
             TestDirectoryIsolation::removeDirectory($root);
         }
