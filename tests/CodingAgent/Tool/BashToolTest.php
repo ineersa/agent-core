@@ -504,6 +504,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             $records = $this->recordsForSession($this->sessionId);
             $this->assertCount(1, $records);
             $this->assertNotNull($records[0]->backgroundedAt);
+            $this->assertNull($records[0]->deadlineNanoseconds);
             $this->assertNull($records[0]->finishedAt);
             $this->assertNotNull($records[0]->pid);
             $this->assertTrue(posix_kill($records[0]->pid, 0), 'Accepted background job must keep running after later cancellation.');
@@ -719,7 +720,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $guidelinesText = implode(' ', $def->promptGuidelines);
         $this->assertStringContainsStringIgnoringCase('time out after 2 seconds by default', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('always provide the timeout argument with an explicit higher value', $guidelinesText);
-        $this->assertStringContainsStringIgnoringCase('3600-second maximum', $guidelinesText);
+        $this->assertStringNotContainsStringIgnoringCase('3600-second maximum', $guidelinesText);
         $this->assertStringContainsString('direct bash calls, not calls inside code_mode', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('bg_status', $guidelinesText);
         $this->assertStringContainsString('backgrounded=true', $guidelinesText);
@@ -870,9 +871,10 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertSame([], $records, 'Nested refusal must not launch a process.');
     }
 
-    #[TestWith([false], 'manual request')]
-    #[TestWith([true], 'model launch')]
-    public function testRequestedDetachmentKeepsSameProcessAndPollerNotifiesOnce(bool $backgrounded): void
+    #[TestWith([false, null], 'manual request')]
+    #[TestWith([true, null], 'model launch')]
+    #[TestWith([false, 7200], 'manual request with explicit timeout')]
+    public function testRequestedDetachmentKeepsSameProcessAndPollerNotifiesOnce(bool $backgrounded, ?int $timeout): void
     {
         $this->createManager();
         $session = self::getContainer()->get(HatfieldSessionStore::class)->createSession('Bash detachment');
@@ -901,6 +903,9 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         try {
             $arguments = ['command' => 'printf "started\\n"; IFS= read -r release < '.escapeshellarg($fifo).'; printf "finished\\n"', 'backgrounded' => $backgrounded];
+            if (null !== $timeout) {
+                $arguments['timeout'] = $timeout;
+            }
             $registry = new ToolRegistry();
             $registry->registerTool(name: 'bash', description: 'bash', handler: $this->makeBashTool(), promptLine: 'bash');
             $executor = new ToolExecutor(
@@ -936,8 +941,13 @@ final class BashToolTest extends IsolatedKernelTestCase
             // Foreground selection addresses the actual launch record.
             $this->assertSame($selected->id, $record->id);
             $this->assertNotNull($record->pid);
-            // Native startup persists its deadline before foreground selection.
-            $this->assertNotNull(BackgroundProcessFixture::record(self::getContainer(), $record->id)?->deadlineNanoseconds);
+            $deadline = BackgroundProcessFixture::record(self::getContainer(), $record->id)?->deadlineNanoseconds;
+            if (null === $timeout) {
+                $this->assertNull($deadline);
+            } else {
+                $this->assertNotNull($deadline);
+                $this->assertGreaterThan(hrtime(true) + 3600 * 1_000_000_000, $deadline);
+            }
             $this->assertNull($record->finishedAt);
             $this->assertNotNull($record->backgroundedAt);
             $this->assertCount(1, $this->recordsForSession($session));

@@ -24,6 +24,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
@@ -31,8 +32,12 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeBackgroundCoordinationHandler;
+use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Runtime\Messenger\FiberMessageExecutionStrategy;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
@@ -48,6 +53,9 @@ use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeIpc;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeNestedToolExecutor;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeProcessOwner;
+use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Ineersa\CodingAgent\Tool\Edit\EditLockDiagnosticsService;
 use Ineersa\CodingAgent\Tool\Edit\PatchApplier;
@@ -59,6 +67,8 @@ use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use Ineersa\SqliteQueue\Client;
+use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
 use Revolt\EventLoop;
@@ -69,13 +79,19 @@ use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
+use Symfony\Component\Messenger\Event\WorkerRunningEvent;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
+use Symfony\Component\Messenger\RoutableMessageBus;
+use Symfony\Component\Messenger\Worker;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Validation;
@@ -547,6 +563,140 @@ PHP));
         $this->assertSame('64M', $limit);
     }
 
+    public function testBrokerLaunchReturnsBeforeItsNestedRequestIsHandled(): void
+    {
+        $container = self::getContainer();
+        $entry = \dirname(__DIR__, 4).'/bin/console';
+        $locator = $this->createStub(\Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator::class);
+        $locator->method('path')->willReturn($entry);
+        $locator->method('command')->willReturn([\PHP_BINARY, $entry]);
+        $supervisor = new SessionSqliteQueueBrokerSupervisor(new NullLogger(), new RuntimeProcessConfig($locator, $this->tmpDir));
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir, 'code-mode-broker');
+        $endpoint = 'HATFIELD_SQLITE_QUEUE_ENDPOINT';
+        $previous = $_SERVER[$endpoint] ?? null;
+        $runId = $this->prepareTopLevelRegistration('broker-launch');
+        $owner = $container->get(CodeModeProcessOwner::class);
+        $client = null;
+        try {
+            $supervisor->start($paths);
+            $_SERVER[$endpoint] = $paths->endpointPath;
+            $client = Client::connect($paths->endpointPath);
+            $accessor = $container->get(StackToolExecutionContextAccessor::class);
+            $context = new ToolContext($runId, 1, 'broker-launch', 'code_mode', new NullCancellationToken(), 5, 0, null, stepId: 'code-mode-bridge-test-step');
+            $bridge = $this->bridge();
+            // Deliberately do not service the queue until the launcher has returned.
+            $fixture = $this->tmpDir.'/nested-read.txt';
+            file_put_contents($fixture, 'broker nested read');
+            $script = 'return tool("read", ["path" => '.var_export($fixture, true).']);';
+            $script = 'return tool("code_mode", ["script" => '.var_export($script, true).']);';
+            $outcome = $accessor->with($context, static fn (): mixed => $bridge->execute($script, 5));
+            $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
+            $this->assertTrue($client->wait('code_mode_requests', 3000));
+            $transport = (new TransportFactory())->createTransport(
+                $paths->transportDsns()['HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN'],
+                [],
+                $container->get('messenger.transport.symfony_serializer'),
+            );
+            $execution = $container->get('agent.execution.bus');
+            $bus = new RoutableMessageBus(new ServiceLocator(['agent.execution.bus' => static fn () => $execution]), $execution);
+            $consume = function (int $count) use ($transport, $bus): array {
+                $events = new EventDispatcher();
+                $handled = [];
+                $worker = new Worker(['code_mode_requests' => $transport], $bus, $events, messageExecutionStrategy: new FiberMessageExecutionStrategy($bus, 1));
+                $events->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use (&$handled, $worker, $count): void {
+                    $handled[] = $event->getEnvelope()->getMessage();
+                    if (\count($handled) === $count) {
+                        $worker->stop();
+                    }
+                });
+                $events->addListener(\Symfony\Component\Messenger\Event\WorkerMessageFailedEvent::class, static function ($event): void {
+                    throw $event->getThrowable();
+                });
+                $deadline = hrtime(true) + 3_000_000_000;
+                $events->addListener(WorkerRunningEvent::class, static function (WorkerRunningEvent $event) use ($deadline): void {
+                    if (hrtime(true) >= $deadline) {
+                        $event->getWorker()->stop();
+                    } elseif ($event->isWorkerIdle()) {
+                        \Amp\delay(0.01);
+                    }
+                });
+                $worker->run(['fetch_size' => 1, 'sleep' => 0]);
+                $this->assertCount($count, $handled);
+
+                return $handled;
+            };
+            [$outerRequest, $readRequest] = $consume(2);
+            $this->assertInstanceOf(CodeModeCallRequestDTO::class, $outerRequest);
+            $this->assertInstanceOf(CodeModeCallRequestDTO::class, $readRequest);
+            $this->assertSame($outcome->deferredId, $outerRequest->invocationId);
+            $this->assertNotSame($outcome->deferredId, $readRequest->invocationId);
+            $this->assertSame($outcome->deferredId, $readRequest->rootId);
+            $record = $owner->invocation($runId, $readRequest->invocationId);
+            $this->assertNotNull($record);
+            $journal = $record['workspace'].'/call-'.hash('sha256', $readRequest->callId).'.json';
+            $retained = file_get_contents($journal);
+            $this->assertIsString($retained);
+            // Controlled worker turnover and redelivery of the exact request.
+            file_put_contents($fixture, 'must not read the replacement bytes');
+            $transport->send(new Envelope($readRequest));
+            $consume(1);
+            $this->assertSame($retained, file_get_contents($journal));
+            $observer = $container->get(\Ineersa\CodingAgent\Runtime\Controller\CodeModeTerminalObserver::class);
+            // The retained terminal frame is the subprocess's completion signal.
+            $deadline = hrtime(true) + 3_000_000_000;
+            do {
+                $observer?->observe($runId, $runId);
+                $terminal = $owner->observeTerminal($runId, $outcome->deferredId, null, null);
+                if (null !== $terminal) {
+                    break;
+                }
+                \Amp\delay(0.01);
+            } while (hrtime(true) < $deadline);
+            $this->assertNotNull($terminal);
+            $this->assertTrue($terminal['ok'], $terminal['error'] ?? 'Expected a successful nested read.');
+            $this->assertStringContainsString('broker nested read', json_encode($terminal['result'], \JSON_THROW_ON_ERROR));
+        } finally {
+            if (null === $previous) {
+                unset($_SERVER[$endpoint]);
+            } else {
+                $_SERVER[$endpoint] = $previous;
+            }
+            $client?->close();
+            $owner->cleanup($runId);
+            $supervisor->shutdownUntil(microtime(true) + 5.0);
+        }
+    }
+
+    public function testCanonicalLaunchRetainsEvidenceAndRefusesSecondExecution(): void
+    {
+        $toolCallId = 'code-mode-owned-launch';
+        $runId = $this->prepareTopLevelRegistration($toolCallId);
+        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $owner = self::getContainer()->get(CodeModeProcessOwner::class);
+        $bridge = $this->bridge();
+        $context = new ToolContext($runId, 1, $toolCallId, 'code_mode', new NullCancellationToken(), 5, 0, null, stepId: 'code-mode-bridge-test-step');
+        $storage = self::getContainer()->get(BackgroundProcessConfig::class)->storageDir;
+
+        try {
+            $this->assertSame(42, $accessor->with($context, static fn (): mixed => $bridge->execute('return 42;')));
+            $metadata = self::getContainer()->get(DeferredToolCompletionRepository::class)->findMetadataByRunAndToolCall($runId, $toolCallId);
+            $this->assertNotNull($metadata);
+            $prefix = $storage.'/code-mode-'.hash('sha256', $runId).'-'.hash('sha256', $metadata->deferredId);
+            $this->assertFileExists($prefix.'.workspace');
+            $this->assertFileExists($prefix.'.pid');
+            try {
+                $accessor->with($context, static fn (): mixed => $bridge->execute('return 43;'));
+                $this->fail('A second launch must not execute.');
+            } catch (ToolCallException $exception) {
+                $this->assertStringContainsString('refusing to start it again', $exception->getMessage());
+                $this->assertFalse($exception->retryable());
+            }
+        } finally {
+            $owner->cleanup($runId);
+        }
+        $this->assertFileDoesNotExist($prefix.'.workspace');
+    }
+
     public function testNestedToolReceivesRemainingScriptBudget(): void
     {
         $seenTimeouts = [];
@@ -602,13 +752,14 @@ PHP));
         $bridge = new CodeModeHostBridge(
             $accessor,
             self::getContainer()->get(ToolRuntime::class),
-            $locator,
+            new CodeModeNestedToolExecutor($accessor, $locator),
             self::getContainer()->get(RuntimeProcessConfig::class),
             self::getContainer()->get(OutputCap::class),
             self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
             self::getContainer()->get('agent.command.bus'),
+            self::getContainer()->get(CodeModeProcessOwner::class),
         );
 
         $runId = $this->prepareTopLevelRegistration('code-mode-bridge-test-budget');
@@ -686,13 +837,14 @@ PHP));
         $bridge = new CodeModeHostBridge(
             $accessor,
             self::getContainer()->get(ToolRuntime::class),
-            $locator,
+            new CodeModeNestedToolExecutor($accessor, $locator),
             self::getContainer()->get(RuntimeProcessConfig::class),
             self::getContainer()->get(OutputCap::class),
             self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
             self::getContainer()->get('agent.command.bus'),
+            self::getContainer()->get(CodeModeProcessOwner::class),
         );
 
         $result = $this->runScript($bridge, "return tool('code_mode', ['script' => 'return 1;']);");
@@ -896,23 +1048,27 @@ PHP));
         $bridge = new CodeModeHostBridge(
             self::getContainer()->get(StackToolExecutionContextAccessor::class),
             self::getContainer()->get(ToolRuntime::class),
-            new class implements \Psr\Container\ContainerInterface {
-                public function get(string $id): mixed
-                {
-                    throw new \RuntimeException('toolbox should not be needed');
-                }
+            new CodeModeNestedToolExecutor(
+                self::getContainer()->get(StackToolExecutionContextAccessor::class),
+                new class implements \Psr\Container\ContainerInterface {
+                    public function get(string $id): mixed
+                    {
+                        throw new \RuntimeException('toolbox should not be needed');
+                    }
 
-                public function has(string $id): bool
-                {
-                    return false;
-                }
-            },
+                    public function has(string $id): bool
+                    {
+                        return false;
+                    }
+                },
+            ),
             new RuntimeProcessConfig($locator, $this->tmpDir),
             self::getContainer()->get(OutputCap::class),
             self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
             self::getContainer()->get('agent.command.bus'),
+            self::getContainer()->get(CodeModeProcessOwner::class),
         );
 
         $result = $this->runScript($bridge, 'return "path-php-ok";');
@@ -1239,13 +1395,14 @@ PHP));
         return new CodeModeHostBridge(
             self::getContainer()->get(StackToolExecutionContextAccessor::class),
             self::getContainer()->get(ToolRuntime::class),
-            $locator,
+            new CodeModeNestedToolExecutor(self::getContainer()->get(StackToolExecutionContextAccessor::class), $locator),
             self::getContainer()->get(RuntimeProcessConfig::class),
             $outputCap ?? self::getContainer()->get(OutputCap::class),
             self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
             $commandBus ?? self::getContainer()->get('agent.command.bus'),
+            self::getContainer()->get(CodeModeProcessOwner::class),
         );
     }
 

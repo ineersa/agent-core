@@ -16,15 +16,15 @@ namespace Ineersa\CodingAgent\Config;
 final readonly class BashToolConfig
 {
     /**
-     * @param int $defaultTimeoutSeconds Default timeout for bash commands (seconds)
-     * @param int $maxTimeoutSeconds     Upper bound on model-supplied timeout (seconds)
-     * @param int $pollIntervalMicros    Poll interval in microseconds for supervision loop
-     * @param int $logTailChars          Max chars to read from background process log
+     * @param int  $defaultTimeoutSeconds Default timeout for bash commands (seconds)
+     * @param ?int $maxTimeoutSeconds     Optional upper bound on model-supplied timeout (seconds)
+     * @param int  $pollIntervalMicros    Poll interval in microseconds for supervision loop
+     * @param int  $logTailChars          Max chars to read from background process log
      */
     public function __construct(
         public int $defaultTimeoutSeconds = 30,
 
-        public int $maxTimeoutSeconds = 3600,
+        public ?int $maxTimeoutSeconds = null,
 
         public int $pollIntervalMicros = 100_000,
 

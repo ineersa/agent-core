@@ -6,30 +6,37 @@
 
 `CodeModeTool` is an opt-in ordinary parallel tool, not a new worker role or an
 LLM-generated-response adapter. `CodeModeHostBridge` launches an owned PHP CLI
-subprocess with a minimal bootstrap. The script talks to the original tool worker
-through private IPC; nested calls use the existing toolbox, hooks and approval
-policy rather than a second tool implementation.
+subprocess. For canonical invocations in the session runtime, the shared tool
+consumer launches PHP and returns a deferred outcome. `run_control` manages
+state transitions; it does not execute scripts or nested tools.
 
 ```mermaid
 sequenceDiagram
+    participant Worker as Shared tool consumer
+    participant PHP as Session-owned PHP subprocess
+    participant Broker as SQLite-backed session broker
+    participant Owner as Controller completion poller
     participant RC as run_control
-    participant Host as Tool consumer Fiber
-    participant PHP as PHP script subprocess
-    participant Toolbox as Existing toolbox
-    RC->>Host: Execute code_mode intent
-    Host->>Host: Check policy and remaining budget
-    Host->>PHP: Start bootstrap and accept private socket
-    Host->>Host: Register deferred correlation / readiness
-    PHP->>Host: tool(name, arguments)
-    Host->>Toolbox: Invoke registered tool with remaining budget
-    Toolbox-->>Host: JSON-compatible value or failure
-    Host-->>PHP: RPC response
-    PHP-->>Host: Return value and diagnostics
-    Host->>RC: Ordinary or deferred completion
+    Worker->>PHP: Launch with invocation identity and controller settlement authority
+    Worker->>Worker: Mark ready and return deferred outcome; release slot
+    PHP->>Broker: Publish code_mode_requests with invocation and call IDs
+    Broker->>Worker: Deliver request to available shared slot
+    Worker->>Worker: Claim call, run existing toolbox, retain reply
+    Worker->>Broker: Publish wake-up to invocation reply queue
+    Broker-->>PHP: Wake-up; PHP reads retained result by call ID
+    PHP->>Owner: Atomically persist terminal.json for observation
+    Owner->>RC: Publish deferred completion
 ```
 
-The script budget defaults to **1,800 seconds** (maximum **3,600**), memory to
-**256 MiB** (maximum **1,024**). The parent remaining tool budget can shorten it.
+The reply wake-up is not the result. Redelivery of a settled request can reuse
+its retained result; an execution claim without a result is ambiguous and is
+not replayed. These records do not restore a lost PHP stack or allow an
+invocation to survive session shutdown. Owner notices use separate identities
+from terminal completion.
+
+The script budget defaults to **1,800 seconds** with no tool-specific cap, memory to
+**256 MiB** (maximum **1,024**). The parent remaining tool budget can shorten it until background acceptance.
+After acceptance only an explicit launch-relative timeout applies.
 Nested calls receive cooperative budget metadata; a synchronously blocking
 handler can overrun until it returns. Scripts yield at host-side I/O, not by
 turning arbitrary PHP filesystem/process calls into async toolbox calls.
@@ -40,12 +47,17 @@ CLI; fused static builds need `php` on PATH. Deferred/interactive tools
 (`subagent`, `fork`, `agent_resume`, `agent_steer`, `notify_parent`, `ask_human`)
 are refused by the bridge.
 
-Direct `backgrounded: true` calls use the existing deferred completion lifecycle.
-The host keeps a worker Fiber and its private IPC connection until settlement;
-worker loss interrupts the script, including backgrounded scripts. Readiness
-prevents automatic replay but does not prove liveness or exactly-once startup.
-`bg_status` controls Bash jobs, not PHP scripts. Script stdout/stderr capture is
-bounded independently; oversized diagnostics use run-owned output artifacts.
+Direct `backgrounded: true` uses the existing deferred completion lifecycle.
+Canonical launches run in separate native process groups with invocation-keyed
+sidecars. The controller can observe completion, stop the group, and clean its
+workspace independently of the launching consumer. `bg_status` controls Bash
+jobs, not PHP scripts.
+
+A brokered `tool('code_mode', ...)` launches another session-owned PHP process
+and releases the request slot. The child record identifies the parent invocation
+and call. The controller replaces the pending child entry in the parent journal
+with the retained result before sending a wake-up. Calls without canonical or
+brokered parent correlation still use the private socket.
 
 ## Scheduling
 

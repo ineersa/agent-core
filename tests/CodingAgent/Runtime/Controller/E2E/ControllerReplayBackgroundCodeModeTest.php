@@ -54,7 +54,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
                 }
                 $this->waitForFile($id.'.ready');
                 $identities[$id] = json_decode(file_get_contents($this->tempDir.'/'.$id.'.before'), true, 32, \JSON_THROW_ON_ERROR);
-                $this->assertFileExists($identities[$id]['socket']);
+                $this->assertDirectoryExists($identities[$id]['workspace']);
                 $snapshot = json_decode(trim($this->query($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
                 $this->assertSame('llama_cpp_test/test', $snapshot['sessionModel'], 'The controller and query retain metadata seeded before numeric session assignment.');
                 $candidate = array_values(array_filter($snapshot[$modelLaunch ? 'work' : 'codeMode'], static fn (array $c): bool => $id === $c['toolCallId']))[0];
@@ -66,7 +66,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
                 }
                 $this->assertSame($id, $this->indexByType($ack)['tool_call.acknowledged'][0]['payload']['tool_call_id']);
             }
-            foreach (['pid', 'socket', 'workspace'] as $field) {
+            foreach (['pid', 'invocation', 'workspace'] as $field) {
                 $this->assertNotSame($identities['one'][$field], $identities['two'][$field]);
             }
             $progress = $this->collectEventsUntil(null, 5, static fn (array $e): bool => 'tool_execution.completed' === ($e['type'] ?? '') && 'free' === ($e['payload']['tool_call_id'] ?? ''));
@@ -75,7 +75,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             $snapshot = json_decode(trim($this->query($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
             $this->assertCount(2, $snapshot['work']);
             foreach (['one', 'two'] as $id) {
-                $this->assertFileExists($identities[$id]['socket'], 'Both hosts remain retained while ordinary work completes.');
+                $this->assertDirectoryExists($identities[$id]['workspace'], 'Both hosts remain retained while ordinary work completes.');
                 $this->assertFileDoesNotExist($this->tempDir.'/'.$id.'.after');
             }
             $this->assertCount(4, file($this->tempDir.'/requests.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES), 'Ordinary work reaches the model before either host returns.');
@@ -86,7 +86,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
                 fwrite($releases['one'], "finish\n");
                 fflush($releases['one']);
             }
-            $this->assertFileExists($identities['two']['socket'], 'The other host is still retained when ordinary work progresses.');
+            $this->assertDirectoryExists($identities['two']['workspace'], 'The other host is still retained when ordinary work progresses.');
             $this->assertFileDoesNotExist($this->tempDir.'/two.after');
             if (!$stop) {
                 $first = $this->waitForEvent('model.notification', 5);
@@ -97,11 +97,18 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             }
             fwrite($releases['two'], "finish\n");
             fflush($releases['two']);
+            if ($modelLaunch) {
+                $notice = $this->waitForEvent('model.notification', 5);
+                $metadata = $notice['payload']['metadata']['background_completion'];
+                $this->assertSame('two', $metadata['tool_call_id']);
+                $this->assertStringStartsWith('code-mode-notice:', $metadata['identity']);
+                $this->assertNull($metadata['invocation_id'] ?? null);
+            }
             $second = $this->waitForEvent('model.notification', 5);
             $this->assertSame('two', $second['payload']['metadata']['background_completion']['tool_call_id']);
             foreach ($stop ? ['two'] : ['one', 'two'] as $id) {
                 $after = json_decode(file_get_contents($this->tempDir.'/'.$id.'.after'), true, 32, \JSON_THROW_ON_ERROR);
-                $this->assertSame($identities[$id], $after['identity'], 'PID, socket, workspace and script-local state survive detachment.');
+                $this->assertSame($identities[$id], $after['identity'], 'PID, invocation, workspace and script-local state survive detachment.');
                 $this->assertStringContainsString('NESTED_'.$id, $after['nested']);
             }
             $this->assertSame($invocations['two'], $second['payload']['metadata']['background_completion']['invocation_id']);
@@ -130,10 +137,16 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
         foreach (['one', 'two'] as $id) {
             $prefix = var_export($this->tempDir.'/'.$id, true);
             $command = ': > '.escapeshellarg($this->tempDir.'/'.$id.'.ready').'; IFS= read -r release < '.escapeshellarg($this->tempDir.'/release-'.$id).'; printf '.escapeshellarg('NESTED_'.$id);
-            $script = '$identity = ["pid" => getmypid(), "workspace" => __DIR__, "socket" => __DIR__."/s.sock", "local" => '.var_export($id, true).']; file_put_contents('.$prefix.'.".before", json_encode($identity)); $nested = tool("bash", '.var_export(['command' => $command], true).'); file_put_contents('.$prefix.'.".after", json_encode(["identity" => ["pid" => getmypid(), "workspace" => __DIR__, "socket" => __DIR__."/s.sock", "local" => $identity["local"]], "nested" => $nested])); return $identity["local"];';
+            $script = '$identity = ["pid" => getmypid(), "workspace" => __DIR__, "invocation" => getenv("HATFIELD_CODE_MODE_INVOCATION"), "local" => '.var_export($id, true).']; file_put_contents('.$prefix.'.".before", json_encode($identity)); $nested = tool("bash", '.var_export(['command' => $command], true).'); file_put_contents('.$prefix.'.".after", json_encode(["identity" => ["pid" => getmypid(), "workspace" => __DIR__, "invocation" => getenv("HATFIELD_CODE_MODE_INVOCATION"), "local" => $identity["local"]], "nested" => $nested])); return $identity["local"];';
+            if ('two' === $id && 'model launch' === $this->dataName()) {
+                $script = str_replace('return $identity["local"];', 'notify_owner("PROGRESS_TWO"); return $identity["local"];', $script);
+            }
             $calls[] = [$id, 'code_mode', ['script' => $script, 'backgrounded' => 'model launch' === $this->dataName()]];
         }
         array_push($calls, ['free', 'read', ['path' => 'free.txt']], null, null, null);
+        if ('model launch' === $this->dataName()) {
+            $calls[] = null; // The intermediate notice can start its own model turn.
+        }
         $fixtures = [];
         foreach ($calls as $call) {
             $fixture = ['model' => 'llama_cpp_test/test', 'provider_id' => 'llama_cpp_test', 'reasoning' => 'off', 'stop_reason' => null === $call ? 'stop' : 'tool_call', 'replay_request_capture' => $this->tempDir.'/requests.jsonl'];
