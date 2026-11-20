@@ -45,14 +45,14 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
 
     public function testResumeSelectsMostRecentlyActiveSessionRatherThanMostRecentlyCreated(): void
     {
+        $older = $this->store->createSession('Older conversation');
+        $newer = $this->store->createSession('Newer conversation');
+        // Session creation uses wall time. Place the simulated activity after
+        // every persisted row, including rows committed by earlier tests.
+        $latest = new \DateTimeImmutable($this->store->listSessions()[0]['updated_at']);
         $previousClock = Clock::get();
-        $clock = new MockClock('2026-11-01 12:00:00');
-        Clock::set($clock);
+        Clock::set(new MockClock($latest->modify('+1 minute')));
         try {
-            $older = $this->store->createSession('Older conversation');
-            $clock->modify('+1 minute');
-            $newer = $this->store->createSession('Newer conversation');
-            $clock->modify('+1 minute');
             self::getContainer()->get(HookDispatcher::class)->dispatchAfterTurnCommit(new AfterTurnCommitHookContext(
                 runId: $older, turnNo: 1, status: RunStatus::Running->value,
                 events: [new AfterTurnCommitEventSummary(1, 'agent_command_queued', ['kind' => 'follow_up'])],
