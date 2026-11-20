@@ -33,10 +33,10 @@ final class SettingsPathCompletionProviderTest extends TestCase
             TestDirectoryIsolation::ensureDirectory($home.'/.hatfield');
             $settingsDir = $cwd.'/.hatfield';
             TestDirectoryIsolation::ensureDirectory($settingsDir);
-            self::assertSame($settingsDir, realpath($settingsDir));
+            $this->assertSame($settingsDir, realpath($settingsDir));
             $settingsPath = $settingsDir.'/settings.yaml';
-            self::assertFileDoesNotExist($settingsPath);
-            self::assertFalse(is_link($settingsPath));
+            $this->assertFileDoesNotExist($settingsPath);
+            $this->assertFalse(is_link($settingsPath));
             file_put_contents($settingsPath, Yaml::dump([
                 'tui' => ['theme' => 'cyberpunk', 'custom_only' => true],
                 'zzz_project_only' => ['enabled' => true],
@@ -71,11 +71,11 @@ final class SettingsPathCompletionProviderTest extends TestCase
             $this->assertContains('tui.transcript', $partial);
             $this->assertNotContains('tui.custom_only', $partial);
 
-            self::assertSame($settingsPath, realpath($settingsPath));
-            self::assertFalse(is_link($settingsPath));
+            $this->assertSame($settingsPath, realpath($settingsPath));
+            $this->assertFalse(is_link($settingsPath));
             file_put_contents($settingsPath, "zzz_reloaded: true\n");
             $reloaded = $provider->getSuggestions(CompletionContext::forCursorAtEnd('/settings-show zzz_'));
-            self::assertSame(['zzz_reloaded'], array_map(static fn ($s) => $s->display, $reloaded));
+            $this->assertSame(['zzz_reloaded'], array_map(static fn ($s) => $s->display, $reloaded));
         } finally {
             TestDirectoryIsolation::removeDirectory($tmp);
         }

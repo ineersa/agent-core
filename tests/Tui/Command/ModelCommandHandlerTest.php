@@ -51,9 +51,9 @@ class ModelCommandHandlerTest extends TestCase
         TestDirectoryIsolation::ensureDirectory($settingsDir);
         TestDirectoryIsolation::ensureDirectory($this->tempDir.'/project/.hatfield/sessions');
 
-        self::assertSame($settingsDir, realpath($settingsDir));
-        self::assertFalse(file_exists($settingsDir.'/settings.yaml'));
-        self::assertFalse(is_link($settingsDir.'/settings.yaml'));
+        $this->assertSame($settingsDir, realpath($settingsDir));
+        $this->assertFalse(file_exists($settingsDir.'/settings.yaml'));
+        $this->assertFalse(is_link($settingsDir.'/settings.yaml'));
 
         // Create home settings with standard AI config
         file_put_contents(

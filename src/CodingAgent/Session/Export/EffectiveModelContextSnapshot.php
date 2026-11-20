@@ -10,9 +10,9 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 final readonly class EffectiveModelContextSnapshot
 {
     /**
-     * @param list<AgentMessage>                $messages
-     * @param list<string>|null          $availableTools null = no retained snapshot; [] = authoritative empty list
-     * @param array<string, mixed>|null  $compaction     Metadata from the latest context_compacted event
+     * @param list<AgentMessage>        $messages
+     * @param list<string>|null         $availableTools null = no retained snapshot; [] = authoritative empty list
+     * @param array<string, mixed>|null $compaction     Metadata from the latest context_compacted event
      */
     public function __construct(
         public array $messages,

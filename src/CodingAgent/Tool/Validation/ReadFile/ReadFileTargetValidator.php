@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Validation\ReadFile;
 
-use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
+use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;

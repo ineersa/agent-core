@@ -50,7 +50,7 @@ final class SessionAgentArtifactPathResolverTest extends TestCase
     public function resolvesCanonicalChildEventsPathThroughRuntimeContract(): void
     {
         $runtime = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
-        self::assertInstanceOf(ChildAgentEventsPathResolverInterface::class, $runtime);
+        $this->assertInstanceOf(ChildAgentEventsPathResolverInterface::class, $runtime);
 
         $parent = 'parent-run-abc';
         $artifact = 'artifact-scout-1';

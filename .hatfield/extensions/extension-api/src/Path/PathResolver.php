@@ -17,7 +17,6 @@ namespace Ineersa\Hatfield\ExtensionApi\Path;
  *  4. Relative path (does not start with `/`) → joined against $cwd.
  *  5. $cwd must be absolute when provided; relative $cwd is rejected.
  *  6. Normalized: `.` and `..` segments, duplicate separators collapsed.
- *
  */
 final class PathResolver
 {
