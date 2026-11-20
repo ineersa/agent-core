@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
@@ -55,11 +56,11 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         $manager = $container->get(EntityManagerInterface::class);
         $manager->clear();
         for ($i = 0; $i < 128; ++$i) {
-            $this->assertSame('pending', $repository->status('deferred'));
+            $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $repository->status('deferred'));
             $this->assertNotNull($repository->findMetadataByDeferredId('deferred'));
             $correlation = $repository->findByDeferredId('deferred');
             $this->assertNotNull($correlation);
-            $this->assertSame('pending', $repository->statusForRunAndToolCall($runId, $correlation->toolCallId));
+            $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $repository->statusForRunAndToolCall($runId, $correlation->toolCallId));
             $this->assertNotNull($repository->findByRunAndToolCall($runId, $correlation->toolCallId));
         }
         $this->assertSame([], $manager->getUnitOfWork()->getIdentityMap()[DeferredToolCompletion::class] ?? []);
@@ -82,7 +83,7 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         $repository = $container->get(DeferredToolCompletionRepository::class);
         $metadata = $repository->findMetadataByDeferredId('deferred');
         $this->assertNotNull($metadata);
-        $this->assertSame('pending', $metadata->status);
+        $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $metadata->status);
         $batches = $container->get(ToolBatchStoreInterface::class);
         $batches->delete($runId, 1, 'step');
         $this->assertNotNull($batches->loadSchedule($runId, 1, 'step'), 'Pending deferred metadata retains the settled batch.');
@@ -95,19 +96,19 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
             $message = $bus->dispatch(new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'discard']]));
             $this->assertInstanceOf(ToolPayloadMessage::class, $message->getMessage());
             $this->assertEquals($metadata->reference, $message->getMessage()->reference);
-            $this->assertSame('pending', $repository->status('deferred'), 'A stale producer must not write owner settlement.');
+            $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $repository->status('deferred'), 'A stale producer must not write owner settlement.');
             $this->assertNotNull($batches->loadSchedule($runId, 1, 'step'));
             $this->assertDirectoryExists($directory);
         }
         $message = $message->with(new ReceivedStamp('run_control'));
         $bus->dispatch($message);
-        $this->assertSame('completed', $repository->status('deferred'));
+        $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $repository->status('deferred'));
         $this->assertNull($batches->loadSchedule($runId, 1, 'step'));
         $this->assertSame(0, (int) $container->get(Connection::class)->fetchOne('SELECT COUNT(*) FROM tool_batch_call WHERE run_id = ?', [$runId]));
         $this->assertDirectoryDoesNotExist($directory);
         $this->assertNotNull($repository->findMetadataByDeferredId('deferred'), 'Completed identity survives body cleanup.');
         $bus->dispatch($message);
-        $this->assertSame('completed', $repository->status('deferred'), 'Duplicate completion is idempotent after cleanup.');
+        $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $repository->status('deferred'), 'Duplicate completion is idempotent after cleanup.');
     }
 
     #[DataProvider('completionBoundaries')]
@@ -123,7 +124,7 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         try {
             $bus->dispatch($message);
         } finally {
-            $this->assertSame('pending', self::getContainer()->get(DeferredToolCompletionRepository::class)->status('deferred'));
+            $this->assertSame(DeferredToolCompletionStatusEnum::Pending, self::getContainer()->get(DeferredToolCompletionRepository::class)->status('deferred'));
             $this->assertDirectoryExists($directory);
         }
     }
@@ -146,7 +147,7 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         try {
             $this->bus($state)->dispatch(new Envelope($message, [new ReceivedStamp('run_control')]));
         } finally {
-            $this->assertSame('pending', $repository->status('deferred'));
+            $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $repository->status('deferred'));
             $this->assertDirectoryExists($directory);
         }
     }

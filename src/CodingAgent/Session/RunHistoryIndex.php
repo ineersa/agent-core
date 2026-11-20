@@ -9,6 +9,8 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception as DbalException;
 use Ineersa\AgentCore\Application\Replay\ReplayLifecycleStatus;
+use Ineersa\AgentCore\Domain\Event\AgentCommandKindEnum;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Session\DTO\PendingToolInvocationDTO;
 use Ineersa\CodingAgent\Session\History\HistoryAssistantTextExtractor;
@@ -297,8 +299,8 @@ final readonly class RunHistoryIndex
                 // Ancestor traversal and command resolution stay in SQLite, not a PHP
                 // retainedTurnNos/seen-sequence set. History controls are always visible.
                 $sql = 'WITH RECURSIVE prefix(anchor) AS (SELECT ? WHERE ? > 0 UNION ALL SELECT t.predecessor FROM turn_anchor t JOIN prefix p ON t.anchor = p.anchor WHERE t.predecessor > 0) '.$sql;
-                $params = [$anchor, $anchor, $startSeq, $endSeq];
-                $sql .= " AND (e.turn_no = 0 OR e.type IN ('history_position_set', 'history_tail_discarded') OR (e.anchor IN (SELECT anchor FROM prefix) AND NOT EXISTS (SELECT 1 FROM command_record c WHERE c.seq = e.seq AND (c.suppressed = 1 OR (c.target_anchor IS NOT NULL AND c.target_anchor NOT IN (SELECT anchor FROM prefix))))))";
+                $params = [$anchor, $anchor, $startSeq, $endSeq, RunEventTypeEnum::HistoryPositionSet->value, RunEventTypeEnum::HistoryTailDiscarded->value];
+                $sql .= ' AND (e.turn_no = 0 OR e.type IN (?, ?) OR (e.anchor IN (SELECT anchor FROM prefix) AND NOT EXISTS (SELECT 1 FROM command_record c WHERE c.seq = e.seq AND (c.suppressed = 1 OR (c.target_anchor IS NOT NULL AND c.target_anchor NOT IN (SELECT anchor FROM prefix))))))';
             }
             $result = $db->executeQuery($sql.' ORDER BY e.seq', $params);
         } catch (\Throwable $exception) {
@@ -647,7 +649,7 @@ final readonly class RunHistoryIndex
                     if ($log->isIncompatibleSchemaVersion($record)) {
                         $db->insert('event_location', ['seq' => $record['seq'], 'offset' => $location['offset'], 'length' => $location['length'], 'type' => $record['type'], 'turn_no' => $record['turn_no'], 'anchor' => 0]);
                     } else {
-                        if ('turn_advanced' === $record['type']) {
+                        if (RunEventTypeEnum::TurnAdvanced->value === $record['type']) {
                             $newTurn = (int) ($record['payload']['turn_no'] ?? $record['turn_no']);
                             // Reusing a displayed turn can re-include old canonical
                             // records even when no navigation occurs in this suffix.
@@ -659,14 +661,14 @@ final readonly class RunHistoryIndex
                         // Advances already move the presentation position. Their
                         // confirmation markers do not invalidate it, but a real
                         // selection can suppress seeds even at the same position.
-                        $navigation = 'history_tail_discarded' === $record['type']
-                            || ('history_position_set' === $record['type']
+                        $navigation = RunEventTypeEnum::HistoryTailDiscarded->value === $record['type']
+                            || (RunEventTypeEnum::HistoryPositionSet->value === $record['type']
                                 && ('history_select' === ($record['payload']['reason'] ?? null)
                                     || (int) ($record['payload']['position_turn_no'] ?? $record['turn_no']) !== $position));
                         if ($navigation) {
                             $navigationPending = true;
                             $rebuildPresentation = true;
-                        } elseif ('turn_advanced' === $record['type'] && (int) ($record['payload']['turn_no'] ?? $record['turn_no']) > 0) {
+                        } elseif (RunEventTypeEnum::TurnAdvanced->value === $record['type'] && (int) ($record['payload']['turn_no'] ?? $record['turn_no']) > 0) {
                             // A previously suppressed seed can become visible when a
                             // later ordinary advance binds it, without another select.
                             $rebuildPresentation = $rebuildPresentation || $navigationPending;
@@ -743,20 +745,20 @@ final readonly class RunHistoryIndex
         $type = $record['type'];
         $turn = $record['turn_no'];
         $payload = $record['payload'];
-        if ('tool_execution_update' === $type && \is_string($payload['submission_receipt']['identity'] ?? null)) {
+        if (RunEventTypeEnum::ToolExecutionUpdate->value === $type && \is_string($payload['submission_receipt']['identity'] ?? null)) {
             $db->executeStatement('INSERT OR IGNORE INTO agent_submission_location (identity_hash, seq) VALUES (?, ?)', [hash('sha256', $payload['submission_receipt']['identity']), $seq]);
         }
-        if (\in_array($type, ['agent_command_queued', 'agent_command_rejected'], true) && \is_string($payload['agent_communication']['identity'] ?? null)) {
+        if (\in_array($type, [RunEventTypeEnum::AgentCommandQueued->value, RunEventTypeEnum::AgentCommandRejected->value], true) && \is_string($payload['agent_communication']['identity'] ?? null)) {
             $db->executeStatement('INSERT OR IGNORE INTO agent_submission_location (identity_hash, seq) VALUES (?, ?)', [hash('sha256', $payload['agent_communication']['identity']), $seq]);
         }
         $promptText = HistoryPromptTextExtractor::extract($type, $payload);
         if ('' !== $promptText) {
-            $kind = 'run_started' === $type ? 'initial' : 'human';
+            $kind = RunEventTypeEnum::RunStarted->value === $type ? 'initial' : 'human';
             $db->executeStatement('INSERT INTO pending_prompt (kind, seq, preview) VALUES (?, ?, ?) ON CONFLICT (kind) DO UPDATE SET seq = excluded.seq, preview = excluded.preview', [$kind, $seq, mb_strcut($promptText, 0, self::PREVIEW_BYTES, 'UTF-8')]);
         }
         unset($promptText);
         $anchor = $turn > 0 ? $this->anchorForTurn($db, $turn, retained: false) : 0;
-        if ('turn_advanced' === $type) {
+        if (RunEventTypeEnum::TurnAdvanced->value === $type) {
             $turn = (int) ($payload['turn_no'] ?? $turn);
             if ($turn > 0) {
                 $anchor = $seq;
@@ -774,7 +776,7 @@ final readonly class RunHistoryIndex
                 $db->executeStatement('UPDATE command_record SET source_anchor = ? WHERE source_anchor = 0 AND seq IN (SELECT seq FROM event_location WHERE anchor = ?)', [$anchor, $anchor]);
                 $db->executeStatement('UPDATE command_record SET target_anchor = ? WHERE target_anchor IS NULL AND suppressed = 0', [$anchor]);
             }
-        } elseif ('history_position_set' === $type) {
+        } elseif (RunEventTypeEnum::HistoryPositionSet->value === $type) {
             $position = (int) ($payload['position_turn_no'] ?? $turn);
             $candidate = $this->anchorForTurn($db, $position);
             if (0 === $position || $candidate > 0) {
@@ -787,7 +789,7 @@ final readonly class RunHistoryIndex
                 }
             }
             $db->insert('history_change', ['seq' => $seq, 'kind' => $type, 'anchor' => $selected]);
-        } elseif ('history_tail_discarded' === $type) {
+        } elseif (RunEventTypeEnum::HistoryTailDiscarded->value === $type) {
             $db->executeStatement("DELETE FROM pending_prompt WHERE kind = 'human'");
             $after = (int) ($payload['after_turn_no'] ?? 0);
             $selected = $this->anchorForTurn($db, $after);
@@ -796,24 +798,24 @@ final readonly class RunHistoryIndex
             $db->executeStatement('UPDATE turn_anchor SET presentation_member = 0 WHERE turn_no > ?', [$after]);
             $tip = $selected;
             $db->insert('history_change', ['seq' => $seq, 'kind' => $type, 'anchor' => $selected]);
-        } elseif (\in_array($type, ['agent_end', 'llm_step_completed'], true) && $anchor > 0) {
+        } elseif (\in_array($type, [RunEventTypeEnum::AgentEnd->value, RunEventTypeEnum::LlmStepCompleted->value], true) && $anchor > 0) {
             $db->executeStatement('UPDATE turn_anchor SET completion_seq = ? WHERE anchor = ?', [$seq, $anchor]);
-            if ('llm_step_completed' === $type) {
+            if (RunEventTypeEnum::LlmStepCompleted->value === $type) {
                 $answerText = HistoryAssistantTextExtractor::extract($payload);
                 $db->executeStatement('UPDATE turn_anchor SET answer_seq = ?, answer_preview = ? WHERE anchor = ?', ['' !== $answerText ? $seq : null, '' !== $answerText ? mb_strcut($answerText, 0, self::PREVIEW_BYTES, 'UTF-8') : null, $anchor]);
             }
         }
         $db->insert('event_location', ['seq' => $seq, 'offset' => $offset, 'length' => $length, 'type' => $type, 'turn_no' => $record['turn_no'], 'anchor' => $anchor]);
-        if (\in_array($type, ['agent_command_queued', 'agent_command_applied'], true)) {
+        if (\in_array($type, [RunEventTypeEnum::AgentCommandQueued->value, RunEventTypeEnum::AgentCommandApplied->value], true)) {
             $db->insert('command_record', ['seq' => $seq, 'type' => $type, 'source_anchor' => $anchor]);
         }
         $key = $payload['idempotency_key'] ?? null;
-        if (\is_string($key) && '' !== $key && \in_array($type, ['agent_command_queued', 'agent_command_applied', 'agent_command_rejected'], true)) {
+        if (\is_string($key) && '' !== $key && \in_array($type, [RunEventTypeEnum::AgentCommandQueued->value, RunEventTypeEnum::AgentCommandApplied->value, RunEventTypeEnum::AgentCommandRejected->value], true)) {
             // IDs may be reused after completion. Keep only their latest canonical
             // location on disk, not old text or a new command-deduplication registry.
             $db->executeStatement('INSERT INTO command_resolution (identity_hash, sequence) VALUES (?, ?) ON CONFLICT (identity_hash) DO UPDATE SET sequence = excluded.sequence', [hash('sha256', $key), $seq]);
         }
-        if ('context_compacted' === $type) {
+        if (RunEventTypeEnum::ContextCompacted->value === $type) {
             $db->insert('context_checkpoint_location', ['seq' => $seq, 'anchor' => $anchor, 'offset' => $offset, 'length' => $length]);
         }
         $this->indexInvocationLocations($db, $record, $selected);
@@ -824,40 +826,40 @@ final readonly class RunHistoryIndex
     {
         $type = $record['type'];
         $payload = $record['payload'];
-        if ('turn_advanced' === $type && $selected > 0) {
+        if (RunEventTypeEnum::TurnAdvanced->value === $type && $selected > 0) {
             $db->executeStatement('INSERT OR IGNORE INTO admission_anchor (anchor) VALUES (?)', [$selected]);
-        } elseif (\in_array($type, ['history_position_set', 'history_tail_discarded'], true) && (int) $db->fetchOne('SELECT MAX(anchor) FROM admission_anchor') !== $selected) {
+        } elseif (\in_array($type, [RunEventTypeEnum::HistoryPositionSet->value, RunEventTypeEnum::HistoryTailDiscarded->value], true) && (int) $db->fetchOne('SELECT MAX(anchor) FROM admission_anchor') !== $selected) {
             // History navigation is exceptional; warm point lookups never walk
             // predecessors. Ordinary new turns extend this cached chain once.
             $db->executeStatement('DELETE FROM admission_anchor');
             $db->executeStatement('WITH RECURSIVE prefix(anchor) AS (SELECT ? WHERE ? > 0 UNION ALL SELECT t.predecessor FROM turn_anchor t JOIN prefix p ON t.anchor = p.anchor WHERE t.predecessor > 0) INSERT INTO admission_anchor SELECT anchor FROM prefix', [$selected, $selected]);
         }
-        $selection = 'history_position_set' === $type && 'history_select' === ($payload['reason'] ?? null);
-        if ('run_started' === $type || $selection) {
+        $selection = RunEventTypeEnum::HistoryPositionSet->value === $type && 'history_select' === ($payload['reason'] ?? null);
+        if (RunEventTypeEnum::RunStarted->value === $type || $selection) {
             $db->executeStatement('DELETE FROM tool_invocation_location');
-        } elseif (\in_array($type, ['llm_step_completed', 'llm_step_failed', 'tool_batch_committed', 'agent_end'], true)) {
+        } elseif (\in_array($type, [RunEventTypeEnum::LlmStepCompleted->value, RunEventTypeEnum::LlmStepFailed->value, RunEventTypeEnum::ToolBatchCommitted->value, RunEventTypeEnum::AgentEnd->value], true)) {
             $db->executeStatement('DELETE FROM tool_invocation_location WHERE shell = 0');
         }
-        if ($selection || \in_array($type, ['agent_end', 'context_compacted'], true)) {
+        if ($selection || \in_array($type, [RunEventTypeEnum::AgentEnd->value, RunEventTypeEnum::ContextCompacted->value], true)) {
             $db->executeStatement('DELETE FROM admission_step_location');
-        } elseif ('context_compaction_failed' === $type) {
+        } elseif (RunEventTypeEnum::ContextCompactionFailed->value === $type) {
             $step = $db->fetchOne('SELECT step_id FROM admission_step_location');
             if (ReplayLifecycleStatus::compactionFailure(RunStatus::Compacting, false === $step ? null : $step, $payload)['terminal']) {
                 $db->executeStatement('DELETE FROM admission_step_location');
             }
-        } elseif (\in_array($type, ['run_started', 'turn_advanced', 'context_compaction_started'], true)) {
-            $previousStep = 'run_started' === $type ? null : $db->fetchOne('SELECT step_id FROM admission_step_location');
+        } elseif (\in_array($type, [RunEventTypeEnum::RunStarted->value, RunEventTypeEnum::TurnAdvanced->value, RunEventTypeEnum::ContextCompactionStarted->value], true)) {
+            $previousStep = RunEventTypeEnum::RunStarted->value === $type ? null : $db->fetchOne('SELECT step_id FROM admission_step_location');
             $step = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : (false === $previousStep ? null : $previousStep);
-            $turn = 'turn_advanced' === $type ? ($payload['turn_no'] ?? $record['turn_no']) : $record['turn_no'];
+            $turn = RunEventTypeEnum::TurnAdvanced->value === $type ? ($payload['turn_no'] ?? $record['turn_no']) : $record['turn_no'];
             $db->executeStatement('INSERT INTO admission_step_location (singleton, turn_no, step_id) VALUES (1, ?, ?) ON CONFLICT (singleton) DO UPDATE SET turn_no = excluded.turn_no, step_id = excluded.step_id', [$turn, $step]);
         }
-        if ('agent_command_applied' === $type && 'shell_command' === ($payload['kind'] ?? null) && \is_string($payload['idempotency_key'] ?? null)) {
+        if (RunEventTypeEnum::AgentCommandApplied->value === $type && AgentCommandKindEnum::ShellCommand->value === ($payload['kind'] ?? null) && \is_string($payload['idempotency_key'] ?? null)) {
             $operation = $payload['current_operation'] ?? [];
             $valid = \is_array($operation) && ($operation['idempotency_key'] ?? null) === $payload['idempotency_key'] && \is_bool($payload['standalone'] ?? null);
             // Cache malformed active identity as such; an unrelated historical
             // command must not break all lookups after it has been retired.
             $this->storeInvocationLocation($db, 'sh_'.hash('sha256', $payload['idempotency_key']), $record['seq'], $valid ? ($operation['turn_no'] ?? $record['turn_no']) : $record['turn_no'], $valid ? ($operation['step_id'] ?? null) : null, $valid ? ($operation['attempt'] ?? 0) : 0, true, true === ($payload['standalone'] ?? null));
-        } elseif ('llm_step_completed' === $type) {
+        } elseif (RunEventTypeEnum::LlmStepCompleted->value === $type) {
             $step = $db->fetchOne('SELECT step_id FROM admission_step_location');
             foreach ($payload['assistant_message']['tool_calls'] ?? [] as $call) {
                 if (\is_string($call['id'] ?? null)) {
@@ -868,14 +870,14 @@ final readonly class RunHistoryIndex
                     $db->executeStatement('INSERT OR IGNORE INTO retained_tool_invocation_location SELECT * FROM tool_invocation_location WHERE tool_call_id = ?', [$call['id']]);
                 }
             }
-        } elseif ('tool_execution_start' === $type && \is_string($payload['tool_call_id'] ?? null)) {
+        } elseif (RunEventTypeEnum::ToolExecutionStart->value === $type && \is_string($payload['tool_call_id'] ?? null)) {
             // Keep the original canonical source when observing execution starts.
             // Approval retries can advance the batch attempt without another start;
             // the batch reference, not this index, owns the current attempt.
             $step = $db->fetchOne('SELECT step_id FROM admission_step_location');
             $db->executeStatement('INSERT OR IGNORE INTO tool_invocation_location (tool_call_id, seq, turn_no, step_id, attempt, shell, standalone) VALUES (?, ?, ?, ?, ?, 0, 0)', [$payload['tool_call_id'], $record['seq'], $record['turn_no'], false === $step ? null : $step, $payload['attempt'] ?? 1]);
             $db->executeStatement('UPDATE tool_invocation_location SET attempt = COALESCE(?, attempt) WHERE tool_call_id = ?', [\is_int($payload['attempt'] ?? null) ? $payload['attempt'] : null, $payload['tool_call_id']]);
-        } elseif ('tool_execution_end' === $type && \is_string($payload['tool_result']['tool_call_id'] ?? null)) {
+        } elseif (RunEventTypeEnum::ToolExecutionEnd->value === $type && \is_string($payload['tool_result']['tool_call_id'] ?? null)) {
             // Ordinary completed calls remain members until batch settlement.
             $db->executeStatement('DELETE FROM tool_invocation_location WHERE tool_call_id = ? AND shell = 1', [$payload['tool_result']['tool_call_id']]);
         }

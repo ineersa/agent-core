@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
@@ -1170,7 +1171,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             stepId: $stepId,
             attempt: 1,
             idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
-            trigger: 'manual',
+            trigger: CompactionTriggerEnum::Manual->value,
             customInstructions: $customInstructions,
         ));
     }

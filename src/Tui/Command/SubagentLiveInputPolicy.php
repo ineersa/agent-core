@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Command;
 
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
+
 /**
  * Central input policy while subagent live view owns the screen.
  *
@@ -85,14 +87,14 @@ final readonly class SubagentLiveInputPolicy
      * Steer is non-interruptive: it is queued for the child run and applies at the
      * next runtime/command boundary; it cannot stop an in-flight tool or shell batch.
      */
-    public function childUserCommandType(bool $childActivityIsActive): string
+    public function childUserCommandType(bool $childActivityIsActive): UserCommandTypeEnum
     {
-        return $childActivityIsActive ? 'steer' : 'follow_up';
+        return $childActivityIsActive ? UserCommandTypeEnum::Steer : UserCommandTypeEnum::FollowUp;
     }
 
-    public function dispatchConfirmationMessage(string $commandType, string $agentName): string
+    public function dispatchConfirmationMessage(UserCommandTypeEnum $commandType, string $agentName): string
     {
-        if ('steer' === $commandType) {
+        if (UserCommandTypeEnum::Steer === $commandType) {
             return \sprintf(
                 'Sent steer to subagent %s — applies at next safe step.',
                 $agentName,

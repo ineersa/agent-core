@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Support;
 
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 
 final class InMemoryDeferredToolCompletionRepository implements DeferredToolCompletionRepositoryInterface
 {
-    /** @var array<string, array{correlation: DeferredToolCompletionCorrelation, status: string, readyAt: ?\DateTimeImmutable}> */
+    /** @var array<string, array{correlation: DeferredToolCompletionCorrelation, status: DeferredToolCompletionStatusEnum, readyAt: ?\DateTimeImmutable}> */
     private array $byDeferredId = [];
 
     /** @var array<string, string> runId|toolCallId => deferredId */
@@ -39,17 +40,17 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
             return null;
         }
 
-        return 'pending' === $row['status'] ? $row['correlation'] : null;
+        return DeferredToolCompletionStatusEnum::Pending === $row['status'] ? $row['correlation'] : null;
     }
 
     public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation
     {
         $row = $this->byDeferredId[$deferredId] ?? null;
 
-        return null !== $row && 'pending' === $row['status'] ? $row['correlation'] : null;
+        return null !== $row && DeferredToolCompletionStatusEnum::Pending === $row['status'] ? $row['correlation'] : null;
     }
 
-    public function statusForRunAndToolCall(string $runId, string $toolCallId): ?string
+    public function statusForRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionStatusEnum
     {
         $deferredId = $this->byRunToolCall[$runId.'|'.$toolCallId] ?? null;
 
@@ -86,7 +87,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         return false;
     }
 
-    public function status(string $deferredId): ?string
+    public function status(string $deferredId): ?DeferredToolCompletionStatusEnum
     {
         return $this->byDeferredId[$deferredId]['status'] ?? null;
     }
@@ -94,7 +95,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
     public function markCompleted(string $deferredId): void
     {
         if (isset($this->byDeferredId[$deferredId])) {
-            $this->byDeferredId[$deferredId]['status'] = 'completed';
+            $this->byDeferredId[$deferredId]['status'] = DeferredToolCompletionStatusEnum::Completed;
         }
     }
 
@@ -103,7 +104,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         if (!isset($this->byDeferredId[$deferredId])) {
             throw new \RuntimeException(\sprintf('Deferred id "%s" is not registered.', $deferredId));
         }
-        if ('pending' !== $this->byDeferredId[$deferredId]['status']) {
+        if (DeferredToolCompletionStatusEnum::Pending !== $this->byDeferredId[$deferredId]['status']) {
             throw new \RuntimeException(\sprintf('Deferred id "%s" is no longer pending for readiness.', $deferredId));
         }
         if (null === $this->byDeferredId[$deferredId]['readyAt']) {
@@ -120,7 +121,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         if (isset($row['backgroundedAt'])) {
             return;
         }
-        if ('pending' !== $row['status'] || null === $row['readyAt']) {
+        if (DeferredToolCompletionStatusEnum::Pending !== $row['status'] || null === $row['readyAt']) {
             throw new \RuntimeException(\sprintf('Deferred id "%s" is not ready for backgrounding.', $deferredId));
         }
         $row['backgroundedAt'] = $acceptedAt;
@@ -147,7 +148,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
 
         $this->byDeferredId[$correlation->deferredId] = [
             'correlation' => $correlation,
-            'status' => 'pending',
+            'status' => DeferredToolCompletionStatusEnum::Pending,
             'readyAt' => $stampReadyAt ? new \DateTimeImmutable() : null,
         ];
         $this->byRunToolCall[$key] = $correlation->deferredId;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -28,7 +29,7 @@ final readonly class UserMessageHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if (!\in_array($event->command->type, ['user_message', 'follow_up', 'append_message', 'steer'], true)) {
+        if (!\in_array($event->command->type, ['user_message', UserCommandTypeEnum::FollowUp->value, UserCommandTypeEnum::AppendMessage->value, UserCommandTypeEnum::Steer->value], true)) {
             return;
         }
 
@@ -53,10 +54,10 @@ final readonly class UserMessageHandler
         //   follow_up   -> follow_up (normal next message when idle)
         //   user_message -> message (generic message)
         $commandType = match ($command->type) {
-            'follow_up' => 'follow_up',
-            'append_message' => 'append_message',
-            'steer' => 'message',
-            default => 'message',
+            UserCommandTypeEnum::FollowUp->value => UserCommandTypeEnum::FollowUp,
+            UserCommandTypeEnum::AppendMessage->value => UserCommandTypeEnum::AppendMessage,
+            UserCommandTypeEnum::Steer->value => UserCommandTypeEnum::Message,
+            default => UserCommandTypeEnum::Message,
         };
 
         $this->client->send($runId, new UserCommand(

@@ -17,11 +17,18 @@ use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
+use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
+use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
+use Ineersa\CodingAgent\Agent\Tool\NotifyParentTool;
+use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
+use Ineersa\CodingAgent\Tool\AskHumanTool;
+use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
@@ -142,7 +149,7 @@ final readonly class CodeModeHostBridge
      */
     private function prepareDeferred(?ToolContext $parentContext): ?string
     {
-        if (null === $parentContext || '' === $parentContext->runId() || null === $parentContext->stepId() || 'code_mode' !== $parentContext->toolName()) {
+        if (null === $parentContext || '' === $parentContext->runId() || null === $parentContext->stepId() || CodeModeTool::NAME !== $parentContext->toolName()) {
             return null;
         }
         if ($this->contextAccessor->depth() > 1) {
@@ -158,7 +165,7 @@ final readonly class CodeModeHostBridge
         }
         $stored = $metadata->reference;
         if (
-            'code_mode' !== $stored->toolName
+            CodeModeTool::NAME !== $stored->toolName
             || [$stored->runId, $stored->turnNo, $stored->stepId, $stored->attempt, $stored->idempotencyKey, $stored->toolCallId, $stored->orderIndex]
             !== [$call->runId(), $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->orderIndex]
         ) {
@@ -423,7 +430,7 @@ final readonly class CodeModeHostBridge
         // CodeModeTool has already converted its host wrapper to plain data.
         // Preserve only the nested script value for IPC; nested diagnostics
         // stay in that child rather than accompanying its tool() return value.
-        if ('code_mode' === $toolName && \is_array($result) && \array_key_exists('code_mode_value', $result)) {
+        if (CodeModeTool::NAME === $toolName && \is_array($result) && \array_key_exists('code_mode_value', $result)) {
             $result = $result['code_mode_value'];
         }
 
@@ -508,7 +515,14 @@ final readonly class CodeModeHostBridge
             if (false === $contents) {
                 throw new \RuntimeException(\sprintf('Unable to read code-mode bootstrap from "%s".', $source));
             }
-            $this->filesystem->dumpFile($target, $contents);
+            $this->filesystem->dumpFile($target, str_replace('/* @unsupported-tools@ */ []', var_export([
+                SubagentToolHandler::NAME,
+                ForkToolHandler::NAME,
+                AgentResumeToolHandler::NAME,
+                AgentSteerTool::NAME,
+                NotifyParentTool::NAME,
+                AskHumanTool::NAME,
+            ], true), $contents));
         } catch (\Throwable $exception) {
             throw new ToolCallException('Failed to materialize code-mode bootstrap for subprocess execution.', retryable: true, previous: $exception);
         }

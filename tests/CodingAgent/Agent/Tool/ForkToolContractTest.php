@@ -20,6 +20,7 @@ use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\ForkArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -52,7 +53,7 @@ final class ForkToolContractTest extends TestCase
             $definition->description,
         );
         $this->assertStringContainsString('you will be notified when it finishes. Do not poll for completion.', $definition->description);
-        $this->assertSame(ModelResolver::LEVELS, $args['properties']['thinking']['enum']);
+        $this->assertSame(ThinkingLevelEnum::values(), $args['properties']['thinking']['enum']);
     }
 
     public function testInvokeReturnsDeferredOutcomeAndDelegatesParameters(): void

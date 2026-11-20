@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session\Replay;
 
+use Ineersa\AgentCore\Domain\Event\AgentCommandKindEnum;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 
 /** Scalar resume display state collected during the owner's existing body pass. */
 final class SessionResumeMetadataProjection
@@ -44,7 +47,8 @@ final class SessionResumeMetadataProjection
 
     public function observe(RunEvent $event, ?RuntimeEvent $runtime, bool $pending = false): void
     {
-        if ('history_position_set' === $event->type && 'history_select' === ($event->payload['reason'] ?? null)) {
+        $kind = AgentCommandKindEnum::fromPayload($event->payload['kind'] ?? null);
+        if (RunEventTypeEnum::HistoryPositionSet->value === $event->type && 'history_select' === ($event->payload['reason'] ?? null)) {
             $prompt = $event->payload['selected_prompt_turn_no'] ?? null;
             if (!\is_int($prompt) || $prompt < 0) {
                 throw new \InvalidArgumentException('Resume history selection requires a non-negative prompt turn.');
@@ -52,36 +56,36 @@ final class SessionResumeMetadataProjection
             // Retain only the canonical selection identity. Its full prompt can
             // be outside the replay prefix and is sought once when sealing.
             $this->data['selected_prompt_turn_no'] = $prompt;
-        } elseif (\in_array($event->type, ['history_position_set', 'history_tail_discarded', 'turn_advanced', 'context_compacted'], true)
-            || ('agent_command_applied' === $event->type && \in_array($event->payload['kind'] ?? null, ['follow_up', 'steer', 'append_message', 'compact'], true))) {
+        } elseif (\in_array($event->type, [RunEventTypeEnum::HistoryPositionSet->value, RunEventTypeEnum::HistoryTailDiscarded->value, RunEventTypeEnum::TurnAdvanced->value, RunEventTypeEnum::ContextCompacted->value], true)
+            || (RunEventTypeEnum::AgentCommandApplied->value === $event->type && (AgentCommandKindEnum::Compact === $kind || true === $kind?->appendsMessage()))) {
             unset($this->data['selected_prompt_turn_no']);
         }
         $key = $event->payload['idempotency_key'] ?? null;
-        if (\in_array($event->type, ['agent_command_applied', 'agent_command_rejected'], true) && \is_string($key)) {
+        if (\in_array($event->type, [RunEventTypeEnum::AgentCommandApplied->value, RunEventTypeEnum::AgentCommandRejected->value], true) && \is_string($key)) {
             $this->removeMessage($key);
         }
-        if (('agent_command_applied' === $event->type && 'cancel' === ($event->payload['kind'] ?? null))
-            || ('history_position_set' === $event->type && 'history_select' === ($event->payload['reason'] ?? null))
-            || 'history_tail_discarded' === $event->type) {
+        if ((RunEventTypeEnum::AgentCommandApplied->value === $event->type && AgentCommandKindEnum::Cancel === $kind)
+            || (RunEventTypeEnum::HistoryPositionSet->value === $event->type && 'history_select' === ($event->payload['reason'] ?? null))
+            || RunEventTypeEnum::HistoryTailDiscarded->value === $event->type) {
             $this->clearMessages();
         }
-        if (\in_array($event->type, ['run_started', 'llm_step_completed'], true)) {
+        if (\in_array($event->type, [RunEventTypeEnum::RunStarted->value, RunEventTypeEnum::LlmStepCompleted->value], true)) {
             $this->data['has_conversation'] = true;
         }
-        if ('tool_execution_start' === $event->type && 'bash' === ($event->payload['tool_name'] ?? null)) {
+        if (RunEventTypeEnum::ToolExecutionStart->value === $event->type && 'bash' === ($event->payload['tool_name'] ?? null)) {
             $this->data['has_shell'] = true;
         }
-        if ('agent_end' === $event->type) {
+        if (RunEventTypeEnum::AgentEnd->value === $event->type) {
             $this->data['is_shell_run'] = true === $this->data['has_shell'] && false === $this->data['has_conversation']
                 && 'completed' === ($event->payload['reason'] ?? 'completed');
         }
         if (null === $runtime) {
             return;
         }
-        if ('turn.started' === $runtime->type) {
+        if (RuntimeEventTypeEnum::TurnStarted->value === $runtime->type) {
             $this->data['usage']['turnOutputTokens'] = 0;
         }
-        if ('assistant.message_completed' === $runtime->type && \is_array($runtime->payload['usage'] ?? null)) {
+        if (RuntimeEventTypeEnum::AssistantMessageCompleted->value === $runtime->type && \is_array($runtime->payload['usage'] ?? null)) {
             $usage = $runtime->payload['usage'];
             $input = (int) ($usage['input_tokens'] ?? $usage['prompt_tokens'] ?? 0);
             $output = (int) ($usage['output_tokens'] ?? $usage['completion_tokens'] ?? 0);
@@ -101,7 +105,7 @@ final class SessionResumeMetadataProjection
             $this->data['usage']['cacheCreationTokens'] += (int) ($usage['cache_creation_tokens'] ?? 0);
         }
         $key = $runtime->payload['idempotency_key'] ?? null;
-        if ('user.message_queued' === $runtime->type && $pending && \is_string($key) && '' !== $key) {
+        if (RuntimeEventTypeEnum::UserMessageQueued->value === $runtime->type && $pending && \is_string($key) && '' !== $key) {
             $text = (string) ($runtime->payload['text'] ?? '');
             $previous = isset($this->data['queued_messages'][$key]) ? $this->messageBytes($key, $this->data['queued_messages'][$key]) + 1 : 0;
             $bytes = $this->messageBytes($key, $text) + 1;
@@ -111,9 +115,9 @@ final class SessionResumeMetadataProjection
             }
             $this->data['queued_messages'][$key] = $text;
             $this->queuedBytes += $bytes - $previous;
-        } elseif ('user.message_submitted' === $runtime->type && \is_string($key)) {
+        } elseif (RuntimeEventTypeEnum::UserMessageSubmitted->value === $runtime->type && \is_string($key)) {
             $this->removeMessage($key);
-        } elseif (\in_array($runtime->type, ['run.cancelled', 'turn.cancelled', 'run.failed', 'turn.failed', 'run.history_position_changed'], true)) {
+        } elseif (\in_array($runtime->type, [RuntimeEventTypeEnum::RunCancelled->value, RuntimeEventTypeEnum::TurnCancelled->value, RuntimeEventTypeEnum::RunFailed->value, RuntimeEventTypeEnum::TurnFailed->value, RuntimeEventTypeEnum::RunHistoryPositionChanged->value], true)) {
             $this->clearMessages();
         }
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
@@ -130,7 +131,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
         string $status,
     ): string {
         $activeTool = $progress->activeTool ?? '';
-        if ('' !== $activeTool && $this->isActiveStatus($status)) {
+        if ('' !== $activeTool && RunStatus::Running->value === $status) {
             return 'Active '.$this->sanitizeInlineValue($activeTool);
         }
 
@@ -152,7 +153,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
             $parts[] = \sprintf('↻ %.0f%%', $progress->cacheReadHitPercentage);
         }
 
-        if ($this->isActiveStatus($status) || \in_array($status, ['completed', 'failed', 'cancelled'], true)) {
+        if (RunStatus::Running->value === $status || true === RunStatus::tryFrom($status)?->isTerminal()) {
             if ($progress->toolCount > 0) {
                 $parts[] = \sprintf('%d tools', $progress->toolCount);
             }
@@ -279,12 +280,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
 
     private function needsLiveHint(string $status): bool
     {
-        return \in_array($status, ['running', 'waiting_human'], true);
-    }
-
-    private function isActiveStatus(string $status): bool
-    {
-        return 'running' === $status;
+        return \in_array($status, [RunStatus::Running->value, RunStatus::WaitingHuman->value], true);
     }
 
     private function formatFooter(SubagentProgressSnapshotDTO $data): string
@@ -382,7 +378,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
 
     private function retrieveGuidance(string $status): string
     {
-        if ('completed' === $status) {
+        if (RunStatus::Completed->value === $status) {
             return 'Use agent_retrieve for full details if the inline handoff is not enough.';
         }
 

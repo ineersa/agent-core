@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Session\Export;
 
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Domain\Event\AgentCommandKindEnum;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -191,7 +192,7 @@ final readonly class EffectiveModelContextProjector
                 }
                 $messageLists[] = $event->payload['messages'];
             } elseif (RunEventTypeEnum::AgentCommandApplied->value === $event->type
-                && \in_array($event->payload['kind'] ?? null, ['steer', 'follow_up', 'append_message'], true)) {
+                && true === AgentCommandKindEnum::fromPayload($event->payload['kind'] ?? null)?->appendsMessage()) {
                 if (!\array_key_exists('message', $event->payload)) {
                     $this->throwMalformedMessage($runId, $event->seq);
                 }

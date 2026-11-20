@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Projection;
 
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 
 use function Symfony\Component\String\u;
@@ -41,7 +42,7 @@ final class SubagentProgressDisplayFormatter
 
         $lines = array_merge($lines, $this->formatSingleWidgetBodyLines($progress, $progress->agentName, $status));
 
-        if (\in_array($status, ['completed', 'failed', 'cancelled'], true)) {
+        if (true === RunStatus::tryFrom($status)?->isTerminal()) {
             $lines[] = $this->retrieveGuidance($status);
         }
 
@@ -74,7 +75,7 @@ final class SubagentProgressDisplayFormatter
         }
 
         $activeTool = $progress->activeTool ?? '';
-        if ('' !== $activeTool && 'running' === $status) {
+        if ('' !== $activeTool && RunStatus::Running->value === $status) {
             $lines[] = '> '.$activeTool;
         }
 
@@ -106,7 +107,7 @@ final class SubagentProgressDisplayFormatter
         if (null !== $data->cacheReadHitPercentage) {
             $parts[] = \sprintf('↻ %.0f%%', $data->cacheReadHitPercentage);
         }
-        if (!\in_array($status, ['running', 'completed', 'failed', 'cancelled'], true)) {
+        if (RunStatus::Running->value !== $status && true !== RunStatus::tryFrom($status)?->isTerminal()) {
             return implode(' | ', $parts);
         }
 
@@ -206,7 +207,7 @@ final class SubagentProgressDisplayFormatter
 
     private function retrieveGuidance(string $status): string
     {
-        if ('completed' === $status) {
+        if (RunStatus::Completed->value === $status) {
             return 'Use agent_retrieve for full details if the inline handoff is not enough.';
         }
 

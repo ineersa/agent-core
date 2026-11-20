@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
@@ -444,7 +445,7 @@ final class RuntimeEventPollerTest extends TestCase
             ->with(
                 'test-run',
                 $this->callback(static fn ($cmd): bool => $cmd instanceof UserCommand
-                    && 'follow_up' === $cmd->type
+                    && UserCommandTypeEnum::FollowUp === $cmd->type
                     && 'Continue after cancel' === $cmd->text
                 ),
             );
@@ -587,7 +588,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->poller->poll($this->state, $this->client);
         $this->assertSame(2, $attempts);
         $this->assertSame(10, $this->state->lastSeq);
-        $this->assertSame([['follow_up', 'Continue after rejection']], $sent);
+        $this->assertSame([[UserCommandTypeEnum::FollowUp, 'Continue after rejection']], $sent);
         $this->assertSame([], $this->state->queuedFollowUps);
 
         $this->state->lastPoll = 0.0;
@@ -614,13 +615,13 @@ final class RuntimeEventPollerTest extends TestCase
             });
 
         $this->poller->poll($this->state, $this->client);
-        $this->assertSame([['follow_up', 'First prompt']], $sent);
+        $this->assertSame([[UserCommandTypeEnum::FollowUp, 'First prompt']], $sent);
         $this->assertSame(['Second prompt'], $this->state->queuedFollowUps);
         $this->assertSame(0, $this->state->lastSeq);
 
         $this->state->lastPoll = 0.0;
         $this->poller->poll($this->state, $this->client);
-        $this->assertSame([['follow_up', 'First prompt'], ['follow_up', 'Second prompt']], $sent);
+        $this->assertSame([[UserCommandTypeEnum::FollowUp, 'First prompt'], [UserCommandTypeEnum::FollowUp, 'Second prompt']], $sent);
         $this->assertSame([], $this->state->queuedFollowUps);
         $this->assertSame(10, $this->state->lastSeq);
     }
@@ -637,7 +638,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->client->expects($this->exactly(2))->method('events')->willReturn([$event]);
         $this->client->expects($dispatch ? $this->once() : $this->never())->method('send')
             ->with('test-run', $this->callback(static fn ($cmd): bool => $cmd instanceof UserCommand
-                && 'follow_up' === $cmd->type && 'Continue after compaction request' === $cmd->text));
+                && UserCommandTypeEnum::FollowUp === $cmd->type && 'Continue after compaction request' === $cmd->text));
         $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
 
         $this->poller->poll($this->state, $this->client);
@@ -678,7 +679,7 @@ final class RuntimeEventPollerTest extends TestCase
             ->with(
                 'test-run',
                 $this->callback(static fn ($cmd): bool => $cmd instanceof UserCommand
-                    && 'follow_up' === $cmd->type
+                    && UserCommandTypeEnum::FollowUp === $cmd->type
                     && 'Run the checks after compaction' === $cmd->text
                 ),
             );

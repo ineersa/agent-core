@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -60,7 +61,7 @@ final class AgentCommunicationToolProof
         Assert::assertSame('source_accepted', $completion->completion->details['status']);
         Assert::assertStringContainsString('does not confirm receiver delivery or attention', $completion->completion->content[0]['text']);
         $bus->dispatch($completion, [new ReceivedStamp('run_control')]);
-        Assert::assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($accept->identity));
+        Assert::assertSame(DeferredToolCompletionStatusEnum::Completed, $c->get(DeferredToolCompletionRepositoryInterface::class)->status($accept->identity));
         $active->loadRecovered($target);
         $bus->dispatch($delivery, [new ReceivedStamp('run_control')]);
         $admitted = $active->requireLoaded($target->runId);

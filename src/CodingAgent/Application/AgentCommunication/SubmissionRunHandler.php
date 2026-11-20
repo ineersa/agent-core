@@ -7,12 +7,15 @@ namespace Ineersa\CodingAgent\Application\AgentCommunication;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
+use Ineersa\CodingAgent\Agent\Tool\NotifyParentTool;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\AcceptSubmissionDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\CompleteSubmissionDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\DeliverSubmissionDTO;
@@ -49,13 +52,13 @@ final readonly class SubmissionRunHandler implements RunMessageHandler
         }
         $metadata = $this->deferred->findMetadataByDeferredId($message->identity);
         if (null === $metadata || $metadata->reference->runId !== $state->runId
-            || !\in_array($metadata->reference->toolName, ['agent_steer', 'notify_parent'], true)) {
+            || !\in_array($metadata->reference->toolName, [AgentSteerTool::NAME, NotifyParentTool::NAME], true)) {
             throw new \RuntimeException('Agent submission lacks its native deferred correlation.');
         }
         // Refused submissions have no accepted receipt. Their native completed
         // marker still fences redelivery after correlation-body cleanup or a
         // later source turn; never reinterpret it as a fresh authorization.
-        if ('completed' === $metadata->status) {
+        if (DeferredToolCompletionStatusEnum::Completed === $metadata->status) {
             return new HandlerResult();
         }
         if (null === $metadata->readyAt) {
@@ -63,7 +66,7 @@ final readonly class SubmissionRunHandler implements RunMessageHandler
         }
         $source = $this->deferred->findByDeferredId($message->identity);
         if (null === $source || $source->runId !== $state->runId
-            || !\in_array($source->toolName, ['agent_steer', 'notify_parent'], true)) {
+            || !\in_array($source->toolName, [AgentSteerTool::NAME, NotifyParentTool::NAME], true)) {
             throw new \RuntimeException('Agent submission lacks its native deferred correlation.');
         }
         if (RunStatus::Running !== $state->status || $state->turnNo !== $source->turnNo
@@ -94,7 +97,7 @@ final readonly class SubmissionRunHandler implements RunMessageHandler
 
     private function delivery(SubmissionReceiptDTO $receipt): DeliverSubmissionDTO
     {
-        return new DeliverSubmissionDTO('agent_steer' === $receipt->toolName ? $receipt->childRunId : $receipt->parentRunId, $receipt->sourceRunId, $receipt->identity);
+        return new DeliverSubmissionDTO(AgentSteerTool::NAME === $receipt->toolName ? $receipt->childRunId : $receipt->parentRunId, $receipt->sourceRunId, $receipt->identity);
     }
 
     private function completion(SubmissionReceiptDTO $receipt): CompleteSubmissionDTO

@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommandCatalog;
@@ -108,7 +109,7 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
         $client->expects($this->once())
             ->method('send')
             ->with('run-1', $this->callback(static function (UserCommand $cmd): bool {
-                return 'follow_up' === $cmd->type && 'next turn' === $cmd->text;
+                return UserCommandTypeEnum::FollowUp === $cmd->type && 'next turn' === $cmd->text;
             }));
 
         $harness = new VirtualTuiHarness(sessionId: $state->sessionId);

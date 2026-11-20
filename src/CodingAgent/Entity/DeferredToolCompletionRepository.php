@@ -10,12 +10,15 @@ use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
+use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
@@ -50,11 +53,11 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             LEFT JOIN run_operational_state state ON state.run_id = invocation.run_id
             LEFT JOIN deferred_subagent_child child ON child.child_run_id = invocation.run_id
             LEFT JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
-            WHERE invocation.tool_name = 'code_mode' AND invocation.status = 'pending'
+            WHERE invocation.tool_name = :tool AND invocation.status = :pending
                 AND (invocation.backgrounded_at IS NOT NULL OR invocation.accepted_result_reference_json IS NULL)
                 AND (invocation.run_id = :root OR state.owner_session_id = :root OR batch.parent_run_id = :root)
             ORDER BY invocation.created_at LIMIT 100
-            SQL, ['root' => $rootRunId]);
+            SQL, ['root' => $rootRunId, 'tool' => CodeModeTool::NAME, 'pending' => DeferredToolCompletionStatusEnum::Pending->value]);
     }
 
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
@@ -76,11 +79,11 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         });
     }
 
-    public function statusForRunAndToolCall(string $runId, string $toolCallId): ?string
+    public function statusForRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionStatusEnum
     {
         $status = $this->getEntityManager()->getConnection()->fetchOne('SELECT status FROM tool_deferred_completion WHERE run_id = ? AND tool_call_id = ?', [$runId, $toolCallId]);
 
-        return false !== $status ? $status : null;
+        return false !== $status ? DeferredToolCompletionStatusEnum::from($status) : null;
     }
 
     public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation
@@ -92,7 +95,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
         return $this->locks->synchronized($metadata->reference->runId, function () use ($deferredId): ?DeferredToolCompletionCorrelation {
             $fresh = $this->findMetadataByDeferredId($deferredId);
-            if (null === $fresh || 'pending' !== $fresh->status) {
+            if (null === $fresh || DeferredToolCompletionStatusEnum::Pending !== $fresh->status) {
                 return null;
             }
             $correlation = $this->payloads->readCorrelation($fresh->reference);
@@ -123,7 +126,8 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         $this->validateReference($reference);
         $identity = [$reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId, $reference->attempt, $reference->idempotencyKey, $reference->orderIndex, $reference->toolName];
         $storedIdentity = [$row['run_id'], $row['turn_no'], $row['step_id'], $row['tool_call_id'], $row['attempt'], $row['idempotency_key'], $row['order_index'], $row['tool_name']];
-        if ('correlation' !== $reference->kind || $identity !== $storedIdentity || !\in_array($row['status'], ['pending', 'completed'], true)) {
+        $status = DeferredToolCompletionStatusEnum::tryFrom($row['status']);
+        if ('correlation' !== $reference->kind || $identity !== $storedIdentity || null === $status) {
             throw new ToolPayloadException('Deferred correlation reference does not match its index.');
         }
 
@@ -137,26 +141,26 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             }
         }
 
-        $accepted ??= 'pending' === $row['status'] ? $this->payloads->findFirstResult($reference) : null;
+        $accepted ??= DeferredToolCompletionStatusEnum::Pending === $status ? $this->payloads->findFirstResult($reference) : null;
 
-        return new DeferredToolCompletionMetadataDTO($row['deferred_id'], $reference, $row['status'], null !== $row['ready_at'] ? new \DateTimeImmutable($row['ready_at']) : null, null !== $row['backgrounded_at'] ? new \DateTimeImmutable($row['backgrounded_at']) : null, $accepted, $row['interruption_reason'], (bool) $row['continuation_required']);
+        return new DeferredToolCompletionMetadataDTO($row['deferred_id'], $reference, $status, null !== $row['ready_at'] ? new \DateTimeImmutable($row['ready_at']) : null, null !== $row['backgrounded_at'] ? new \DateTimeImmutable($row['backgrounded_at']) : null, $accepted, null === $row['interruption_reason'] ? null : DeferredToolInterruptionReasonEnum::from($row['interruption_reason']), (bool) $row['continuation_required']);
     }
 
     /** @return list<string> */
     public function codeModeIdentities(string $runId): array
     {
-        return $this->getEntityManager()->getConnection()->fetchFirstColumn("SELECT deferred_id FROM tool_deferred_completion WHERE run_id = ? AND tool_name = 'code_mode'", [$runId]);
+        return $this->getEntityManager()->getConnection()->fetchFirstColumn('SELECT deferred_id FROM tool_deferred_completion WHERE run_id = ? AND tool_name = ?', [$runId, CodeModeTool::NAME]);
     }
 
-    public function interrupt(string $deferredId, string $reason): void
+    public function interrupt(string $deferredId, DeferredToolInterruptionReasonEnum $reason): void
     {
         $entity = $this->require($deferredId);
         // Cancellation or discard supersedes recovery permission, but the
         // non-null interruption still fences the old physical host.
-        if (null === $entity->interruptionReason || 'controller_lost' === $entity->interruptionReason) {
+        if (null === $entity->interruptionReason || DeferredToolInterruptionReasonEnum::ControllerLost === $entity->interruptionReason) {
             $entity->interruptionReason = $reason;
         }
-        if ('controller_lost' !== $entity->interruptionReason) {
+        if (DeferredToolInterruptionReasonEnum::ControllerLost !== $entity->interruptionReason) {
             $entity->continuationRequired = false;
         }
         $this->getEntityManager()->flush();
@@ -167,7 +171,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
     {
         // A completed source can still own a mailbox receipt or an unconsumed
         // successor in its original turn. Historical completed turns cannot.
-        return $this->getEntityManager()->getConnection()->fetchFirstColumn("SELECT DISTINCT d.deferred_id FROM tool_deferred_completion d LEFT JOIN background_completion_receipt r ON r.deferred_id = d.deferred_id LEFT JOIN run_operational_state s ON s.run_id = d.run_id WHERE d.run_id = ? AND d.tool_name = 'code_mode' AND (d.status = 'pending' OR d.continuation_required = 1 OR r.disposition IN ('pending', 'forwarding') OR (s.status = 'running' AND s.turn_no = d.turn_no AND s.active_step_id = d.step_id))", [$runId]);
+        return $this->getEntityManager()->getConnection()->fetchFirstColumn("SELECT DISTINCT d.deferred_id FROM tool_deferred_completion d LEFT JOIN background_completion_receipt r ON r.deferred_id = d.deferred_id LEFT JOIN run_operational_state s ON s.run_id = d.run_id WHERE d.run_id = ? AND d.tool_name = ? AND (d.status = ? OR d.continuation_required = 1 OR r.disposition IN ('pending', 'forwarding') OR (s.status = 'running' AND s.turn_no = d.turn_no AND s.active_step_id = d.step_id))", [$runId, CodeModeTool::NAME, DeferredToolCompletionStatusEnum::Pending->value]);
     }
 
     public function runRequiresContinuation(string $runId): bool
@@ -186,14 +190,14 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
     {
         // Pending rows may own a processed reference sealed before SQL acceptance.
         // Repair checks that bounded reference before loading any terminal body.
-        return $this->getEntityManager()->getConnection()->fetchFirstColumn("SELECT DISTINCT d.run_id FROM tool_deferred_completion d LEFT JOIN run_operational_state s ON s.run_id = d.run_id LEFT JOIN background_completion_receipt r ON r.deferred_id = d.deferred_id WHERE (d.continuation_required = 1 OR d.status = 'pending' OR r.disposition = 'pending') AND (d.run_id = ? OR s.owner_session_id = ? OR r.destination_run_id = ? OR r.root_run_id = ?)", array_fill(0, 4, $ownerRunId));
+        return $this->getEntityManager()->getConnection()->fetchFirstColumn("SELECT DISTINCT d.run_id FROM tool_deferred_completion d LEFT JOIN run_operational_state s ON s.run_id = d.run_id LEFT JOIN background_completion_receipt r ON r.deferred_id = d.deferred_id WHERE (d.continuation_required = 1 OR d.status = ? OR r.disposition = 'pending') AND (d.run_id = ? OR s.owner_session_id = ? OR r.destination_run_id = ? OR r.root_run_id = ?)", [DeferredToolCompletionStatusEnum::Pending->value, ...array_fill(0, 4, $ownerRunId)]);
     }
 
-    public function status(string $deferredId): ?string
+    public function status(string $deferredId): ?DeferredToolCompletionStatusEnum
     {
         $status = $this->getEntityManager()->getConnection()->fetchOne('SELECT status FROM tool_deferred_completion WHERE deferred_id = ?', [$deferredId]);
 
-        return false !== $status ? $status : null;
+        return false !== $status ? DeferredToolCompletionStatusEnum::from($status) : null;
     }
 
     public function markCompleted(string $deferredId): void
@@ -202,8 +206,8 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         $updated = $em->getConnection()->executeStatement(
             'UPDATE tool_deferred_completion SET status = :completed, updated_at = :now WHERE deferred_id = :deferred_id AND status = :pending',
             [
-                'completed' => 'completed',
-                'pending' => 'pending',
+                'completed' => DeferredToolCompletionStatusEnum::Completed->value,
+                'pending' => DeferredToolCompletionStatusEnum::Pending->value,
                 'deferred_id' => $deferredId,
                 'now' => Clock::get()->now()->format('Y-m-d H:i:s'),
             ],
@@ -226,11 +230,11 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             return;
         }
 
-        if ('completed' === $entity->status) {
+        if (DeferredToolCompletionStatusEnum::Completed === $entity->status) {
             return;
         }
 
-        $entity->status = 'completed';
+        $entity->status = DeferredToolCompletionStatusEnum::Completed;
         $em->flush();
     }
 
@@ -242,7 +246,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             if (null !== $fresh->readyAt) {
                 return;
             }
-            if ('pending' !== $fresh->status) {
+            if (DeferredToolCompletionStatusEnum::Pending !== $fresh->status) {
                 throw new ToolPayloadException('Deferred completion is no longer pending for readiness.');
             }
             $fresh->readyAt = Clock::get()->now();
@@ -258,7 +262,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             if (null !== $fresh->backgroundedAt) {
                 return;
             }
-            if ('pending' !== $fresh->status || null === $fresh->readyAt || null !== $fresh->acceptedResultReferenceJson) {
+            if (DeferredToolCompletionStatusEnum::Pending !== $fresh->status || null === $fresh->readyAt || null !== $fresh->acceptedResultReferenceJson) {
                 throw new ToolPayloadException('Deferred completion is not ready for backgrounding.');
             }
             $fresh->backgroundedAt = $acceptedAt;
@@ -350,7 +354,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                 'timeout_seconds' => $correlation->timeoutSeconds,
                 'max_parallelism' => $correlation->maxParallelism,
                 'tools_ref' => $correlation->toolsRef,
-                'status' => 'pending',
+                'status' => DeferredToolCompletionStatusEnum::Pending->value,
                 'created_at' => $now,
                 'updated_at' => $now,
             ];
@@ -430,7 +434,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
     {
         // Completed rows retain only their bounded dedupe identity. Their data
         // may have been legitimately removed after canonical batch settlement.
-        if ('pending' !== $entity->status) {
+        if (DeferredToolCompletionStatusEnum::Pending !== $entity->status) {
             throw new ToolPayloadException('Completed deferred invocation has no live correlation body.');
         }
         $reference = $this->serializer->deserialize($entity->bodyReferenceJson, ToolPayloadReferenceDTO::class, 'json');

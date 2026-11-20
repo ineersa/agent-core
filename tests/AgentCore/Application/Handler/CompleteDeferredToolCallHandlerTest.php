@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -26,7 +27,7 @@ final class CompleteDeferredToolCallHandlerTest extends TestCase
         $pending = true;
         $correlation = new DeferredToolCompletionCorrelation('deferred', 'run', 1, 'step', 1, 'key', 'call', 'echo', [], 0);
         $repository = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
-        $repository->method('status')->willReturnCallback(static fn (): string => $pending ? 'pending' : 'completed');
+        $repository->method('status')->willReturnCallback(static fn (): DeferredToolCompletionStatusEnum => $pending ? DeferredToolCompletionStatusEnum::Pending : DeferredToolCompletionStatusEnum::Completed);
         $repository->method('findByDeferredId')->willReturn($correlation);
         $repository->expects($sendSucceeds ? $this->once() : $this->never())->method('markCompleted')->with('deferred')->willReturnCallback(static function () use (&$pending): void {
             $pending = false;

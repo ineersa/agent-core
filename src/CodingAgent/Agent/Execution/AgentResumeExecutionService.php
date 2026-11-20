@@ -25,6 +25,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredS
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
+use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
@@ -269,7 +270,7 @@ final class AgentResumeExecutionService
         $winnerOrder = null;
         foreach ($schedule->expectedOrder as $candidateToolCallId => $orderIndex) {
             $call = $this->toolBatches->loadCall($runId, $turnNo, $stepId, $candidateToolCallId);
-            if (null === $call || 'agent_resume' !== $call->toolName) {
+            if (null === $call || AgentResumeToolHandler::NAME !== $call->toolName) {
                 continue;
             }
             try {

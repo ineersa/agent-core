@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Psr\Log\LoggerInterface;
@@ -31,7 +32,7 @@ final readonly class CancelHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if ('cancel' !== $event->command->type) {
+        if (UserCommandTypeEnum::Cancel->value !== $event->command->type) {
             return;
         }
 

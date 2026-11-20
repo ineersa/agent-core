@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
@@ -880,7 +881,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($original, $lifecycle));
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable());
         $deferred->markReady($lifecycle);
-        $this->assertSame('pending', $deferred->status($lifecycle));
+        $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $deferred->status($lifecycle));
         $this->assertNotNull($deferred->findMetadataByDeferredId($lifecycle)?->readyAt);
         $this->ensureArtifactReserved($parent, $c1['childRunId'], $c1['artifactId'], 'fork', 'Fork task', AgentArtifactKindEnum::Fork);
 
@@ -927,7 +928,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         );
         $worker($original);
         $this->assertCount(0, $workerBus->messages, json_encode($workerBus->messages, \JSON_THROW_ON_ERROR));
-        $this->assertSame('pending', $deferred->status($lifecycle));
+        $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $deferred->status($lifecycle));
         $this->assertSame(1, $notifications);
         $this->assertCount(0, $workerBus->messages);
         $this->assertFileExists($inputPath, 'Owner-prepared ready execution still retains launch input until delivery cleanup.');
@@ -952,7 +953,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame(2, $notifications, 'Pending redelivery re-emits registration without reading input.');
         $terminalBus = new TestMessageBus();
         (new CompleteDeferredToolCallHandler($deferred, $terminalBus, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $batchStore, new TestLogger()))($complete);
-        $this->assertSame('completed', $deferred->status($lifecycle));
+        $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $deferred->status($lifecycle));
         $this->assertCount(1, $terminalBus->messages);
         $worker($original);
         $this->assertSame(2, $notifications, 'Completed original execution redelivery is a no-op.');
@@ -1236,7 +1237,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertInstanceOf(MarkChildBackgroundedDTO::class, $mark);
         $container->get(ChildBackgroundCoordinationHandler::class)($mark);
         $this->assertSame([], $handler->handle($request, $state)->events, 'Duplicate launch intent cannot acknowledge twice.');
-        $this->assertSame('completed', $container->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
+        $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $container->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
         $late = new TestMessageBus();
         $dispatcher = new DeferredSubagentBatchCompletionDispatcher($container->get(DeferredToolCompletionRepositoryInterface::class), $repo, $late, new TestLogger(), $container->get(ToolLaunchInputStoreInterface::class), $container->get(SubagentChildRunArtifactFinalizer::class));
         $kind = 'fork' === $toolName ? AgentArtifactKindEnum::Fork : AgentArtifactKindEnum::Subagent;

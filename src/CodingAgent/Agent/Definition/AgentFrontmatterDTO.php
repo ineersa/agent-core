@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Definition;
 
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
@@ -61,7 +62,7 @@ final class AgentFrontmatterDTO
         public readonly ?string $model = null,
 
         #[Assert\Choice(
-            choices: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+            callback: [ThinkingLevelEnum::class, 'values'],
             message: '"thinking" must be one of off|minimal|low|medium|high|xhigh|max.',
         )]
         public readonly ?string $thinking = null,

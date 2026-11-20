@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DTO\ChildBackgro
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\ChildBackgroundCandidateDTO;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -59,6 +60,6 @@ final readonly class ChildInvocationBackgroundService
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function detach(BackgroundChildInvocationDTO $message): void
     {
-        $this->processor->process('background_child', $message);
+        $this->processor->process(UserCommandTypeEnum::BackgroundChild->value, $message);
     }
 }

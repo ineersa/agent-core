@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -73,7 +74,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
         $state->handle = new RunHandle($sessionId);
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->once())->method('send')->with($sessionId, $this->callback(
-            static fn (UserCommand $command): bool => 'follow_up' === $command->type
+            static fn (UserCommand $command): bool => UserCommandTypeEnum::FollowUp === $command->type
                 && str_contains($command->text, 'Error: [Image #1]. [Image #8: ')
                 && str_contains($command->text, '/attachments/pasted-image-8.png'),
         ));
@@ -154,7 +155,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
         $text = 'Image paste: Session attachment already exists for [Image #1].';
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->exactly(2))->method('send')->with($sessionId, $this->callback(
-            static fn (UserCommand $command): bool => 'follow_up' === $command->type && $text === $command->text,
+            static fn (UserCommand $command): bool => UserCommandTypeEnum::FollowUp === $command->type && $text === $command->text,
         ));
         $harness = new VirtualTuiHarness(sessionId: $sessionId);
         $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())

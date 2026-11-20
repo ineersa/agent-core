@@ -24,7 +24,7 @@ final readonly class BackgroundCompletionConsumptionPolicy implements CommandCon
 
     public function interrupted(?string $id): bool
     {
-        return null !== $id && \in_array($this->deferred->findMetadataByDeferredId($id)?->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true);
+        return null !== $id && true === $this->deferred->findMetadataByDeferredId($id)?->interruptionReason?->preventsContinuation();
     }
 
     public function parked(?string $id): bool

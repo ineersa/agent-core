@@ -50,7 +50,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         );
 
         $runId = $toolCall->runId ?? ($toolCall->context['run_id'] ?? null);
-        $retain = \is_string($runId) && (true === ($toolCall->context['retain_output'] ?? false) || ('code_mode' === $toolCall->toolName && null !== $this->deferred->findByRunAndToolCall($runId, $toolCall->toolCallId)));
+        $retain = \is_string($runId) && (true === ($toolCall->context['retain_output'] ?? false) || (CodeModeTool::NAME === $toolCall->toolName && null !== $this->deferred->findByRunAndToolCall($runId, $toolCall->toolCallId)));
         $raw = \is_array($result->details) ? ($result->details['raw_result'] ?? null) : null;
         $captured = 'read' === $toolCall->toolName && \is_array($raw) ? ($raw['output_cap'] ?? null) : null;
         if (\is_array($captured) && \is_string($captured['saved_path'] ?? null) && \is_int($captured['byte_count'] ?? null)) {

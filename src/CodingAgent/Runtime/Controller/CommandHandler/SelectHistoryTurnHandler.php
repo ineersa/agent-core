@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -26,7 +27,7 @@ final readonly class SelectHistoryTurnHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if ('select_history_turn' !== $event->command->type) {
+        if (UserCommandTypeEnum::SelectHistoryTurn->value !== $event->command->type) {
             return;
         }
 

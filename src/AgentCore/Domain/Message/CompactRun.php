@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
+use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
+
 /**
  * Request to compact the current run's message history.
  *
@@ -34,7 +36,7 @@ final readonly class CompactRun extends AbstractAgentBusMessage implements RunCo
         string $stepId,
         int $attempt,
         string $idempotencyKey,
-        public string $trigger = 'manual',
+        public string $trigger = CompactionTriggerEnum::Manual->value,
         public bool $continueAfterCompaction = false,
         public ?string $customInstructions = null,
     ) {

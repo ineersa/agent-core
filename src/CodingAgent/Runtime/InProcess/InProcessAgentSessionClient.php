@@ -28,6 +28,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Exception\BackgroundProcessUnavailableException;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
@@ -38,6 +39,7 @@ use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BashBackgroundRequestService;
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 
@@ -180,43 +182,43 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         // answer_human and shell_command carry
         // machine/payload answers, so prompt templates do not expand them.
-        if (\in_array($command->type, ['message', 'steer', 'follow_up'], true)) {
+        if (\in_array($command->type, [UserCommandTypeEnum::Message, UserCommandTypeEnum::Steer, UserCommandTypeEnum::FollowUp], true)) {
             $text = $this->promptTemplateService->expandPromptTemplate($text);
         }
 
         match ($command->type) {
-            'steer', 'message' => $this->runner->steer(
+            UserCommandTypeEnum::Steer, UserCommandTypeEnum::Message => $this->runner->steer(
                 $runId,
                 new AgentMessage(
                     role: 'user',
                     content: [['type' => 'text', 'text' => $text]],
                 ),
             ),
-            'follow_up' => $this->runner->followUp(
+            UserCommandTypeEnum::FollowUp => $this->runner->followUp(
                 $runId,
                 new AgentMessage(
                     role: 'user',
                     content: [['type' => 'text', 'text' => $text]],
                 ),
             ),
-            'append_message' => $this->runner->appendMessage(
+            UserCommandTypeEnum::AppendMessage => $this->runner->appendMessage(
                 $runId,
                 new AgentMessage(
                     role: 'user',
                     content: [['type' => 'text', 'text' => $text]],
                 ),
             ),
-            'answer_human' => $this->runner->answerHuman(
+            UserCommandTypeEnum::AnswerHuman => $this->runner->answerHuman(
                 $runId,
                 (string) ($command->payload['question_id'] ?? ''),
                 $command->payload['answer'] ?? null,
             ),
-            'shell_command' => $this->handleShellCommandSend($runId, $command),
-            'background_bash' => $this->backgroundRequests->request($runId, $command->payload),
-            'background_child' => $this->childBackground->request($runId, $command->payload),
-            'background_code_mode', 'stop_code_mode' => $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($runId, $command->payload['deferred_id'] ?? '', $command->payload['tool_call_id'] ?? '', 'stop_code_mode' === $command->type)),
-            'select_history_turn' => $this->handleInProcessSelectHistoryTurn($runId, $command),
-            default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
+            UserCommandTypeEnum::ShellCommand => $this->handleShellCommandSend($runId, $command),
+            UserCommandTypeEnum::BackgroundBash => $this->backgroundRequests->request($runId, $command->payload),
+            UserCommandTypeEnum::BackgroundChild => $this->childBackground->request($runId, $command->payload),
+            UserCommandTypeEnum::BackgroundCodeMode, UserCommandTypeEnum::StopCodeMode => $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($runId, $command->payload['deferred_id'] ?? '', $command->payload['tool_call_id'] ?? '', UserCommandTypeEnum::StopCodeMode === $command->type)),
+            UserCommandTypeEnum::SelectHistoryTurn => $this->handleInProcessSelectHistoryTurn($runId, $command),
+            UserCommandTypeEnum::Cancel => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type->value)),
         };
     }
 
@@ -446,7 +448,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         }
         $effectiveModel = $modelRef->toString();
 
-        if (null !== $request->reasoning && \in_array($request->reasoning, ModelResolver::LEVELS, true)) {
+        if (null !== $request->reasoning && null !== ThinkingLevelEnum::tryFrom($request->reasoning)) {
             $reasoning = $request->reasoning;
         } else {
             $reasoning = $this->modelResolver->resolveInitialReasoning(null, $sessionId);

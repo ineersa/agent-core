@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
@@ -43,7 +44,7 @@ final class SubmissionRunHandlerTest extends IsolatedKernelTestCase
         Assert::assertTrue($reply->getMessage()->completion->isError);
         $bus->dispatch($reply->with(new ReceivedStamp('run_control')));
         $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
-        Assert::assertSame('completed', $deferred->status($receipt->identity));
+        Assert::assertSame(DeferredToolCompletionStatusEnum::Completed, $deferred->status($receipt->identity));
         Assert::assertNull($deferred->findByDeferredId($receipt->identity));
         Assert::assertNull($c->get(SubmissionReceiptRepository::class)->receipt($f->parent, $receipt->identity));
         $f->append($f->parent, 4, 8, 'turn_advanced', ['turn_no' => 8, 'step_id' => 'later-step']);

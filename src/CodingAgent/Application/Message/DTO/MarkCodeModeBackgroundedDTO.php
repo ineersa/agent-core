@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Message\DTO;
 
+use Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum;
 use Symfony\Component\Validator\Constraints as Assert;
 
 final readonly class MarkCodeModeBackgroundedDTO
@@ -13,8 +14,7 @@ final readonly class MarkCodeModeBackgroundedDTO
         #[Assert\Uuid]
         public string $deferredId,
         public \DateTimeImmutable $acceptedAt,
-        #[Assert\Choice(choices: ['stopped', 'cancelled', 'history_discarded', 'controller_lost'])]
-        public ?string $interruptionReason = null,
+        public ?DeferredToolInterruptionReasonEnum $interruptionReason = null,
         public ?bool $continuationRequired = null,
     ) {
     }

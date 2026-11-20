@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ProcessReloadIntentDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -156,7 +157,7 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
 
         // Dispatch the history-select command.
         $this->client->send($runId, new UserCommand(
-            type: 'select_history_turn',
+            type: UserCommandTypeEnum::SelectHistoryTurn,
             payload: ['turn_no' => $targetTurnNo, 'role' => $role],
         ));
 

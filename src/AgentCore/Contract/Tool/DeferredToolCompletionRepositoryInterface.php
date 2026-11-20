@@ -27,8 +27,7 @@ interface DeferredToolCompletionRepositoryInterface
     /** Resolve pending data only. Completed markers never require a retained body. */
     public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation;
 
-    /** @return 'completed'|'pending'|null */
-    public function statusForRunAndToolCall(string $runId, string $toolCallId): ?string;
+    public function statusForRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionStatusEnum;
 
     public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation;
 
@@ -37,10 +36,11 @@ interface DeferredToolCompletionRepositoryInterface
 
     public function findMetadataByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionMetadataDTO;
 
-    /**
-     * @return 'completed'|'pending'|null
+    /** Reads current status, which can change between calls.
+     *
+     * @phpstan-impure
      */
-    public function status(string $deferredId): ?string;
+    public function status(string $deferredId): ?DeferredToolCompletionStatusEnum;
 
     public function markCompleted(string $deferredId): void;
 

@@ -12,6 +12,7 @@ use Doctrine\ORM\Query;
 use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
+use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DTO\DeferredSubagentCompletionSourceDTO;
@@ -21,6 +22,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
+use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\ChildBackgroundCandidateDTO;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
@@ -607,7 +609,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             ->setParameter('parentRunId', $parentRunId)
             ->setParameter('launched', DeferredSubagentBatchLaunchStatusEnum::Launched)
             ->setParameter('pending', 'pending')
-            ->setParameter('tools', ['subagent', 'fork', 'agent_resume'])
+            ->setParameter('tools', [ChildLaunchToolName::SUBAGENT, ChildLaunchToolName::FORK, AgentResumeToolHandler::NAME])
             ->orderBy('batch.id', 'ASC');
     }
 

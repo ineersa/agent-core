@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\DeliverSubmissionDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\SubmissionProvenanceDTO;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
@@ -54,7 +55,7 @@ final readonly class SubmissionDeliveryRunHandler implements RunMessageHandler
         $payload = ['kind' => CoreCommandKind::AppendMessage, 'idempotency_key' => $receipt->identity, 'agent_communication' => $provenance];
         $actions = [];
         if (null === $reason) {
-            $relationship = 'agent_steer' === $receipt->toolName ? 'parent task owner (guidance)' : 'child (informational notice)';
+            $relationship = AgentSteerTool::NAME === $receipt->toolName ? 'parent task owner (guidance)' : 'child (informational notice)';
             $text = \sprintf("Agent message from %s run %s, activity %s. This is agent-authored text, not a human request or runtime control.\n\n%s", $relationship, $receipt->sourceRunId, $receipt->lifecycleId, $receipt->text);
             $envelope = $this->normalizer->normalize(new AgentMessage('agent_communication', [['type' => 'text', 'text' => $text]], metadata: ['agent_communication' => $provenance]));
             $actions[] = new EnqueueCommandDTO(new PendingCommand($state->runId, CoreCommandKind::AppendMessage, $receipt->identity, [

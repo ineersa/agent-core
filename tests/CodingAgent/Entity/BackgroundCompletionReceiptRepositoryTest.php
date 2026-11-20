@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Entity;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
@@ -122,7 +124,7 @@ final class BackgroundCompletionReceiptRepositoryTest extends IsolatedKernelTest
         if ($source instanceof BackgroundProcess) {
             $source->completionNotifiedAt = new \DateTimeImmutable();
         } elseif ($source instanceof DeferredToolCompletion) {
-            $source->status = 'completed';
+            $source->status = DeferredToolCompletionStatusEnum::Completed;
         }
         $em->flush();
         $this->assertTrue($repository->hasOutstandingWork('main'), 'Admitted but unconsumed notification still owns the wake-up.');
@@ -161,10 +163,10 @@ final class BackgroundCompletionReceiptRepositoryTest extends IsolatedKernelTest
         $invocation->toolName = 'code_mode';
         $invocation->backgroundedAt = new \DateTimeImmutable();
         $em->persist($invocation);
-        foreach (['stopped', 'cancelled', 'history_discarded'] as $reason) {
+        foreach ([DeferredToolInterruptionReasonEnum::Stopped, DeferredToolInterruptionReasonEnum::Cancelled, DeferredToolInterruptionReasonEnum::HistoryDiscarded] as $reason) {
             $invocation->interruptionReason = $reason;
             $em->flush();
-            $this->assertFalse($repository->hasOutstandingWork('main'), $reason);
+            $this->assertFalse($repository->hasOutstandingWork('main'), $reason->value);
         }
     }
 

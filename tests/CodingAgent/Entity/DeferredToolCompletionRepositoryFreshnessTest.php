@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Entity;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
@@ -58,7 +59,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
             orderIndex: 0,
         ));
 
-        $this->assertSame('pending', $this->repository->status($correlation->deferredId));
+        $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $this->repository->status($correlation->deferredId));
         $pending = $this->repository->findByRunAndToolCall($runId, 'call-fresh');
         $this->assertNotNull($pending);
 
@@ -66,7 +67,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
             'deferredId' => $correlation->deferredId,
         ]);
         $this->assertInstanceOf(DeferredToolCompletion::class, $managed);
-        $this->assertSame('pending', $managed->status);
+        $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $managed->status);
 
         $this->connection->executeStatement(
             'UPDATE tool_deferred_completion
@@ -79,14 +80,14 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
             ],
         );
 
-        $this->assertSame('completed', $this->repository->status($correlation->deferredId));
+        $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $this->repository->status($correlation->deferredId));
         $this->assertNull($this->repository->findByRunAndToolCall($runId, 'call-fresh'));
         $metadata = $this->repository->findMetadataByDeferredId($correlation->deferredId);
         $this->assertNotNull($metadata);
-        $this->assertSame('completed', $metadata->status);
+        $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $metadata->status);
         $this->assertSame($runId, $metadata->reference->runId);
         $this->assertSame('call-fresh', $metadata->reference->toolCallId);
-        $this->assertSame('pending', $managed->status);
+        $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $managed->status);
         $this->assertTrue($this->entityManager->contains($managed));
     }
 
@@ -111,7 +112,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
             'deferredId' => $correlation->deferredId,
         ]);
         $this->assertInstanceOf(DeferredToolCompletion::class, $managed);
-        $this->assertSame('pending', $managed->status);
+        $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $managed->status);
 
         // External writer completes the row while this EM still caches pending.
         $this->connection->executeStatement(
@@ -136,7 +137,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
         $this->assertIsArray($row);
         $this->assertSame('completed', $row['status']);
         $this->assertSame('2026-09-16 12:11:00', $row['updated_at']);
-        $this->assertSame('completed', $managed->status);
+        $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $managed->status);
     }
 
     #[Test]

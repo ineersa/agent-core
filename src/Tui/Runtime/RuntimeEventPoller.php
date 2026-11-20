@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
@@ -529,7 +530,7 @@ final class RuntimeEventPoller
         }
         while ([] !== $state->queuedFollowUps) {
             $client->send($state->handle->runId,
-                new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'follow_up', text: $state->queuedFollowUps[0]));
+                new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: UserCommandTypeEnum::FollowUp, text: $state->queuedFollowUps[0]));
             array_shift($state->queuedFollowUps);
             $state->activity = RunActivityStateEnum::Starting;
         }

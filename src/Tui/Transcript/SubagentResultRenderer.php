@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
@@ -48,7 +50,7 @@ final readonly class SubagentResultRenderer
 
         $toolName = $block->meta['tool_name'] ?? null;
 
-        return 'subagent' === $toolName
+        return ChildLaunchToolName::SUBAGENT === $toolName
             || isset($block->meta['subagent_progress'])
             || isset($block->meta['subagent_final']);
     }
@@ -179,7 +181,7 @@ final readonly class SubagentResultRenderer
 
     private function resolveHandoffMarkdown(SubagentProgressSnapshotDTO $progress, string $resultText): string
     {
-        if (!$this->isTerminalCardStatus($this->resolveCardStatus($progress))) {
+        if (true !== RunStatus::tryFrom($progress->status)?->isTerminal()) {
             return '';
         }
 
@@ -188,20 +190,6 @@ final readonly class SubagentResultRenderer
         }
 
         return trim($resultText);
-    }
-
-    private function isTerminalCardStatus(string $status): bool
-    {
-        return \in_array($status, ['completed', 'failed', 'cancelled'], true);
-    }
-
-    private function resolveCardStatus(SubagentProgressSnapshotDTO $progress): string
-    {
-        return match ($progress->status) {
-            'needs_clarification' => 'waiting_human',
-            'starting' => 'running',
-            default => $progress->status,
-        };
     }
 
     private function resolveResultText(TranscriptBlock $block): string

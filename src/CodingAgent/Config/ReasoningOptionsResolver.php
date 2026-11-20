@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Config;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 
 /**
  * Converts a global user-facing reasoning level + Hatfield model metadata
@@ -18,8 +19,6 @@ use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 final readonly class ReasoningOptionsResolver
 {
     /** Reasoning levels that are not "off". */
-    private const array ACTIVE_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
-
     public function __construct(
         private HatfieldModelCatalog $catalog,
     ) {
@@ -34,7 +33,7 @@ final readonly class ReasoningOptionsResolver
     {
         $level = strtolower($level);
 
-        if (!\in_array($level, ['off', ...self::ACTIVE_LEVELS], true)) {
+        if (null === ThinkingLevelEnum::tryFrom($level)) {
             return [];
         }
 

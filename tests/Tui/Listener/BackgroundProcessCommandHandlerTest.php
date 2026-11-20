@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundChildStatusDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
@@ -249,7 +250,7 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $this->confirm();
         $this->assertCount(1, $sent);
         $this->assertSame('owner', $sent[0][0]);
-        $this->assertSame('stop_code_mode', $sent[0][1]->type);
+        $this->assertSame(UserCommandTypeEnum::StopCodeMode, $sent[0][1]->type);
         $this->assertSame(['deferred_id' => 'invocation', 'tool_call_id' => 'host'], $sent[0][1]->payload);
         $this->assertFalse($this->harness->screen()->hasInputOverlay());
     }

@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Contract\CommandConsumptionPolicyInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -171,7 +172,7 @@ final readonly class CommandMailboxPolicy
                     stepId: $stepId,
                     attempt: 1,
                     idempotencyKey: hash('sha256', \sprintf('%s|%s', $state->runId, $stepId)),
-                    trigger: 'manual',
+                    trigger: CompactionTriggerEnum::Manual->value,
                     customInstructions: $customInstructions,
                 );
 
