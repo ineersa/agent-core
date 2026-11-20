@@ -10,6 +10,8 @@ use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInter
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Listener\FooterStateInitializer;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
@@ -36,14 +38,6 @@ final class SubagentLivePickerController
     /** @var list<array{value: string, label: string}> */
     private array $openItems = [];
 
-    /**
-     * Invoked with the previous child run id when leaving/switching away from it.
-     * Listener layer wires question cleanup here (Deptrac: picker must not import TuiQuestion).
-     *
-     * @var ?\Closure(string): void
-     */
-    private readonly ?\Closure $onLeavingChildRun;
-
     /** @var ?\Closure(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
     private readonly ?\Closure $onHumanInputRequested;
 
@@ -56,11 +50,11 @@ final class SubagentLivePickerController
         private readonly ChildRunTranscriptSnapshotProviderInterface $childSnapshotProvider,
         private readonly ChildAgentEventsPathResolverInterface $childEventsPathResolver,
         private readonly SessionEventsExportService $exportService,
+        private readonly QuestionCoordinator $questionCoordinator,
+        private readonly QuestionController $questionController,
         ?\Closure $onHumanInputRequested = null,
-        ?\Closure $onLeavingChildRun = null,
     ) {
         $this->onHumanInputRequested = $onHumanInputRequested;
-        $this->onLeavingChildRun = $onLeavingChildRun;
     }
 
     public function open(): void
@@ -359,12 +353,7 @@ final class SubagentLivePickerController
         if ($state->subagentLiveView->active
             && null !== $state->subagentLiveView->selected
             && $state->subagentLiveView->selected->artifactId === $artifactId) {
-            $leavingRunId = $state->subagentLiveView->selected->agentRunId;
-            if (null !== $this->onLeavingChildRun) {
-                ($this->onLeavingChildRun)($leavingRunId);
-            }
-            SubagentLiveMainReturn::returnToMain($state, $screen, $this->client, requestRender: false);
-            $this->childPoller->resetProjection();
+            SubagentLiveMainReturn::returnToMain($state, $screen, $this->questionCoordinator, $this->questionController, $this->childPoller, $this->client, requestRender: false);
         }
 
         // Remove only the dismissed snapshot row; do not import other catalog updates mid-open.
@@ -393,9 +382,8 @@ final class SubagentLivePickerController
         $previous = $state->subagentLiveView->selected;
         if (null !== $previous && $previous->agentRunId !== $child->agentRunId) {
             // Drop previous child's active/queued HITL before switching visible owner.
-            if (null !== $this->onLeavingChildRun) {
-                ($this->onLeavingChildRun)($previous->agentRunId);
-            }
+            $this->questionCoordinator->removeForRun($previous->agentRunId);
+            $this->questionController->close();
             $client->endObservingChildRun($previous->agentRunId);
             $this->childPoller->resetProjection();
             $state->subagentLiveView->clearProjectedState();

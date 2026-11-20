@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Transcript;
 use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Style\Padding;
@@ -190,36 +191,13 @@ final readonly class TranscriptBlockRenderer
             $groups = [];
         }
 
-        /** @var array<string, list<array{keys: list<string>, action: string, description: string}>> $normalized */
-        $normalized = [];
-        foreach ($groups as $context => $bindings) {
-            if (!\is_string($context) || !\is_array($bindings)) {
-                continue;
-            }
-            $rows = [];
-            foreach ($bindings as $binding) {
-                if (!\is_array($binding)) {
-                    continue;
-                }
-                $keys = $binding['keys'] ?? [];
-                if (!\is_array($keys)) {
-                    $keys = [];
-                }
-                $rows[] = [
-                    'keys' => array_values(array_filter($keys, static fn (mixed $k): bool => \is_string($k))),
-                    'action' => \is_string($binding['action'] ?? null) ? $binding['action'] : '',
-                    'description' => \is_string($binding['description'] ?? null) ? $binding['description'] : '',
-                ];
-            }
-            $normalized[$context] = $rows;
-        }
-
+        /** @var array<string, list<HotkeyBindingDTO>> $groups */
         $emptyMessage = $block->meta['empty_message'] ?? '';
         if (!\is_string($emptyMessage)) {
             $emptyMessage = '';
         }
 
-        return new HotkeyTableWidget($normalized, $emptyMessage);
+        return new HotkeyTableWidget($groups, $emptyMessage);
     }
 
     private function systemStreamingSuffix(TranscriptBlock $block): string

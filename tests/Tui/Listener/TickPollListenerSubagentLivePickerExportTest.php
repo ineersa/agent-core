@@ -18,6 +18,8 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
@@ -109,6 +111,8 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
 
     private function pickerReportingOpen(TuiSessionState $state, ChatScreen $screen): SubagentLivePickerController
     {
+        $questionCoordinator = new QuestionCoordinator();
+        $questionController = new QuestionController($questionCoordinator, $screen);
         $picker = new SubagentLivePickerController(
             new Tui(),
             $screen,
@@ -118,6 +122,8 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             SessionEventsExportServiceFactory::create(),
+            $questionCoordinator,
+            $questionController,
         );
         $overlay = new \Ineersa\Tui\Picker\PickerOverlay();
         $overlayRef = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');

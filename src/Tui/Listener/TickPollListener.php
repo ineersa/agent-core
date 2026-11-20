@@ -116,16 +116,7 @@ final class TickPollListener implements TuiListenerRegistrar
             }
 
             $returnToParent = static function () use ($state, $screen, $client, $questionCoordinator, $questionController, $subagentLiveChildPoller): void {
-                if (!$state->subagentLiveView->active) {
-                    return;
-                }
-                $selected = $state->subagentLiveView->selected;
-                if (null !== $selected) {
-                    $questionCoordinator->removeForRun($selected->agentRunId);
-                    $questionController->close();
-                }
-                SubagentLiveMainReturn::returnToMain($state, $screen, $client);
-                $subagentLiveChildPoller->resetProjection();
+                SubagentLiveMainReturn::returnToMain($state, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $client);
             };
 
             $transcriptChanges = $poller->poll(

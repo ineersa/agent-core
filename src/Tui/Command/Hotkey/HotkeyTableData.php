@@ -14,7 +14,7 @@ use Ineersa\Tui\Command\CommandResult;
  * and stays in the TuiCommand layer so SlashCommandRegistry has zero
  * theme dependencies.
  *
- * SubmitListener stores plain structured groups on a System transcript
+ * SubmitListener stores typed binding groups on a System transcript
  * block; {@see \Ineersa\Tui\Transcript\HotkeyTableWidget} renders them.
  * The empty-message fallback is owned by the widget, not duplicated here.
  */

@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\HotkeyTableWidget;
@@ -50,11 +51,7 @@ final class HotkeyTableWidgetTest extends TestCase
     {
         $widget = new HotkeyTableWidget([
             'Global' => [
-                [
-                    'keys' => ['ctrl+c'],
-                    'action' => 'Clear editor',
-                    'description' => 'Clear or double-exit',
-                ],
+                new HotkeyBindingDTO('Global', ['ctrl+c'], 'Clear editor', 'Clear or double-exit'),
             ],
         ]);
         $output = implode("\n", $this->renderWidget($widget, 100));
@@ -100,11 +97,7 @@ final class HotkeyTableWidgetTest extends TestCase
     {
         $widget = new HotkeyTableWidget([
             'Editor' => [
-                [
-                    'keys' => ['ctrl+shift+enter'],
-                    'action' => 'A very long action name that should truncate',
-                    'description' => 'A very long description that also needs truncation under narrow widths',
-                ],
+                new HotkeyBindingDTO('Editor', ['ctrl+shift+enter'], 'A very long action name that should truncate', 'A very long description that also needs truncation under narrow widths'),
             ],
         ]);
 
@@ -132,7 +125,7 @@ final class HotkeyTableWidgetTest extends TestCase
     {
         $widget = new HotkeyTableWidget([
             'Global' => [
-                ['keys' => ['ctrl+c'], 'action' => 'Cancel', 'description' => 'Interrupt'],
+                new HotkeyBindingDTO('Global', ['ctrl+c'], 'Cancel', 'Interrupt'),
             ],
         ]);
 
@@ -151,11 +144,7 @@ final class HotkeyTableWidgetTest extends TestCase
     {
         $widget = new HotkeyTableWidget([
             'Global' => [
-                [
-                    'keys' => ['ctrl+alt+shift+page_down'],
-                    'action' => 'Do something elaborate',
-                    'description' => 'Needs room',
-                ],
+                new HotkeyBindingDTO('Global', ['ctrl+alt+shift+page_down'], 'Do something elaborate', 'Needs room'),
             ],
         ]);
 
@@ -177,7 +166,7 @@ final class HotkeyTableWidgetTest extends TestCase
                 'style' => 'hotkey-table',
                 'hotkey_groups' => [
                     'Global' => [
-                        ['keys' => ['ctrl+d'], 'action' => 'Exit', 'description' => 'Quit'],
+                        new HotkeyBindingDTO('Global', ['ctrl+d'], 'Exit', 'Quit'),
                     ],
                 ],
                 'empty_message' => '',

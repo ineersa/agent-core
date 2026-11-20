@@ -209,19 +209,7 @@ final class PreviewExpansionInputListenerTest extends TestCase
         }
         $this->assertTrue($found, 'Hotkey catalog must include ctrl+o binding');
 
-        $groupsForWidget = [];
-        foreach ($groups as $context => $bindings) {
-            $groupsForWidget[$context] = array_map(
-                static fn ($b): array => [
-                    'keys' => $b->keys,
-                    'action' => $b->action,
-                    'description' => $b->description,
-                ],
-                $bindings,
-            );
-        }
-
-        $widget = new HotkeyTableWidget($groupsForWidget);
+        $widget = new HotkeyTableWidget($groups);
         $root = new ContainerWidget();
         $root->add($widget);
         $lines = (new Renderer(

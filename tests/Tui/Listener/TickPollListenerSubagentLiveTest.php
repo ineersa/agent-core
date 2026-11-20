@@ -23,6 +23,8 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
@@ -251,6 +253,8 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             new \Psr\Log\NullLogger(),
             SubagentProgressSerializerTestSupport::denormalizer(),
         );
+        $questionCoordinator = new QuestionCoordinator();
+        $questionController = new QuestionController($questionCoordinator, $screen);
         $picker = new \Ineersa\Tui\Picker\SubagentLivePickerController(
             $harness->tui(),
             $screen,
@@ -265,6 +269,8 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             },
             $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface::class),
             SessionEventsExportServiceFactory::create(),
+            $questionCoordinator,
+            $questionController,
         );
 
         $enter = new \ReflectionMethod(\Ineersa\Tui\Picker\SubagentLivePickerController::class, 'enterLiveView');
@@ -280,6 +286,8 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             parentPoller: $poller,
             childPoller: $childPoller,
             subagentLivePicker: $picker,
+            questionCoordinator: $questionCoordinator,
+            questionController: $questionController,
         );
         $context = $this->buildTuiContext()
             ->withTui($harness->tui())
@@ -296,7 +304,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Running, $state->subagentLiveView->childActivity);
         $this->assertSame(SubagentLiveStatusEnum::Running, $state->subagentLiveCatalog->findByArtifactId($artifactId)?->status);
 
-        \Ineersa\Tui\Runtime\SubagentLiveMainReturn::returnToMain($state, $screen, $client);
+        \Ineersa\Tui\Runtime\SubagentLiveMainReturn::returnToMain($state, $screen, $services->questionCoordinator, $services->questionController, $childPoller, $client);
         $this->assertFalse($state->subagentLiveView->active);
 
         $picker->open();

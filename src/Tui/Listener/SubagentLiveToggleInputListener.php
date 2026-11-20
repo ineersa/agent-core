@@ -33,13 +33,7 @@ final class SubagentLiveToggleInputListener implements TuiListenerRegistrar
                 $event->stopPropagation();
 
                 if ($state->subagentLiveView->active) {
-                    $selected = $state->subagentLiveView->selected;
-                    if (null !== $selected) {
-                        $questionCoordinator->removeForRun($selected->agentRunId);
-                        $questionController->close();
-                    }
-                    SubagentLiveMainReturn::returnToMain($state, $screen, $context->client);
-                    $services->childPoller->resetProjection();
+                    SubagentLiveMainReturn::returnToMain($state, $screen, $questionCoordinator, $questionController, $services->childPoller, $context->client);
                     $screen->setWorkingMessage('Returned to main session (Ctrl+\\).');
 
                     return;

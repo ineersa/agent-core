@@ -161,6 +161,8 @@ trait TuiSessionServicesFactoryTrait
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
             SessionEventsExportServiceFactory::create(),
+            $questionCoordinator,
+            $questionController,
         );
 
         return new TuiSessionServices(
