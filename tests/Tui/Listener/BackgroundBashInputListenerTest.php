@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\ChildBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
@@ -129,7 +130,7 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
             self::assertSame($this->visibleRunId, $runId);
             self::assertSame(['record_id' => $process->id, 'tool_call_id' => 'call-visible'], $command->payload);
             self::getContainer()->get(EventDispatcherInterface::class)->dispatch(new ControllerCommandEvent(
-                new RuntimeCommand(id: 'ctrl-b', type: $command->type, runId: $runId, payload: $command->payload),
+                new RuntimeCommand(id: 'ctrl-b', type: $command->type->value, runId: $runId, payload: $command->payload),
                 static function (RuntimeEvent $event): void {
                     self::fail('Valid background target was refused: '.$event->type);
                 },
@@ -275,7 +276,7 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->once())->method('send')->willReturnCallback(static function (string $runId, UserCommand $command) use (&$errors): void {
             self::getContainer()->get(EventDispatcherInterface::class)->dispatch(new ControllerCommandEvent(
-                new RuntimeCommand(id: 'stale', type: $command->type, runId: $runId, payload: $command->payload),
+                new RuntimeCommand(id: 'stale', type: $command->type->value, runId: $runId, payload: $command->payload),
                 static function (RuntimeEvent $event) use (&$errors): void {
                     $errors[] = $event->type;
                 },
@@ -310,7 +311,7 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         $this->startForeground($this->visibleRunId, 'bash-call');
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->once())->method('send')->with($this->visibleRunId, $this->callback(
-            static fn (UserCommand $command): bool => 'background_code_mode' === $command->type
+            static fn (UserCommand $command): bool => UserCommandTypeEnum::BackgroundCodeMode === $command->type
                 && ['deferred_id' => 'invocation', 'tool_call_id' => 'host'] === $command->payload,
         ));
         $harness = $this->mount($this->visibleRunId, $client, snapshot: new BackgroundWorkSnapshotDTO([], [], [new ChildBackgroundCandidateDTO('invocation', 'host', 'code_mode host')]));

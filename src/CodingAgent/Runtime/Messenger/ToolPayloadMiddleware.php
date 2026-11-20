@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
@@ -21,6 +23,7 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
+use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\EnvelopeAwareExceptionInterface;
@@ -74,20 +77,20 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             }
             $this->validate($message);
             $body = $this->locks->synchronized($message->runId(), function () use ($message, $received): ExecuteToolCall|ExecuteShellToolCall|ToolCallResult|CompleteDeferredToolCall|null {
-                if ('run_control' === $received->getTransportName() && null === $message->deferredId && 'result' === $message->reference->kind && 'code_mode' === $message->reference->toolName) {
+                if ('run_control' === $received->getTransportName() && null === $message->deferredId && 'result' === $message->reference->kind && CodeModeTool::NAME === $message->reference->toolName) {
                     $reference = $this->acceptCodeModeResult($message->reference);
                     if (null === $reference) {
                         return null;
                     }
                     $message = new ToolPayloadMessage($reference);
                 }
-                if ('result' === $message->reference->kind && 'code_mode' === $message->reference->toolName && $this->deferred->runRequiresContinuation($message->runId())) {
+                if ('result' === $message->reference->kind && CodeModeTool::NAME === $message->reference->toolName && $this->deferred->runRequiresContinuation($message->runId())) {
                     return null;
                 }
                 if (null !== $message->deferredId) {
                     $metadata = $this->deferredMetadata($message->deferredId);
                     $this->assertDeferredReference($metadata, $message->reference);
-                    if ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, 'run_control' === $received->getTransportName())) {
+                    if (DeferredToolCompletionStatusEnum::Completed === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, 'run_control' === $received->getTransportName())) {
                         $ref = $metadata->reference;
                         $this->deferredHandler->settle($metadata->deferredId, $ref->runId, $ref->turnNo, $ref->stepId);
 
@@ -222,7 +225,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             $this->assertDeferredReference($metadata, $initial->reference);
             // Pending completions must reach owner settlement even when their
             // caller is obsolete. Only completed redelivery is a producer no-op.
-            if ('completed' === $metadata->status) {
+            if (DeferredToolCompletionStatusEnum::Completed === $metadata->status) {
                 return null;
             }
             if (!$this->admission->acceptsDeferred($metadata->reference, false)) {
@@ -255,7 +258,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             $status = null !== $metadata
                 ? $metadata->status
                 : $this->deferred->statusForRunAndToolCall($message->runId(), $message->toolCallId);
-            if ('completed' === $status) {
+            if (DeferredToolCompletionStatusEnum::Completed === $status) {
                 return [null, null];
             }
             $metadata = $this->findEarlyDeferredRegistration($message);
@@ -283,15 +286,15 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             return $incoming;
         }
         $this->assertDeferredReference($metadata, $incoming);
-        if ('completed' === $metadata->status) {
+        if (DeferredToolCompletionStatusEnum::Completed === $metadata->status) {
             return null;
         }
-        if (\in_array($metadata->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true) && (null !== $metadata->backgroundedAt || 'history_discarded' === $metadata->interruptionReason)) {
+        if (true === $metadata->interruptionReason?->preventsContinuation() && (null !== $metadata->backgroundedAt || DeferredToolInterruptionReasonEnum::HistoryDiscarded === $metadata->interruptionReason)) {
             $this->deferred->markCompleted($metadata->deferredId);
 
             return null;
         }
-        if (null === $metadata->backgroundedAt && 'controller_lost' !== $metadata->interruptionReason && !$this->admission->accepts($incoming, $owner)) {
+        if (null === $metadata->backgroundedAt && DeferredToolInterruptionReasonEnum::ControllerLost !== $metadata->interruptionReason && !$this->admission->accepts($incoming, $owner)) {
             return null;
         }
         $reference = $this->deferred->acceptResultReference($metadata->deferredId, $metadata->acceptedResultReference ?? $incoming);
@@ -325,7 +328,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
     private function findEarlyDeferredRegistration(ToolCallResult $message): ?DeferredToolCompletionMetadataDTO
     {
         $metadata = $this->deferred->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
-        if (null === $metadata || 'pending' !== $metadata->status || 'code_mode' !== $metadata->reference->toolName) {
+        if (null === $metadata || DeferredToolCompletionStatusEnum::Pending !== $metadata->status || CodeModeTool::NAME !== $metadata->reference->toolName) {
             return null;
         }
         $stored = $metadata->reference;

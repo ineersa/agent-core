@@ -68,7 +68,7 @@ parameters:
   ruleset:
     AgentCore: [AiPlatform]
     CodingAgent: [AgentCore, ProviderBridge, ExtensionApi, Console, Process, HttpKernel, AiPlatform, McpSdk]
-    TuiBootstrap: [CodingAgent, Tui, Console, SymfonyTui]
+    TuiBootstrap: [CodingAgent, Tui, ExtensionApi, Console, SymfonyTui]
     Tui: [CodingAgent, AgentCore, ExtensionApi, Console, Process, SymfonyTui, AiPlatform]
     ProviderBridge: [AiPlatform]
     ExtensionApi: [SymfonyTui]

@@ -11,6 +11,8 @@ use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
@@ -120,11 +122,11 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             }
         }
         if (!$live) {
-            $deferred->interrupt($call->deferredId, 'controller_lost');
+            $deferred->interrupt($call->deferredId, DeferredToolInterruptionReasonEnum::ControllerLost);
             $deferred->requireContinuation($call->deferredId, true);
         }
         if (null !== $interruption) {
-            $deferred->interrupt($call->deferredId, $interruption);
+            $deferred->interrupt($call->deferredId, DeferredToolInterruptionReasonEnum::from($interruption));
         }
         $specs = [
             ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['messages' => []]],
@@ -149,7 +151,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         if (null !== $interruption) {
             $this->assertSame([], $bus->messages, 'Controller-loss evidence cannot authorize delivery after cancellation or history discard.');
             $this->assertFalse($deferred->runRequiresContinuation($run));
-            $this->assertSame($interruption, $deferred->findMetadataByDeferredId($call->deferredId)->interruptionReason);
+            $this->assertSame(DeferredToolInterruptionReasonEnum::from($interruption), $deferred->findMetadataByDeferredId($call->deferredId)->interruptionReason);
             $this->assertSame(RunStatus::Failed, $store->requireLoaded($run)->status);
 
             return;
@@ -165,8 +167,8 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $results = array_values(array_filter($bus->messages, static fn (object $message): bool => $message instanceof ToolCallResult));
         $this->assertCount(!$completed && ($retained || !$live) ? 1 : 0, $results);
         $metadata = $deferred->findMetadataByDeferredId($call->deferredId);
-        $this->assertSame($completed ? 'completed' : 'pending', $metadata->status, 'Transport dispatch is not durable result admission.');
-        $this->assertSame($live ? null : 'controller_lost', $metadata->interruptionReason);
+        $this->assertSame($completed ? DeferredToolCompletionStatusEnum::Completed : DeferredToolCompletionStatusEnum::Pending, $metadata->status, 'Transport dispatch is not durable result admission.');
+        $this->assertSame($live ? null : DeferredToolInterruptionReasonEnum::ControllerLost, $metadata->interruptionReason);
         if ([] !== $results) {
             if ($retained) {
                 $this->assertEquals($terminal, $results[0]);

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -24,16 +25,16 @@ final readonly class BackgroundBashHandler
     public function __invoke(ControllerCommandEvent $event): void
     {
         $command = $event->command;
-        if (\in_array($command->type, ['background_code_mode', 'stop_code_mode'], true)) {
-            $this->commandBus->dispatch($this->serializer->denormalize(['run_id' => $command->runId, 'deferred_id' => $command->payload['deferred_id'] ?? '', 'tool_call_id' => $command->payload['tool_call_id'] ?? '', 'stop' => 'stop_code_mode' === $command->type], BackgroundCodeModeInvocationDTO::class));
+        if (\in_array($command->type, [UserCommandTypeEnum::BackgroundCodeMode->value, UserCommandTypeEnum::StopCodeMode->value], true)) {
+            $this->commandBus->dispatch($this->serializer->denormalize(['run_id' => $command->runId, 'deferred_id' => $command->payload['deferred_id'] ?? '', 'tool_call_id' => $command->payload['tool_call_id'] ?? '', 'stop' => UserCommandTypeEnum::StopCodeMode->value === $command->type], BackgroundCodeModeInvocationDTO::class));
 
             return;
         }
-        if (!\in_array($command->type, ['background_bash', 'background_child'], true)) {
+        if (!\in_array($command->type, [UserCommandTypeEnum::BackgroundBash->value, UserCommandTypeEnum::BackgroundChild->value], true)) {
             return;
         }
 
-        if ('background_child' === $command->type) {
+        if (UserCommandTypeEnum::BackgroundChild->value === $command->type) {
             $accepted = $this->children->request($command->runId ?? '', $command->payload);
         } else {
             $request = $this->requests->prepare($command->runId ?? '', $command->payload);

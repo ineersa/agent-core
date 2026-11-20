@@ -8,6 +8,7 @@ use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -130,7 +131,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             self::assertNotNull($batches->findByLifecycleId('mixed-batch'));
             self::assertNotNull($children->findByChildRunId('mixed-child'));
             self::assertNull($deferred->statusForRunAndToolCall($parent, 'no-deferred'));
-            self::assertSame('pending', $deferred->findMetadataByDeferredId('mixed-code')?->status);
+            self::assertSame(DeferredToolCompletionStatusEnum::Pending, $deferred->findMetadataByDeferredId('mixed-code')?->status);
             self::assertSame('mixed-code', $deferred->findByRunAndToolCall($parent, 'code-call')?->deferredId);
             self::assertTrue($sessions->exists($parent));
             self::assertContains($parent, array_column($sessions->listSessions(), 'sessionId'));

@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
@@ -106,7 +107,7 @@ final class TuiHistoryProcessVirtualTest extends PerMethodIsolatedKernelTestCase
             $state->handle = $client->start(new StartRunRequest('FIRST_PROMPT', runId: $run, model: 'llama_cpp_test/test'));
             $state->sessionReady = true;
             $this->awaitState($client, $harness, $state, static fn (): bool => RunActivityStateEnum::Completed === $state->activity);
-            $client->send($run, new UserCommand('follow_up', text: 'SECOND_PROMPT'));
+            $client->send($run, new UserCommand(UserCommandTypeEnum::FollowUp, text: 'SECOND_PROMPT'));
             $this->awaitState($client, $harness, $state, static fn (): bool => RunActivityStateEnum::Completed === $state->activity && \in_array('SECOND_ANSWER', array_column($state->transcript, 'text'), true));
             $this->assertStringContainsString('SECOND_ANSWER', $this->visible($harness));
 

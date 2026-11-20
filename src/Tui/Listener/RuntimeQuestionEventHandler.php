@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
@@ -106,7 +107,7 @@ final class RuntimeQuestionEventHandler
                     $boolAnswer = \is_string($answer) && 'yes' === strtolower($answer);
 
                     $client->send($runId, new UserCommand(
-                        type: 'answer_human',
+                        type: UserCommandTypeEnum::AnswerHuman,
                         payload: [
                             'question_id' => $questionId,
                             'answer' => $boolAnswer,
@@ -116,7 +117,7 @@ final class RuntimeQuestionEventHandler
                     $answerStr = \is_scalar($answer) ? (string) $answer : 'cancel';
 
                     $client->send($runId, new UserCommand(
-                        type: 'answer_human',
+                        type: UserCommandTypeEnum::AnswerHuman,
                         payload: [
                             'question_id' => $questionId,
                             'answer' => $answerStr,
@@ -130,7 +131,7 @@ final class RuntimeQuestionEventHandler
             },
             onCancel: static function () use ($client, $runId, $questionId, $sessionState, $screen): void {
                 $client->send($runId, new UserCommand(
-                    type: 'answer_human',
+                    type: UserCommandTypeEnum::AnswerHuman,
                     payload: [
                         'question_id' => $questionId,
                         'answer' => 'Cancelled by user',

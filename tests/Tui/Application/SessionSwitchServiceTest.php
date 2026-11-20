@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Contract\ProcessReloadIntentDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\Tui\Application\TuiSessionSwitchService;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -262,7 +263,7 @@ final class SessionSwitchServiceTest extends TestCase
             ->method('send')
             ->with(
                 'test-run-id',
-                $this->callback(static fn (UserCommand $cmd): bool => 'select_history_turn' === $cmd->type
+                $this->callback(static fn (UserCommand $cmd): bool => UserCommandTypeEnum::SelectHistoryTurn === $cmd->type
                     && ['turn_no' => 3, 'role' => 'user'] === $cmd->payload
                 ),
             );

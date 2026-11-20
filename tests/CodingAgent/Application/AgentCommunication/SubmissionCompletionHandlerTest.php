@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Application\AgentCommunication;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\AcceptSubmissionDTO;
@@ -34,7 +35,7 @@ final class SubmissionCompletionHandlerTest extends IsolatedKernelTestCase
         $reply = array_find($transport->getSent(), static fn ($envelope): bool => $envelope->getMessage() instanceof CompleteSubmissionDTO);
         Assert::assertNotNull($reply);
         $bus->dispatch($reply->with(new ReceivedStamp('run_control')));
-        Assert::assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($receipt->identity));
+        Assert::assertSame(DeferredToolCompletionStatusEnum::Completed, $c->get(DeferredToolCompletionRepositoryInterface::class)->status($receipt->identity));
         $f->append($f->child, 5, 1, 'agent_end', ['reason' => 'completed']);
         $f->status($f->child, RunStatus::Completed);
         $active->release($f->child);
@@ -60,7 +61,7 @@ final class SubmissionCompletionHandlerTest extends IsolatedKernelTestCase
         $reply = $transport->getSent()[0];
         $transport->reset();
         $bus->dispatch($reply->with(new ReceivedStamp('run_control')));
-        Assert::assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($receipt->identity));
+        Assert::assertSame(DeferredToolCompletionStatusEnum::Completed, $c->get(DeferredToolCompletionRepositoryInterface::class)->status($receipt->identity));
         $sent = $c->get('messenger.transport.run_control')->getSent();
         Assert::assertCount(1, $sent);
         Assert::assertInstanceOf(ToolPayloadMessage::class, $sent[0]->getMessage());

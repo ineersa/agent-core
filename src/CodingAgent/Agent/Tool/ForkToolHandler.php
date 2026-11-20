@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionServiceInterface;
@@ -15,7 +16,7 @@ use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 final class ForkToolHandler
 {
-    public const string NAME = 'fork';
+    public const string NAME = ChildLaunchToolName::FORK;
 
     public const string DESCRIPTION = 'Launch a child agent with a copy of the current conversation context. By default, wait for completion and return its handoff. Set backgrounded=true to continue other work while the fork runs; you will be notified when it finishes. Do not poll for completion.';
 

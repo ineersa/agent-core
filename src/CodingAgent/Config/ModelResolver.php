@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -28,8 +29,6 @@ use Psr\Log\LoggerInterface;
 final class ModelResolver
 {
     /** Valid reasoning levels. */
-    public const LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
-
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly HatfieldSessionStore $sessionMetaStore,
@@ -232,12 +231,12 @@ final class ModelResolver
     {
         $catalog = $this->appConfig->catalog;
         if (null === $catalog) {
-            return self::LEVELS;
+            return ThinkingLevelEnum::values();
         }
 
         $model = $this->getCurrentModel($sessionId);
         if (null === $model) {
-            return self::LEVELS;
+            return ThinkingLevelEnum::values();
         }
 
         $def = $catalog->getModel($model);

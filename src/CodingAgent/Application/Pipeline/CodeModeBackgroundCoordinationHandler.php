@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
@@ -43,7 +44,7 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
         $this->transactions->transactional(function () use ($action): void {
             if (null !== $action->continuationRequired) {
                 $metadata = $this->deferred->findMetadataByDeferredId($action->deferredId);
-                if ($action->continuationRequired && \in_array($metadata?->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true)) {
+                if ($action->continuationRequired && true === $metadata?->interruptionReason?->preventsContinuation()) {
                     $this->deferred->markCompleted($action->deferredId);
                     $this->deferred->requireContinuation($action->deferredId, false);
 
@@ -60,7 +61,7 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
                 $this->deferred->interrupt($action->deferredId, $action->interruptionReason);
                 // A retained terminal needs no future worker delivery to retire
                 // an explicitly abandoned invocation. A live host stays pending.
-                if ('controller_lost' !== $action->interruptionReason && null !== $this->deferred->findMetadataByDeferredId($action->deferredId)?->acceptedResultReference) {
+                if (DeferredToolInterruptionReasonEnum::ControllerLost !== $action->interruptionReason && null !== $this->deferred->findMetadataByDeferredId($action->deferredId)?->acceptedResultReference) {
                     $this->deferred->markCompleted($action->deferredId);
                 }
 
@@ -104,7 +105,7 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
     public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
     {
         $reason = \in_array(RunEventTypeEnum::HistoryTailDiscarded->value, array_column($context->events, 'type'), true)
-            ? 'history_discarded' : (\in_array($context->status, ['cancelling', 'cancelled'], true) ? 'cancelled' : null);
+            ? DeferredToolInterruptionReasonEnum::HistoryDiscarded : (\in_array($context->status, ['cancelling', 'cancelled'], true) ? DeferredToolInterruptionReasonEnum::Cancelled : null);
         if (null === $reason) {
             return [];
         }
@@ -128,7 +129,7 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
         foreach ($this->owners->forOwner($root) as $run) {
             $this->locks->synchronized($run, function () use ($run): void {
                 foreach ($this->deferred->controllerLossIdentities($run) as $id) {
-                    $this(new MarkCodeModeBackgroundedDTO($id, new \DateTimeImmutable(), 'controller_lost', true));
+                    $this(new MarkCodeModeBackgroundedDTO($id, new \DateTimeImmutable(), DeferredToolInterruptionReasonEnum::ControllerLost, true));
                 }
             });
         }

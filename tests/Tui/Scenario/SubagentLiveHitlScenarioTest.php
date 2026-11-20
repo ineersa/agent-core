@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Scenario;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
@@ -44,7 +45,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $last = $h->client->lastSend();
         $this->assertNotNull($last);
         $this->assertSame(self::CHILD_RUN, $last['runId']);
-        $this->assertSame('answer_human', $last['command']->type);
+        $this->assertSame(UserCommandTypeEnum::AnswerHuman, $last['command']->type);
         $this->assertNull($h->statusText('subagent_live'));
 
         $h->ingestChildProgress(self::ARTIFACT, self::CHILD_RUN, 'completed');
@@ -81,8 +82,8 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $last = $h->client->lastSend();
         $this->assertNotNull($last);
         $this->assertSame(self::PARENT_RUN, $last['runId']);
-        $this->assertContains($last['command']->type, ['steer', 'follow_up', 'message']);
-        $this->assertNotSame('answer_human', $last['command']->type);
+        $this->assertContains($last['command']->type, [UserCommandTypeEnum::Steer, UserCommandTypeEnum::FollowUp, UserCommandTypeEnum::Message]);
+        $this->assertNotSame(UserCommandTypeEnum::AnswerHuman, $last['command']->type);
     }
 
     #[Test]
@@ -139,7 +140,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $last = $h->client->lastSend();
         $this->assertNotNull($last);
         $this->assertSame(self::PARENT_RUN, $last['runId']);
-        $this->assertSame('answer_human', $last['command']->type);
+        $this->assertSame(UserCommandTypeEnum::AnswerHuman, $last['command']->type);
         $this->assertSame('docs/agents.md', $last['command']->payload['answer'] ?? null);
     }
 
@@ -244,7 +245,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $this->assertSame(self::CHILD_RUN, $h->questionCoordinator->activeRequest()?->runId);
         $answerOps = array_filter(
             $h->client->ops,
-            static fn (array $o): bool => 'send' === ($o['op'] ?? '') && 'answer_human' === ($o['command']->type ?? null),
+            static fn (array $o): bool => 'send' === ($o['op'] ?? '') && UserCommandTypeEnum::AnswerHuman === ($o['command']->type ?? null),
         );
         $this->assertCount(0, $answerOps);
 

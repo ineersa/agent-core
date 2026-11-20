@@ -10,6 +10,8 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
+use Ineersa\CodingAgent\Agent\Tool\NotifyParentTool;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\SubmissionInputDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\SubmissionReceiptDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -47,7 +49,7 @@ final readonly class SubmissionFactory
     /** @param array<string, mixed> $arguments */
     public function prepare(string $runId, int $turnNo, string $stepId, string $toolCallId, string $toolName, array $arguments): SubmissionReceiptDTO
     {
-        if (!\in_array($toolName, ['agent_steer', 'notify_parent'], true)) {
+        if (!\in_array($toolName, [AgentSteerTool::NAME, NotifyParentTool::NAME], true)) {
             throw new ToolCallException('Unsupported agent communication tool.', retryable: false);
         }
         $input = $this->denormalizer->denormalize($arguments, SubmissionInputDTO::class, context: [AbstractNormalizer::ALLOW_EXTRA_ATTRIBUTES => false]);
@@ -60,7 +62,7 @@ final readonly class SubmissionFactory
             || RunStatus::Running !== $this->statuses->findOperationalStatus($runId)?->status) {
             throw new ToolCallException('Agent submission source invocation is no longer active.', retryable: false);
         }
-        if ('agent_steer' === $toolName) {
+        if (AgentSteerTool::NAME === $toolName) {
             if ((null === $input->artifact_id) === (null === $input->agent_run_id)) {
                 throw new ToolCallException('agent_steer requires exactly one child handle.', retryable: false);
             }
@@ -82,7 +84,7 @@ final readonly class SubmissionFactory
             $child = $this->children->findByChildRunId($runId);
         }
         $batch = null === $child ? null : $this->batches->findByLifecycleId($child->batchLifecycleId);
-        if (null === $child || null === $batch || ('agent_steer' === $toolName && $batch->parentRunId !== $runId)
+        if (null === $child || null === $batch || (AgentSteerTool::NAME === $toolName && $batch->parentRunId !== $runId)
             || null !== $batch->interruptionKind || null !== $batch->completionSource || null !== $batch->terminalCompletionEnqueuedAt
             || !$this->artifacts->belongsToCurrentParentLifetime($batch->parentRunId, $child->artifactId)) {
             throw new ToolCallException('Direct child activity is no longer authorized.', retryable: false);
@@ -93,7 +95,7 @@ final readonly class SubmissionFactory
         }
         $parentStatus = $this->statuses->findOperationalStatus($batch->parentRunId)?->status;
         $allowedParent = \in_array($parentStatus, [RunStatus::Running, RunStatus::WaitingHuman, RunStatus::Compacting], true)
-            || ('notify_parent' === $toolName && RunStatus::Completed === $parentStatus && null !== $batch->backgroundedAt);
+            || (NotifyParentTool::NAME === $toolName && RunStatus::Completed === $parentStatus && null !== $batch->backgroundedAt);
         // Detached children can outlive their originating step, but never the
         // selected canonical ancestry. This lookup does not reconstruct RunState.
         $origin = $this->invocations->find($batch->parentRunId, $batch->parentToolCallId, requireCurrentStep: false);

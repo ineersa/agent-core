@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
+use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -274,7 +275,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     stepId: $compactStepId,
                     attempt: 1,
                     idempotencyKey: hash('sha256', \sprintf('%s|compact|%d|%s', $runId, $compactRequestTurnNo, $compactStepId)),
-                    trigger: 'auto',
+                    trigger: CompactionTriggerEnum::Auto->value,
                     continueAfterCompaction: true,
                 );
 
@@ -291,7 +292,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                             'turn_no' => $nextTurnNo,
                             'request_idempotency_key' => $compactEffect->idempotencyKey(),
                             'advance_idempotency_key' => $message->idempotencyKey(),
-                            'trigger' => 'auto',
+                            'trigger' => CompactionTriggerEnum::Auto->value,
                         ],
                     ],
                 ];

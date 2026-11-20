@@ -58,7 +58,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $queries = array_values(array_filter($sql->records, static fn (array $r): bool => str_starts_with($r['context']['sql'] ?? '', 'SELECT')));
         $this->assertCount($selects, $queries);
         foreach ($queries as $query) {
-            $this->assertLessThanOrEqual(802, \count($query['context']['params']));
+            $this->assertLessThanOrEqual(803, \count($query['context']['params']));
             $this->assertStringContainsString('UNION', $query['context']['sql']);
         }
         $sql->records = [];

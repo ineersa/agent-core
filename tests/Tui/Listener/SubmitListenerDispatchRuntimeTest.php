@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -174,7 +175,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             ->with(
                 'run-1',
                 $this->callback(static function (UserCommand $cmd): bool {
-                    return 'steer' === $cmd->type && '/review foo' === $cmd->text;
+                    return UserCommandTypeEnum::Steer === $cmd->type && '/review foo' === $cmd->text;
                 }),
             );
 
@@ -191,7 +192,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->client->expects($this->once())
             ->method('send')
             ->with('run-1', $this->callback(static function (UserCommand $cmd): bool {
-                return 'steer' === $cmd->type;
+                return UserCommandTypeEnum::Steer === $cmd->type;
             }));
 
         $this->dispatchSubmit('/review steer');
@@ -256,8 +257,8 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $poller->poll($this->state, $this->client);
 
         $this->assertSame([
-            ['run-1', 'follow_up', 'Add regression tests.'],
-            ['run-1', 'follow_up', 'Also update the docs.'],
+            ['run-1', UserCommandTypeEnum::FollowUp, 'Add regression tests.'],
+            ['run-1', UserCommandTypeEnum::FollowUp, 'Also update the docs.'],
         ], $sent);
     }
 
@@ -300,7 +301,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             $this->state->lastPoll = 0.0;
             $poller->poll($this->state, $this->client);
         }
-        $this->assertSame([['follow_up', 'Continue after compaction.']], $sent);
+        $this->assertSame([[UserCommandTypeEnum::FollowUp, 'Continue after compaction.']], $sent);
         $this->assertSame([], $this->state->queuedFollowUps);
         $this->assertSame('Previously restored input', $this->state->pendingEditorRestoreText);
         $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
@@ -369,7 +370,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             ->with(
                 'run-1',
                 $this->callback(static function (UserCommand $cmd): bool {
-                    return 'follow_up' === $cmd->type && '/review follow' === $cmd->text;
+                    return UserCommandTypeEnum::FollowUp === $cmd->type && '/review follow' === $cmd->text;
                 }),
             );
 
@@ -389,7 +390,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->client->expects($this->once())
             ->method('send')
             ->with('run-1', $this->callback(static function (UserCommand $cmd): bool {
-                return 'follow_up' === $cmd->type;
+                return UserCommandTypeEnum::FollowUp === $cmd->type;
             }));
 
         $this->dispatchSubmit('/review idle');
@@ -519,8 +520,13 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $appConfig = self::footerAppConfig($this->tempCwd);
         $homeDir = $this->tempCwd.'/home';
-        mkdir($homeDir.'/.hatfield', 0777, true);
-        file_put_contents($homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: default\n");
+        $settingsDir = $homeDir.'/.hatfield';
+        TestDirectoryIsolation::ensureDirectory($settingsDir);
+        $this->assertSame($settingsDir, realpath($settingsDir));
+        $settingsPath = $settingsDir.'/settings.yaml';
+        $this->assertFileDoesNotExist($settingsPath);
+        $this->assertFalse(is_link($settingsPath));
+        file_put_contents($settingsPath, "tui:\n    theme: default\n");
         $pathResolver = new \Ineersa\CodingAgent\Config\SettingsPathResolver($this->tempCwd, $homeDir);
         $homeWriter = new \Ineersa\CodingAgent\Config\SettingsOverrideWriter(
             $pathResolver,
@@ -649,7 +655,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->client->expects($this->once())
             ->method('send')
             ->with('run-1', $this->callback(static function (UserCommand $cmd): bool {
-                return 'follow_up' === $cmd->type && 'hello again' === $cmd->text;
+                return UserCommandTypeEnum::FollowUp === $cmd->type && 'hello again' === $cmd->text;
             }));
 
         $this->dispatchSubmit('hello again');
@@ -670,7 +676,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             ->with(
                 'run-completed',
                 $this->callback(static function (UserCommand $cmd): bool {
-                    return 'shell_command' === $cmd->type
+                    return UserCommandTypeEnum::ShellCommand === $cmd->type
                         && '!ls -1' === $cmd->text
                         && [] === $cmd->payload;
                 }),
@@ -691,7 +697,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             ->with(
                 'run-active',
                 $this->callback(static function (UserCommand $cmd): bool {
-                    return 'shell_command' === $cmd->type
+                    return UserCommandTypeEnum::ShellCommand === $cmd->type
                         && '!pwd' === $cmd->text
                         && [] === $cmd->payload;
                 }),
@@ -725,7 +731,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 runId: $parentRunId),
             onAnswer: static function (mixed $answer) use ($client, $parentRunId): void {
                 $client->send($parentRunId, new UserCommand(
-                    type: 'answer_human',
+                    type: UserCommandTypeEnum::AnswerHuman,
                     payload: [
                         'question_id' => 'q_docs_parent',
                         'answer' => \is_scalar($answer) ? (string) $answer : 'cancel',
@@ -737,7 +743,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->dispatchSubmit('docs/agents.md');
 
         $this->assertNotNull($sent);
-        $this->assertSame('answer_human', $sent[1]->type);
+        $this->assertSame(UserCommandTypeEnum::AnswerHuman, $sent[1]->type);
         $this->assertSame('q_docs_parent', $sent[1]->payload['question_id'] ?? null);
         $this->assertSame('docs/agents.md', $sent[1]->payload['answer'] ?? null);
         $this->assertFalse($this->questionCoordinator->actionRequired());

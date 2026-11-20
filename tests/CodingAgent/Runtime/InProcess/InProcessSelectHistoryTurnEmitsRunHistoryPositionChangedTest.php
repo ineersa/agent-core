@@ -22,6 +22,7 @@ use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -100,7 +101,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
         $sink = new InMemoryRuntimeEventSink();
 
         $this->client($eventStore, $historySelectionService, $sink, $activeRunContext)->send(self::RUN_ID, new UserCommand(
-            type: 'select_history_turn',
+            type: UserCommandTypeEnum::SelectHistoryTurn,
             payload: ['turn_no' => 1],
         ));
 

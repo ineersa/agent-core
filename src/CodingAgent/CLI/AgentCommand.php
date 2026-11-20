@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\CLI;
 
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
-use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Controller\HeadlessController;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
@@ -22,6 +22,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use Ineersa\Tui\Application\InteractiveMode;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -254,8 +255,8 @@ final class AgentCommand
     {
         // Validate explicit reasoning before any write so a later reasoning
         // failure cannot leave a partially applied model override.
-        if ('' !== $reasoning && !\in_array($reasoning, ModelResolver::LEVELS, true)) {
-            throw new \InvalidArgumentException(\sprintf('Invalid reasoning level "%s". Valid levels: %s.', $reasoning, implode(', ', ModelResolver::LEVELS)));
+        if ('' !== $reasoning && null === ThinkingLevelEnum::tryFrom($reasoning)) {
+            throw new \InvalidArgumentException(\sprintf('Invalid reasoning level "%s". Valid levels: %s.', $reasoning, implode(', ', ThinkingLevelEnum::values())));
         }
 
         if ('' !== $model) {
@@ -413,7 +414,7 @@ final class AgentCommand
 
         $client = $this->inProcessClient;
         $client->send($runId, new UserCommand(
-            type: 'message',
+            type: UserCommandTypeEnum::Message,
             text: (string) ($command->payload['text'] ?? ''),
         ));
 

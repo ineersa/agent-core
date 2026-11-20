@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
@@ -80,7 +81,7 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
     {
         $this->writeTemplate('review', 'Review: $@');
 
-        $this->client()->send('run-1', new UserCommand(type: 'message', text: '/review foo bar'));
+        $this->client()->send('run-1', new UserCommand(type: UserCommandTypeEnum::Message, text: '/review foo bar'));
 
         $this->assertCount(1, $this->spyRunner->steerMessages);
         $this->assertSame('Review: foo bar', $this->msgText($this->spyRunner->steerMessages[0]));
@@ -90,7 +91,7 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
     {
         $this->writeTemplate('review', 'Review: $@');
 
-        $this->client()->send('run-1', new UserCommand(type: 'steer', text: '/review baz'));
+        $this->client()->send('run-1', new UserCommand(type: UserCommandTypeEnum::Steer, text: '/review baz'));
 
         $this->assertCount(1, $this->spyRunner->steerMessages);
         $this->assertSame('Review: baz', $this->msgText($this->spyRunner->steerMessages[0]));
@@ -100,7 +101,7 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
     {
         $this->writeTemplate('review', 'Follow-up: $@');
 
-        $this->client()->send('run-1', new UserCommand(type: 'follow_up', text: '/review qux'));
+        $this->client()->send('run-1', new UserCommand(type: UserCommandTypeEnum::FollowUp, text: '/review qux'));
 
         $this->assertCount(1, $this->spyRunner->followUpMessages);
         $this->assertSame('Follow-up: qux', $this->msgText($this->spyRunner->followUpMessages[0]));
@@ -111,7 +112,7 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
         $this->writeTemplate('review', 'expanded:$@');
 
         $this->client()->send('run-1', new UserCommand(
-            type: 'answer_human',
+            type: UserCommandTypeEnum::AnswerHuman,
             text: '/review yes',
             payload: ['question_id' => 'q1', 'answer' => true],
         ));
@@ -128,7 +129,7 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
         $this->writeTemplate('review', 'expanded:$@');
 
         // Non-matching slash command passes through unchanged.
-        $this->client()->send('run-1', new UserCommand(type: 'message', text: '/nonexistent foo'));
+        $this->client()->send('run-1', new UserCommand(type: UserCommandTypeEnum::Message, text: '/nonexistent foo'));
 
         $this->assertCount(1, $this->spyRunner->steerMessages);
         $this->assertSame('/nonexistent foo', $this->msgText($this->spyRunner->steerMessages[0]));
@@ -143,7 +144,7 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
         // shell_command text must NOT be expanded — the raw command
         // text is passed to the tool executor unchanged.
         $this->client()->send('run-1', new UserCommand(
-            type: 'shell_command',
+            type: UserCommandTypeEnum::ShellCommand,
             text: '!review rm -rf',
         ));
 

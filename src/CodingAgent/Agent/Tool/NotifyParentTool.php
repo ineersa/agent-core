@@ -17,6 +17,8 @@ use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 final readonly class NotifyParentTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'notify_parent';
+
     public function __construct(private StackToolExecutionContextAccessor $context, private SubmissionFactory $submissions, private ToolRuntime $runtime)
     {
     }
@@ -35,7 +37,7 @@ final readonly class NotifyParentTool implements HatfieldToolProviderInterface
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'notify_parent',
+            name: self::NAME,
             description: 'Child-only: send a short notice to your runtime-recorded parent for the current child activity. Returns a persisted source receipt, not confirmation of delivery or attention. Does not settle the parent tool call or replace your final handoff.',
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,

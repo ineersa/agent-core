@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Session\History;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\ReplayLifecycleStatus;
+use Ineersa\AgentCore\Domain\Event\AgentCommandKindEnum;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -105,7 +106,7 @@ final class RunPresentationProjector
                 if ('shell_command' === $kind && \is_string($payload['idempotency_key'] ?? null) && '' !== $payload['idempotency_key']) {
                     $this->shells['sh_'.hash('sha256', $payload['idempotency_key'])] = true;
                 }
-                $append = \in_array($kind, ['steer', 'follow_up', 'append_message'], true);
+                $append = true === AgentCommandKindEnum::fromPayload($kind)?->appendsMessage();
                 if ($append) {
                     $this->status = RunStatus::Running;
                 } elseif ('cancel' === $kind) {

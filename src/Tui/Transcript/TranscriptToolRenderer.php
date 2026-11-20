@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
+use Ineersa\CodingAgent\Agent\Tool\NotifyParentTool;
 use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -179,7 +181,7 @@ final readonly class TranscriptToolRenderer
 
     private function isCommunicationTool(TranscriptBlock $block): bool
     {
-        return \in_array($block->meta['tool_name'] ?? null, ['agent_steer', 'notify_parent'], true);
+        return \in_array($block->meta['tool_name'] ?? null, [AgentSteerTool::NAME, NotifyParentTool::NAME], true);
     }
 
     private function buildCompactLifecycleWidget(TranscriptBlock $call, ?TranscriptBlock $result, TuiTheme $theme): AbstractWidget
@@ -208,7 +210,7 @@ final readonly class TranscriptToolRenderer
         }
         $target = '';
         if ($communication) {
-            $target = ' → '.('notify_parent' === $name ? 'parent' : 'child');
+            $target = ' → '.(NotifyParentTool::NAME === $name ? 'parent' : 'child');
             $id = $arguments['agent_run_id'] ?? $arguments['artifact_id'] ?? '';
             if (\is_string($id) && '' !== $id) {
                 $target .= ' '.substr(str_starts_with($id, 'agent_') ? substr($id, 6) : $id, 0, 8);

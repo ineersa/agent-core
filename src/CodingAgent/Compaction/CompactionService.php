@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Compaction;
 
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
+use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
@@ -116,7 +117,7 @@ final readonly class CompactionService implements CompactionServiceInterface
         string $runId,
         int $turnNo,
         array $messages,
-        string $trigger = 'manual',
+        string $trigger = CompactionTriggerEnum::Manual->value,
         ?string $customInstructions = null,
         ?string $activeModel = null,
     ): MessageSnapshotCompactionResult {

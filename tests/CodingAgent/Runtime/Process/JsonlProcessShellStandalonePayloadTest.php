@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationB
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
@@ -131,7 +132,7 @@ PHP);
         ));
 
         $client->send($runId, new UserCommand(
-            type: 'shell_command',
+            type: UserCommandTypeEnum::ShellCommand,
             text: '!ls -1',
         ));
 

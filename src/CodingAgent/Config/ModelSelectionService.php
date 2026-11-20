@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 
 /**
  * Central model/reasoning selection with four-tier priority and persistence.
@@ -126,7 +127,7 @@ final class ModelSelectionService
     /**
      * Change the reasoning level for the current session.
      *
-     * Validates against {@see ModelResolver::LEVELS} before any write.
+     * Validates against the Hatfield thinking levels before any write.
      *
      * @throws \InvalidArgumentException If the level is not a valid reasoning level
      */
@@ -388,15 +389,15 @@ final class ModelSelectionService
     /**
      * Persist the reasoning level to home settings and session metadata.
      *
-     * Validates against ModelResolver::LEVELS before any write.
+     * Validates against the Hatfield thinking levels before any write.
      * YAML is written before session metadata.
      *
      * @throws \InvalidArgumentException If the level is not a valid reasoning level
      */
     private function persistReasoning(string $level, string $sessionId): void
     {
-        if (!\in_array($level, ModelResolver::LEVELS, true)) {
-            throw new \InvalidArgumentException(\sprintf('Invalid reasoning level "%s". Valid levels: %s.', $level, implode(', ', ModelResolver::LEVELS)));
+        if (null === ThinkingLevelEnum::tryFrom($level)) {
+            throw new \InvalidArgumentException(\sprintf('Invalid reasoning level "%s". Valid levels: %s.', $level, implode(', ', ThinkingLevelEnum::values())));
         }
 
         // User-layer path ignores $cwd; pass empty string.

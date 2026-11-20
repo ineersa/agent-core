@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -65,7 +66,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $oldMounts = $mounts;
             $localInput = $state->queuedFollowUps = ['Locally queued input'];
             $harness->screen()->promptEditor()->replaceText('Preserved editor draft');
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
             // No explicit attach, fake client, or recovery callback: ordinary
             // production polling restarts the owned pipe and adopts its identity.
@@ -78,7 +79,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->assertStringContainsString('Preserved editor draft', $harness->plainScreenText());
             $this->assertSame(['17' => 'Restored pending input'], $state->queuedUserMessages);
             $this->assertExactAck($directory);
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'Live after recovery'));
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'Live after recovery'));
             $this->pumpUntil($client, $state, $harness, $poller, $mount,
                 static fn (): bool => str_contains($harness->plainScreenText(), 'Live after recovery'));
             $this->assertNull($state->bootstrapError);
@@ -137,7 +138,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $state->queuedFollowUps = ['Local parent input'];
             (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/child-run', 'child-42');
             (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/suffix-type', RuntimeEventTypeEnum::RunCancelled->value);
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
             $wait(static fn (): bool => $state->sessionReady && $state->handle->bootstrapRequestId !== $oldRequest
                 && str_contains($harness->plainScreenText(), 'Local parent input'));
@@ -415,7 +416,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         [$client, $directory] = $this->protocolClient('42');
         try {
             $client->start(new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Original prompt', '42'));
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
             $state->handle = $client->attach('42');
             $returnedRequestId = $state->handle->bootstrapRequestId;
@@ -467,7 +468,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $original = $state->handle->bootstrapRequestId;
             (new \Symfony\Component\Filesystem\Filesystem())->dumpFile(
                 $directory.($beforeReady ? '/exit-before-ready' : '/fail-next-spawn'), '2');
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
             $state->lastPoll = 0;
             // Default capture policy handles the real transport failure. No
@@ -523,11 +524,11 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $state->handle = $client->attach('42');
             $this->pumpUntil($client, $state, $harness, $poller, $mount, static fn (): bool => $state->sessionReady);
             $original = $state->handle->bootstrapRequestId;
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'Live after chained recovery'));
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'Live after chained recovery'));
             $this->assertSame($original, $state->handle->bootstrapRequestId);
             $restoring = (new \ReflectionProperty($client, 'pendingSessionRestoring'))->getValue($client);
             $this->assertSame($original, $restoring->payload['previous_command_id']);
@@ -629,7 +630,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->assertNull($state->pendingInitialPrompt);
             $this->assertSame('Original catalog prompt', $store->findSession($runId)->prompt);
             $oldRequest = $state->handle->bootstrapRequestId;
-            $client->send($runId, new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $client->send($runId, new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
             $this->pumpUntil($client, $state, $harness, $poller,
                 static function () use ($state, $harness): void { $harness->screen()->setTranscriptBlocks($state->transcript); },
@@ -928,9 +929,9 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
     private function restartReturnedAttachBeforePolling(\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient $client, TuiSessionState $state): void
     {
         $returnedId = $state->handle->bootstrapRequestId;
-        $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+        $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
         $this->awaitPeerExit($client);
-        $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'Live after returned attach'));
+        $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'Live after returned attach'));
         $this->assertSame($returnedId, $state->handle->bootstrapRequestId);
         $restoring = (new \ReflectionProperty($client, 'pendingSessionRestoring'))->getValue($client);
         $this->assertSame($returnedId, $restoring->payload['previous_command_id']);

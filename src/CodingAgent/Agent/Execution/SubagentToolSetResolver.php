@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
+use Ineersa\CodingAgent\Agent\Tool\NotifyParentTool;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 
 /**
@@ -50,15 +52,15 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
         if (null === $allowedTools) {
             // Only a recorded child can address a runtime-derived parent.
             return new ActiveToolSet(
-                toolNames: array_values(array_diff($inner->toolNames, ['notify_parent'])),
-                allowListNames: array_values(array_diff($inner->allowListNames, ['notify_parent'])),
-                executionModes: array_diff_key($inner->executionModes, ['notify_parent' => true]),
-                timeoutSeconds: array_diff_key($inner->timeoutSeconds, ['notify_parent' => true]),
+                toolNames: array_values(array_diff($inner->toolNames, [NotifyParentTool::NAME])),
+                allowListNames: array_values(array_diff($inner->allowListNames, [NotifyParentTool::NAME])),
+                executionModes: array_diff_key($inner->executionModes, [NotifyParentTool::NAME => true]),
+                timeoutSeconds: array_diff_key($inner->timeoutSeconds, [NotifyParentTool::NAME => true]),
             );
         }
 
         // Older child metadata cannot enable parent-only steering either.
-        $allowedTools = array_values(array_diff($allowedTools, ['agent_steer']));
+        $allowedTools = array_values(array_diff($allowedTools, [AgentSteerTool::NAME]));
 
         // Intersect the inner toolset with the child's allowed tools.
         $allowedLookup = array_flip($allowedTools);

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
+use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
+use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
+use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 
@@ -51,7 +54,7 @@ final readonly class AgentToolPolicyResolver
         // Neither inherit-all nor explicit lists can reintroduce these tools.
         $tools = array_values(array_filter(
             $tools,
-            fn (string $name): bool => !\in_array($name, ['subagent', 'fork', 'agent_resume', 'agent_steer'], true) && !($this->toolRegistry->toolDefinition($name)->mainOnly ?? false),
+            fn (string $name): bool => !\in_array($name, [ChildLaunchToolName::SUBAGENT, ChildLaunchToolName::FORK, AgentResumeToolHandler::NAME, AgentSteerTool::NAME], true) && !($this->toolRegistry->toolDefinition($name)->mainOnly ?? false),
         ));
 
         // Parent-only tools (hatfield_docs, …) are stripped for every child,

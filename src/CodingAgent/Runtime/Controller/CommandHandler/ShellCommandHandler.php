@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -34,7 +35,7 @@ final readonly class ShellCommandHandler
     public function __invoke(ControllerCommandEvent $event): void
     {
         $command = $event->command;
-        if ('shell_command' !== $command->type) {
+        if (UserCommandTypeEnum::ShellCommand->value !== $command->type) {
             return;
         }
 

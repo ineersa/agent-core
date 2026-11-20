@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\ClearTranscript;
@@ -434,12 +435,12 @@ final class SubmitListener implements TuiListenerRegistrar
                 } elseif ($state->activity->isActive()) {
                     $client->send(
                         $state->handle->runId,
-                        new UserCommand(type: 'steer', text: $text),
+                        new UserCommand(type: UserCommandTypeEnum::Steer, text: $text),
                     );
                 } else {
                     $client->send(
                         $state->handle->runId,
-                        new UserCommand(type: 'follow_up', text: $text),
+                        new UserCommand(type: UserCommandTypeEnum::FollowUp, text: $text),
                     );
                     // Transition to Starting so that subsequent submits
                     // while the agent picks up the follow_up use steer.
@@ -613,7 +614,7 @@ final class SubmitListener implements TuiListenerRegistrar
                 // payload must not carry standalone or dual text fields.
                 $client->send(
                     $state->handle->runId,
-                    new UserCommand(type: 'shell_command', text: $shellCommand->rawInput),
+                    new UserCommand(type: UserCommandTypeEnum::ShellCommand, text: $shellCommand->rawInput),
                 );
 
                 // The controller must NEVER write AgentEnd for shell commands.

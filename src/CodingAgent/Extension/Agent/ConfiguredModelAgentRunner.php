@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Agent;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
@@ -90,7 +91,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         $cancelToken = new NullCancellationToken();
         $resolutionValues = [];
         if (null !== $request->thinkingLevel) {
-            $resolutionValues['thinking_level'] = $request->thinkingLevel;
+            $resolutionValues['thinking_level'] = $request->thinkingLevel->value;
         }
         $resolvedModel = $this->modelResolver->resolve(
             $request->model,
@@ -125,7 +126,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         );
 
         $options = ['stream' => true];
-        if ('off' === $request->thinkingLevel) {
+        if (ThinkingLevelEnum::Off === $request->thinkingLevel) {
             // Explicit per-call off only (Dropper). Do not infer from session/default
             // reasoning=off, and do not invent provider engines from ids.
             $options = array_replace($options, $this->explicitThinkingOffProviderOptions($request->model));
@@ -141,7 +142,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             'tool_count' => \count($request->tools),
             'step_id' => $stepId,
             'max_duration_seconds' => $request->maxDurationSeconds,
-            'thinking_level' => $request->thinkingLevel,
+            'thinking_level' => $request->thinkingLevel?->value,
         ]);
 
         LlmInvocationCancelScope::enter($cancelToken, $request->sessionId);

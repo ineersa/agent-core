@@ -26,6 +26,10 @@ use Symfony\Component\Tui\Widget\TextWidget;
  */
 final class HistoryPickerController
 {
+    private const string OLDER = 'older';
+    private const string NEWER = 'newer';
+    private const string ASSISTANT_PREFIX = 'assistant:';
+
     private ?PickerOverlay $overlay = null;
 
     public function __construct(
@@ -81,12 +85,12 @@ final class HistoryPickerController
         $listWidget->onSelect(static function (SelectEvent $event) use ($picker, $switcher, $history): void {
             $value = $event->getItem()['value'];
             $picker->closePicker();
-            if ('older' === $value) {
+            if (self::OLDER === $value) {
                 $picker->open(before: $history->olderBefore);
-            } elseif ('newer' === $value) {
+            } elseif (self::NEWER === $value) {
                 $picker->open(after: $history->newerAfter);
-            } elseif (str_starts_with($value, 'assistant:')) {
-                $switcher->selectHistoryTurn((int) substr($value, 10), 'assistant');
+            } elseif (str_starts_with($value, self::ASSISTANT_PREFIX)) {
+                $switcher->selectHistoryTurn((int) substr($value, \strlen(self::ASSISTANT_PREFIX)), 'assistant');
             } else {
                 $switcher->selectHistoryTurn((int) $value);
             }
@@ -112,7 +116,7 @@ final class HistoryPickerController
     {
         $items = [];
         if (null !== $history->olderBefore) {
-            $items[] = ['value' => 'older', 'label' => $theme->muted('Older entries...')];
+            $items[] = ['value' => self::OLDER, 'label' => $theme->muted('Older entries...')];
         }
         foreach ($history->entries as $prompt) {
             $body = PickerListLabelFormatter::sanitizeTitle($prompt->text);
@@ -122,12 +126,12 @@ final class HistoryPickerController
             $marker = $prompt->anchor === $history->selectedAnchor && $prompt->role === $history->selectedRole ? '◉ ' : '○ ';
             $prefix = PickerListLabelFormatter::formatRolePrefix($theme, $prompt->role);
             $items[] = [
-                'value' => ('assistant' === $prompt->role ? 'assistant:' : '').$prompt->turnNo,
+                'value' => ('assistant' === $prompt->role ? self::ASSISTANT_PREFIX : '').$prompt->turnNo,
                 'label' => $marker.$prefix.' '.$body,
             ];
         }
         if (null !== $history->newerAfter) {
-            $items[] = ['value' => 'newer', 'label' => $theme->muted('Newer entries...')];
+            $items[] = ['value' => self::NEWER, 'label' => $theme->muted('Newer entries...')];
         }
 
         return $items;

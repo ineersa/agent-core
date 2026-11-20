@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion
 
 use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
@@ -146,7 +147,7 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
             return;
         }
 
-        if ('completed' === $deferredStatus) {
+        if (DeferredToolCompletionStatusEnum::Completed === $deferredStatus) {
             $this->markTerminalEnqueued($lifecycleId, $parentRunId, $parentToolCallId, $expectedProjectionVersion);
 
             return;

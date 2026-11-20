@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Compaction;
 
+use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -81,7 +82,7 @@ final class ProviderContextUsageResolver
             if (
                 (RunEventTypeEnum::ContextCompactionStarted->value === $event->type
                     || RunEventTypeEnum::ContextCompactionFailed->value === $event->type)
-                && 'auto' === ($event->payload['trigger'] ?? null)
+                && CompactionTriggerEnum::Auto->value === ($event->payload['trigger'] ?? null)
             ) {
                 $hasNewerAutoAttempt = true;
 

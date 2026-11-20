@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'tool_deferred_completion')]
@@ -67,8 +69,8 @@ class DeferredToolCompletion
     #[ORM\Column(name: 'tools_ref', type: 'string', length: 255, nullable: true)]
     public ?string $toolsRef = null;
 
-    #[ORM\Column(type: 'string', length: 32)]
-    public string $status = 'pending';
+    #[ORM\Column(type: 'string', length: 32, enumType: DeferredToolCompletionStatusEnum::class)]
+    public DeferredToolCompletionStatusEnum $status = DeferredToolCompletionStatusEnum::Pending;
 
     #[ORM\Column(name: 'ready_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $readyAt = null;
@@ -76,8 +78,8 @@ class DeferredToolCompletion
     #[ORM\Column(name: 'backgrounded_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $backgroundedAt = null;
 
-    #[ORM\Column(name: 'interruption_reason', type: 'string', length: 32, nullable: true)]
-    public ?string $interruptionReason = null;
+    #[ORM\Column(name: 'interruption_reason', type: 'string', length: 32, nullable: true, enumType: DeferredToolInterruptionReasonEnum::class)]
+    public ?DeferredToolInterruptionReasonEnum $interruptionReason = null;
 
     #[ORM\Column(name: 'continuation_required', type: 'boolean', options: ['default' => false])]
     public bool $continuationRequired = false;
