@@ -116,7 +116,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         }
         // Keep consuming the durable agent queue after consolidation, including
         // messages accepted by an older controller before its last shutdown.
-        $transportNames = 'tool' === $transport ? ['tool', 'agent'] : ['llm'];
+        $transportNames = 'tool' === $transport ? ['tool', 'agent', 'code_mode_requests'] : ['llm'];
         $receivers = [];
         foreach ($transportNames as $name) {
             if (!$this->receiverLocator->has($name)) {

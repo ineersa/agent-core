@@ -23,13 +23,15 @@ final readonly class BashTimeoutSchemaProvider implements SchemaProviderInterfac
 
     public function getSchemaFragment(array $context = []): array
     {
+        $max = $this->config->maxTimeoutSeconds;
+
         return [
             'description' => \sprintf(
-                'Timeout in seconds (default: %d, max: %d). Provide an explicit higher value for commands that need more than the default.',
+                'Timeout in seconds (default: %d%s). Provide an explicit higher value for commands that need more than the default. After background acceptance only an explicit timeout applies, measured from launch.',
                 $this->config->defaultTimeoutSeconds,
-                $this->config->maxTimeoutSeconds,
+                null === $max ? '' : \sprintf(', max: %d', $max),
             ),
-            'maximum' => $this->config->maxTimeoutSeconds,
+            ...(null === $max ? [] : ['maximum' => $max]),
         ];
     }
 }

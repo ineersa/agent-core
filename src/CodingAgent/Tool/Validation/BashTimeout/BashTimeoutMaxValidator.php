@@ -34,7 +34,7 @@ final class BashTimeoutMaxValidator extends ConstraintValidator
         }
 
         $max = $this->config->maxTimeoutSeconds;
-        if ($value > $max) {
+        if (null !== $max && $value > $max) {
             $this->context->buildViolation($constraint->message)
                 ->setParameter('{{ limit }}', (string) $max)
                 ->setParameter('{{ value }}', (string) $value)

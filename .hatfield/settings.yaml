@@ -3,6 +3,7 @@ tui:
 runtime:
     llm_concurrency: 10
 tools:
+    # Set bash.max_timeout_seconds to a positive integer to impose an operator cap.
     code_mode:
         enabled: true
 logging:

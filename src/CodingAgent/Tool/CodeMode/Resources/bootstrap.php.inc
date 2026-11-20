@@ -97,15 +97,72 @@ if (!\function_exists('hatfield_code_mode_read')) {
     }
 }
 
+/** @param array<string, mixed> $arguments */
+function hatfield_code_mode_broker_call(string $operation, string $name, array $arguments): mixed
+{
+    global $broker, $invocationId, $rootId;
+    $id = bin2hex(random_bytes(8));
+    $body = ['invocation_id' => $invocationId, 'call_id' => $id, 'name' => $name, 'arguments' => $arguments, 'operation' => $operation, 'root_id' => $rootId];
+    $broker->send('code_mode_requests', json_encode($body, JSON_THROW_ON_ERROR), json_encode(['type' => \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO::class], JSON_THROW_ON_ERROR));
+    $queue = 'code_mode_reply.'.$invocationId;
+    $path = __DIR__.'/call-'.hash('sha256', $id).'.json';
+    while (true) {
+        $delivery = $broker->receive($queue);
+        if (null !== $delivery) {
+            $broker->acknowledge($delivery->receipt);
+        }
+        clearstatcache(true, $path);
+        if (is_file($path)) {
+            $record = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+            $reply = $record['reply'] ?? null;
+            if (is_array($reply) && !isset($reply['child'])) {
+                if (true === ($reply['ok'] ?? null)) {
+                    return $reply['result'] ?? null;
+                }
+                throw new RuntimeException($reply['error'] ?? 'Code-mode call failed.');
+            }
+        }
+        $broker->wait($queue, 1000);
+    }
+}
+
+/** @param array<string, mixed> $frame */
+function hatfield_code_mode_terminal(array $frame): void
+{
+    global $broker, $connection;
+    if (null === $broker) {
+        hatfield_code_mode_write($connection, $frame);
+        return;
+    }
+    // Publish once, atomically; the controller may have already recorded a stop.
+    $temporary = __DIR__.'/terminal-'.bin2hex(random_bytes(8)).'.tmp';
+    $json = json_encode($frame, JSON_THROW_ON_ERROR);
+    try {
+        if (file_put_contents($temporary, $json) !== strlen($json)) {
+            throw new RuntimeException('Could not write code-mode terminal result.');
+        }
+        if (!@link($temporary, __DIR__.'/terminal.json') && !is_file(__DIR__.'/terminal.json')) {
+            throw new RuntimeException('Could not publish code-mode terminal result.');
+        }
+    } finally {
+        if (is_file($temporary)) {
+            unlink($temporary);
+        }
+    }
+}
+
 if (!\function_exists('notify_owner')) {
     /** @return array<string, mixed> Submission is not consumption or acknowledgement. */
     function notify_owner(string $message): array
     {
-        global $connection;
+        global $connection, $broker;
 
         // Refuse oversized and invalid UTF-8 payloads before JSON framing.
         if (\strlen($message) > 8192 || 1 !== preg_match('//u', $message)) {
             return ['status' => 'refused', 'reason' => 'invalid_message'];
+        }
+        if (null !== $broker) {
+            return hatfield_code_mode_broker_call('notice', 'notify_owner', ['message' => $message]);
         }
         if (!\is_resource($connection)) {
             return ['status' => 'refused', 'reason' => 'owner_unavailable'];
@@ -134,9 +191,9 @@ if (!\function_exists('tool')) {
         }
 
         /** @var resource|null $connection */
-        global $connection;
+        global $connection, $broker;
 
-        if (!\is_resource($connection)) {
+        if (null === $broker && !\is_resource($connection)) {
             throw new RuntimeException('Code-mode host connection is not available.');
         }
 
@@ -150,6 +207,10 @@ if (!\function_exists('tool')) {
                 'Tool "%s" is not supported inside code_mode. Child launches, agent communication, and interactive ask_human calls must run outside the script.',
                 $name,
             ));
+        }
+
+        if (null !== $broker) {
+            return hatfield_code_mode_broker_call('tool', $name, $arguments);
         }
 
         $id = bin2hex(random_bytes(8));
@@ -270,16 +331,32 @@ ini_set('log_errors', '1');
 ini_set('error_log', '');
 error_reporting(E_ALL);
 
-$connection = @stream_socket_client('unix://'.$socketPath, $errno, $errstr, 5.0);
-if (false === $connection) {
-    fwrite(\STDERR, \sprintf("Failed to connect to code-mode host: [%d] %s\n", $errno, $errstr));
-    exit(2);
-}
+$endpoint = getenv('HATFIELD_CODE_MODE_BROKER');
+$broker = null;
+$connection = null;
+if (is_string($endpoint) && '' !== $endpoint) {
+    require getenv('HATFIELD_CODE_MODE_AUTOLOAD');
+    $invocationId = getenv('HATFIELD_CODE_MODE_INVOCATION');
+    $rootId = getenv('HATFIELD_CODE_MODE_ROOT') ?: $invocationId;
+    $broker = \Ineersa\SqliteQueue\Client::connect($endpoint);
+    // The launcher exposes this gate only after canonical readiness commits.
+    while (!is_file(__DIR__.'/ready')) {
+        clearstatcache(true, __DIR__.'/ready');
+        usleep(10_000);
+    }
+} else {
+    $connection = @stream_socket_client('unix://'.$socketPath, $errno, $errstr, 5.0);
+    if (false === $connection) {
+        fwrite(\STDERR, \sprintf("Failed to connect to code-mode host: [%d] %s\n", $errno, $errstr));
+        exit(2);
+    }
 
-stream_set_blocking($connection, true);
-// The host owns invocation deadlines and cancellation and stops this process.
-// A separate PHP socket timeout would prematurely fail valid nested tool calls.
-stream_set_timeout($connection, -1);
+    stream_set_blocking($connection, true);
+    // The host owns invocation deadlines and cancellation and stops this process.
+    // A separate PHP socket timeout would prematurely fail valid nested tool calls.
+    stream_set_timeout($connection, -1);
+
+}
 
 register_shutdown_function(static function () use (&$connection): void {
     $error = error_get_last();
@@ -304,7 +381,7 @@ try {
     })();
 
     $result = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::assertEncodable($result, 'Code-mode script return value');
-    hatfield_code_mode_write($connection, [
+    hatfield_code_mode_terminal([
         'type' => 'return',
         'ok' => true,
         'result' => $result,
@@ -321,7 +398,7 @@ try {
         if (!mb_check_encoding($message, 'UTF-8') || $exception->getMessage() === \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::MALFORMED_MESSAGE) {
             $message = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::MALFORMED_MESSAGE;
         }
-        hatfield_code_mode_write($connection, [
+        hatfield_code_mode_terminal([
             'type' => 'return',
             'ok' => false,
             'error' => $message,

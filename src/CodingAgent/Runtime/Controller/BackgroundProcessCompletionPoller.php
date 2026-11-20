@@ -65,6 +65,7 @@ final class BackgroundProcessCompletionPoller
         private readonly AgentArtifactRegistry $artifactRegistry,
         private readonly BackgroundCompletionReceiptRepository $receipts,
         ?string $sessionId = null,
+        private readonly ?CodeModeTerminalObserver $codeMode = null,
     ) {
         // Normalize empty string to null so repository null-guards
         // (null !== $sessionId) work correctly when the env var is
@@ -146,6 +147,16 @@ final class BackgroundProcessCompletionPoller
         }
 
         $sessionIds = $this->resolveOwnedSessionIds($this->sessionId);
+        foreach ($sessionIds as $runId) {
+            try {
+                $this->codeMode?->observe($this->sessionId, $runId);
+            } catch (\Throwable $error) {
+                $this->logger->warning('code_mode.terminal_scan_failed', [
+                    'run_id' => $runId, 'session_id' => $this->sessionId, 'component' => 'tool.code_mode',
+                    'event_type' => 'code_mode.terminal_scan_failed', 'error_type' => $error::class,
+                ]);
+            }
+        }
         $pendingByPid = [];
 
         try {

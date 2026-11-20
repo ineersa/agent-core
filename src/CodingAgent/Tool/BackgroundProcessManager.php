@@ -175,6 +175,7 @@ final class BackgroundProcessManager
         ?int $deadlineNanoseconds = null,
         bool $backgroundRequested = false,
         ?string $invocationKey = null,
+        ?int $foregroundDeadlineNanoseconds = null,
     ): StartResult {
         $runId = $sessionId ?? '';
         $scoped = '' !== $runId && null !== $toolCallId && '' !== $toolCallId;
@@ -187,7 +188,7 @@ final class BackgroundProcessManager
 
         $ownsInvocation = false;
         try {
-            return $this->lifecycle->withSidecarLock($statusFile, function () use ($command, $runId, $toolCallId, $deadlineNanoseconds, $backgroundRequested, $scoped, $pidFile, $statusFile, $logFile, &$ownsInvocation): StartResult {
+            return $this->lifecycle->withSidecarLock($statusFile, function () use ($command, $runId, $toolCallId, $deadlineNanoseconds, $foregroundDeadlineNanoseconds, $backgroundRequested, $scoped, $pidFile, $statusFile, $logFile, &$ownsInvocation): StartResult {
                 if (!$this->lifecycle->ownsSidecarPaths($logFile, $statusFile)) {
                     throw new \RuntimeException('Bash native paths are not owned sidecars.');
                 }
@@ -236,12 +237,17 @@ final class BackgroundProcessManager
                     $startedAt = new \DateTimeImmutable('@'.$timestamp);
                 }
                 $deadline = null !== $record ? $record->deadlineNanoseconds : $deadlineNanoseconds;
-                if ($evidence && null === $record && null !== $deadlineNanoseconds) {
-                    // Preserve the caller's budget when recovering a launch whose
-                    // post-launch SQL insert was interrupted. The PID file dates
-                    // the original launch; do not restart its timeout on replay.
+                if ($evidence) {
+                    // Rebase fresh deadlines on the original launch when recovering a
+                    // native invocation. An already persisted explicit deadline wins.
                     $elapsed = max(0.0, (float) Clock::get()->now()->format('U.u') - (float) $startedAt->format('U.u'));
-                    $deadline = $deadlineNanoseconds - (int) ($elapsed * 1_000_000_000);
+                    $elapsedNs = (int) min($elapsed * 1_000_000_000, intdiv(\PHP_INT_MAX, 2));
+                    if (null === $record && null !== $deadline) {
+                        $deadline -= $elapsedNs;
+                    }
+                    if (null !== $foregroundDeadlineNanoseconds) {
+                        $foregroundDeadlineNanoseconds -= $elapsedNs;
+                    }
                 }
                 if ($scoped && null === $id) {
                     $id = $this->store->insertRecord([
@@ -262,7 +268,12 @@ final class BackgroundProcessManager
                     $this->observeNative($native);
                 }
 
-                return new StartResult($pid, $logFile, $statusFile, $native->deadlineNanoseconds, $accepted);
+                $foregroundDeadline = $foregroundDeadlineNanoseconds ?? $native->deadlineNanoseconds;
+                if (null !== $foregroundDeadline && null !== $native->deadlineNanoseconds) {
+                    $foregroundDeadline = min($foregroundDeadline, $native->deadlineNanoseconds);
+                }
+
+                return new StartResult($pid, $logFile, $statusFile, $foregroundDeadline, $accepted);
             });
         } catch (\Throwable $error) {
             if ($ownsInvocation) {
@@ -498,11 +509,11 @@ final class BackgroundProcessManager
      *
      * @param array{kind: 'native', statusPath: string, pid: int, sessionId: string}|array{kind: 'record', statusPath: string, recordId: int, pid: ?int, sessionId: string} $candidate
      */
-    public function acceptResolvedBackground(array $candidate, ?CancellationTokenInterface $cancellationToken = null): bool
+    public function acceptResolvedBackground(array $candidate, ?CancellationTokenInterface $cancellationToken = null, ?int $foregroundDeadlineNanoseconds = null): bool
     {
         $statusPath = $candidate['statusPath'];
 
-        return $this->lifecycle->withSidecarLock($statusPath, function () use ($candidate, $statusPath, $cancellationToken): bool {
+        return $this->lifecycle->withSidecarLock($statusPath, function () use ($candidate, $statusPath, $cancellationToken, $foregroundDeadlineNanoseconds): bool {
             $id = $this->store->recordIdForStatusPath($statusPath, $candidate['sessionId']);
             $record = null === $id ? null : $this->store->snapshot($id);
             if (null !== $record?->backgroundedAt) {
@@ -512,7 +523,7 @@ final class BackgroundProcessManager
             }
             // Lock acquisition can yield. Recheck cancellation after acquiring
             // it; an acceptance already committed by another delivery still wins.
-            if ($cancellationToken?->isCancellationRequested()) {
+            if ($cancellationToken?->isCancellationRequested() || (null !== $foregroundDeadlineNanoseconds && hrtime(true) >= $foregroundDeadlineNanoseconds)) {
                 return false;
             }
             if (null !== $record?->finishedAt || null !== $this->lifecycle->readStatusFile($statusPath)

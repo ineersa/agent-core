@@ -83,11 +83,13 @@ floats, invalid UTF-8 and cycles fail. Missing/null returns show `null`;
 
 | Argument | Default | Maximum |
 |---|---|---|
-| `timeout_seconds` | `1800` | `3600` |
+| `timeout_seconds` | `1800` | No tool-specific cap |
 | `memory_limit_mb` | `256` | `1024` |
 | `backgrounded` | `false` | Boolean |
 
-The remaining parent tool budget can shorten the script deadline. Nested handlers
+The foreground default and remaining parent tool budget apply until background
+acceptance. After acceptance only an explicit deadline applies, measured from
+launch. Nested handlers
 receive a cooperative budget, not a guarantee that synchronous code is preempted.
 Stdout/stderr accompany the return value; large diagnostics use saved artifacts
 and normal output caps. Prefer a small final `return` to dumping intermediates.
@@ -113,8 +115,11 @@ fused native builds require `php` on PATH.
 `subagent`, `fork`, `agent_resume`, `agent_steer`, `notify_parent` and `ask_human`
 are unsupported inside code mode. Call them directly. Nested Bash/code-mode calls
 cannot detach; use a direct `backgrounded: true` call for background work.
-A background PHP script still depends on its original host worker and cannot
-restore its stack after worker loss.
+Canonical PHP scripts in the session runtime use the broker for nested tool
+calls and do not depend on the worker that launched them. A script that loses
+its PHP process cannot resume, and an interrupted tool call may have an unknown
+outcome. A brokered `tool('code_mode', ...)` waits for the inner script without holding
+a shared tool slot.
 
 Related: [settings](settings.md), [human input](human-input.md),
 [approvals](approvals.md), [sessions](session-storage.md).

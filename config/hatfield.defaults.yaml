@@ -241,7 +241,7 @@ tools:
 
         # Maximum allowed timeout that a model can request.
         # Timeouts above this are rejected with a validation error.
-        max_timeout_seconds: 3600
+        max_timeout_seconds: null
 
         # Supervision loop poll interval in microseconds.
         poll_interval_micros: 100000

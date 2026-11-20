@@ -199,7 +199,8 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
                     return $envelope;
                 }
             };
-            $receivers = new ServiceLocator(['tool' => static fn () => $tool, 'agent' => static fn () => $agent]);
+            $requests = $factory->createTransport('sqlite-queue://code_mode_requests?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $receivers = new ServiceLocator(['tool' => static fn () => $tool, 'agent' => static fn () => $agent, 'code_mode_requests' => static fn () => $requests]);
             $dispatcher = new EventDispatcher();
             $dispatcher->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use (&$handled): void {
                 $handled[] = $event->getReceiverName();
@@ -475,9 +476,9 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         };
         $receivers = [];
         $factories = [];
-        $names = 'tool' === $role ? ['tool', 'agent'] : ['llm'];
-        foreach ($names as $name) {
-            $receiver = new class($name, intdiv($total, \count($names)), null !== $failure) implements KeepaliveReceiverInterface {
+        $names = 'tool' === $role ? ['tool', 'agent', 'code_mode_requests'] : ['llm'];
+        foreach ($names as $index => $name) {
+            $receiver = new class($name, intdiv($total, \count($names)) + ($index < $total % \count($names) ? 1 : 0), null !== $failure) implements KeepaliveReceiverInterface {
                 /** @var list<string> */
                 public array $acknowledged = [];
                 public int $keepalives = 0;
@@ -604,7 +605,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         });
         $config = clone self::getContainer()->get(AppConfig::class);
         $config->runtime = new RuntimeConfigDTO();
-        $receivers = new ServiceLocator(['tool' => static fn () => $receiver, 'agent' => static fn () => new class implements ReceiverInterface {
+        $empty = new class implements ReceiverInterface {
             public function get(): iterable
             {
                 return [];
@@ -617,7 +618,8 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             public function reject(Envelope $envelope): void
             {
             }
-        }]);
+        };
+        $receivers = new ServiceLocator(['tool' => static fn () => $receiver, 'agent' => static fn () => $empty, 'code_mode_requests' => static fn () => $empty]);
         $buses = new ServiceLocator(['default' => static fn () => $bus]);
         $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $config);
         // PHPUnit's earlier kernels can already exceed the production limit.

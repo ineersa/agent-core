@@ -31,14 +31,9 @@ use Ineersa\CodingAgent\Tool\AskHumanTool;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
-use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Revolt\EventLoop;
-use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
-use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
-use Symfony\AI\Agent\Toolbox\ToolboxInterface;
-use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Process\Exception\ProcessStartFailedException;
@@ -65,18 +60,18 @@ final readonly class CodeModeHostBridge
     private const int POLL_INTERVAL_MICROS = 20_000;
     private const int MAX_UNIX_SOCKET_PATH_BYTES = 100;
     private const int SCRIPT_WRAPPER_PREFIX_LINES = 3;
-    private const string TOOLBOX_LOCATOR_KEY = 'toolbox';
 
     public function __construct(
         private StackToolExecutionContextAccessor $contextAccessor,
         private ToolRuntime $toolRuntime,
-        private ContainerInterface $toolboxLocator,
+        private CodeModeNestedToolExecutor $nestedTools,
         private RuntimeProcessConfig $runtimeProcessConfig,
         private OutputCap $outputCap,
         private DeferredToolCompletionRepository $deferred,
         private ToolBatchStoreInterface $batches,
         private ToolPayloadStoreInterface $payloads,
         private MessageBusInterface $commandBus,
+        private CodeModeProcessOwner $processOwner,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -84,33 +79,59 @@ final readonly class CodeModeHostBridge
 
     public function execute(
         string $script,
-        int $timeoutSeconds = CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS,
+        ?int $timeoutSeconds = null,
         int $memoryLimitMb = CodeModeArgumentsDTO::DEFAULT_MEMORY_LIMIT_MB,
         bool $backgrounded = false,
     ): mixed {
         return $this->toolRuntime->run(function () use ($script, $timeoutSeconds, $memoryLimitMb, $backgrounded): mixed {
             $parentContext = $this->contextAccessor->current();
             $cancelToken = $parentContext?->cancellationToken() ?? new NullCancellationToken();
-            $timeoutSeconds = $this->resolveScriptWallSeconds($timeoutSeconds, $parentContext?->timeoutSeconds());
+            $explicitTimeout = $timeoutSeconds;
+            $timeoutSeconds = $this->resolveScriptWallSeconds($timeoutSeconds ?? CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS, $parentContext?->timeoutSeconds());
             $memoryLimit = $this->formatMemoryLimit($memoryLimitMb);
             $deferredId = $this->prepareDeferred($parentContext);
             if ($backgrounded && null === $deferredId) {
                 throw new ToolCallException('Background launch requires a top-level code_mode invocation.', retryable: false);
             }
             if (null !== $deferredId) {
-                $cancelToken = new CodeModeCancellationToken($cancelToken, $this->deferred, $deferredId);
+                $cancelToken = new CodeModeCancellationToken($cancelToken, $this->deferred, $deferredId, $explicitTimeout);
             }
 
             $workspace = $this->createWorkspace();
             $process = null;
+            $controllerOwns = false;
             $server = null;
             $connection = null;
             $capture = new CodeModeDiagnosticCapture($this->outputCap, $parentContext?->runId(), $workspace['dir'], null !== $parentContext && (null !== $deferredId || $parentContext->retainOutput()) ? fn (callable $write): string => $this->payloads->saveAttachment($parentContext->runId(), $parentContext->attachmentOwnerToolCallId(), $write) : null);
 
             try {
                 $this->writeScript($workspace['script'], $script);
+                $endpoint = $_SERVER['HATFIELD_SQLITE_QUEUE_ENDPOINT'] ?? $_ENV['HATFIELD_SQLITE_QUEUE_ENDPOINT'] ?? getenv('HATFIELD_SQLITE_QUEUE_ENDPOINT');
+                if ($cancelToken instanceof CodeModeCancellationToken && null !== $cancelToken->brokerInvocationId && null !== $cancelToken->brokerCallId && null !== $cancelToken->brokerRootId) {
+                    if (!\is_string($endpoint) || '' === $endpoint) {
+                        throw new ToolCallException('Nested code-mode broker endpoint unavailable.', retryable: false);
+                    }
+                    $child = UuidV7::v7()->toRfc4122();
+                    $parent = ['invocationId' => $cancelToken->brokerInvocationId, 'callId' => $cancelToken->brokerCallId, 'rootId' => $cancelToken->brokerRootId, 'limit' => $timeoutSeconds];
+                    $this->startProcess($workspace, $cancelToken, $memoryLimit, $capture, $parentContext->runId(), $child, $endpoint, $parent);
+                    $controllerOwns = true;
+                    $this->filesystem->dumpFile($workspace['dir'].'/ready', '');
+
+                    return new DeferredToolCompletionOutcome($child);
+                }
+                if (null !== $deferredId && \is_string($endpoint) && '' !== $endpoint) {
+                    $this->startProcess($workspace, $cancelToken, $memoryLimit, $capture, $parentContext->runId(), $deferredId, $endpoint);
+                    $controllerOwns = true;
+                    $this->deferred->markReady($deferredId);
+                    if ($backgrounded) {
+                        $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($parentContext->runId(), $deferredId, $parentContext->toolCallId()));
+                    }
+                    $this->filesystem->dumpFile($workspace['dir'].'/ready', '');
+
+                    return new DeferredToolCompletionOutcome($deferredId);
+                }
                 $server = $this->createSocketServer($workspace['socket']);
-                $process = $this->startProcess($workspace, $cancelToken, $memoryLimit, $capture);
+                $process = $this->startProcess($workspace, $cancelToken, $memoryLimit, $capture, $parentContext?->runId(), $deferredId);
                 $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
                 if (null !== $deferredId) {
                     $this->deferred->markReady($deferredId);
@@ -136,7 +157,9 @@ final readonly class CodeModeHostBridge
                 $this->stopProcess($process);
                 $this->closeResource($connection);
                 $this->closeResource($server);
-                $this->cleanupWorkspace($workspace);
+                if (!$controllerOwns) {
+                    $this->cleanupWorkspace($workspace);
+                }
             }
         });
     }
@@ -180,7 +203,7 @@ final readonly class CodeModeHostBridge
      */
     private function serve(
         mixed $connection,
-        Process $process,
+        Process|CodeModeOwnedProcess $process,
         ?ToolContext $parentContext,
         CancellationTokenInterface $cancelToken,
         ?int $timeoutSeconds,
@@ -377,44 +400,15 @@ final readonly class CodeModeHostBridge
         int $timeoutSeconds,
         int $startedAtNs,
     ): mixed {
-        $remainingSeconds = $this->remainingScriptBudgetSeconds($timeoutSeconds, $startedAtNs);
-        if (null === $remainingSeconds) {
+        if ($cancelToken instanceof CodeModeCancellationToken) {
+            $timeoutSeconds = $cancelToken->wallLimit($timeoutSeconds);
+        }
+        $remainingSeconds = null === $timeoutSeconds ? null : $this->remainingScriptBudgetSeconds($timeoutSeconds, $startedAtNs);
+        if (null !== $timeoutSeconds && null === $remainingSeconds) {
             throw new ToolCallException(\sprintf('Code-mode execution timed out after %d seconds.', $timeoutSeconds), retryable: false);
         }
 
-        $toolCallId = 'code-mode-'.bin2hex(random_bytes(8));
-        $nestedContext = new ToolContext(
-            runId: $parentContext?->runId() ?? '',
-            turnNo: $parentContext?->turnNo() ?? 0,
-            toolCallId: $toolCallId,
-            toolName: $name,
-            cancellationToken: $cancelToken,
-            timeoutSeconds: $remainingSeconds,
-            orderIndex: 0,
-            humanInputAnswer: null,
-            stepId: $parentContext?->stepId(),
-            parentModel: $parentContext?->parentModel(),
-            allowsHumanInput: $parentContext?->allowsHumanInput() ?? true,
-            retainOutput: $parentContext?->retainOutput() ?? false,
-            attachmentOwnerToolCallId: $parentContext?->attachmentOwnerToolCallId(),
-        );
-
-        return $this->contextAccessor->with($nestedContext, function () use ($name, $arguments, $toolCallId): mixed {
-            try {
-                $toolboxResult = $this->toolbox()->execute(new ToolCall($toolCallId, $name, $arguments));
-            } catch (ToolNotFoundException $exception) {
-                throw new ToolCallException($exception->getMessage(), retryable: false, previous: $exception);
-            } catch (ToolExecutionExceptionInterface $exception) {
-                $previous = $exception->getPrevious();
-                if ($previous instanceof ToolCallException) {
-                    throw $previous;
-                }
-
-                throw new ToolCallException($previous?->getMessage() ?? $exception->getMessage(), retryable: false, previous: $previous ?? $exception);
-            }
-
-            return $toolboxResult->getResult();
-        });
+        return $this->nestedTools->execute('code-mode-'.bin2hex(random_bytes(8)), $name, $arguments, $parentContext, $cancelToken, $remainingSeconds);
     }
 
     private function normalizeResult(mixed $result, string $toolName): mixed
@@ -620,9 +614,10 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * @param array{dir: string, script: string, socket: string, startedAtNs: int} $workspace
+     * @param array{dir: string, script: string, socket: string, startedAtNs: int}         $workspace
+     * @param array{invocationId: string, callId: string, rootId: string, limit: int}|null $parent
      */
-    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, CodeModeDiagnosticCapture $capture): Process
+    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, CodeModeDiagnosticCapture $capture, ?string $runId, ?string $invocationId, ?string $endpoint = null, ?array $parent = null): Process|CodeModeOwnedProcess
     {
         if ($cancelToken->isCancellationRequested()) {
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
@@ -647,19 +642,35 @@ final readonly class CodeModeHostBridge
             '-d', 'error_log=',
             $bootstrap,
         ];
-        $process = Process::fromShellCommandline(
-            'exec '.implode(' ', array_map(escapeshellarg(...), $command))
-                .' > '.escapeshellarg($capture->stdoutPath)
-                .' 2> '.escapeshellarg($capture->stderrPath),
-            $this->runtimeProcessConfig->runtimeCwd(),
-            [
-                'HATFIELD_CODE_MODE_SOCKET' => $workspace['socket'],
-                'HATFIELD_CODE_MODE_SCRIPT' => $workspace['script'],
-                'HATFIELD_CODE_MODE_TOON_ROOT' => $toonRoot,
-                'HATFIELD_CODE_MODE_VALUE_CODEC' => $valueCodec,
-                'HATFIELD_CODE_MODE_MEMORY_LIMIT' => $memoryLimit,
-            ],
-        );
+        $shell = 'exec '.implode(' ', array_map(escapeshellarg(...), $command))
+            .' > '.escapeshellarg($capture->stdoutPath)
+            .' 2> '.escapeshellarg($capture->stderrPath);
+        $cwd = $this->runtimeProcessConfig->runtimeCwd();
+        $environment = [
+            'HATFIELD_CODE_MODE_SOCKET' => $workspace['socket'],
+            'HATFIELD_CODE_MODE_SCRIPT' => $workspace['script'],
+            'HATFIELD_CODE_MODE_TOON_ROOT' => $toonRoot,
+            'HATFIELD_CODE_MODE_VALUE_CODEC' => $valueCodec,
+            'HATFIELD_CODE_MODE_MEMORY_LIMIT' => $memoryLimit,
+        ];
+        if (null !== $endpoint) {
+            $environment['HATFIELD_CODE_MODE_BROKER'] = $endpoint;
+            $environment['HATFIELD_CODE_MODE_INVOCATION'] = $invocationId ?? throw new \LogicException('Missing invocation identity.');
+            $environment['HATFIELD_CODE_MODE_ROOT'] = $parent['rootId'] ?? $invocationId;
+            $archive = \Phar::running(false);
+            $root = '' === $archive ? \dirname(__DIR__, 4) : 'phar://'.$archive;
+            $environment['HATFIELD_CODE_MODE_AUTOLOAD'] = $root.'/vendor/autoload.php';
+        }
+        if (null !== $runId && null !== $invocationId) {
+            $assignments = '';
+            foreach ($environment as $name => $value) {
+                $assignments .= $name.'='.escapeshellarg($value).' ';
+            }
+
+            return $this->processOwner->launch($runId, $invocationId, $workspace['dir'], 'cd '.escapeshellarg($cwd).' && '.$assignments.$shell, $workspace['startedAtNs'], controllerSettles: null !== $endpoint, parent: $parent);
+        }
+
+        $process = Process::fromShellCommandline($shell, $cwd, $environment);
         $process->setTimeout(null);
         $process->setIdleTimeout(null);
 
@@ -679,7 +690,7 @@ final readonly class CodeModeHostBridge
      */
     private function acceptConnection(
         mixed $server,
-        Process $process,
+        Process|CodeModeOwnedProcess $process,
         CancellationTokenInterface $cancelToken,
         ?int $timeoutSeconds,
         int $startedAtNs,
@@ -732,7 +743,7 @@ final readonly class CodeModeHostBridge
      */
     private function waitWhileBlocked(
         mixed $connection,
-        Process $process,
+        Process|CodeModeOwnedProcess $process,
         CancellationTokenInterface $cancelToken,
         ?int $timeoutSeconds,
         int $startedAtNs,
@@ -790,9 +801,12 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException('Code-mode execution cancelled.', retryable: false);
         }
 
+        if ($cancelToken instanceof CodeModeCancellationToken) {
+            $timeoutSeconds = $cancelToken->wallLimit($timeoutSeconds);
+        }
         if (null !== $timeoutSeconds && $timeoutSeconds > 0) {
             $elapsedNs = hrtime(true) - $startedAtNs;
-            if ($elapsedNs >= $timeoutSeconds * 1_000_000_000) {
+            if (intdiv($elapsedNs, 1_000_000_000) >= $timeoutSeconds) {
                 throw new ToolCallException(\sprintf('Code-mode execution timed out after %d seconds.', $timeoutSeconds), retryable: false);
             }
         }
@@ -840,7 +854,7 @@ final readonly class CodeModeHostBridge
     }
 
     private function connectionClosedException(
-        Process $process,
+        Process|CodeModeOwnedProcess $process,
         CancellationTokenInterface $cancelToken,
         int $timeoutSeconds,
         int $startedAtNs,
@@ -860,7 +874,7 @@ final readonly class CodeModeHostBridge
         return new ToolCallException('Code-mode script closed the host connection before returning a value.', retryable: false);
     }
 
-    private function earlyExitException(Process $process): ToolCallException
+    private function earlyExitException(Process|CodeModeOwnedProcess $process): ToolCallException
     {
         $this->drainProcessOutput($process);
 
@@ -873,7 +887,7 @@ final readonly class CodeModeHostBridge
         return new ToolCallException($message, retryable: false);
     }
 
-    private function drainProcessOutput(Process $process): void
+    private function drainProcessOutput(Process|CodeModeOwnedProcess $process): void
     {
         // Refresh child liveness; stdout/stderr go directly to workspace files.
         $process->isRunning();
@@ -890,13 +904,18 @@ final readonly class CodeModeHostBridge
         return new CodeModeExecutionResult($result, $diagnostics);
     }
 
-    private function stopProcess(?Process $process): void
+    private function stopProcess(Process|CodeModeOwnedProcess|null $process): void
     {
         if (null === $process) {
             return;
         }
 
         try {
+            if ($process instanceof CodeModeOwnedProcess) {
+                $process->stop();
+
+                return;
+            }
             if ($process->isRunning()) {
                 $process->signal(\SIGTERM);
                 $deadline = hrtime(true) + self::DEFAULT_GRACE_SECONDS * 1_000_000_000;
@@ -912,7 +931,7 @@ final readonly class CodeModeHostBridge
                     }
                 }
             }
-        } catch (ProcessRuntimeException $exception) {
+        } catch (\RuntimeException $exception) {
             $this->logger->warning('code_mode.process_stop_failed', [
                 'component' => 'tool.code_mode',
                 'event_type' => 'code_mode.process_stop_failed',
@@ -947,20 +966,6 @@ final readonly class CodeModeHostBridge
                 'message' => $exception->getMessage(),
             ]);
         }
-    }
-
-    private function toolbox(): ToolboxInterface
-    {
-        if (!$this->toolboxLocator->has(self::TOOLBOX_LOCATOR_KEY)) {
-            throw new \LogicException('Code-mode toolbox locator is missing the toolbox entry.');
-        }
-
-        $toolbox = $this->toolboxLocator->get(self::TOOLBOX_LOCATOR_KEY);
-        if (!$toolbox instanceof ToolboxInterface) {
-            throw new \LogicException(\sprintf('Code-mode toolbox locator must return ToolboxInterface, got %s.', get_debug_type($toolbox)));
-        }
-
-        return $toolbox;
     }
 
     /**

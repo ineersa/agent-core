@@ -92,7 +92,7 @@ final class LlmFiberConsumeWaitSubscriber implements EventSubscriberInterface
         }
 
         $names = $event->getWorker()->getMetadata()->getTransportNames();
-        if (!\in_array($names, [['llm'], ['tool', 'agent']], true)) {
+        if (!\in_array($names, [['llm'], ['tool', 'agent', 'code_mode_requests']], true)) {
             return;
         }
         $owner = null;
