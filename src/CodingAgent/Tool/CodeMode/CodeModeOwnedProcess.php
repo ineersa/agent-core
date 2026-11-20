@@ -23,11 +23,6 @@ final readonly class CodeModeOwnedProcess
         return $this->lifecycle->readStatusFile($this->statusPath);
     }
 
-    public function stop(): void
-    {
-        $this->lifecycle->withSidecarLock($this->statusPath, $this->stopLocked(...));
-    }
-
     public function stopLocked(): void
     {
         $this->lifecycle->stopProcess($this->pid, $this->pid, $this->statusPath);

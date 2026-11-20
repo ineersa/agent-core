@@ -72,7 +72,7 @@ final readonly class CodeModeTerminalObserver
             if (null !== $reply && null !== $destination && $this->calls->completeChild($parent['invocationId'], $parent['callId'], $id, $reply)) {
                 $transport = $this->replies->create($parent['invocationId']);
                 try {
-                    $transport->send(new Envelope(new CodeModeReplyReadyDTO($parent['callId'])));
+                    $transport->send(new Envelope(new CodeModeReplyReadyDTO()));
                 } finally {
                     $transport->close();
                 }

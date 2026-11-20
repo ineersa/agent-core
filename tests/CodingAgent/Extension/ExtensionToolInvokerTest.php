@@ -77,26 +77,16 @@ final class ExtensionToolInvokerTest extends IsolatedKernelTestCase
         $this->assertFalse($direct->isError, $direct->text);
         $this->assertCount(1, $direct->outputs, 'Native capture and processor must not retain duplicate copies.');
         $this->assertStringContainsString($direct->outputs[0]->path, $direct->text);
-        $nested = $invoker->invoke(new ToolInvocationRequestDTO($run, 'outer', 'code_mode', ['script' => \sprintf(
-            'return [tool("read", ["path" => %s]), tool("bash", ["command" => "printf %%030000d 0"])];', var_export($path, true),
-        )], true));
-        $this->assertFalse($nested->isError, $nested->text);
-        $this->assertCount(2, $nested->outputs, 'Nested read and Bash artifacts belong to the outer invocation.');
-        $sizes = array_column($nested->outputs, 'byteCount');
-        sort($sizes);
-        $this->assertSame([30_000, 1_200_001], $sizes);
+        $standaloneCodeMode = $invoker->invoke(new ToolInvocationRequestDTO($run, 'outer', 'code_mode', ['script' => 'return 42;'], true));
+        $this->assertTrue($standaloneCodeMode->isError);
+        $this->assertStringContainsString('Code-mode launch requires a valid session invocation.', $standaloneCodeMode->text);
+
         $container->get(OutputCap::class)->cleanupRun($run, 'test-retained-output');
-        foreach ([$direct, $nested] as $result) {
-            foreach ($result->outputs as $reference) {
-                $this->assertFileExists($reference->path);
-                $this->assertStringContainsString('tool-attachments', $reference->path);
-                $this->assertSame($reference->byteCount, filesize($reference->path));
-                $this->assertStringContainsString($reference->path, $result->text);
-                if ($reference->byteCount > 1_000_000) {
-                    $this->assertSame(hash_file('sha256', $path), hash_file('sha256', $reference->path));
-                }
-            }
-        }
+        $reference = $direct->outputs[0];
+        $this->assertFileExists($reference->path);
+        $this->assertStringContainsString('tool-attachments', $reference->path);
+        $this->assertSame($reference->byteCount, filesize($reference->path));
+        $this->assertSame(hash_file('sha256', $path), hash_file('sha256', $reference->path));
 
         $processor = new class implements ToolResultProcessorInterface {
             public function process(ToolResult $result, ToolCall $toolCall): ToolResult

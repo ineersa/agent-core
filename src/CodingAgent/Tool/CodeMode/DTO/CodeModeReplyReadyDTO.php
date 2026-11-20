@@ -6,7 +6,4 @@ namespace Ineersa\CodingAgent\Tool\CodeMode\DTO;
 
 final readonly class CodeModeReplyReadyDTO
 {
-    public function __construct(public string $callId)
-    {
-    }
 }

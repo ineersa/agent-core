@@ -12,7 +12,7 @@ final class CodeModeCancellationToken implements CancellationTokenInterface
     private bool $cancelled = false;
     private bool $backgrounded = false;
 
-    public function __construct(private CancellationTokenInterface $parent, private DeferredToolCompletionRepositoryInterface $deferred, private string $id, private ?int $explicitTimeoutSeconds = null, public readonly ?string $brokerInvocationId = null, public readonly ?string $brokerCallId = null, public readonly ?string $brokerRootId = null, private readonly ?\Closure $invocationUnavailable = null)
+    public function __construct(private CancellationTokenInterface $parent, private DeferredToolCompletionRepositoryInterface $deferred, private string $id, public readonly ?string $brokerInvocationId = null, public readonly ?string $brokerCallId = null, public readonly ?string $brokerRootId = null, private readonly ?\Closure $invocationUnavailable = null)
     {
     }
 
@@ -24,11 +24,5 @@ final class CodeModeCancellationToken implements CancellationTokenInterface
         return $this->cancelled = $this->cancelled || 'pending' !== $metadata?->status || null !== $metadata->interruptionReason
             || (null !== $this->invocationUnavailable && ($this->invocationUnavailable)($this->backgrounded))
             || (!$this->backgrounded && $this->parent->isCancellationRequested());
-    }
-
-    /** Use the acceptance observed by the preceding cancellation check. */
-    public function wallLimit(?int $foregroundSeconds): ?int
-    {
-        return $this->backgrounded ? $this->explicitTimeoutSeconds : $foregroundSeconds;
     }
 }

@@ -62,7 +62,7 @@ final readonly class CodeModeCallRequestHandler
         $reply = $this->calls->settle($request->invocationId, $request->callId, $wire, function () use ($request, $call, $rootId): array {
             try {
                 $explicit = $call->args['timeout_seconds'] ?? null;
-                $token = new CodeModeCancellationToken(new RunCancellationToken($this->status, $call->runId()), $this->deferred, $rootId, \is_int($explicit) ? $explicit : null, $request->invocationId, $request->callId, $rootId,
+                $token = new CodeModeCancellationToken(new RunCancellationToken($this->status, $call->runId()), $this->deferred, $rootId, $request->invocationId, $request->callId, $rootId,
                     fn (bool $backgrounded): bool => $this->processes->hasExited($call->runId(), $request->invocationId)
                         || ($this->processes->deadline($call->runId(), $request->invocationId, $backgrounded, \is_int($explicit) ? $explicit : null, $call->timeoutSeconds) ?? \PHP_INT_MAX) <= hrtime(true));
                 if ($token->isCancellationRequested()) {
@@ -121,7 +121,7 @@ final readonly class CodeModeCallRequestHandler
         }
         $transport = $this->replies->create($request->invocationId);
         try {
-            $transport->send(new Envelope(new CodeModeReplyReadyDTO($request->callId)));
+            $transport->send(new Envelope(new CodeModeReplyReadyDTO()));
         } finally {
             $transport->close();
         }
