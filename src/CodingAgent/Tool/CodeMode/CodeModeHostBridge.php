@@ -13,9 +13,9 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
-use Ineersa\CodingAgent\Entity\CodeModeCallRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\SqliteQueue\Client;
 use Psr\Log\LoggerInterface;
@@ -37,7 +37,8 @@ final readonly class CodeModeHostBridge
         private ToolBatchStoreInterface $batches,
         private MessageBusInterface $commandBus,
         private CodeModeProcessOwner $processOwner,
-        private CodeModeCallRepository $calls,
+        private CodeModeRuntimeMaterializer $runtime,
+        private ToolBatchRunStoragePathsInterface $paths,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -59,16 +60,7 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException('Code-mode session broker unavailable.', retryable: false, previous: $error);
         }
         $token = $context->cancellationToken();
-        $parent = null;
-        if ($token instanceof CodeModeCancellationToken && null !== $token->brokerInvocationId && null !== $token->brokerCallId && null !== $token->brokerRootId) {
-            if ($backgrounded) {
-                throw new ToolCallException('Background launch requires a top-level code_mode invocation.', retryable: false);
-            }
-            $id = UuidV7::v7()->toRfc4122();
-            $parent = ['invocationId' => $token->brokerInvocationId, 'callId' => $token->brokerCallId, 'rootId' => $token->brokerRootId, 'timeout' => $timeoutSeconds];
-        } else {
-            $id = $this->prepareDeferred($context);
-        }
+        $id = $this->prepareDeferred($context);
         if ($token->isCancellationRequested()) {
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
         }
@@ -76,23 +68,15 @@ final readonly class CodeModeHostBridge
         $owned = false;
         try {
             $this->writeScript($workspace['script'], $script);
-            if (null !== $parent) {
-                $this->calls->reserveChild($parent['invocationId'], $parent['callId'], $id);
-            }
-            $this->startProcess($workspace, $token, $this->formatMemoryLimit($memoryLimitMb), $context->runId(), $id, $endpoint, $parent);
+            $this->startProcess($workspace, $token, $this->formatMemoryLimit($memoryLimitMb), $context->runId(), $id, $endpoint);
             $owned = true;
-            if (null === $parent && $backgrounded) {
+            if ($backgrounded) {
                 $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($context->runId(), $id, $context->toolCallId()));
             }
 
             return new DeferredToolCompletionOutcome($id);
-        } catch (\Throwable $error) {
-            if (null !== $parent) {
-                throw new ToolCallException('Code-mode child launch failed; refusing to start it again.', retryable: false, previous: $error);
-            }
-            throw $error;
         } finally {
-            if (!$owned) {
+            if (!$owned && null === $this->processOwner->invocation($context->runId(), $id)) {
                 $this->cleanupWorkspace($workspace);
             }
         }
@@ -184,89 +168,15 @@ final readonly class CodeModeHostBridge
         return $target;
     }
 
-    private function materializeValueCodec(string $workspaceDir): string
-    {
-        $source = __DIR__.'/CodeModeValueCodec.php';
-        $target = $workspaceDir.'/CodeModeValueCodec.php';
-
-        try {
-            $contents = file_get_contents($source);
-            if (false === $contents) {
-                throw new \RuntimeException(\sprintf('Unable to read code-mode value codec from "%s".', $source));
-            }
-            $this->filesystem->dumpFile($target, $contents);
-        } catch (\Throwable $exception) {
-            throw new ToolCallException('Failed to materialize code-mode value codec for subprocess execution.', retryable: true, previous: $exception);
-        }
-
-        return $target;
-    }
-
-    /**
-     * Materialize the installed HelgeSverre TOON package for the child process.
-     *
-     * Resolves the package root from the host-loaded class file so PHAR and
-     * source trees both work without shipping a forked copy under Resources/.
-     */
-    private function materializeToonLibrary(string $workspaceDir): string
-    {
-        $targetRoot = $workspaceDir.'/toon';
-
-        try {
-            $sourceRoot = $this->installedToonSourceRoot();
-            $this->filesystem->mkdir($targetRoot);
-
-            $iterator = new \RecursiveIteratorIterator(
-                new \RecursiveDirectoryIterator($sourceRoot, \FilesystemIterator::SKIP_DOTS),
-            );
-            foreach ($iterator as $file) {
-                if (!$file->isFile()) {
-                    continue;
-                }
-                $relative = substr($file->getPathname(), \strlen($sourceRoot) + 1);
-                $this->filesystem->copy($file->getPathname(), $targetRoot.'/'.$relative, true);
-            }
-
-            // Preserve upstream MIT license beside the materialized sources.
-            $license = \dirname($sourceRoot).'/LICENSE';
-            if (is_file($license)) {
-                $this->filesystem->copy($license, $targetRoot.'/LICENSE', true);
-            }
-        } catch (\Throwable $exception) {
-            throw new ToolCallException('Failed to materialize code-mode TOON library for subprocess execution.', retryable: true, previous: $exception);
-        }
-
-        return $targetRoot;
-    }
-
-    private function installedToonSourceRoot(): string
-    {
-        $toonFile = (new \ReflectionClass(\HelgeSverre\Toon\Toon::class))->getFileName();
-        if (!\is_string($toonFile) || '' === $toonFile) {
-            throw new \RuntimeException('Unable to resolve HelgeSverre\\Toon\\Toon source path on the host.');
-        }
-
-        $sourceRoot = \dirname($toonFile);
-        if (!is_dir($sourceRoot)) {
-            throw new \RuntimeException(\sprintf('Installed TOON source root is missing at "%s".', $sourceRoot));
-        }
-
-        return $sourceRoot;
-    }
-
-    /**
-     * @param array{dir: string, script: string, startedAtNs: int}                            $workspace
-     * @param array{invocationId: string, callId: string, rootId: string, timeout: ?int}|null $parent
-     */
-    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, string $runId, string $invocationId, string $endpoint, ?array $parent): void
+    /** @param array{dir: string, script: string, startedAtNs: int} $workspace */
+    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, string $runId, string $invocationId, string $endpoint): void
     {
         if ($cancelToken->isCancellationRequested()) {
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
         }
 
         $bootstrap = $this->materializeBootstrap($workspace['dir']);
-        $toonRoot = $this->materializeToonLibrary($workspace['dir']);
-        $valueCodec = $this->materializeValueCodec($workspace['dir']);
+        $this->runtime->materialize($workspace['dir'].'/runtime');
         // Keep stderr for warnings/fatals, but suppress display_errors and Xdebug
         // stacks so each warning is not mirrored into stdout with a call stack.
         // Process's pipe reader can aggregate arbitrarily many bytes before
@@ -289,23 +199,19 @@ final readonly class CodeModeHostBridge
         $cwd = $this->runtimeProcessConfig->runtimeCwd();
         $environment = [
             'HATFIELD_CODE_MODE_SCRIPT' => $workspace['script'],
-            'HATFIELD_CODE_MODE_TOON_ROOT' => $toonRoot,
-            'HATFIELD_CODE_MODE_VALUE_CODEC' => $valueCodec,
+            'HATFIELD_CODE_MODE_RUN' => $runId,
+            'HATFIELD_CODE_MODE_BATCH_DIR' => $this->paths->resolveToolBatchesDirectory($runId),
             'HATFIELD_CODE_MODE_MEMORY_LIMIT' => $memoryLimit,
         ];
         $environment['HATFIELD_SQLITE_QUEUE_ENDPOINT'] = $endpoint;
         $environment['HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN'] = 'sqlite-queue://code_mode_requests?endpoint='.rawurlencode($endpoint);
         $environment['HATFIELD_CODE_MODE_INVOCATION'] = $invocationId;
-        $environment['HATFIELD_CODE_MODE_ROOT'] = $parent['rootId'] ?? $invocationId;
-        $archive = \Phar::running(false);
-        $root = '' === $archive ? \dirname(__DIR__, 4) : 'phar://'.$archive;
-        $environment['HATFIELD_CODE_MODE_AUTOLOAD'] = $root.'/vendor/autoload.php';
+        $environment['HATFIELD_CODE_MODE_ROOT'] = $invocationId;
         $assignments = '';
         foreach ($environment as $name => $value) {
             $assignments .= $name.'='.escapeshellarg($value).' ';
         }
-        $this->processOwner->launch($runId, $invocationId, $workspace['dir'], 'cd '.escapeshellarg($cwd).' && '.$assignments.$shell, $workspace['startedAtNs'], controllerSettles: true, parent: $parent,
-            admit: null === $parent ? fn () => $this->deferred->markReady($invocationId) : null);
+        $this->processOwner->launch($runId, $invocationId, $workspace['dir'], 'cd '.escapeshellarg($cwd).' && '.$assignments.$shell, $workspace['startedAtNs'], admit: fn () => $this->deferred->markReady($invocationId));
     }
 
     private function formatMemoryLimit(int $memoryLimitMb): string

@@ -10,12 +10,10 @@ use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
-use Ineersa\CodingAgent\Entity\CodeModeCallRepository;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticCapture;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnostics;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeProcessOwner;
-use Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
 use Psr\Log\LoggerInterface;
@@ -29,8 +27,6 @@ final readonly class CodeModeTerminalObserver
         private DeferredToolCompletionRepositoryInterface $deferred,
         #[Autowire(service: 'agent.command.bus')] private MessageBusInterface $commandBus,
         private LoggerInterface $logger,
-        private CodeModeCallRepository $calls,
-        private CodeModeReplyTransportFactory $replies,
         private OutputCap $outputCap,
         private ToolPayloadStoreInterface $payloads,
         private CodeModeDiagnosticsToolResultProcessor $diagnostics,
@@ -55,30 +51,6 @@ final readonly class CodeModeTerminalObserver
     private function settle(string $runId, string $id): void
     {
         $invocation = $this->processes->invocation($runId, $id);
-        $parent = $invocation['parent'] ?? null;
-        if (null !== $parent) {
-            $root = $this->deferred->findMetadataByDeferredId($parent['rootId']);
-            $destination = $this->processes->invocation($runId, $parent['invocationId']);
-            // The session still owns this process if its caller exits. Only
-            // explicit interruption or the inherited deadlines can stop it.
-            $stop = $root?->interruptionReason;
-            $call = $this->deferred->findByDeferredId($parent['rootId']);
-            $explicit = $call?->arguments['timeout_seconds'] ?? null;
-            $deadline = $this->processes->deadline($runId, $id, null !== $root?->backgroundedAt, \is_int($explicit) ? $explicit : null, $call?->timeoutSeconds);
-            $reply = $this->processes->observeTerminal($runId, $id, $deadline, $stop);
-            if (null !== $reply && null !== $destination && null !== $root
-                && null === $this->calls->reply($parent['invocationId'], $parent['callId'])) {
-                if (!$reply['ok']) {
-                    $capture = new CodeModeDiagnosticCapture($this->outputCap, $runId, $invocation['workspace']);
-                    $reply['error'] = $capture->boundedFailure($reply['error'] ?? 'Code-mode child failed.');
-                }
-                $reference = $this->replies->publish($parent['invocationId'], $parent['callId'], $root->reference, $reply);
-                $this->replies->send($parent['invocationId'], $parent['callId'], $reference);
-                $this->calls->completeChild($parent['invocationId'], $parent['callId'], $id, $reference);
-            }
-
-            return;
-        }
         $metadata = $this->deferred->findMetadataByDeferredId($id);
         if (null === $metadata || 'pending' !== $metadata->status || $runId !== $metadata->reference->runId || 'code_mode' !== $metadata->reference->toolName) {
             return;
@@ -98,7 +70,7 @@ final readonly class CodeModeTerminalObserver
         $capture = new CodeModeDiagnosticCapture($this->outputCap, $runId, $invocation['workspace'],
             fn (callable $write): string => $this->payloads->saveAttachment($runId, $call->toolCallId, $write));
         try {
-            $diagnostics = $capture->prepare(3); // Lines before user code in the materialized script.
+            $diagnostics = is_file($capture->stdoutPath) && is_file($capture->stderrPath) ? $capture->prepare(3) : []; // Lines before user code in the materialized script.
         } catch (MalformedToolResultException $error) {
             $reply = ['ok' => false, 'error' => $error->getMessage()];
             $diagnostics = [];

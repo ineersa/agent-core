@@ -35,18 +35,5 @@ final class CodeModeCallRepositoryTest extends IsolatedKernelTestCase
         $unknown = $replacement->settle($workspace, 'unknown', $request, $never, $fallback);
         $this->assertEquals($error, $unknown);
         $this->assertEquals($unknown, $first->settle($workspace, 'unknown', $request, $never, $fallback));
-
-        $pending = $first->settle($workspace, 'nested', $request, function () use ($replacement, $workspace, $request, $never, $fallback): string {
-            $this->assertNull($replacement->childId($workspace, 'nested'));
-            $replacement->reserveChild($workspace, 'nested', 'child-id');
-            $this->assertSame('child-id', $replacement->childId($workspace, 'nested'));
-            $this->assertNull($replacement->settle($workspace, 'nested', $request, $never, $fallback));
-
-            return 'child-id';
-        }, $fallback);
-        $this->assertSame('child-id', $pending);
-        $this->assertSame($pending, $replacement->settle($workspace, 'nested', $request, $never, $fallback));
-        $this->assertTrue($replacement->completeChild($workspace, 'nested', 'child-id', $error));
-        $this->assertEquals($error, $first->settle($workspace, 'nested', $request, $never, $fallback));
     }
 }

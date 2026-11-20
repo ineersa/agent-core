@@ -23,23 +23,6 @@ final class CodeModeDiagnosticCapture
         $this->stderrPath = $workspace.'/stderr.log';
     }
 
-    /** Child diagnostics are previews only: never hand out workspace paths or attachments. */
-    public function boundedFailure(string $message): string
-    {
-        $limit = 4096;
-        $preview = static function (string $path) use ($limit): ?string {
-            $text = is_file($path) && !is_link($path) ? file_get_contents($path, false, null, 0, $limit + 1) : false;
-            if (false === $text) {
-                return null;
-            }
-
-            return mb_strcut(mb_scrub($text, 'UTF-8'), 0, $limit, 'UTF-8').(\strlen($text) > $limit ? "\n[diagnostics truncated]" : '');
-        };
-        $message = CodeModeDiagnostics::normalizePaths(mb_strcut(mb_scrub($message, 'UTF-8'), 0, $limit, 'UTF-8'));
-
-        return CodeModeDiagnostics::appendToMessage($message, CodeModeDiagnostics::prepare($preview($this->stdoutPath), $preview($this->stderrPath)));
-    }
-
     /** @return array{stdout?: string, stderr?: string} */
     public function prepare(int $wrapperPrefixLines): array
     {

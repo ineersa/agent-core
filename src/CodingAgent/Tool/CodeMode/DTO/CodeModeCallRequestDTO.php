@@ -14,7 +14,7 @@ final readonly class CodeModeCallRequestDTO
         #[Assert\Regex('/^[a-f0-9]{16}$/D')] public string $callId,
         #[Assert\NotBlank, Assert\Length(max: 255)] public string $name,
         public array $arguments,
-        #[Assert\Choice(choices: ['tool', 'notice'])] public string $operation = 'tool',
+        #[Assert\Choice(choices: ['tool', 'notice', 'admit', 'return'])] public string $operation = 'tool',
         #[Assert\Uuid] public ?string $rootId = null,
     ) {
     }

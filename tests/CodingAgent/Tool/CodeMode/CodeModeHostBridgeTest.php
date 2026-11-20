@@ -78,9 +78,9 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             // Deliberately do not service the queue until the launcher has returned.
             $fixture = $this->tmpDir.'/nested-read.txt';
             file_put_contents($fixture, 'broker nested read');
-            $script = 'echo tool("read", ["path" => '.var_export($fixture, true).']); echo str_repeat("X", 8192)."OMITTED_TAIL"; fwrite(STDERR, "child diagnostic"); throw new RuntimeException("child failed");';
             $script = 'try { tool("read", ["invalid list"]); } catch (RuntimeException $error) { $refusal = $error->getMessage(); }'
-                .' try { tool("code_mode", ["script" => '.var_export($script, true).']); } catch (RuntimeException $error) { $child = $error->getMessage(); } return [$refusal ?? null, $child ?? null];';
+                .' try { tool("code_mode", ["script" => "return 42;"]); } catch (RuntimeException $error) { $recursion = $error->getMessage(); }'
+                .' return [$refusal ?? null, tool("read", ["path" => '.var_export($fixture, true).']), $recursion ?? null];';
             $outcome = $accessor->with($context, static fn (): mixed => $tool(new CodeModeArgumentsDTO($script, 5)));
             $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
             $this->assertTrue($client->wait('code_mode_requests', 3000));
@@ -117,12 +117,12 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
 
                 return $handled;
             };
-            [$invalidRequest, $outerRequest, $readRequest] = $consume(3);
+            [, $invalidRequest, $outerRequest, $readRequest] = $consume(5);
             $this->assertInstanceOf(CodeModeCallRequestDTO::class, $invalidRequest);
             $this->assertInstanceOf(CodeModeCallRequestDTO::class, $outerRequest);
             $this->assertInstanceOf(CodeModeCallRequestDTO::class, $readRequest);
             $this->assertSame($outcome->deferredId, $outerRequest->invocationId);
-            $this->assertNotSame($outcome->deferredId, $readRequest->invocationId);
+            $this->assertSame($outcome->deferredId, $readRequest->invocationId);
             $this->assertSame($outcome->deferredId, $readRequest->rootId);
             $record = $owner->invocation($runId, $readRequest->invocationId);
             $this->assertNotNull($record);
@@ -153,11 +153,8 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $this->assertTrue($terminal['ok'], $terminal['error'] ?? 'Expected a successful nested read.');
             $this->assertSame('Invalid code-mode call request.', $terminal['result'][0] ?? null);
             $this->assertStringContainsString('broker nested read', $terminal['result'][1]);
-            $this->assertStringContainsString('child failed', $terminal['result'][1]);
-            $this->assertStringContainsString('child diagnostic', $terminal['result'][1]);
-            $this->assertStringContainsString('[diagnostics truncated]', $terminal['result'][1]);
-            $this->assertStringNotContainsString('OMITTED_TAIL', $terminal['result'][1]);
-            $this->assertStringNotContainsString($record['workspace'], $terminal['result'][1]);
+            $this->assertStringContainsString('Tool "code_mode" is not supported', $terminal['result'][2]);
+            $this->assertSame([$outcome->deferredId], $owner->controllerInvocationIds($runId));
         } finally {
             if (null === $previous) {
                 unset($_SERVER[$endpoint]);

@@ -12,7 +12,7 @@ final class CodeModeCancellationToken implements CancellationTokenInterface
     private bool $cancelled = false;
     private bool $backgrounded = false;
 
-    public function __construct(private CancellationTokenInterface $parent, private DeferredToolCompletionRepositoryInterface $deferred, private string $id, public readonly ?string $brokerInvocationId = null, public readonly ?string $brokerCallId = null, public readonly ?string $brokerRootId = null, private readonly ?\Closure $invocationUnavailable = null)
+    public function __construct(private CancellationTokenInterface $parent, private DeferredToolCompletionRepositoryInterface $deferred, private string $id, private readonly ?\Closure $invocationUnavailable = null)
     {
     }
 

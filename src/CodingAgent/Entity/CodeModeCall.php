@@ -14,7 +14,6 @@ final class CodeModeCall
         #[ORM\Id, ORM\Column(length: 36)] public readonly string $invocationId,
         #[ORM\Id, ORM\Column(length: 16)] public readonly string $callId,
         #[ORM\Column(length: 64)] public readonly string $fingerprint,
-        #[ORM\Column(length: 36, nullable: true)] public readonly ?string $childId,
         #[ORM\Column(type: 'text', nullable: true)] public readonly ?string $replyReference,
     ) {
     }

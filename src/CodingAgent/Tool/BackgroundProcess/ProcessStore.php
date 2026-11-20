@@ -41,6 +41,8 @@ final class ProcessStore
         $connection = $this->entityManager->getConnection();
         $connection->insert('background_process', [
             'pid' => $fields['pid'] ?? null,
+            'code_mode_id' => $fields['code_mode_id'] ?? null,
+            'code_mode_launch' => $fields['code_mode_launch'] ?? null,
             'pgid' => $fields['pgid'] ?? null,
             'session_id' => $fields['session_id'] ?? '',
             'command' => $fields['command'] ?? '',
@@ -194,7 +196,7 @@ final class ProcessStore
             return [];
         }
 
-        return array_map($this->hydrateSnapshot(...), $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id IN (?) AND finished_at IS NULL ORDER BY id', [$runIds], [ArrayParameterType::STRING]));
+        return array_map($this->hydrateSnapshot(...), $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id IN (?) AND code_mode_id IS NULL AND finished_at IS NULL ORDER BY id', [$runIds], [ArrayParameterType::STRING]));
     }
 
     public function snapshot(int $recordId): ?BashProcessRecordDTO
@@ -213,7 +215,7 @@ final class ProcessStore
     /** @return list<BashProcessRecordDTO> */
     public function sessionSnapshots(string $runId): array
     {
-        return array_map($this->hydrateSnapshot(...), $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id = ? ORDER BY id', [$runId]));
+        return array_map($this->hydrateSnapshot(...), $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id = ? AND code_mode_id IS NULL ORDER BY id', [$runId]));
     }
 
     public function latestSnapshot(int $pid): ?BashProcessRecordDTO

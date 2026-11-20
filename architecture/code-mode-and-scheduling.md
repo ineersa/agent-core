@@ -25,7 +25,8 @@ sequenceDiagram
     Worker->>Worker: Claim call, run existing toolbox, retain reply
     Worker->>Broker: Publish managed result reference to invocation reply queue
     Broker-->>PHP: Correlated reply with managed tool payload reference
-    PHP->>Owner: Publish managed return and commit its reference by invocation ID
+    PHP->>Broker: Report return and wait for acknowledgement
+    Broker->>Worker: Commit managed return reference before replying
     Owner->>RC: Publish deferred completion
 ```
 
@@ -44,24 +45,25 @@ turning arbitrary PHP filesystem/process calls into async toolbox calls.
 
 Direct PHP bypasses hooks and approvals. Code mode inherits the launcher's
 sandbox, if any; it creates none. Source/PHAR builds reuse their launching PHP
-CLI; fused static builds need `php` on PATH. Deferred/interactive tools
+CLI; fused static builds need `php` on PATH. The launcher materializes a standalone
+Composer runtime from the installed locked packages before starting external PHP.
+The script process does not load the application kernel or open the state database.
+Deferred/interactive tools
 (`subagent`, `fork`, `agent_resume`, `agent_steer`, `notify_parent`, `ask_human`)
 are refused by the bridge.
 
 Direct `backgrounded: true` uses the existing deferred completion lifecycle.
-Canonical launches run in separate native process groups with invocation-keyed
-sidecars. The controller can observe completion, stop the group, and clean its
-workspace independently of the launching consumer. PHP checks committed root
-admission and, for a child, its exact prelaunch reservation once at startup.
-There is no launcher-owned readiness file or bootstrap wait. `bg_status` controls Bash
-jobs, not PHP scripts.
+Canonical launches reserve a row in the Doctrine background-process catalog and
+run in separate native process groups with invocation-keyed PID and status
+sidecars. The controller can stop the group and clean its workspace, including
+when no PID was published. A reservation abandoned before native startup is
+fenced and reported as an unknown launch, never replayed. PHP checks committed
+admission at startup. `bg_status` controls Bash jobs, not PHP scripts.
 
-A brokered `tool('code_mode', ...)` launches another session-owned PHP process
-and releases the request slot. The child record identifies the parent invocation
-and call. The controller publishes a correlated reply and records its managed reference against the reserved child. Failed-child replies include bounded diagnostic previews, not paths or attachments to the child streams. An exited caller does not itself request a native stop of the child. Calls without canonical or brokered parent correlation, or without a live
-session broker, are refused before launch.
+Scripts can invoke ordinary tools but cannot recursively launch `code_mode`.
+Calls without canonical correlation or a live session broker are refused.
 
-Nested requests are claimed by a unique invocation/call key before tool execution. No database transaction spans the tool effect. The existing process-sidecar lock facility suppresses duplicate execution while a claimant is alive and releases on worker exit. A persisted claim without a reference or reserved child yields a managed unknown-outcome error. Doctrine stores only reply references; both nested results and PHP returns live in the managed tool payload store. The worker publishes a managed tool result and sends its reference on the invocation reply queue. PHP waits for the matching call ID and reads the referenced result from the payload store.
+Nested requests are claimed by a unique invocation/call key before tool execution. No database transaction spans the tool effect. The existing process-sidecar lock facility suppresses duplicate execution while a claimant is alive and releases on worker exit. A persisted claim without a reference yields a managed unknown-outcome error. Doctrine stores only reply references; both nested results and PHP returns live in the managed tool payload store. The worker publishes a managed tool result and sends its reference on the invocation reply queue. PHP waits for the matching call ID and reads the referenced result from the payload store.
 
 ## Scheduling
 

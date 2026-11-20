@@ -19,6 +19,34 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
         parent::__construct($registry, BackgroundProcess::class);
     }
 
+    /** @return array{workspace: string, startedAtNs: int, fenced: bool}|null */
+    public function codeModeLaunch(string $runId, string $id): ?array
+    {
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative('SELECT code_mode_launch, finished_at FROM background_process WHERE session_id = ? AND code_mode_id = ?', [$runId, $id]);
+        if (false === $row) {
+            return null;
+        }
+        $launch = json_decode($row['code_mode_launch'], true, flags: \JSON_THROW_ON_ERROR);
+
+        return $launch + ['fenced' => null !== $row['finished_at']];
+    }
+
+    /** @return list<string> */
+    public function codeModeIds(string $runId): array
+    {
+        return $this->getEntityManager()->getConnection()->fetchFirstColumn('SELECT code_mode_id FROM background_process WHERE session_id = ? AND code_mode_id IS NOT NULL ORDER BY id', [$runId]);
+    }
+
+    public function fenceCodeModeLaunch(string $runId, string $id): void
+    {
+        $this->getEntityManager()->getConnection()->executeStatement('UPDATE background_process SET finished_at = CURRENT_TIMESTAMP WHERE session_id = ? AND code_mode_id = ? AND finished_at IS NULL', [$runId, $id]);
+    }
+
+    public function removeCodeModeLaunch(string $runId, string $id): void
+    {
+        $this->getEntityManager()->getConnection()->delete('background_process', ['session_id' => $runId, 'code_mode_id' => $id]);
+    }
+
     /** @return list<array<string, mixed>> */
     public function findOwnedBackgroundWork(string $rootRunId, ?int $observedRecordId): array
     {

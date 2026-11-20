@@ -14,7 +14,9 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\CodeModeCallRepository;
+use Ineersa\CodingAgent\Entity\CodeModeReportedReturnRepository;
 use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO;
+use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
@@ -33,6 +35,7 @@ final readonly class CodeModeCallRequestHandler
         private StackToolExecutionContextAccessor $contexts,
         private CodeModeNestedToolExecutor $executor,
         private CodeModeCallRepository $calls,
+        private CodeModeReportedReturnRepository $returns,
         #[Autowire(service: 'agent.command.bus')] private MessageBusInterface $commands,
         private CodeModeReplyTransportFactory $replies,
     ) {
@@ -48,7 +51,7 @@ final readonly class CodeModeCallRequestHandler
         $ref = $metadata->reference;
         $call = $this->batches->loadCall($ref->runId, $ref->turnNo, $ref->stepId, $ref->toolCallId);
         $process = $this->processes->invocation($ref->runId, $request->invocationId);
-        if (null === $process || ($rootId !== $request->invocationId && ($process['parent']['rootId'] ?? null) !== $rootId) || null === $call || 'code_mode' !== $call->toolName
+        if (null === $process || $rootId !== $request->invocationId || null === $call || 'code_mode' !== $call->toolName
             || $ref->attempt !== $call->attempt() || $ref->idempotencyKey !== $call->idempotencyKey() || $ref->orderIndex !== $call->orderIndex) {
             throw new UnrecoverableMessageHandlingException('Code-mode invocation evidence does not match the canonical call.');
         }
@@ -59,11 +62,26 @@ final readonly class CodeModeCallRequestHandler
 
             return;
         }
+        if ('admit' === $request->operation || 'return' === $request->operation) {
+            if ($process['fenced'] || null !== $metadata->interruptionReason) {
+                $reply = ['ok' => false, 'error' => 'Code-mode launch is no longer admitted.'];
+            } else {
+                if ('return' === $request->operation) {
+                    // Acknowledge only after committing the reference. PHP cannot
+                    // exit successfully before the supervisor can read its return.
+                    $this->returns->record($request->invocationId, $this->replies->publish($request->invocationId, 'return', $ref, $request->arguments));
+                }
+                $reply = ['ok' => true];
+            }
+            $this->replies->send($request->invocationId, $request->callId, $publish($reply));
+
+            return;
+        }
         $wire = ['operation' => $request->operation, 'name' => $request->name, 'arguments' => $request->arguments];
         $execute = function () use ($request, $call, $rootId): array {
             try {
                 $explicit = $call->args['timeout_seconds'] ?? null;
-                $token = new CodeModeCancellationToken(new RunCancellationToken($this->status, $call->runId()), $this->deferred, $rootId, $request->invocationId, $request->callId, $rootId,
+                $token = new CodeModeCancellationToken(new RunCancellationToken($this->status, $call->runId()), $this->deferred, $rootId,
                     fn (bool $backgrounded): bool => $this->processes->hasExited($call->runId(), $request->invocationId)
                         || ($this->processes->deadline($call->runId(), $request->invocationId, $backgrounded, \is_int($explicit) ? $explicit : null, $call->timeoutSeconds) ?? \PHP_INT_MAX) <= hrtime(true));
                 if ($token->isCancellationRequested()) {
@@ -82,20 +100,14 @@ final readonly class CodeModeCallRequestHandler
 
                     return ['ok' => true, 'result' => ['status' => 'submitted', 'notice_id' => $identity]];
                 }
-                if (CodeModeUnsupportedTools::contains($request->name)) {
+                if (CodeModeTool::NAME === $request->name || CodeModeUnsupportedTools::contains($request->name)) {
                     return ['ok' => false, 'error' => CodeModeUnsupportedTools::rejectionMessage($request->name)];
                 }
                 $owner = new ToolContext($call->runId(), $call->turnNo(), $call->toolCallId, 'code_mode', $token, null, $call->orderIndex, stepId: $call->stepId(), parentModel: $call->parentModel);
                 $id = 'code-mode-'.hash('sha256', $request->invocationId.':'.$request->callId);
                 $value = $this->contexts->with($owner, fn (): mixed => $this->executor->execute($id, $request->name, $request->arguments, $owner, $token, null));
-                if ($value instanceof DeferredToolCompletionOutcome) {
-                    return ['child' => $value->deferredId];
-                }
-                if ($value instanceof ToolExecutionHumanInputSuspension) {
+                if ($value instanceof DeferredToolCompletionOutcome || $value instanceof ToolExecutionHumanInputSuspension) {
                     return ['ok' => false, 'error' => 'Deferred or interactive results are not supported in nested calls.'];
-                }
-                if ('code_mode' === $request->name && \is_array($value) && \array_key_exists('code_mode_value', $value)) {
-                    $value = $value['code_mode_value'];
                 }
 
                 return ['ok' => true, 'result' => CodeModeValueCodec::assertEncodable($value, 'Nested tool result')];
@@ -106,31 +118,12 @@ final readonly class CodeModeCallRequestHandler
             }
         };
         $reply = $this->calls->settle($request->invocationId, $request->callId, $wire,
-            static function () use ($execute, $publish) {
-                $result = $execute();
-
-                return $result['child'] ?? $publish($result);
-            },
+            static fn () => $publish($execute()),
             static fn () => $publish(['ok' => false, 'error' => 'Code-mode call outcome is unknown; refusing to run it again.']),
         );
         if (null === $reply) {
             return;
         }
-        if (\is_string($reply)) {
-            $childId = $reply;
-            $child = $this->processes->invocation($call->runId(), $childId);
-            if (null !== $child) {
-                return;
-            }
-            // Redelivery after a dead claimant cannot determine whether launch
-            // crossed the native boundary. Never start another copy.
-            $this->calls->completeChild($request->invocationId, $request->callId, $childId, $publish([
-                'ok' => false, 'error' => 'Code-mode child launch outcome is unknown; refusing to start it again.',
-            ]));
-            $reply = $this->calls->reply($request->invocationId, $request->callId);
-        }
-        if (null !== $reply) {
-            $this->replies->send($request->invocationId, $request->callId, $reply);
-        }
+        $this->replies->send($request->invocationId, $request->callId, $reply);
     }
 }

@@ -17,12 +17,11 @@ declare(strict_types=1);
 /** @param array<string, mixed> $arguments */
 function hatfield_code_mode_broker_call(string $operation, string $name, array $arguments): mixed
 {
-    global $broker, $invocationId, $rootId, $kernel;
+    global $broker, $requests, $invocationId, $payloads;
     $id = bin2hex(random_bytes(8));
-    $kernel->getContainer()->get('hatfield.code_mode.execution_bus')->dispatch(
-        new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO($invocationId, $id, $name, $arguments, $operation, $rootId),
-    );
-    $payloads = $kernel->getContainer()->get('hatfield.code_mode.payload_store');
+    $requests->send(new \Symfony\Component\Messenger\Envelope(
+        new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO($invocationId, $id, $name, $arguments, $operation, $invocationId),
+    ));
     while (true) {
         foreach ($broker->get() as $delivery) {
             $message = $delivery->getMessage();
@@ -48,12 +47,8 @@ function hatfield_code_mode_broker_call(string $operation, string $name, array $
 /** @param array<string, mixed> $frame */
 function hatfield_code_mode_terminal(array $frame): void
 {
-    global $kernel, $invocationId, $rootId;
     unset($frame['type']);
-    /** @var \Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory $replies */
-    $replies = $kernel->getContainer()->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory::class);
-    $kernel->getContainer()->get(\Ineersa\CodingAgent\Entity\CodeModeReportedReturnRepository::class)
-        ->record($invocationId, $replies->publishReturn($invocationId, $rootId, $frame));
+    hatfield_code_mode_broker_call('return', 'return', $frame);
 }
 
 if (!\function_exists('notify_owner')) {
@@ -103,25 +98,6 @@ if (!\function_exists('tool')) {
     }
 }
 
-if (!function_exists('hatfield_code_mode_register_toon_autoload')) {
-    function hatfield_code_mode_register_toon_autoload(string $root): void
-    {
-        $root = rtrim($root, '/');
-        spl_autoload_register(static function (string $class) use ($root): void {
-            $prefix = 'HelgeSverre\\Toon\\';
-            if (!str_starts_with($class, $prefix)) {
-                return;
-            }
-
-            $relative = str_replace('\\', '/', substr($class, strlen($prefix)));
-            $path = $root.'/'.$relative.'.php';
-            if (is_file($path)) {
-                require_once $path;
-            }
-        });
-    }
-}
-
 if (!function_exists('toon_encode')) {
     /**
      * Encode a PHP value to TOON text.
@@ -164,24 +140,10 @@ if (!\is_string($scriptPath) || '' === $scriptPath) {
     exit(2);
 }
 
-$toonRoot = getenv('HATFIELD_CODE_MODE_TOON_ROOT');
-if (!\is_string($toonRoot) || '' === $toonRoot || !is_dir($toonRoot)) {
-    fwrite(\STDERR, "HATFIELD_CODE_MODE_TOON_ROOT is required.\n");
-    exit(2);
-}
-hatfield_code_mode_register_toon_autoload($toonRoot);
-
 $memoryLimit = getenv('HATFIELD_CODE_MODE_MEMORY_LIMIT');
 if (is_string($memoryLimit) && '' !== $memoryLimit) {
     ini_set('memory_limit', $memoryLimit);
 }
-
-$valueCodec = getenv('HATFIELD_CODE_MODE_VALUE_CODEC');
-if (!is_string($valueCodec) || '' === $valueCodec || !is_file($valueCodec)) {
-    fwrite(STDERR, "HATFIELD_CODE_MODE_VALUE_CODEC is required.\n");
-    exit(2);
-}
-require_once $valueCodec;
 
 // Host starts the child with display_errors=0. Keep that so warnings go to
 // stderr once without an stdout mirror. Errors still report through STDERR.
@@ -193,18 +155,42 @@ ini_set('log_errors', '1');
 ini_set('error_log', '');
 error_reporting(E_ALL);
 
-require getenv('HATFIELD_CODE_MODE_AUTOLOAD');
+require __DIR__.'/runtime/autoload.php';
 $invocationId = getenv('HATFIELD_CODE_MODE_INVOCATION');
-$rootId = getenv('HATFIELD_CODE_MODE_ROOT') ?: $invocationId;
-$kernel = new \Ineersa\CodingAgent\Kernel(getenv('APP_ENV') ?: 'prod', false);
-$kernel->boot();
-/** @var \Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory $replies */
-$replies = $kernel->getContainer()->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory::class);
-if (!$replies->isAdmitted($invocationId, $rootId)) {
-    fwrite(\STDERR, "Code-mode launch is no longer admitted.\n");
-    exit(1);
-}
-$broker = $replies->create($invocationId);
+$runId = getenv('HATFIELD_CODE_MODE_RUN');
+$batchDir = getenv('HATFIELD_CODE_MODE_BATCH_DIR');
+$normalizer = new \Symfony\Component\Serializer\Normalizer\ObjectNormalizer(
+    nameConverter: new \Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter(),
+    propertyTypeExtractor: new \Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor(),
+);
+$codec = new \Symfony\Component\Serializer\Serializer([$normalizer], [new \Symfony\Component\Serializer\Encoder\JsonEncoder()]);
+$serializer = new \Symfony\Component\Messenger\Transport\Serialization\Serializer($codec);
+$factory = new \Ineersa\SqliteQueue\Messenger\TransportFactory();
+$endpoint = ['endpoint' => getenv('HATFIELD_SQLITE_QUEUE_ENDPOINT')];
+$requests = $factory->createTransport('sqlite-queue://code_mode_requests', $endpoint, $serializer);
+$broker = $factory->createTransport('sqlite-queue://code_mode_reply.'.$invocationId, $endpoint, $serializer);
+$paths = new class($runId, $batchDir) implements \Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface {
+    public function __construct(private string $runId, private string $path) {}
+
+    public function resolveToolBatchesDirectory(string $runId): string
+    {
+        if ($runId !== $this->runId) {
+            throw new RuntimeException('Unexpected code-mode payload run.');
+        }
+
+        return $this->path;
+    }
+
+    public function withStorage(string $runId, callable $write): mixed
+    {
+        throw new LogicException('Code-mode payload access is read-only.');
+    }
+};
+$payloads = new \Ineersa\CodingAgent\Session\SessionToolPayloadStore(
+    $paths, $codec, \Symfony\Component\Validator\Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(),
+    new \Symfony\Component\Filesystem\Filesystem(),
+);
+hatfield_code_mode_broker_call('admit', 'admit', []);
 
 register_shutdown_function(static function (): void {
     $error = error_get_last();

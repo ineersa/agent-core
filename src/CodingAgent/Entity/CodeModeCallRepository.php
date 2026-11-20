@@ -26,7 +26,7 @@ final class CodeModeCallRepository extends ServiceEntityRepository
      * @param callable(): (ToolPayloadReferenceDTO|string) $execute a string identifies a reserved child
      * @param callable(): ToolPayloadReferenceDTO          $unknown
      */
-    public function settle(string $invocationId, string $callId, array $request, callable $execute, callable $unknown): ToolPayloadReferenceDTO|string|null
+    public function settle(string $invocationId, string $callId, array $request, callable $execute, callable $unknown): ?ToolPayloadReferenceDTO
     {
         $fingerprint = hash('sha256', json_encode($request, \JSON_THROW_ON_ERROR));
         // The same native lock facility used by process sidecars releases on worker exit.
@@ -38,23 +38,13 @@ final class CodeModeCallRepository extends ServiceEntityRepository
             $db = $this->connection();
             if (1 === $db->executeStatement('INSERT INTO code_mode_call (invocationId, callId, fingerprint) VALUES (?, ?, ?) ON CONFLICT (invocationId, callId) DO NOTHING', [$invocationId, $callId, $fingerprint])) {
                 $outcome = $execute();
-                if (\is_string($outcome)) {
-                    if ($outcome !== $this->childId($invocationId, $callId)) {
-                        throw new ToolCallException('Code-mode child was not reserved before launch.', retryable: false);
-                    }
-
-                    return $outcome;
-                }
             } else {
-                $row = $db->fetchAssociative('SELECT fingerprint, childId, replyReference FROM code_mode_call WHERE invocationId = ? AND callId = ?', [$invocationId, $callId]);
+                $row = $db->fetchAssociative('SELECT fingerprint, replyReference FROM code_mode_call WHERE invocationId = ? AND callId = ?', [$invocationId, $callId]);
                 if (false === $row || $row['fingerprint'] !== $fingerprint) {
                     throw new ToolCallException('Code-mode call ID was reused for a different request.', retryable: false);
                 }
                 if (\is_string($row['replyReference'])) {
                     return $this->decode($row['replyReference']);
-                }
-                if (\is_string($row['childId'])) {
-                    return $row['childId'];
                 }
                 $outcome = $unknown();
             }
@@ -66,30 +56,11 @@ final class CodeModeCallRepository extends ServiceEntityRepository
         }
     }
 
-    public function reserveChild(string $invocationId, string $callId, string $childId): void
-    {
-        if (1 !== $this->connection()->executeStatement('UPDATE code_mode_call SET childId = ? WHERE invocationId = ? AND callId = ? AND childId IS NULL AND replyReference IS NULL', [$childId, $invocationId, $callId])) {
-            throw new ToolCallException('Cannot reserve code-mode child for launch.', retryable: false);
-        }
-    }
-
-    public function childId(string $invocationId, string $callId): ?string
-    {
-        $child = $this->connection()->fetchOne('SELECT childId FROM code_mode_call WHERE invocationId = ? AND callId = ?', [$invocationId, $callId]);
-
-        return \is_string($child) ? $child : null;
-    }
-
     public function reply(string $invocationId, string $callId): ?ToolPayloadReferenceDTO
     {
         $json = $this->connection()->fetchOne('SELECT replyReference FROM code_mode_call WHERE invocationId = ? AND callId = ?', [$invocationId, $callId]);
 
         return \is_string($json) ? $this->decode($json) : null;
-    }
-
-    public function completeChild(string $invocationId, string $callId, string $childId, ToolPayloadReferenceDTO $reply): bool
-    {
-        return 1 === $this->connection()->executeStatement('UPDATE code_mode_call SET replyReference = ? WHERE invocationId = ? AND callId = ? AND childId = ? AND replyReference IS NULL', [$this->serializer->serialize($reply, 'json'), $invocationId, $callId, $childId]);
     }
 
     public function remove(string $invocationId): void

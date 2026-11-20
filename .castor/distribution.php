@@ -1085,7 +1085,58 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
     distribution_smoke_packaged_process_topology($artifactPath, isPhar: false);
 }
 
-/** Prove packaged broker/worker operation and full-tree shutdown without a model call. */
+/**
+ * @param resource             $listener
+ * @param array<int, resource> $pipes
+ */
+function distribution_smoke_code_mode($listener, array $pipes, string $tmp): void
+{
+    $token = bin2hex(random_bytes(12));
+    \CastorTasks\write_file_checked($tmp.'/code-mode-input.txt', $token);
+    fwrite($pipes[0], json_encode(['v' => 1, 'id' => 'code-mode-smoke', 'type' => 'start_run', 'payload' => ['prompt' => 'Run the requested tool.']], \JSON_THROW_ON_ERROR)."\n");
+    $peer = @stream_socket_accept($listener, 5);
+    if (false === $peer) {
+        throw new RuntimeException('Packaged code-mode smoke: provider request missing. '.stream_get_contents($pipes[1]).stream_get_contents($pipes[2]));
+    }
+    try {
+        stream_set_timeout($peer, 5);
+        $length = 0;
+        while (false !== ($line = fgets($peer)) && '' !== trim($line)) {
+            if (preg_match('/^Content-Length: (\d+)/i', $line, $matches)) {
+                $length = (int) $matches[1];
+            }
+        }
+        if ($length > 0) {
+            stream_get_contents($peer, $length);
+        }
+        $script = 'file_put_contents("code-mode-output.txt", json_encode(tool("read", ["path" => "code-mode-input.txt"])));';
+        $delta = ['tool_calls' => [[
+            'index' => 0, 'id' => 'call_code_mode_smoke', 'type' => 'function',
+            'function' => ['name' => 'code_mode', 'arguments' => json_encode(['script' => $script], \JSON_THROW_ON_ERROR)],
+        ]]];
+        $events = '';
+        foreach ([[$delta, null], [new stdClass(), 'tool_calls']] as [$message, $finish]) {
+            $events .= 'data: '.json_encode(['id' => 'code-mode-smoke', 'object' => 'chat.completion.chunk', 'created' => 1, 'model' => 'smoke', 'choices' => [['index' => 0, 'delta' => $message, 'finish_reason' => $finish]]], \JSON_THROW_ON_ERROR)."\n\n";
+        }
+        $events .= "data: [DONE]\n\n";
+        fwrite($peer, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\nContent-Length: ".strlen($events)."\r\n\r\n".$events);
+    } finally {
+        fclose($peer);
+    }
+    $deadline = microtime(true) + 5;
+    do {
+        $output = @file_get_contents($tmp.'/code-mode-output.txt');
+        if (false !== $output && str_contains($output, $token)) {
+            echo "  packaged code mode: nested read returned the fixture bytes\n";
+
+            return;
+        }
+        usleep(50_000);
+    } while (microtime(true) < $deadline);
+    throw new RuntimeException('Packaged code-mode nested read did not finish. '.stream_get_contents($pipes[1]).stream_get_contents($pipes[2]));
+}
+
+/** Prove packaged broker/worker operation and full-tree shutdown with a deterministic local provider. */
 function distribution_smoke_packaged_process_topology(string $artifactPath, bool $isPhar): void
 {
     if (!is_file($artifactPath)) {
@@ -1100,7 +1151,39 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
     }
     mkdir($tmp.'/home/.hatfield', 0755, true);
     mkdir($tmp.'/.hatfield/sessions/topo-1', 0755, true);
-    \CastorTasks\write_file_checked($tmp.'/home/.hatfield/settings.yaml', "ai:\n    default_model: null\n");
+    mkdir($tmp.'/scratch', 0700);
+    $listener = stream_socket_server('tcp://127.0.0.1:0');
+    if (false === $listener || false === ($address = stream_socket_get_name($listener, false))) {
+        throw new RuntimeException('Unable to start packaged code-mode fixture provider.');
+    }
+    $settings = $tmp.'/home/.hatfield/settings.yaml';
+    if (realpath($tmp).'/home/.hatfield' !== realpath(dirname($settings)) || file_exists($settings) || is_link($settings)) {
+        throw new RuntimeException('Packaged smoke settings path is not disposable.');
+    }
+    \CastorTasks\write_file_checked($settings, <<<YAML
+        ai:
+          default_model: smoke/smoke
+          providers:
+            smoke:
+              type: generic
+              enabled: true
+              base_url: http://{$address}
+              api: openai-completions
+              api_key: smoke
+              supports_completions: true
+              models:
+                smoke:
+                  name: smoke
+                  context_window: 32768
+                  max_tokens: 4096
+                  input: [text]
+                  tool_calling: true
+        tools:
+          execution:
+            max_parallelism: 1
+          code_mode:
+            enabled: true
+        YAML);
 
     // Relocate and rename the artifact so children cannot depend on its build path.
     // Native acceptance still copies only the one executable, with no interpreter.
@@ -1130,6 +1213,7 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
     ];
     $env = [
         'HOME' => $tmp.'/home',
+        'TMPDIR' => $tmp.'/scratch',
         'APP_ENV' => 'prod',
         'APP_DEBUG' => '0',
         'HATFIELD_CWD' => $tmp,
@@ -1280,6 +1364,8 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
             $client->close();
         }
 
+        distribution_smoke_code_mode($listener, $pipes, $tmp);
+
         // Capture owned PIDs WHILE controller is still alive. After exit, orphans
         // reparent and pgrep -P <dead-controller> false-passes.
         // Keep the entire captured descendant tree, including title-rewritten
@@ -1291,6 +1377,7 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
         echo "  packaged topology: runtime.ready + broker/worker/consumers via renamed {$launchPath}\n";
         echo '  packaged topology: captured '.count($ownedSnapshot)." owned descendant PIDs before shutdown\n";
     } finally {
+        fclose($listener);
         if (is_resource($pipes[0])) {
             fclose($pipes[0]);
         }
