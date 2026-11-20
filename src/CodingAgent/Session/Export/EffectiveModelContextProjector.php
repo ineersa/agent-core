@@ -48,10 +48,7 @@ final readonly class EffectiveModelContextProjector
         $toolsSnapshot = $this->latestAvailableToolsSnapshot($filtered, $runId);
 
         return new EffectiveModelContextSnapshot(
-            messages: array_values(array_map(
-                static fn (AgentMessage $message): array => $message->toArray(),
-                $replayed->messages,
-            )),
+            messages: $replayed->messages,
             availableTools: $toolsSnapshot['tools'],
             availableToolsSchemaTokensEstimate: $toolsSnapshot['estimate'],
             compaction: $this->latestCompactionMetadata($filtered),

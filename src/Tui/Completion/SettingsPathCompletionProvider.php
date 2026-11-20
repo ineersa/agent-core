@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Completion;
 
-/** Direct-child path completion for "/settings-show <prefix>" (exactly one space; Deptrac via source interface). */
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppConfigLoader;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
+
+/** Direct-child path completion for "/settings-show <prefix>" (exactly one space). */
 final readonly class SettingsPathCompletionProvider implements CompletionProvider
 {
     public function __construct(
-        private SettingsPathCompletionSourceInterface $settingsSource,
+        private AppConfigLoader $loader,
+        private AppResourceLocator $resources,
+        private AppConfig $activeConfig,
     ) {
     }
 
@@ -27,7 +33,8 @@ final readonly class SettingsPathCompletionProvider implements CompletionProvide
             $segmentPrefix = substr($prefix, $dot + 1);
         }
 
-        $parent = $this->mapAtPath($this->settingsSource->loadEffectiveSettings(), $parentPath);
+        $settings = $this->loader->load($this->resources->getDefaultsPath(), $this->activeConfig->cwd)->effective;
+        $parent = $this->mapAtPath($settings, $parentPath);
         if (null === $parent) {
             return [];
         }

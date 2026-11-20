@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Validation\EditFile;
 
-use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;

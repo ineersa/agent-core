@@ -14,7 +14,6 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Completion\CompletionContext;
 use Ineersa\Tui\Completion\SettingsPathCompletionProvider;
-use Ineersa\Tui\Listener\SettingsPathCompletionSource;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -32,17 +31,20 @@ final class SettingsPathCompletionProviderTest extends TestCase
             $home = $tmp.'/home';
             $cwd = $tmp.'/project';
             TestDirectoryIsolation::ensureDirectory($home.'/.hatfield');
-            TestDirectoryIsolation::createHatfieldTree($cwd);
-            file_put_contents($cwd.'/.hatfield/settings.yaml', Yaml::dump([
+            $settingsDir = $cwd.'/.hatfield';
+            TestDirectoryIsolation::ensureDirectory($settingsDir);
+            self::assertSame($settingsDir, realpath($settingsDir));
+            $settingsPath = $settingsDir.'/settings.yaml';
+            self::assertFileDoesNotExist($settingsPath);
+            self::assertFalse(is_link($settingsPath));
+            file_put_contents($settingsPath, Yaml::dump([
                 'tui' => ['theme' => 'cyberpunk', 'custom_only' => true],
                 'zzz_project_only' => ['enabled' => true],
             ], 6, 4));
             $provider = new SettingsPathCompletionProvider(
-                new SettingsPathCompletionSource(
-                    new AppConfigLoader(new SettingsPathResolver(ProjectDir::get(), $home)),
-                    new AppResourceLocator(ProjectDir::get()),
-                    new AppConfig(tui: new TuiConfig(theme: 'cyberpunk'), logging: new LoggingConfig(), cwd: $cwd),
-                ),
+                new AppConfigLoader(new SettingsPathResolver(ProjectDir::get(), $home)),
+                new AppResourceLocator(ProjectDir::get()),
+                new AppConfig(tui: new TuiConfig(theme: 'cyberpunk'), logging: new LoggingConfig(), cwd: $cwd),
             );
 
             $rootPaths = array_map(
@@ -68,6 +70,12 @@ final class SettingsPathCompletionProviderTest extends TestCase
             $this->assertContains('tui.theme', $partial);
             $this->assertContains('tui.transcript', $partial);
             $this->assertNotContains('tui.custom_only', $partial);
+
+            self::assertSame($settingsPath, realpath($settingsPath));
+            self::assertFalse(is_link($settingsPath));
+            file_put_contents($settingsPath, "zzz_reloaded: true\n");
+            $reloaded = $provider->getSuggestions(CompletionContext::forCursorAtEnd('/settings-show zzz_'));
+            self::assertSame(['zzz_reloaded'], array_map(static fn ($s) => $s->display, $reloaded));
         } finally {
             TestDirectoryIsolation::removeDirectory($tmp);
         }

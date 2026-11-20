@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\Edit\PatchApplier;
 use Ineersa\CodingAgent\Tool\Edit\PatchFailureFormatter;

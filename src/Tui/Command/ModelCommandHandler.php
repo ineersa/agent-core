@@ -2,16 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Tui\Listener;
+namespace Ineersa\Tui\Command;
 
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\Tui\Command\CommandResult;
-use Ineersa\Tui\Command\NoOp;
-use Ineersa\Tui\Command\SlashCommand;
-use Ineersa\Tui\Command\SlashCommandHandler;
-use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Listener\FooterStateInitializer;
+use Ineersa\Tui\Listener\PendingModelSelection;
 use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -20,10 +17,6 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Handles /model and /model-favourites slash commands.
- *
- * Lives in TuiListener (not TuiCommand) because it needs
- * ModelSelectionService from CodingAgent/Config, which TuiCommand
- * cannot import per deptrac rules.
  *
  * /model: no args opens the interactive model picker; with a
  * provider/modelname ref selects the model directly.

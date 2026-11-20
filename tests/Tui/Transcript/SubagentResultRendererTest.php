@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Transcript;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptPreviewsConfig;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -13,7 +15,6 @@ use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\SubagentResultRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Render\Renderer;
@@ -564,7 +565,7 @@ final class SubagentResultRendererTest extends TestCase
         bool $expanded = false,
         int $width = 120,
     ): array {
-        $displayConfig = new TranscriptDisplayConfig(toolResultPreviewLines: $previewLines);
+        $displayConfig = new TuiTranscriptConfig(previews: new TuiTranscriptPreviewsConfig(toolResultLines: $previewLines));
         $displayState = new TranscriptDisplayState(previewableBlocksExpanded: $expanded);
         $factory = new TranscriptBlockWidgetFactory(
             displayConfig: $displayConfig,

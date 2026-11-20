@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -31,7 +32,7 @@ final readonly class TranscriptToolRenderer
     private const int COLLAPSED_RESULT_LINE_LIMIT = 4;
 
     public function __construct(
-        private readonly TranscriptDisplayConfig $displayConfig,
+        private readonly TuiTranscriptConfig $displayConfig,
         private readonly TranscriptDisplayState $displayState,
         private readonly EditToolCallDiffRenderer $editDiffRenderer,
         private readonly WriteToolCallContentRenderer $writeContentRenderer,
@@ -798,10 +799,10 @@ final readonly class TranscriptToolRenderer
     private function collapsedResultPreviewLineLimit(): int
     {
         if ($this->displayState->previewableBlocksExpanded) {
-            return $this->displayConfig->toolResultPreviewLines;
+            return $this->displayConfig->previews->toolResultLines;
         }
 
-        $configured = $this->displayConfig->toolResultPreviewLines;
+        $configured = $this->displayConfig->previews->toolResultLines;
         if ($configured <= 0) {
             return $configured;
         }

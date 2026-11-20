@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Session\ChildAgentEventsPathResolver;
+use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -15,8 +15,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Test thesis: canonical session artifact paths are the single source of truth;
- * runtime adapters must resolve identical absolute events paths.
+ * The shared session resolver fulfills the picker contract for canonical child events paths.
  */
 final class SessionAgentArtifactPathResolverTest extends TestCase
 {
@@ -48,18 +47,17 @@ final class SessionAgentArtifactPathResolverTest extends TestCase
     }
 
     #[Test]
-    public function eventsPathMatchesBetweenCanonicalAndRuntimeAdapters(): void
+    public function resolvesCanonicalChildEventsPathThroughRuntimeContract(): void
     {
-        $canonical = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
-        $runtime = new ChildAgentEventsPathResolver($canonical);
+        $runtime = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
+        self::assertInstanceOf(ChildAgentEventsPathResolverInterface::class, $runtime);
 
         $parent = 'parent-run-abc';
         $artifact = 'artifact-scout-1';
 
         $expected = $this->projectDir.'/.hatfield/sessions/'.$parent.'/artifacts/agents/'.$artifact.'/events.jsonl';
 
-        $this->assertSame($expected, $canonical->eventsPath($parent, $artifact));
-        $this->assertSame($expected, $runtime->eventsPath($parent, $artifact));
+        $this->assertSame($expected, $runtime->eventsPath(parentSessionId: $parent, artifactId: $artifact));
     }
 
     #[Test]

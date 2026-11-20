@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 use Symfony\Component\DependencyInjection\Attribute\AutowireServiceClosure;

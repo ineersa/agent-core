@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Tests\Transcript;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptThinkingConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -22,7 +24,6 @@ use Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -43,7 +44,7 @@ final class TranscriptBlockRendererTest extends TestCase
     {
         $harness = new VirtualTuiHarness(
             palette: new ThemePalette('commentary-test', [ThemeColorEnum::AssistantMessage->value => 'green', ThemeColorEnum::Muted->value => 'red']),
-            displayConfig: new TranscriptDisplayConfig(thinkingVisible: false),
+            displayConfig: new TuiTranscriptConfig(thinking: new TuiTranscriptThinkingConfig(visible: false)),
         );
         $harness->screen()->setWorkingVisible(false);
         $dispatcher = new EventDispatcher();

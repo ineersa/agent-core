@@ -6,7 +6,7 @@ namespace Ineersa\Tests\Tui\Completion;
 
 use Ineersa\Tui\Completion\CompletionContext;
 use Ineersa\Tui\Completion\FileMentionCompletionProvider;
-use Ineersa\Tui\Completion\FileMentionIndexEntryDTO;
+use Ineersa\CodingAgent\CLI\DTO\FileMentionIndexEntryDTO;
 use Ineersa\Tui\Completion\FileMentionIndexReader;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;

@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\ImagePaste;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -29,7 +30,6 @@ use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Tui\Event\TickEvent;
@@ -213,7 +213,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
             new DefaultTheme(new ThemePalette('test')),
             $sessionId,
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
 
@@ -261,7 +261,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
             new DefaultTheme(new ThemePalette('test')),
             $sessionId,
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
 
@@ -306,7 +306,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
             new DefaultTheme(new ThemePalette('test')),
             '',
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
 
@@ -349,7 +349,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
             new DefaultTheme(new ThemePalette('test')),
             $sessionId,
             new PromptEditor(),
-            new TranscriptDisplayConfig(),
+            new TuiTranscriptConfig(),
             new TranscriptDisplayState(),
         );
 

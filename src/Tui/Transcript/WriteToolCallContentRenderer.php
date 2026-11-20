@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Style\Padding;
@@ -35,14 +36,14 @@ final readonly class WriteToolCallContentRenderer
         string $content,
         string $path,
         TuiTheme $theme,
-        TranscriptDisplayConfig $displayConfig,
+        TuiTranscriptConfig $displayConfig,
         TranscriptDisplayState $displayState,
     ): array {
         $normalized = str_replace(["\r\n", "\r"], "\n", $content);
         $rawLines = explode("\n", $normalized);
         $preview = $this->linePreview->apply(
             $rawLines,
-            $displayConfig->diffPreviewLines,
+            $displayConfig->previews->diffLines,
             displayState: $displayState,
         );
 

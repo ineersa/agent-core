@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -25,7 +26,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
  * User / assistant / visible thinking → {@see MarkdownWidget}.
  * Host-tagged automatic messages → {@see AutomaticMessageWidget}, including
  * child tasks whose model-facing role remains user.
- * Hidden thinking → compact placeholder from {@see TranscriptDisplayConfig} only,
+ * Hidden thinking → compact placeholder from {@see TuiTranscriptConfig} only,
  * not {@see TranscriptBlock::$collapsed}.
  * Question blocks → compact markdown prompt/answer transcript record (HITL).
  * System blocks → severity/lifecycle prefix + color, optional markdown or
@@ -39,7 +40,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
 final readonly class TranscriptBlockRenderer
 {
     public function __construct(
-        private readonly TranscriptDisplayConfig $displayConfig,
+        private readonly TuiTranscriptConfig $displayConfig,
         private readonly TranscriptDisplayState $displayState,
         private readonly MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
     ) {
@@ -58,8 +59,8 @@ final readonly class TranscriptBlockRenderer
             return new AutomaticMessageWidget($block, $this->displayState, $theme, $this->markdown);
         }
 
-        // Hidden thinking: compact placeholder; uses TranscriptDisplayConfig only, NOT TranscriptBlock::collapsed.
-        if ($this->isThinkingBlock($block) && !$this->displayConfig->thinkingVisible) {
+        // Hidden thinking: compact placeholder; uses TuiTranscriptConfig only, NOT TranscriptBlock::collapsed.
+        if ($this->isThinkingBlock($block) && !$this->displayConfig->thinking->visible) {
             $line = \sprintf('%s Thinking', TranscriptGlyphs::GLYPH_ASSISTANT_THINKING);
 
             return new TextWidget($theme->color(ThemeColorEnum::ThinkingText, $line));
@@ -378,7 +379,7 @@ final readonly class TranscriptBlockRenderer
      */
     private function applyThinkingStyle(Style $style): Style
     {
-        return match ($this->displayConfig->thinkingStyle) {
+        return match ($this->displayConfig->thinking->style) {
             'dim_italic' => $style->withDim(true)->withItalic(true),
             'dim' => $style->withDim(true),
             'italic' => $style->withItalic(true),

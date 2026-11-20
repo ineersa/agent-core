@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Setup;
 
-use Ineersa\Tui\Setup\ProvidersSetupFlowInterface;
+use Ineersa\CodingAgent\CLI\Providers\ProvidersSetupFlowInterface;
 use Ineersa\Tui\Setup\SetupScreen;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;

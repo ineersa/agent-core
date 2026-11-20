@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Completion;
 
+use Ineersa\CodingAgent\CLI\DTO\FileMentionIndexEntryDTO;
+
 /**
  * Completion provider for @ file/path mentions.
  *

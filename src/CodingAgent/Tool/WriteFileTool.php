@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\WriteFileArgumentsDTO;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 

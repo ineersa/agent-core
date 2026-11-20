@@ -77,7 +77,6 @@ final readonly class InteractiveMode
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
         private AppConfig $appConfig,
-        private TranscriptDisplayConfigMapper $transcriptConfigMapper,
         private HistoryProviderInterface $historyProvider,
         private SlashCommandCatalog $commandCatalog,
         private iterable $catalogRegistrars,
@@ -153,11 +152,9 @@ final readonly class InteractiveMode
         // shutdown.
         $needsTerminalClear = false;
 
-        // Map the immutable TranscriptDisplayConfig once before the session
-        // loop; it is derived from Hatfield config which does not change
-        // within a TUI lifetime. Each new session still gets a fresh mutable
-        // TranscriptDisplayState initialized from the immutable config.
-        $displayConfig = $this->transcriptConfigMapper->map($this->appConfig->tui->transcript);
+        // Share the immutable settings across sessions; each session gets
+        // fresh mutable display state below.
+        $displayConfig = $this->appConfig->tui->transcript;
 
         // ── Seed the process-scoped slash command catalog once ──
         // Command metadata/aliases/help data is registered exactly once per
@@ -182,11 +179,11 @@ final readonly class InteractiveMode
             }
 
             // ── Initialize per-session transcript display state ──
-            // The immutable config is mapped once above.  Each session
+            // Each session
             // (draft/resume/fresh) gets its own mutable display state
-            // initialized from the config's previewsExpandedByDefault.
+            // initialized from the configured preview default.
             $state->transcriptDisplayState = new TranscriptDisplayState(
-                previewableBlocksExpanded: $displayConfig->previewsExpandedByDefault,
+                previewableBlocksExpanded: $displayConfig->previews->expandedByDefault,
             );
 
             // ── Build screen and mount widget tree ──

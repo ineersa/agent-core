@@ -71,6 +71,14 @@ Focused references: [extension-api-tools.md](extension-api-tools.md),
 `getSettings('task_workflow')` returns `extensions.settings.task_workflow` (array, possibly empty).
 Paths should resolve against `getCwd()`, not the extension install path, unless you intentionally use `__DIR__` for package assets.
 
+Use `Ineersa\Hatfield\ExtensionApi\Path\PathResolver::resolve($path, $cwd)`
+to interpret paths the same way as Hatfield's file tools. Pass the session CWD
+explicitly; omitting it uses the process CWD. The resolver expands `~` and
+`~/`, normalizes separators and `.`/`..` segments, and rejects null bytes,
+relative CWDs, and `~user` syntax with `InvalidArgumentException`. Resolution
+is lexical: it neither checks existence nor follows symlinks, so its output
+alone does not establish filesystem containment.
+
 For editable setup fields, implement `ConfigurableExtensionInterface::getConfiguration()`
 with Symfony Config's `ConfigurationInterface`. Its tree root names the
 `extensions.settings` key; use native node defaults, validation and `info()`.

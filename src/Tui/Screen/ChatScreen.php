@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Screen;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
@@ -20,7 +21,6 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\PendingMessagesWidget;
 use Ineersa\Tui\Transcript\ThemeStyleSheetFactory;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptMountedWidget;
 use Ineersa\Tui\Widget\BackgroundWorkWidget;
@@ -106,7 +106,7 @@ final class ChatScreen
         private readonly TuiTheme $theme,
         private string $sessionId,
         private readonly PromptEditor $promptEditor,
-        TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
+        TuiTranscriptConfig $displayConfig = new TuiTranscriptConfig(),
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
     ) {
         // ── Instantiate directly mounted native chrome widgets ──

@@ -7,12 +7,12 @@ namespace Ineersa\Tui\Transcript;
 /**
  * Live/session-only mutable display state for the transcript.
  *
- * Initialized from TranscriptDisplayConfig at TUI startup. Changes
+ * Initialized from TuiTranscriptConfig at TUI startup. Changes
  * (e.g. Ctrl+O toggling preview expansion) affect this state only
  * and are NOT persisted to Hatfield settings or session metadata.
  *
  * No thinking visibility state in v1 — the renderer reads
- * TranscriptDisplayConfig::thinkingVisible directly.
+ * the immutable transcript thinking setting directly.
  */
 final class TranscriptDisplayState
 {

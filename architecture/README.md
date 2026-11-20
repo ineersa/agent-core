@@ -57,13 +57,23 @@ flowchart LR
     App --> Core["src/AgentCore"]
     App --> API["ExtensionApi"]
     Packages["Extension packages"] --> API
-    TUI -.->|Specific approved edges| Core
-    App -.->|Approved CLI bootstrap| TUI
+    TUI --> Core
+    App -.->|AgentCommand and SetupCommand bootstrap only| TUI
 ```
 
 [depfile.yaml](../depfile.yaml) and `castor deptrac` define the exact allowed
-edges. AgentCore has no CodingAgent, TUI or concrete-extension dependency.
+edges. TUI directories organize presentation code; they are not separate
+dependency boundaries. Commands and screens may use owning application services
+directly. AgentCore has no CodingAgent, TUI or concrete-extension dependency.
 ExtensionApi exposes public contracts, not host implementation services.
+Session ID completion reads the session store’s bounded catalog directly;
+settings path completion loads the effective layers for the active working
+directory when `/settings-show` completion is requested.
+
+`Tui\Command\ModelCommandHandler` handles `/model` and `/model-favourites`;
+`ModelControlListener` registers both commands. The child-run picker uses the
+same `SessionAgentArtifactPathResolver` as artifact storage, through its narrow
+`ChildAgentEventsPathResolverInterface`.
 
 ## Event channels
 

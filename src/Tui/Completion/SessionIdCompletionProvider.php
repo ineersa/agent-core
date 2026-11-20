@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Completion;
 
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+
 /**
  * Completion provider for session IDs in /resume, /r, and /rename commands.
  *
@@ -17,8 +19,8 @@ namespace Ineersa\Tui\Completion;
  * (e.g. "/rename 1 "), no completions are returned so the user can
  * type the new name without interference.
  *
- * Suggestions are filtered from the SessionCompletionSource
- * by session ID prefix.  Insert text includes a trailing space so
+ * Suggestions are filtered by the session store
+ * using the session ID prefix. Insert text includes a trailing space so
  * the cursor advances past the completed session ID.
  */
 final readonly class SessionIdCompletionProvider implements CompletionProvider
@@ -27,7 +29,7 @@ final readonly class SessionIdCompletionProvider implements CompletionProvider
     private const int MAX_SUGGESTIONS = 30;
 
     public function __construct(
-        private SessionCompletionSourceInterface $sessionSource,
+        private HatfieldSessionStore $sessionStore,
     ) {
     }
 
@@ -42,7 +44,7 @@ final readonly class SessionIdCompletionProvider implements CompletionProvider
 
         [$command, $prefix] = $parsed;
 
-        $sessions = $this->sessionSource->listCompletionSessions($prefix, self::MAX_SUGGESTIONS);
+        $sessions = $this->sessionStore->listCompletionSessions($prefix, self::MAX_SUGGESTIONS);
 
         if ([] === $sessions) {
             return [];
@@ -54,8 +56,8 @@ final readonly class SessionIdCompletionProvider implements CompletionProvider
         $suggestions = [];
 
         foreach ($sessions as $session) {
-            $sessionId = $session->sessionId;
-            $displayTitle = $session->displayTitle;
+            $sessionId = $session['sessionId'];
+            $displayTitle = $session['displayTitle'];
 
             $suggestions[] = new CompletionSuggestion(
                 display: '#'.$sessionId.' — '.$displayTitle,

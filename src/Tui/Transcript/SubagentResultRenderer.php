@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -27,7 +28,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
 final readonly class SubagentResultRenderer
 {
     public function __construct(
-        private TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
+        private TuiTranscriptConfig $displayConfig = new TuiTranscriptConfig(),
         private TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         private TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
         private MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
@@ -136,7 +137,7 @@ final readonly class SubagentResultRenderer
         $lines = explode("\n", $handoffMarkdown);
         $preview = $this->linePreviewService->apply(
             $lines,
-            $this->displayConfig->toolResultPreviewLines,
+            $this->displayConfig->previews->toolResultLines,
             displayState: $this->displayState,
         );
 
@@ -173,7 +174,7 @@ final readonly class SubagentResultRenderer
 
         $lines = explode("\n", $handoffMarkdown);
 
-        return \count($lines) > $this->displayConfig->toolResultPreviewLines;
+        return \count($lines) > $this->displayConfig->previews->toolResultLines;
     }
 
     private function resolveHandoffMarkdown(SubagentProgressSnapshotDTO $progress, string $resultText): string

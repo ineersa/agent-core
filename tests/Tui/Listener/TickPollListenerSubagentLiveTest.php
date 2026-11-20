@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
@@ -36,7 +37,6 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -97,7 +97,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         );
 
         $tui = new Tui();
-        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
+        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TuiTranscriptConfig(), new TranscriptDisplayState());
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript());
 
         $services = $this->createSessionServices(
@@ -177,7 +177,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         );
 
         $tui = new Tui();
-        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
+        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TuiTranscriptConfig(), new TranscriptDisplayState());
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript());
 
         $services = $this->createSessionServices(

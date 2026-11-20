@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI;
 
-use Ineersa\Tui\Completion\FileMentionIndexEntryDTO;
+use Ineersa\CodingAgent\CLI\DTO\FileMentionIndexEntryDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Finder\SplFileInfo as FinderSplFileInfo;
