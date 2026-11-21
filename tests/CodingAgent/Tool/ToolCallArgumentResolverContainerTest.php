@@ -90,7 +90,7 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         $this->assertNull($config->maxTimeoutSeconds);
         $this->assertArrayNotHasKey('maximum', $timeout);
         $this->assertSame(
-            \sprintf('Timeout in seconds (default: %d). Provide an explicit higher value for commands that need more than the default. After background acceptance only an explicit timeout applies, measured from launch.', $config->defaultTimeoutSeconds),
+            \sprintf('Timeout in seconds (default: %d). Provide an explicit higher value for commands that need more than the default. After background acceptance the explicit timeout or, when omitted, the configured maximum applies from launch. Without either there is no deadline.', $config->defaultTimeoutSeconds),
             $timeout['description'],
         );
     }
