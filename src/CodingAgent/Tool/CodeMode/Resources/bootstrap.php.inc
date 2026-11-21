@@ -55,8 +55,19 @@ function hatfield_code_mode_broker_call(string $operation, string $name, array $
 /** @param array<string, mixed> $frame */
 function hatfield_code_mode_terminal(array $frame): void
 {
-    unset($frame['type']);
-    hatfield_code_mode_broker_call('return', 'return', $frame);
+    global $factory, $endpoint, $serializer, $invocationId, $runId, $payloads;
+    $id = 'code-mode-terminal-'.$invocationId;
+    $reference = $payloads->publish(new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
+        $runId, 0, $id, 0, $id, $id, 0, $frame, true !== $frame['ok'],
+    ));
+    $terminal = $factory->createTransport('sqlite-queue://code_mode_terminal.'.$invocationId, $endpoint, $serializer);
+    try {
+        $terminal->send(new \Symfony\Component\Messenger\Envelope(
+            new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeTerminalReportDTO($invocationId, $reference),
+        ));
+    } finally {
+        $terminal->close();
+    }
 }
 
 if (!\function_exists('notify_owner')) {
@@ -191,7 +202,9 @@ $paths = new class($runId, $batchDir) implements \Ineersa\CodingAgent\Session\To
 
     public function withStorage(string $runId, callable $write): mixed
     {
-        throw new LogicException('Code-mode payload access is read-only.');
+        $this->resolveToolBatchesDirectory($runId);
+
+        return $write();
     }
 };
 $payloads = new \Ineersa\CodingAgent\Session\SessionToolPayloadStore(
@@ -224,7 +237,6 @@ try {
 
     $result = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::assertEncodable($result, 'Code-mode script return value');
     hatfield_code_mode_terminal([
-        'type' => 'return',
         'ok' => true,
         'result' => $result,
     ]);
@@ -243,7 +255,6 @@ try {
             $message = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::MALFORMED_MESSAGE;
         }
         hatfield_code_mode_terminal([
-            'type' => 'return',
             'ok' => false,
             'error' => $message,
         ]);

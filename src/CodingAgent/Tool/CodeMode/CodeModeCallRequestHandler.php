@@ -13,8 +13,6 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
-use Ineersa\CodingAgent\Entity\CodeModeCallRepository;
-use Ineersa\CodingAgent\Entity\CodeModeReportedReturnRepository;
 use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -34,8 +32,6 @@ final readonly class CodeModeCallRequestHandler
         private RunOperationalStatusReaderInterface $status,
         private StackToolExecutionContextAccessor $contexts,
         private CodeModeNestedToolExecutor $executor,
-        private CodeModeCallRepository $calls,
-        private CodeModeReportedReturnRepository $returns,
         #[Autowire(service: 'agent.command.bus')] private MessageBusInterface $commands,
         private CodeModeReplyTransportFactory $replies,
     ) {
@@ -62,22 +58,16 @@ final readonly class CodeModeCallRequestHandler
 
             return;
         }
-        if ('admit' === $request->operation || 'return' === $request->operation) {
+        if ('admit' === $request->operation) {
             if ($process['fenced'] || null !== $metadata->interruptionReason) {
                 $reply = ['ok' => false, 'error' => 'Code-mode launch is no longer admitted.'];
             } else {
-                if ('return' === $request->operation) {
-                    // Acknowledge only after committing the reference. PHP cannot
-                    // exit successfully before the supervisor can read its return.
-                    $this->returns->record($request->invocationId, $this->replies->publish($request->invocationId, 'return', $ref, $request->arguments));
-                }
                 $reply = ['ok' => true];
             }
             $this->replies->send($request->invocationId, $request->callId, $publish($reply));
 
             return;
         }
-        $wire = ['operation' => $request->operation, 'name' => $request->name, 'arguments' => $request->arguments];
         $execute = function () use ($request, $call, $rootId): array {
             try {
                 $explicit = $call->args['timeout_seconds'] ?? null;
@@ -117,13 +107,6 @@ final readonly class CodeModeCallRequestHandler
                 return ['ok' => false, 'error' => mb_check_encoding($message, 'UTF-8') ? $message : CodeModeValueCodec::MALFORMED_MESSAGE];
             }
         };
-        $reply = $this->calls->settle($request->invocationId, $request->callId, $wire,
-            static fn () => $publish($execute()),
-            static fn () => $publish(['ok' => false, 'error' => 'Code-mode call outcome is unknown; refusing to run it again.']),
-        );
-        if (null === $reply) {
-            return;
-        }
-        $this->replies->send($request->invocationId, $request->callId, $reply);
+        $this->replies->send($request->invocationId, $request->callId, $publish($execute()));
     }
 }

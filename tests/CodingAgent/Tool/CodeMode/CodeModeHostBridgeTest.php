@@ -26,7 +26,6 @@ use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Psr\Log\NullLogger;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
 use Symfony\Component\Messenger\Event\WorkerRunningEvent;
 use Symfony\Component\Messenger\RoutableMessageBus;
@@ -87,7 +86,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
                 .' $second = \Amp\async(static function () {'
                 .' \Revolt\EventLoop::queue(static fn () => touch('.var_export($contended, true).'));'
                 .' return tool("read", ["path" => '.var_export($otherFixture, true).']); });'
-                .' return [$refusal ?? null, $first->await(), $recursion ?? null, $second->await()];';
+                .' return [$refusal ?? null, $first->await(), $recursion ?? null, $second->await(), str_repeat("x", 600000)];';
             $outcome = $accessor->with($context, static fn (): mixed => $tool(new CodeModeArgumentsDTO($script, 5)));
             $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
             $this->assertTrue($client->wait('code_mode_requests', 3000));
@@ -132,7 +131,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
                 \Amp\delay(0.01);
             }
             $this->assertFileExists($contended);
-            [$readRequest] = $consume(3);
+            [$readRequest] = $consume(2);
             $this->assertInstanceOf(CodeModeCallRequestDTO::class, $invalidRequest);
             $this->assertInstanceOf(CodeModeCallRequestDTO::class, $outerRequest);
             $this->assertInstanceOf(CodeModeCallRequestDTO::class, $readRequest);
@@ -141,35 +140,76 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $this->assertSame($outcome->deferredId, $readRequest->rootId);
             $record = $owner->invocation($runId, $readRequest->invocationId);
             $this->assertNotNull($record);
-            $calls = $container->get(\Ineersa\CodingAgent\Entity\CodeModeCallRepository::class);
-            $retained = $calls->reply($readRequest->invocationId, $readRequest->callId);
-            $this->assertNotNull($retained);
-            $this->assertSame('result', $retained->kind);
-            $payload = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class)->read($retained);
-            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ToolCallResult::class, $payload);
-            $this->assertStringContainsString('broker nested read', json_encode($payload->result, \JSON_THROW_ON_ERROR));
-            // Controlled worker turnover and redelivery of the exact request.
-            file_put_contents($fixture, 'must not read the replacement bytes');
-            $transport->send(new Envelope($readRequest));
-            $consume(1);
-            $this->assertEquals($retained, $calls->reply($readRequest->invocationId, $readRequest->callId));
-            $observer = $container->get(\Ineersa\CodingAgent\Runtime\Controller\CodeModeTerminalObserver::class);
-            // The controller reconciles the committed reply with native exit evidence.
+            $terminalTransport = $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory::class)->terminal($outcome->deferredId);
+            $report = null;
             $deadline = hrtime(true) + 3_000_000_000;
             do {
-                $observer?->observe($runId, $runId);
-                $terminal = $owner->observeTerminal($runId, $outcome->deferredId, null, null);
+                $terminal = $owner->observeTerminal($runId, $outcome->deferredId, null, null, static function () use ($terminalTransport, $container, &$report): ?array {
+                    foreach ($terminalTransport->get() as $delivery) {
+                        $message = $delivery->getMessage();
+                        $terminalTransport->ack($delivery);
+
+                        self::assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeTerminalReportDTO::class, $message);
+                        $report = $message;
+                        $result = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class)->read($message->payload);
+                        self::assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ToolCallResult::class, $result);
+                        self::assertIsArray($result->result);
+
+                        return $result->result;
+                    }
+
+                    return null;
+                });
                 if (null !== $terminal) {
                     break;
                 }
                 \Amp\delay(0.01);
             } while (hrtime(true) < $deadline);
+            $this->assertNotNull($report);
+            // Requeue the same report to exercise the controller receiver independently
+            // of the payload inspection above. A reserved row is still in the broker.
+            $terminalTransport->send(new \Symfony\Component\Messenger\Envelope($report));
+            $queue = 'code_mode_terminal.'.$outcome->deferredId;
+            $brokerDb = new \PDO('sqlite:'.$paths->databasePath);
+            $query = $brokerDb->prepare('SELECT reserved_until FROM queue_messages WHERE queue = ?');
+            $reservation = static function () use ($query, $queue): mixed {
+                $query->execute([$queue]);
+                $value = $query->fetchColumn();
+                $query->closeCursor();
+
+                return $value;
+            };
+            $commandBus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+            $canonical = null;
+            $commandBus->expects($this->once())->method('dispatch')->willReturnCallback(static function (object $message) use (&$canonical, $reservation): \Symfony\Component\Messenger\Envelope {
+                self::assertIsInt($reservation());
+                self::assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ToolCallResult::class, $message);
+                $canonical = $message;
+
+                return new \Symfony\Component\Messenger\Envelope($message);
+            });
+            $deferred = $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class);
+            $payloads = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class);
+            $observer = new \Ineersa\CodingAgent\Runtime\Controller\CodeModeTerminalObserver(
+                $owner, $deferred, $commandBus, new NullLogger(), $container->get(\Ineersa\CodingAgent\Tool\OutputCap::class), $payloads,
+                $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor::class),
+                $container->get(\Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor::class),
+                $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory::class),
+            );
+            $observer->observe($runId, $runId);
+            $this->assertNotNull($canonical);
+            $this->assertIsInt($reservation(), 'Dispatch alone must not acknowledge the terminal report.');
+            $deferred->acceptResultReference($outcome->deferredId, $payloads->publish($canonical));
+            $observer->observe($runId, $runId);
+            $this->assertFalse($reservation(), 'Canonical admission allows acknowledgement.');
+            $terminalTransport->close();
             $this->assertNotNull($terminal);
             $this->assertTrue($terminal['ok'], $terminal['error'] ?? 'Expected a successful nested read.');
             $this->assertSame('Invalid code-mode call request.', $terminal['result'][0] ?? null);
             $this->assertStringContainsString('broker nested read', $terminal['result'][1]);
             $this->assertStringContainsString('Tool "code_mode" is not supported', $terminal['result'][2]);
             $this->assertStringContainsString('distinct second read', $terminal['result'][3]);
+            $this->assertSame(str_repeat('x', 600000), $terminal['result'][4]);
             $this->assertSame([$outcome->deferredId], $owner->controllerInvocationIds($runId));
         } finally {
             if (null === $previous) {

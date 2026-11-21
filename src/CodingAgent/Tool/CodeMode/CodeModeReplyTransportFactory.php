@@ -53,6 +53,11 @@ final readonly class CodeModeReplyTransportFactory
         }
     }
 
+    public function terminal(string $invocationId): Transport
+    {
+        return $this->factory->createTransport('sqlite-queue://code_mode_terminal.'.$invocationId, ['endpoint' => $this->endpoint], $this->serializer);
+    }
+
     public function create(string $invocationId): Transport
     {
         return $this->factory->createTransport('sqlite-queue://code_mode_reply.'.$invocationId, ['endpoint' => $this->endpoint], $this->serializer);

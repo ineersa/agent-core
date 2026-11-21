@@ -22,18 +22,17 @@ sequenceDiagram
     Worker->>Worker: Return deferred outcome; release slot
     PHP->>Broker: Publish code_mode_requests with invocation and call IDs
     Broker->>Worker: Deliver request to available shared slot
-    Worker->>Worker: Claim call, run existing toolbox, retain reply
+    Worker->>Worker: Validate and run existing toolbox
     Worker->>Broker: Publish managed result reference to invocation reply queue
     Broker-->>PHP: Correlated reply with managed tool payload reference
-    PHP->>Broker: Report return and wait for acknowledgement
-    Broker->>Worker: Commit managed return reference before replying
-    Owner->>RC: Publish deferred completion
+    PHP->>Broker: Publish managed terminal reference
+    Broker->>Owner: Deliver report after native exit
+    Owner->>RC: Admit deferred completion
+    Owner->>Broker: Acknowledge terminal report
 ```
 
-The reply envelope carries a reference, not the result payload. Redelivery of a settled request can reuse
-its retained result; an execution claim without a result is ambiguous and is
-not replayed. These records do not restore a lost PHP stack or allow an
-invocation to survive session shutdown. Owner notices use separate identities
+The reply envelope carries a reference, not the result payload. Delivery may repeat; individual tools own idempotency if needed.
+The worker does not persist claims or replies in application state. Owner notices use separate identities
 from terminal completion.
 
 The script budget defaults to **1,800 seconds** with no tool-specific cap, memory to
@@ -65,7 +64,7 @@ admission at startup. `bg_status` controls Bash jobs, not PHP scripts.
 Scripts can invoke ordinary tools but cannot recursively launch `code_mode`.
 Calls without canonical correlation or a live session broker are refused.
 
-Nested requests are claimed by a unique invocation/call key before tool execution. No database transaction spans the tool effect. The existing process-sidecar lock facility suppresses duplicate execution while a claimant is alive and releases on worker exit. A persisted claim without a reference yields a managed unknown-outcome error. Doctrine stores only reply references; both nested results and PHP returns live in the managed tool payload store. The worker publishes a managed tool result and sends its reference on the invocation reply queue. PHP waits for the matching call ID and reads the referenced result from the payload store.
+The worker validates and executes a nested request, publishes a managed result reference to the invocation reply queue, and then acknowledges the request. PHP waits for the matching call ID and resolves the reference using the payload store. The call ID correlates replies; it does not suppress execution on redelivery.
 
 ## Scheduling
 

@@ -5,11 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\CodeMode;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
-use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
-use Ineersa\CodingAgent\Entity\CodeModeCallRepository;
-use Ineersa\CodingAgent\Entity\CodeModeReportedReturnRepository;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Symfony\Component\Filesystem\Filesystem;
@@ -17,7 +13,7 @@ use Symfony\Component\Filesystem\Filesystem;
 /** Owns native launch evidence independently of any tool consumer. */
 final readonly class CodeModeProcessOwner
 {
-    public function __construct(private ProcessLifecycle $lifecycle, private CodeModeReportedReturnRepository $returns, private CodeModeCallRepository $calls, private ToolPayloadStoreInterface $payloads, private BackgroundProcessRepository $records, private ProcessStore $store, private Filesystem $filesystem = new Filesystem())
+    public function __construct(private ProcessLifecycle $lifecycle, private BackgroundProcessRepository $records, private ProcessStore $store, private Filesystem $filesystem = new Filesystem())
     {
     }
 
@@ -87,11 +83,11 @@ final readonly class CodeModeProcessOwner
     }
 
     /** @return array{ok: bool, result?: mixed, error?: string}|null */
-    public function observeTerminal(string $runId, string $id, ?int $deadline, ?string $interruption): ?array
+    public function observeTerminal(string $runId, string $id, ?int $deadline, ?string $interruption, callable $report): ?array
     {
         $status = $this->prefix($runId).hash('sha256', $id).'.status';
 
-        return $this->lifecycle->withSidecarLock($status, function () use ($runId, $id, $deadline, $interruption, $status): ?array {
+        return $this->lifecycle->withSidecarLock($status, function () use ($runId, $id, $deadline, $interruption, $status, $report): ?array {
             $invocation = $this->invocation($runId, $id);
             if (null === $invocation || !$this->lifecycle->ownsSidecarPaths(substr($status, 0, -7).'.log', $status)) {
                 return null;
@@ -117,14 +113,7 @@ final readonly class CodeModeProcessOwner
                     ? 'Code-mode invocation interrupted: '.$interruption.'.' : 'Code-mode invocation timed out.'];
             }
 
-            $reference = $this->returns->reply($id);
-            if (null === $reference) {
-                return ['ok' => false, 'error' => 'Code-mode subprocess exited without returning a value.'];
-            }
-            $result = $this->payloads->read($reference);
-
-            return $result instanceof ToolCallResult && \is_array($result->result)
-                ? $result->result : ['ok' => false, 'error' => 'Invalid code-mode return payload.'];
+            return $report() ?? ['ok' => false, 'error' => 'Code-mode subprocess exited without returning a value.'];
         });
     }
 
@@ -153,8 +142,6 @@ final readonly class CodeModeProcessOwner
                     $this->filesystem->remove($workspace);
                 }
                 if ($this->lifecycle->deleteLockedRecordSidecars($prefix.'.log', $statusPath)) {
-                    $this->returns->remove($id);
-                    $this->calls->remove($id);
                     $this->records->removeCodeModeLaunch($runId, $id);
                 }
             });

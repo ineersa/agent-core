@@ -63,6 +63,9 @@ from launch. If `timeout` is omitted, the configured maximum applies from launch
 without a configured maximum there is no background deadline.
 
 ## code_mode
+Broker delivery can repeat a nested tool request. Individual tools own idempotency if they need it.
+
+Broker delivery can repeat a nested tool request. Individual tools own idempotency if they need it.
 
 Enable `tools.code_mode.enabled: true` in settings and restart Hatfield. The tool
 accepts a PHP **function body** in `script`, not a file path. It is useful for
