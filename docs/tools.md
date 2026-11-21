@@ -89,8 +89,9 @@ floats, invalid UTF-8 and cycles fail. Missing/null returns show `null`;
 
 The foreground default and remaining parent tool budget apply until background
 acceptance. After acceptance only an explicit deadline applies, measured from
-launch. Nested handlers
-receive a cooperative budget, not a guarantee that synchronous code is preempted.
+launch. Nested handlers observe the current script deadline through cooperative
+cancellation, not a fixed per-call timeout. Cancellation does not preempt
+synchronously blocking code.
 Stdout/stderr accompany the return value; large diagnostics use saved artifacts
 and normal output caps. Prefer a small final `return` to dumping intermediates.
 

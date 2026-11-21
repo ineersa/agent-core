@@ -22,9 +22,9 @@ final class CodeModeCallRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param array<string, mixed>                         $request
-     * @param callable(): (ToolPayloadReferenceDTO|string) $execute a string identifies a reserved child
-     * @param callable(): ToolPayloadReferenceDTO          $unknown
+     * @param array<string, mixed>                $request
+     * @param callable(): ToolPayloadReferenceDTO $execute
+     * @param callable(): ToolPayloadReferenceDTO $unknown
      */
     public function settle(string $invocationId, string $callId, array $request, callable $execute, callable $unknown): ?ToolPayloadReferenceDTO
     {

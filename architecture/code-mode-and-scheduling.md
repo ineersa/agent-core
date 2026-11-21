@@ -39,8 +39,10 @@ from terminal completion.
 The script budget defaults to **1,800 seconds** with no tool-specific cap, memory to
 **256 MiB** (maximum **1,024**). The parent remaining tool budget can shorten it until background acceptance.
 After acceptance only an explicit launch-relative timeout applies.
-Nested calls receive cooperative budget metadata; a synchronously blocking
-handler can overrun until it returns. Scripts yield at host-side I/O, not by
+Nested calls observe the current script deadline through a live cancellation
+token, not a snapshot in `ToolContext::timeoutSeconds()`. Detaching releases
+the inherited limit even for a nested call already running; an explicit script
+timeout still applies. A synchronously blocking handler can overrun until it returns. Scripts yield at host-side I/O, not by
 turning arbitrary PHP filesystem/process calls into async toolbox calls.
 
 Direct PHP bypasses hooks and approvals. Code mode inherits the launcher's

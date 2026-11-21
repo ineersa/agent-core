@@ -21,7 +21,7 @@ final class CodeModeArgumentsDTO
         #[Assert\NotBlank(normalizer: 'trim', message: 'The "script" argument is required and must be a non-empty string.')]
         public readonly string $script,
         #[Schema(
-            description: 'Script wall-clock budget in seconds (default '.self::DEFAULT_TIMEOUT_SECONDS.'). Before background acceptance the remaining parent tool budget wins when smaller. After acceptance only an explicit timeout applies, measured from launch. Nested tool calls receive the remaining budget cooperatively.',
+            description: 'Script wall-clock budget in seconds (default '.self::DEFAULT_TIMEOUT_SECONDS.'). Before background acceptance the remaining parent tool budget wins when smaller. After acceptance only an explicit timeout applies, measured from launch. Nested tool calls observe the live script deadline through cooperative cancellation, not a fixed per-call timeout.',
             minimum: 1,
         )]
         #[Assert\Range(

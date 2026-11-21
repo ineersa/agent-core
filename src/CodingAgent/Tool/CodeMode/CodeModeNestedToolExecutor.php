@@ -32,7 +32,6 @@ final readonly class CodeModeNestedToolExecutor
         array $arguments,
         ?ToolContext $parentContext,
         CancellationTokenInterface $cancelToken,
-        ?int $remainingSeconds,
     ): mixed {
         $nestedContext = new ToolContext(
             runId: $parentContext?->runId() ?? '',
@@ -40,7 +39,8 @@ final readonly class CodeModeNestedToolExecutor
             toolCallId: $toolCallId,
             toolName: $name,
             cancellationToken: $cancelToken,
-            timeoutSeconds: $remainingSeconds,
+            // The live token follows deadline changes when the script detaches.
+            timeoutSeconds: null,
             orderIndex: 0,
             humanInputAnswer: null,
             stepId: $parentContext?->stepId(),

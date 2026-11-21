@@ -204,7 +204,6 @@ final readonly class CodeModeHostBridge
             'HATFIELD_CODE_MODE_MEMORY_LIMIT' => $memoryLimit,
         ];
         $environment['HATFIELD_SQLITE_QUEUE_ENDPOINT'] = $endpoint;
-        $environment['HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN'] = 'sqlite-queue://code_mode_requests?endpoint='.rawurlencode($endpoint);
         $environment['HATFIELD_CODE_MODE_INVOCATION'] = $invocationId;
         $environment['HATFIELD_CODE_MODE_ROOT'] = $invocationId;
         $assignments = '';

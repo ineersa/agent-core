@@ -105,7 +105,7 @@ final readonly class CodeModeCallRequestHandler
                 }
                 $owner = new ToolContext($call->runId(), $call->turnNo(), $call->toolCallId, 'code_mode', $token, null, $call->orderIndex, stepId: $call->stepId(), parentModel: $call->parentModel);
                 $id = 'code-mode-'.hash('sha256', $request->invocationId.':'.$request->callId);
-                $value = $this->contexts->with($owner, fn (): mixed => $this->executor->execute($id, $request->name, $request->arguments, $owner, $token, null));
+                $value = $this->contexts->with($owner, fn (): mixed => $this->executor->execute($id, $request->name, $request->arguments, $owner, $token));
                 if ($value instanceof DeferredToolCompletionOutcome || $value instanceof ToolExecutionHumanInputSuspension) {
                     return ['ok' => false, 'error' => 'Deferred or interactive results are not supported in nested calls.'];
                 }
