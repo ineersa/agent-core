@@ -14,6 +14,7 @@
         "helgesverre/toon": "^3.1",
         "ineersa/hatfield-extension-api": "@dev",
         "psr/log": "^3.0",
+        "symfony/clock": "^7.3|^8.0",
         "symfony/config": "^8.1",
         "symfony/filesystem": "^7.3|^8.0",
         "symfony/property-access": "^7.3|^8.0",

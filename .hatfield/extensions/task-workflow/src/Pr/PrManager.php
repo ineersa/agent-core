@@ -6,18 +6,24 @@ namespace Ineersa\HatfieldExt\TaskWorkflow\Pr;
 
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\Clock\AmpClock;
 use Ineersa\HatfieldExt\TaskWorkflow\DTO\PullRequestDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Exception\TaskTransitionException;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\InvocationControl;
+use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Filesystem\Filesystem;
 
 final readonly class PrManager
 {
     private const string FIELDS = 'number,url,state,mergedAt,headRepository,headRefName,baseRefName,headRefOid,reviewDecision,closingIssuesReferences';
 
-    public function __construct(private ExecInterface $exec, private string $primaryRoot, private TaskWorkflowSettings $settings)
-    {
+    public function __construct(
+        private ExecInterface $exec,
+        private string $primaryRoot,
+        private TaskWorkflowSettings $settings,
+        private ClockInterface $clock = new AmpClock(),
+    ) {
     }
 
     public function view(int|string $reference, ?InvocationControl $control = null): PullRequestDTO
@@ -84,7 +90,20 @@ final readonly class PrManager
                 throw new TaskTransitionException('PR creation returned no canonical URL; reconcile the remote lookup before retrying.');
             }
 
-            return $this->view($url, $control);
+            // GitHub indexes closing references asynchronously after creation. Only
+            // this post-create read waits; discovery and identity checks stay strict.
+            $pr = $this->view($url, $control);
+            $delays = [1, 2, 4, 8];
+            while (!\in_array($issue, $pr->closingIssues, true)) {
+                $delay = array_shift($delays);
+                if (null === $delay) {
+                    throw new TaskTransitionException(\sprintf('PR #%d created but GitHub has not linked it to issue #%d yet; retry with pr: %d.', $pr->number, $issue, $pr->number));
+                }
+                $this->waitForLink($delay, $control);
+                $pr = $this->view($url, $control);
+            }
+
+            return $pr;
         } finally {
             $filesystem->remove($file);
         }
@@ -126,6 +145,18 @@ final readonly class PrManager
     public function develop(int $issue, string $branch, string $base, ?InvocationControl $control = null): void
     {
         $this->gh(['issue', 'develop', (string) $issue, '--name', $branch, '--base', $base], $control);
+    }
+
+    private function waitForLink(int $seconds, ?InvocationControl $control): void
+    {
+        // Yield in short slices so both hosts observe cancellation/deadlines
+        // throughout backoff, not only when launching the next GitHub request.
+        for ($slice = 0; $slice < $seconds * 10; ++$slice) {
+            if (null !== $control?->interrupted()) {
+                throw new TaskTransitionException('Interrupted while waiting for GitHub to link the created PR to its issue.');
+            }
+            $this->clock->sleep($control?->remainingTimeoutSeconds(0.1) ?? 0.1);
+        }
     }
 
     /** @param list<string> $args */

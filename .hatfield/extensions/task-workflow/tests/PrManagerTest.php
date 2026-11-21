@@ -6,13 +6,109 @@ namespace Ineersa\HatfieldExt\TaskWorkflow\Tests;
 
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
 use Ineersa\HatfieldExt\TaskWorkflow\Exception\TaskTransitionException;
 use Ineersa\HatfieldExt\TaskWorkflow\Pr\PrManager;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
+use Ineersa\HatfieldExt\TaskWorkflow\Tool\InvocationControl;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\MockClock;
 
 final class PrManagerTest extends TestCase
 {
+    #[DataProvider('linkAttempts')]
+    public function testCreateWaitsOnlyUntilTheExactIssueIsLinked(int $unlinkedReads, int $waitSeconds): void
+    {
+        $clock = new MockClock('2026-01-01T00:00:00Z');
+        $start = $clock->now();
+        $calls = [];
+        $manager = $this->manager([
+            new ExecResultDTO('https://github.com/acme/project/pull/9', '', 0),
+            ...array_fill(0, $unlinkedReads, $this->response(['closingIssuesReferences' => [['number' => 8]]])),
+            $this->response(),
+        ], $calls, $clock);
+
+        $pr = $manager->create(7, 'task/7', 'release', 'Title', 'Body');
+
+        $manager->assertIdentity($pr, 'task/7', 'release', 7);
+        $this->assertCount($unlinkedReads + 2, $calls);
+        $this->assertEquals($start->modify('+'.$waitSeconds.' seconds'), $clock->now());
+        $this->assertFileDoesNotExist($calls[0][array_search('--body-file', $calls[0], true) + 1]);
+    }
+
+    public static function linkAttempts(): iterable
+    {
+        yield 'already linked: no wait' => [0, 0];
+        yield 'linked after first wait' => [1, 1];
+        yield 'linked on final attempt' => [4, 15];
+    }
+
+    public function testCreateReportsTheCreatedPrWhenLinkNeverAppears(): void
+    {
+        $clock = new MockClock('2026-01-01T00:00:00Z');
+        $start = $clock->now();
+        $calls = [];
+        $manager = $this->manager([
+            new ExecResultDTO('https://github.com/acme/project/pull/9', '', 0),
+            ...array_fill(0, 5, $this->response(['closingIssuesReferences' => []])),
+        ], $calls, $clock);
+
+        try {
+            $manager->create(7, 'task/7', 'release', 'Title', 'Body');
+            $this->fail('Expected a bounded linking refusal');
+        } catch (TaskTransitionException $exception) {
+            $this->assertSame('PR #9 created but GitHub has not linked it to issue #7 yet; retry with pr: 9.', $exception->getMessage());
+        }
+
+        $this->assertCount(6, $calls);
+        $this->assertEquals($start->modify('+15 seconds'), $clock->now());
+        $this->assertFileDoesNotExist($calls[0][array_search('--body-file', $calls[0], true) + 1]);
+    }
+
+    public function testCancellationDuringBackoffStopsBeforeTheNextView(): void
+    {
+        $clock = new MockClock('2026-01-01T00:00:00Z');
+        $cancelAt = $clock->now()->modify('+300 milliseconds');
+        $token = new class($clock, $cancelAt) implements ToolCancellationTokenInterface {
+            public function __construct(private ClockInterface $clock, private \DateTimeImmutable $cancelAt)
+            {
+            }
+
+            public function isCancellationRequested(): bool
+            {
+                return $this->clock->now() >= $this->cancelAt;
+            }
+        };
+        $calls = [];
+        $manager = $this->manager([
+            new ExecResultDTO('https://github.com/acme/project/pull/9', '', 0),
+            $this->response(['closingIssuesReferences' => []]),
+        ], $calls, $clock);
+
+        try {
+            $manager->create(7, 'task/7', 'release', 'Title', 'Body', new InvocationControl($token, null, null));
+            $this->fail('Expected cancellation during the wait');
+        } catch (TaskTransitionException $exception) {
+            $this->assertStringContainsString('Interrupted while waiting', $exception->getMessage());
+        }
+
+        $this->assertCount(2, $calls);
+        $this->assertEquals($cancelAt, $clock->now());
+        $this->assertFileDoesNotExist($calls[0][array_search('--body-file', $calls[0], true) + 1]);
+    }
+
+    public function testFindStillRejectsUnlinkedPrWithoutPolling(): void
+    {
+        $calls = [];
+        $manager = $this->manager([[[['number' => 9]]], $this->response(['closingIssuesReferences' => []])], $calls);
+
+        $this->expectException(TaskTransitionException::class);
+        $this->expectExceptionMessage('PR does not match the exact issue, head branch and base branch.');
+        $manager->find('task/7', 'release', 7);
+    }
+
     public function testExactIssueHeadAndActualBaseSelection(): void
     {
         $calls = [];
@@ -80,7 +176,7 @@ final class PrManagerTest extends TestCase
         return array_replace(['number' => 9, 'url' => 'https://github.com/acme/project/pull/9', 'state' => 'OPEN', 'mergedAt' => null, 'headRepository' => ['nameWithOwner' => 'acme/project'], 'headRefName' => 'task/7', 'baseRefName' => 'release', 'headRefOid' => 'accepted-sha', 'reviewDecision' => 'APPROVED', 'closingIssuesReferences' => [['number' => 7]]], $changes);
     }
 
-    private function manager(array $responses, array &$calls): PrManager
+    private function manager(array $responses, array &$calls, ?ClockInterface $clock = null): PrManager
     {
         return new PrManager(new StubExec(static function (string $command, array $args, ?ExecOptionsDTO $options) use (&$responses, &$calls): ExecResultDTO {
             self::assertSame('gh', $command);
@@ -89,6 +185,6 @@ final class PrManagerTest extends TestCase
             $response = array_shift($responses) ?? throw new \LogicException('Unexpected gh call');
 
             return $response instanceof ExecResultDTO ? $response : new ExecResultDTO(json_encode($response, \JSON_THROW_ON_ERROR), '', 0);
-        }), '/primary', new TaskWorkflowSettings(repository: 'acme/project', mergeMethod: 'squash'));
+        }), '/primary', new TaskWorkflowSettings(repository: 'acme/project', mergeMethod: 'squash'), $clock ?? new MockClock());
     }
 }

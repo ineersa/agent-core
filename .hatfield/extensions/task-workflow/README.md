@@ -275,10 +275,12 @@ cannot be "resumed" by making a new branch from base. PR relationships replace
 linked-branch relationships after PR creation; closed/merged native PR references
 are paginated explicitly. Query failure is never interpreted as no match.
 
-Submission reruns validation for the submitted revision. Nonzero exit, launch
-failure, timeout, cancellation, changed HEAD, tracked changes or nonignored
-untracked files prevent advancement. A formatter's changes must be committed
-and revalidated. Successful push/PR effects are reconciled after uncertain errors.
+Review validates the submitted SHA. Hook failure/interruption, changed HEAD or a
+dirty worktree blocks advancement. Commit formatter changes and revalidate.
+Successful push/PR effects are reconciled after uncertain errors.
+
+Both hosts retry new PR issue links for 15s. Missing links report the PR to retry;
+identity checks stay strict.
 
 Completion uses `gh pr merge --match-head-commit` and the configured merge method,
 never `--admin`, local remerging, force push or `--delete-branch`. Repository
