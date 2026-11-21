@@ -18,7 +18,10 @@ Internals: [phar-packaging.md](phar-packaging.md) · [static-packaging.md](stati
 | `SHA256SUMS` | SHA-256 for every release asset |
 
 Native releases are single-file per target. Amp SQLite workers relaunch the same
-fused binary through `--internal-sqlite-worker`.
+fused binary through `--internal-sqlite-worker`. Foreground and background Bash
+use the installed runtime to launch their process groups and do not need a
+separate PHP CLI. Running `code_mode` scripts from a fused binary requires
+`php` on PATH.
 
 Intel macOS is PHAR-only: install system PHP ≥ 8.5 with the required extensions
 and omit `--static`. Releases do not include an Intel macOS native binary.

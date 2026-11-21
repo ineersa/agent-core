@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Tool\BackgroundProcess;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Support\TestProcessRuntime;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -36,6 +37,7 @@ final class ProcessLifecycleTest extends TestCase
             new BackgroundProcessConfig(storageDir: $this->tmpDir, stopGraceSeconds: 0),
             new TestLogger(),
             new LockFactory(new FlockStore()),
+            TestProcessRuntime::source(),
         );
     }
 
@@ -57,20 +59,20 @@ final class ProcessLifecycleTest extends TestCase
         $this->assertIsResource($server);
         $address = stream_socket_get_name($server, false);
         $this->assertIsString($address);
-        $shim = $this->tmpDir.'/php';
-        // Delay the external launcher behind a socket barrier. The stderr
+        $shim = $this->tmpDir.'/launcher.php';
+        // Delay the internal launcher behind a socket barrier. The stderr
         // pipe stays open until the detached wrapper fails or redirects.
         $shimBody = <<<'PHP'
 $socket = stream_socket_client(ADDRESS);
 fwrite($socket, "entered\n");
 fgets($socket);
-$process = proc_open([PHP_BINARY, ...array_slice($argv, 1)], [STDIN, STDOUT, ['pipe', 'w']], $pipes);
+$process = proc_open([PHP_BINARY, CONSOLE, ...array_slice($argv, 1)], [STDIN, STDOUT, ['pipe', 'w']], $pipes);
 stream_get_contents($pipes[2]);
 fclose($pipes[2]);
 $exit = proc_close($process);
 fwrite($socket, "done:$exit\n");
 PHP;
-        $shimBody = str_replace('ADDRESS', var_export('tcp://'.$address, true), $shimBody);
+        $shimBody = str_replace(['ADDRESS', 'CONSOLE'], [var_export('tcp://'.$address, true), var_export(\dirname(__DIR__, 4).'/bin/console', true)], $shimBody);
         file_put_contents($shim, '#!'.\PHP_BINARY."\n<?php\n".$shimBody);
         chmod($shim, 0700);
         $workerPath = $this->tmpDir.'/worker.php';
@@ -79,7 +81,8 @@ PHP;
 <?php
 require AUTOLOAD;
 $config = new \Ineersa\CodingAgent\Config\BackgroundProcessConfig(storageDir: DIRECTORY);
-$lifecycle = new \Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle($config, new \Psr\Log\NullLogger(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+$runtime = new \Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig(new \Ineersa\CodingAgent\Runtime\Process\ConfigExecutableLocator(), DIRECTORY);
+$lifecycle = new \Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle($config, new \Psr\Log\NullLogger(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), $runtime);
 $lifecycle->launchProcess(COMMAND, PIDFILE, LOGFILE, STATUSFILE);
 PHP;
         $workerBody = str_replace(
@@ -88,7 +91,7 @@ PHP;
             $workerBody,
         );
         file_put_contents($workerPath, $workerBody);
-        $worker = new Process([\PHP_BINARY, $workerPath], env: ['PATH' => $this->tmpDir.':'.getenv('PATH'), 'HATFIELD_SESSION_ID' => false], timeout: 5);
+        $worker = new Process([\PHP_BINARY, $workerPath], env: ['HATFIELD_BINARY_PATH' => $shim, 'HATFIELD_SESSION_ID' => false], timeout: 5);
         $connection = null;
         try {
             $worker->start();
@@ -194,7 +197,7 @@ PHP;
     {
         $directory = $this->tmpDir.'/native paths with spaces';
         mkdir($directory);
-        $this->lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $directory, stopGraceSeconds: 1), new TestLogger(), new LockFactory(new FlockStore()));
+        $this->lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $directory, stopGraceSeconds: 1), new TestLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $status = $directory.'/owned.status';
         $pidFile = $directory.'/owned.pid';
         $log = $directory.'/owned.log';

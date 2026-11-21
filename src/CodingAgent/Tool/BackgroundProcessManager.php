@@ -68,7 +68,7 @@ use function Amp\delay;
  * function, so controller startup removes accepted process state left by
  * the prior controller after it regains exclusive session ownership.
  *
- * External PHP CLI with PCNTL and POSIX is required. If unavailable, start() fails with a
+ * If the installed runtime cannot create a process group, start() fails with a
  * clear exception rather than falling back to unsafe single-PID mode
  * that cannot reliably propagate signals to child workloads.
  *
@@ -149,7 +149,7 @@ final class BackgroundProcessManager
      * file is not written; the owner observation marks that scenario as
      * "finished (unclean)".
      *
-     * If the external PHP launcher is unavailable or fails, this
+     * If the internal launcher is unavailable or fails, this
      * method throws rather than falling back to single-PID mode that
      * cannot safely propagate TERM to child workloads.
      *

@@ -50,6 +50,9 @@ $workerArgv = $_SERVER['argv'] ?? [];
 if (Ineersa\CodingAgent\Runtime\Messenger\InternalSqliteWorkerBootstrap::matches($workerArgv)) {
     Ineersa\CodingAgent\Runtime\Messenger\InternalSqliteWorkerBootstrap::tryRun($workerArgv);
 }
+if (Ineersa\CodingAgent\Runtime\Process\DetachedProcessLauncher::FLAG === ($workerArgv[1] ?? null)) {
+    Ineersa\CodingAgent\Runtime\Process\DetachedProcessLauncher::run($workerArgv);
+}
 unset($workerArgv);
 
 // ── Early --cwd resolution ───────────────────────────────────────────────

@@ -39,6 +39,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Support\TestProcessRuntime;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -135,7 +136,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $poller = null;
         $logger = $this->createStub(LoggerInterface::class);
         $logger->method('info')->willReturnCallback(static function (string $message) use (&$poller): void {
@@ -213,7 +214,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $owner = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
         $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('stale Bash completion');
         PreparedEventStoreSeeder::append(self::getContainer()->get(PreparedTransitionEventStoreInterface::class), RunEvent::forAppend($runId, 0, 'run_started', ['payload' => ['messages' => []]]));
@@ -271,7 +272,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -307,7 +308,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->commandBus = new MessageBus([new SendMessageMiddleware($locator)]);
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
-        $poller = $this->createPoller($store, new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore())), $config, new NullLogger()));
+        $poller = $this->createPoller($store, new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source()), $config, new NullLogger()));
         $poll = new \ReflectionMethod($poller, 'poll');
         $pending = new DeferredFuture();
         $release = new DeferredFuture();
@@ -391,7 +392,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -427,7 +428,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -454,7 +455,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -475,7 +476,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         // Construct with empty string — must be normalized to null
@@ -533,7 +534,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager, 'test-regression-run');
@@ -585,7 +586,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -631,7 +632,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager, 'test-poller-run');
@@ -651,7 +652,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $owner = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $process = new BackgroundProcess();
@@ -713,7 +714,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $config = new BackgroundProcessConfig(storageDir: $this->tmpDir, stopGraceSeconds: 0);
-        $manager = new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore())), $config, new NullLogger());
+        $manager = new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source()), $config, new NullLogger());
 
         $process = $manager->start(
             'sleep 10',

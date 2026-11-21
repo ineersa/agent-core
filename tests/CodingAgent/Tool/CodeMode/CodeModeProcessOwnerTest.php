@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\CodeModeReportedReturnRepository;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Support\TestProcessRuntime;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeProcessOwner;
@@ -41,7 +42,7 @@ final class CodeModeProcessOwnerTest extends IsolatedKernelTestCase
             };
             $container = self::getContainer();
             $store = $container->get(\Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore::class);
-            $owner = new CodeModeProcessOwner(new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $root), new NullLogger(), new LockFactory(new FlockStore($root))), $returns, $container->get(\Ineersa\CodingAgent\Entity\CodeModeCallRepository::class), $payloads, $container->get(\Ineersa\CodingAgent\Entity\BackgroundProcessRepository::class), $store);
+            $owner = new CodeModeProcessOwner(new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $root), new NullLogger(), new LockFactory(new FlockStore($root)), TestProcessRuntime::source()), $returns, $container->get(\Ineersa\CodingAgent\Entity\CodeModeCallRepository::class), $payloads, $container->get(\Ineersa\CodingAgent\Entity\BackgroundProcessRepository::class), $store);
             $prefix = $root.'/code-mode-'.hash('sha256', 'run').'-'.hash('sha256', 'invocation');
             $store->insertRecord(['session_id' => 'run', 'code_mode_id' => 'invocation', 'code_mode_launch' => json_encode([
                 'workspace' => $workspace, 'startedAtNs' => hrtime(true) - 10_000_000_000, 'parent' => null,

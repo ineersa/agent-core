@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 use Amp\Process\Process;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Runtime\Process\DetachedProcessLauncher;
+use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Process\ExecutableFinder;
@@ -29,13 +31,14 @@ final class ProcessLifecycle
         private readonly BackgroundProcessConfig $config,
         private readonly LoggerInterface $logger,
         private readonly LockFactory $lockFactory,
+        private readonly RuntimeProcessConfig $runtime,
     ) {
     }
 
     // ─── Process launch ──────────────────────────────────────────────
 
     /**
-     * Launch a command in a new session/process group via an external PHP CLI.
+     * Launch a command in a new session/process group via the installed runtime.
      *
      * Builds a shell wrapper that backgrounds the user command, traps
      * SIGTERM, and records exit status to a status file. Returns the
@@ -53,11 +56,9 @@ final class ProcessLifecycle
      */
     public function launchProcess(string $command, string $pidFile, string $logFile, string $statusFile): array
     {
-        $finder = new ExecutableFinder();
-        $php = $finder->find('php');
-        $bash = $finder->find('bash');
-        if (null === $php || null === $bash) {
-            throw new \RuntimeException('Background processes require PHP CLI and Bash on PATH.');
+        $bash = (new ExecutableFinder())->find('bash');
+        if (null === $bash) {
+            throw new \RuntimeException('Background processes require Bash on PATH.');
         }
 
         // Build a shell wrapper that:
@@ -81,27 +82,7 @@ final class ProcessLifecycle
         // child owns the readiness pipe until exec (or an explicit failure),
         // and the Bash wrapper closes it by redirecting before running work.
         // Keep the workload in its own bash -c so its exit cannot bypass status.
-        $launcher = Process::start([$php, '-r', <<<'PHP'
-            if (!function_exists('pcntl_fork') || !function_exists('posix_setsid') || !function_exists('pcntl_exec')) {
-                echo "PHP CLI requires pcntl_fork, posix_setsid and pcntl_exec\n";
-                exit(1);
-            }
-            $pid = pcntl_fork();
-            if ($pid < 0) {
-                echo "pcntl_fork failed\n";
-                exit(1);
-            }
-            if ($pid > 0) {
-                exit(0);
-            }
-            if (posix_setsid() < 0) {
-                echo "posix_setsid failed\n";
-                exit(1);
-            }
-            @pcntl_exec($argv[1], ['-c', $argv[2]]);
-            echo "pcntl_exec failed\n";
-            exit(1);
-            PHP, '--', $bash, $shellCode]);
+        $launcher = Process::start([...$this->runtime->executableCommand(), DetachedProcessLauncher::FLAG, $bash, $shellCode]);
         $launcher->getStdin()->close();
         // Reading launch-pipe EOF cooperatively preserves wrapper readiness.
         $output = trim(buffer($launcher->getStdout()));

@@ -45,6 +45,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Support\TestProcessRuntime;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
@@ -1111,7 +1112,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         /** @var ProcessStore $store */
         $store = self::getContainer()->get(ProcessStore::class);
-        $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->bgConfig, new NullLogger());
         $this->managerCreated = true;
     }
