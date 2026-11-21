@@ -1093,6 +1093,9 @@ function distribution_smoke_code_mode($listener, array $pipes, string $tmp): voi
 {
     $token = bin2hex(random_bytes(12));
     \CastorTasks\write_file_checked($tmp.'/code-mode-input.txt', $token);
+    if (!posix_mkfifo($tmp.'/code-mode-hold', 0600)) {
+        throw new RuntimeException('Unable to create packaged code-mode stop barrier.');
+    }
     fwrite($pipes[0], json_encode(['v' => 1, 'id' => 'code-mode-smoke', 'type' => 'start_run', 'payload' => ['prompt' => 'Run the requested tool.']], \JSON_THROW_ON_ERROR)."\n");
     $peer = @stream_socket_accept($listener, 5);
     if (false === $peer) {
@@ -1109,11 +1112,15 @@ function distribution_smoke_code_mode($listener, array $pipes, string $tmp): voi
         if ($length > 0) {
             stream_get_contents($peer, $length);
         }
-        $script = 'file_put_contents("code-mode-output.txt", json_encode(tool("read", ["path" => "code-mode-input.txt"])));';
-        $delta = ['tool_calls' => [[
-            'index' => 0, 'id' => 'call_code_mode_smoke', 'type' => 'function',
-            'function' => ['name' => 'code_mode', 'arguments' => json_encode(['script' => $script], \JSON_THROW_ON_ERROR)],
-        ]]];
+        $script = 'file_put_contents("code-mode-output.txt", json_encode(tool("read", ["path" => "code-mode-input.txt"]))); return 1;';
+        $hold = 'file_put_contents("code-mode-group.tmp", json_encode([posix_getpgid(0), getenv("HATFIELD_CODE_MODE_INVOCATION")])); rename("code-mode-group.tmp", "code-mode-group.json"); fopen("code-mode-hold", "rb");';
+        $delta = ['tool_calls' => []];
+        foreach ([['call_code_mode_smoke', $script, false], ['call_code_mode_hold', $hold, true]] as $index => [$id, $body, $backgrounded]) {
+            $delta['tool_calls'][] = [
+                'index' => $index, 'id' => $id, 'type' => 'function',
+                'function' => ['name' => 'code_mode', 'arguments' => json_encode(['script' => $body, 'backgrounded' => $backgrounded], \JSON_THROW_ON_ERROR)],
+            ];
+        }
         $events = '';
         foreach ([[$delta, null], [new stdClass(), 'tool_calls']] as [$message, $finish]) {
             $events .= 'data: '.json_encode(['id' => 'code-mode-smoke', 'object' => 'chat.completion.chunk', 'created' => 1, 'model' => 'smoke', 'choices' => [['index' => 0, 'delta' => $message, 'finish_reason' => $finish]]], \JSON_THROW_ON_ERROR)."\n\n";
@@ -1123,17 +1130,48 @@ function distribution_smoke_code_mode($listener, array $pipes, string $tmp): voi
     } finally {
         fclose($peer);
     }
+    $stdout = '';
+    $runId = '';
+    $returned = false;
+    $accepted = false;
+    $stopSent = false;
+    $probeSent = false;
     $deadline = microtime(true) + 5;
     do {
-        $output = @file_get_contents($tmp.'/code-mode-output.txt');
-        if (false !== $output && str_contains($output, $token)) {
-            echo "  packaged code mode: nested read returned the fixture bytes\n";
+        $stdout .= stream_get_contents($pipes[1]);
+        while (false !== ($newline = strpos($stdout, "\n"))) {
+            $event = json_decode(substr($stdout, 0, $newline), true);
+            $stdout = substr($stdout, $newline + 1);
+            $payload = $event['payload'] ?? [];
+            if ('tool_execution.completed' === ($event['type'] ?? null) && 'call_code_mode_smoke' === ($payload['tool_call_id'] ?? null)) {
+                $returned = '1' === ($payload['result'] ?? null);
+            }
+            if ('tool_call.acknowledged' === ($event['type'] ?? null) && 'call_code_mode_hold' === ($payload['tool_call_id'] ?? null)) {
+                $accepted = true === ($payload['backgrounded'] ?? false);
+                $runId = $event['runId'];
+            }
+            if ($probeSent && 'command.ack' === ($event['type'] ?? null) && 'code-mode-alive' === ($payload['commandId'] ?? null)) {
+                echo "  packaged code mode: return 1, nested read, stopped process group, controller responsive\n";
 
-            return;
+                return;
+            }
+        }
+        if ($returned && $accepted && !$stopSent && is_file($tmp.'/code-mode-group.json')) {
+            [$pgid, $invocation] = json_decode(file_get_contents($tmp.'/code-mode-group.json'), true, flags: \JSON_THROW_ON_ERROR);
+            $output = file_get_contents($tmp.'/code-mode-output.txt');
+            if (!str_contains($output, $token) || !is_int($pgid) || $pgid <= 1 || $pgid === posix_getpgid(0) || !posix_kill(-$pgid, 0) || !is_string($invocation) || '' === $invocation) {
+                throw new RuntimeException('Packaged code-mode smoke: invalid nested read or group evidence.');
+            }
+            fwrite($pipes[0], json_encode(['v' => 1, 'id' => 'code-mode-stop', 'type' => 'stop_code_mode', 'runId' => $runId, 'payload' => ['deferred_id' => $invocation, 'tool_call_id' => 'call_code_mode_hold']], \JSON_THROW_ON_ERROR)."\n");
+            $stopSent = true;
+        }
+        if ($stopSent && !$probeSent && !posix_kill(-$pgid, 0) && 3 === posix_get_last_error()) {
+            fwrite($pipes[0], json_encode(['v' => 1, 'id' => 'code-mode-alive', 'type' => 'stop_code_mode', 'runId' => $runId, 'payload' => ['deferred_id' => $invocation, 'tool_call_id' => 'call_code_mode_hold']], \JSON_THROW_ON_ERROR)."\n");
+            $probeSent = true;
         }
         usleep(50_000);
     } while (microtime(true) < $deadline);
-    throw new RuntimeException('Packaged code-mode nested read did not finish. '.stream_get_contents($pipes[1]).stream_get_contents($pipes[2]));
+    throw new RuntimeException(sprintf('Packaged code-mode smoke incomplete (returned=%d, accepted=%d, stop=%d, group gone=%d). %s', $returned, $accepted, $stopSent, $probeSent, stream_get_contents($pipes[2])));
 }
 
 /** Prove packaged broker/worker operation and full-tree shutdown with a deterministic local provider. */
@@ -1150,7 +1188,9 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
         throw new RuntimeException('Native topology smoke: unable to create temp dir');
     }
     mkdir($tmp.'/home/.hatfield', 0755, true);
-    mkdir($tmp.'/.hatfield/sessions/topo-1', 0755, true);
+    // Recover an empty fixture session at startup so its run and broker owner agree.
+    mkdir($tmp.'/.hatfield/sessions/1', 0755, true);
+    \CastorTasks\write_file_checked($tmp.'/.hatfield/sessions/1/events.jsonl', '');
     mkdir($tmp.'/scratch', 0700);
     $listener = stream_socket_server('tcp://127.0.0.1:0');
     if (false === $listener || false === ($address = stream_socket_get_name($listener, false))) {
@@ -1199,7 +1239,7 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
         throw new RuntimeException('Packaged topology smoke: unable to resolve copied artifact path.');
     }
 
-    $sessionId = 'topo-1';
+    $sessionId = '1';
     $queuePaths = Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths::forSession(
         $tmp.'/.hatfield/sessions',
         $sessionId,
@@ -1225,8 +1265,9 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
     foreach (getenv() as $k => $v) {
         $fullEnv[$k] = $v;
     }
-    // Keep PATH free of host PHP interpreters so the fused binary cannot fall back.
-    $fullEnv['PATH'] = '/usr/bin:/bin';
+    // Controller workers still must use the renamed artifact; code mode and
+    // the detached launcher intentionally require an external PHP CLI.
+    $fullEnv['PATH'] = dirname(\PHP_BINARY).':/usr/bin:/bin';
     foreach ($env as $k => $v) {
         $fullEnv[$k] = $v;
     }

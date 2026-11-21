@@ -15,7 +15,6 @@ use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
-use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 /**
@@ -54,24 +53,24 @@ final class ProcessLifecycleTest extends TestCase
             $this->markTestSkipped('This proof never signals a root-owned process.');
         }
         $this->assertSame($this->tmpDir, realpath($this->tmpDir));
-        $setsid = (new ExecutableFinder())->find('setsid');
-        $this->assertNotNull($setsid);
         $server = stream_socket_server('tcp://127.0.0.1:0');
         $this->assertIsResource($server);
         $address = stream_socket_get_name($server, false);
         $this->assertIsString($address);
-        $shim = $this->tmpDir.'/setsid';
-        // Delay the actual wrapper behind a socket barrier. --wait lets the
-        // fixture report its termination, not merely the transient launcher exit.
+        $shim = $this->tmpDir.'/php';
+        // Delay the external launcher behind a socket barrier. The stderr
+        // pipe stays open until the detached wrapper fails or redirects.
         $shimBody = <<<'PHP'
 $socket = stream_socket_client(ADDRESS);
 fwrite($socket, "entered\n");
 fgets($socket);
-$process = proc_open([SETSID, '--wait', ...array_slice($argv, 1)], [STDIN, STDOUT, STDERR], $pipes);
+$process = proc_open([PHP_BINARY, ...array_slice($argv, 1)], [STDIN, STDOUT, ['pipe', 'w']], $pipes);
+stream_get_contents($pipes[2]);
+fclose($pipes[2]);
 $exit = proc_close($process);
 fwrite($socket, "done:$exit\n");
 PHP;
-        $shimBody = str_replace(['ADDRESS', 'SETSID'], [var_export('tcp://'.$address, true), var_export($setsid, true)], $shimBody);
+        $shimBody = str_replace('ADDRESS', var_export('tcp://'.$address, true), $shimBody);
         file_put_contents($shim, '#!'.\PHP_BINARY."\n<?php\n".$shimBody);
         chmod($shim, 0700);
         $workerPath = $this->tmpDir.'/worker.php';
@@ -114,6 +113,25 @@ PHP;
             if ($worker->isRunning()) {
                 $worker->stop(0);
             }
+        }
+    }
+
+    #[Test]
+    public function launchReportsDetachedExecFailureWithoutClaimingWork(): void
+    {
+        $brokenBash = $this->tmpDir.'/bash';
+        file_put_contents($brokenBash, "not an executable format\n");
+        chmod($brokenBash, 0700);
+        $path = getenv('PATH');
+        putenv('PATH='.$this->tmpDir.':'.$path);
+        $pidFile = $this->tmpDir.'/failed.pid';
+        try {
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('readiness: pcntl_exec failed');
+            $this->lifecycle->launchProcess('exit 0', $pidFile, $this->tmpDir.'/failed.log', $this->tmpDir.'/failed.status');
+        } finally {
+            putenv(false === $path ? 'PATH' : 'PATH='.$path);
+            $this->assertFileDoesNotExist($pidFile);
         }
     }
 

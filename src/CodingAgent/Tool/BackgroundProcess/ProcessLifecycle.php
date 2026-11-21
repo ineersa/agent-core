@@ -17,7 +17,7 @@ use function Amp\delay;
 /**
  * OS and filesystem operations for background process lifecycle.
  *
- * Handles process launch (setsid + shell wrapper), signal delivery
+ * Handles process launch (detached session + shell wrapper), signal delivery
  * (TERM/KILL), liveness checks, PGID resolution, log file reading,
  * and cleanup of PID/status/log files on disk.
  *
@@ -35,7 +35,7 @@ final class ProcessLifecycle
     // ─── Process launch ──────────────────────────────────────────────
 
     /**
-     * Launch a command in a new session/process group via setsid.
+     * Launch a command in a new session/process group via an external PHP CLI.
      *
      * Builds a shell wrapper that backgrounds the user command, traps
      * SIGTERM, and records exit status to a status file. Returns the
@@ -53,15 +53,16 @@ final class ProcessLifecycle
      */
     public function launchProcess(string $command, string $pidFile, string $logFile, string $statusFile): array
     {
-        // Preflight: verify setsid is available before attempting launch.
-        $setsid = (new ExecutableFinder())->find('setsid');
-        if (null === $setsid) {
-            throw new \RuntimeException('setsid is required but not found on this platform.');
+        $finder = new ExecutableFinder();
+        $php = $finder->find('php');
+        $bash = $finder->find('bash');
+        if (null === $php || null === $bash) {
+            throw new \RuntimeException('Background processes require PHP CLI and Bash on PATH.');
         }
 
         // Build a shell wrapper that:
         //  1. Exclusively claims pidFile before running the command
-        //  2. Redirects stdout/stderr to logFile
+        //  2. Opens logFile before announcing readiness, then redirects output
         //  3. Backgrounds the user command as a child process (&) so
         //     the child inherits default SIGTERM (not ignored)
         //  4. Sets a SIGTERM trap in the wrapper that forwards TERM
@@ -69,28 +70,44 @@ final class ProcessLifecycle
         //  5. Waits for the child on the normal path, stores child RC
         //     in a variable before echo so exit reflects child outcome
         $shellCode = \sprintf(
-            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || exit 73; set +o noclobber; echo $$ || exit 74; exec >> %s 2>&1; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > "$STATUS_FILE"; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > "$STATUS_FILE"; exit $RC',
+            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || { echo claimed; exit 73; }; set +o noclobber; if ! { exec 4>> %s; }; then echo log-open-failed; exit 74; fi; echo $$ || exit 74; exec </dev/null >&4 2>&1 4>&-; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > "$STATUS_FILE"; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > "$STATUS_FILE"; exit $RC',
             escapeshellarg($pidFile),
             escapeshellarg($logFile),
             escapeshellarg($command),
             escapeshellarg($statusFile),
         );
 
-        // Always force setsid to fork (-f). Without -f, util-linux setsid may
-        // fork only when the caller is already a process-group leader; the
-        // shell's "setsid … & echo $!" then tracks that short-lived forked
-        // setsid helper instead of the durable bash wrapper. The wrapper PID
-        // is authoritative. Publish it on the launch pipe before redirecting
-        // stdout to the log: EOF acknowledges readiness without polling a file.
-        // Keep the command in its own bash -c so heredocs/exit cannot consume
-        // or bypass the supervisor's wait/status-writing code.
-        $launcher = Process::start([$setsid, '-f', 'bash', '-c', $shellCode]);
-        // Reading launch-pipe EOF cooperatively preserves the wrapper readiness
-        // boundary without blocking every other invocation in this process.
-        $output = preg_split('/\R/', trim(buffer($launcher->getStdout())));
+        // The fork parent only reports whether it could fork. The detached
+        // child owns the readiness pipe until exec (or an explicit failure),
+        // and the Bash wrapper closes it by redirecting before running work.
+        // Keep the workload in its own bash -c so its exit cannot bypass status.
+        $launcher = Process::start([$php, '-r', <<<'PHP'
+            if (!function_exists('pcntl_fork') || !function_exists('posix_setsid') || !function_exists('pcntl_exec')) {
+                echo "PHP CLI requires pcntl_fork, posix_setsid and pcntl_exec\n";
+                exit(1);
+            }
+            $pid = pcntl_fork();
+            if ($pid < 0) {
+                echo "pcntl_fork failed\n";
+                exit(1);
+            }
+            if ($pid > 0) {
+                exit(0);
+            }
+            if (posix_setsid() < 0) {
+                echo "posix_setsid failed\n";
+                exit(1);
+            }
+            @pcntl_exec($argv[1], ['-c', $argv[2]]);
+            echo "pcntl_exec failed\n";
+            exit(1);
+            PHP, '--', $bash, $shellCode]);
+        $launcher->getStdin()->close();
+        // Reading launch-pipe EOF cooperatively preserves wrapper readiness.
+        $output = trim(buffer($launcher->getStdout()));
         $exitCode = $launcher->join();
 
-        if (73 === $exitCode) {
+        if (0 === $exitCode && 'claimed' === $output) {
             $pid = $this->readPidFile($statusFile);
             if (null === $pid) {
                 throw new \RuntimeException('Bash wrapper claim exists without a valid PID; workload outcome is unknown.');
@@ -102,15 +119,11 @@ final class ProcessLifecycle
 
             return ['pid' => $pid, 'pgid' => $pgid];
         }
-        if (0 !== $exitCode || [] === $output) {
-            throw new \RuntimeException('Failed to launch background process: setsid returned exit code '.$exitCode.'. (pid file: '.$pidFile.')');
+        if (0 !== $exitCode || !ctype_digit($output) || (int) $output <= 0) {
+            throw new \RuntimeException(\sprintf('Failed to launch background process: launcher exit %d, readiness: %s (pid file: %s).', $exitCode, '' === $output ? 'missing' : $output, $pidFile));
         }
 
-        $pid = (int) $output[0];
-        if ($pid <= 0) {
-            throw new \RuntimeException('Failed to launch background process: invalid wrapper PID ('.$output[0].').');
-        }
-
+        $pid = (int) $output;
         $pgid = $this->resolvePgid($pid);
 
         return ['pid' => $pid, 'pgid' => $pgid];
@@ -146,7 +159,7 @@ final class ProcessLifecycle
         @exec(\sprintf('kill -KILL -%d 2>/dev/null', $ownedGroup));
     }
 
-    /** Validate the live setsid wrapper, not merely a reusable PID or SQL row. */
+    /** Validate the live session wrapper, not merely a reusable PID or SQL row. */
     public function ownedPgid(int $pid, string $statusPath): ?int
     {
         if (!$this->ownsSidecarPaths(substr($statusPath, 0, -7).'.log', $statusPath)

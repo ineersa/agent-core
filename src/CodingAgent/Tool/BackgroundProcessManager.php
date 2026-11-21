@@ -32,7 +32,7 @@ use function Amp\delay;
  * and OS/filesystem operations to ProcessLifecycle.
  *
  * Process lifecycle:
- *  1. start() launches the command in a new session/process group via setsid.
+ *  1. start() launches the command in a new session/process group.
  *     Bash persists actual launch facts after native startup. A shell
  *     wrapper backgrounds the command as a distinct child process,
  *     redirects stdout/stderr to a log file, and records exit status
@@ -68,7 +68,7 @@ use function Amp\delay;
  * function, so controller startup removes accepted process state left by
  * the prior controller after it regains exclusive session ownership.
  *
- * setsid is required. If setsid is unavailable, start() fails with a
+ * External PHP CLI with PCNTL and POSIX is required. If unavailable, start() fails with a
  * clear exception rather than falling back to unsafe single-PID mode
  * that cannot reliably propagate signals to child workloads.
  *
@@ -132,7 +132,7 @@ final class BackgroundProcessManager
     /**
      * Launch and supervise a native process locally.
      *
-     * The command is launched in a new session/process group via setsid
+     * The command is launched in a new session/process group
      * and wrapped in a shell harness that:
      *  - Records the wrapper PID to a .pid file
      *  - Redirects stdout/stderr to a .log file
@@ -149,7 +149,7 @@ final class BackgroundProcessManager
      * file is not written; the owner observation marks that scenario as
      * "finished (unclean)".
      *
-     * setsid is required.  If setsid is not available or fails, this
+     * If the external PHP launcher is unavailable or fails, this
      * method throws rather than falling back to single-PID mode that
      * cannot safely propagate TERM to child workloads.
      *
