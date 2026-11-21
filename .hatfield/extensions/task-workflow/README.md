@@ -280,6 +280,14 @@ failure, timeout, cancellation, changed HEAD, tracked changes or nonignored
 untracked files prevent advancement. A formatter's changes must be committed
 and revalidated. Successful push/PR effects are reconciled after uncertain errors.
 
+In both Hatfield and the Claude Code plugin, a newly created PR is read immediately
+and retried after 1, 2, 4 and 8 seconds until GitHub exposes its closing-issue link.
+These waits yield and respect invocation cancellation/deadlines. If the link is
+still missing, the error identifies the created PR and asks for a retry with
+`pr: "N"`; Workflow remains IN-PROGRESS. Existing-PR discovery and exact issue,
+head and base checks remain strict. The 15-second backoff excludes GitHub request
+time, which is separately bounded by the invocation budget.
+
 Completion uses `gh pr merge --match-head-commit` and the configured merge method,
 never `--admin`, local remerging, force push or `--delete-branch`. Repository
 protections and project review requirements still apply. An enabled auto-merge
