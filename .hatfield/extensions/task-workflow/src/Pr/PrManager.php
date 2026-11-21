@@ -92,15 +92,18 @@ final readonly class PrManager
 
             // GitHub indexes closing references asynchronously after creation. Only
             // this post-create read waits; discovery and identity checks stay strict.
-            foreach ([0, 1, 2, 4, 8] as $delay) {
+            $pr = $this->view($url, $control);
+            $delays = [1, 2, 4, 8];
+            while (!\in_array($issue, $pr->closingIssues, true)) {
+                $delay = array_shift($delays);
+                if (null === $delay) {
+                    throw new TaskTransitionException(\sprintf('PR #%d created but GitHub has not linked it to issue #%d yet; retry with pr: %d.', $pr->number, $issue, $pr->number));
+                }
                 $this->waitForLink($delay, $control);
                 $pr = $this->view($url, $control);
-                if (\in_array($issue, $pr->closingIssues, true)) {
-                    return $pr;
-                }
             }
 
-            throw new TaskTransitionException(\sprintf('PR #%d created but GitHub has not linked it to issue #%d yet; retry with pr: %d.', $pr->number, $issue, $pr->number));
+            return $pr;
         } finally {
             $filesystem->remove($file);
         }

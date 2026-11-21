@@ -275,18 +275,12 @@ cannot be "resumed" by making a new branch from base. PR relationships replace
 linked-branch relationships after PR creation; closed/merged native PR references
 are paginated explicitly. Query failure is never interpreted as no match.
 
-Submission reruns validation for the submitted revision. Nonzero exit, launch
-failure, timeout, cancellation, changed HEAD, tracked changes or nonignored
-untracked files prevent advancement. A formatter's changes must be committed
-and revalidated. Successful push/PR effects are reconciled after uncertain errors.
+Review validates the submitted SHA. Hook failure/interruption, changed HEAD or a
+dirty worktree blocks advancement. Commit formatter changes and revalidate.
+Successful push/PR effects are reconciled after uncertain errors.
 
-In both Hatfield and the Claude Code plugin, a newly created PR is read immediately
-and retried after 1, 2, 4 and 8 seconds until GitHub exposes its closing-issue link.
-These waits yield and respect invocation cancellation/deadlines. If the link is
-still missing, the error identifies the created PR and asks for a retry with
-`pr: "N"`; Workflow remains IN-PROGRESS. Existing-PR discovery and exact issue,
-head and base checks remain strict. The 15-second backoff excludes GitHub request
-time, which is separately bounded by the invocation budget.
+Both hosts retry new PR issue links for 15s. Missing links report the PR to retry;
+identity checks stay strict.
 
 Completion uses `gh pr merge --match-head-commit` and the configured merge method,
 never `--admin`, local remerging, force push or `--delete-branch`. Repository
