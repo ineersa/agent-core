@@ -277,7 +277,8 @@ For an installed Composer extension, select **Uninstall** independently of
 **Configure**. Confirm the package name and scope: setup removes its direct Composer
 requirement, enablement entries, and extension settings block from that scope.
 It leaves the other scope and stored extension data alone. Setup refuses removal
-if it cannot identify the settings block or verify scope ownership. Disable built-in
+if the package lacks a trusted catalog identity, the scope is ambiguous, or existing settings cannot be safely read. If no `settings.yaml` exists,
+uninstall leaves it absent. Uninstall does not load extension code. Disable built-in
 extensions through Configure instead. Restart Hatfield after uninstalling.
 
 Turning **Enabled for parent** off also turns that extension's fork and agent selections off in the form. Re-enabling the parent does not restore those selections automatically. Save to persist the choices; existing sessions need a restart to load them.

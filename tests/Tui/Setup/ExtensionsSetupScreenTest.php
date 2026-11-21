@@ -39,6 +39,7 @@ final class ExtensionsSetupScreenTest extends PerMethodIsolatedKernelTestCase
         $metadata = $cwd.'/.hatfield/extensions/vendor/composer/installed.json';
         $package = 'ineersa/hatfield-ext-observational-memory';
         (new Filesystem())->dumpFile($metadata, json_encode(['packages' => [['name' => $package]]], \JSON_THROW_ON_ERROR));
+        (new Filesystem())->dumpFile($cwd.'/.hatfield/extensions/composer.json', '{}');
         $before = file_get_contents($cwd.'/.hatfield/settings.yaml');
         $terminal = new VirtualTerminal(columns: 150, rows: 40);
         $tui = new Tui(terminal: $terminal);
@@ -60,7 +61,7 @@ final class ExtensionsSetupScreenTest extends PerMethodIsolatedKernelTestCase
             $terminal->simulateInput("\r"); // Enter uninstall confirmation, without ever opening the form.
             $terminal->simulateInput("\x1b[B");
             $terminal->simulateInput("\r");
-            $this->assertStringContainsString('Uninstall failed in project scope. Package metadata does not declare an extension class.', $notice->getText());
+            $this->assertStringContainsString('Uninstall failed in project scope. Only a directly installed runtime requirement can be removed.', $notice->getText());
             $this->assertSame($before, file_get_contents($cwd.'/.hatfield/settings.yaml'));
             $this->assertFileExists($metadata);
         } finally {

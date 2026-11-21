@@ -123,6 +123,12 @@ final class SettingsOverrideWriter
         };
     }
 
+    /** @return array<string, mixed> */
+    public function readRequired(SettingsLayerEnum $layer, string $cwd): array
+    {
+        return $this->readSettings($this->layerPath($layer, $cwd), required: true);
+    }
+
     /**
      * @param array<string, mixed> $settings
      * @param list<string>         $segments
@@ -217,9 +223,13 @@ final class SettingsOverrideWriter
     /**
      * @return array<string, mixed>
      */
-    private function readSettings(string $filePath): array
+    private function readSettings(string $filePath, bool $required = false): array
     {
         if (!is_file($filePath)) {
+            if ($required) {
+                throw new \RuntimeException(\sprintf('Settings must be a regular file: %s', $filePath));
+            }
+
             return [];
         }
 

@@ -31,6 +31,13 @@ use Symfony\Component\Yaml\Yaml;
 
 final class ExtensionsSetupFlow
 {
+    // These roots are reserved for the named official packages. Installed metadata
+    // and provider schemas may corroborate ownership, but cannot assign it.
+    private const array PACKAGE_IDENTITIES = [
+        'ineersa/hatfield-ext-task-workflow' => ['class' => 'Ineersa\\HatfieldExt\\TaskWorkflow\\TaskWorkflowExtension', 'root' => 'task_workflow'],
+        'ineersa/hatfield-ext-observational-memory' => ['class' => 'Ineersa\\HatfieldExt\\ObservationalMemory\\ObservationalMemoryExtension', 'root' => 'observational_memory'],
+    ];
+
     public SettingsLayerEnum $layer = SettingsLayerEnum::Project;
     /** @var array<string, NodeInterface> */
     public array $nodes = [];
@@ -87,21 +94,45 @@ final class ExtensionsSetupFlow
         if ($this->isBuiltIn($package)) {
             throw new ExtensionSetupRefusalException('Built-in extensions cannot be uninstalled. Disable them in Configure.');
         }
-        [$class, , $root] = $this->configurationFor($package);
-        $key = $root->getName();
-        if (!preg_match('/^[a-zA-Z0-9_-]+$/D', $key)) {
-            throw new ExtensionSetupRefusalException('Cannot identify a safe settings block to remove. Nothing was removed.');
+        $identity = self::PACKAGE_IDENTITIES[$package] ?? null;
+        if (null === $identity) {
+            throw new ExtensionSetupRefusalException('No trusted uninstall identity exists for this package. Nothing was removed.');
         }
+        $class = $identity['class'];
         $path = $this->writer->layerPath($this->layer, $this->app->cwd);
         $other = $this->writer->layerPath(SettingsLayerEnum::User === $this->layer ? SettingsLayerEnum::Project : SettingsLayerEnum::User, $this->app->cwd);
-        $scopeRoot = realpath(\dirname($path, 2));
-        if (false === $scopeRoot || realpath(\dirname($path)) !== $scopeRoot.'/.hatfield'
-            || is_link($path) || realpath(\dirname($path)) === realpath(\dirname($other))) {
+        clearstatcache(true);
+        $directory = \dirname($path);
+        $scopeRoot = realpath(\dirname($directory));
+        if (!is_readable($directory) || !is_executable($directory)) {
+            throw new ExtensionSetupRefusalException('Cannot inspect settings.yaml in the selected scope. Nothing was removed.');
+        }
+        if (false === $scopeRoot || realpath($directory) !== $scopeRoot.'/.hatfield'
+            || is_link($path) || realpath($directory) === realpath(\dirname($other))) {
             throw new ExtensionSetupRefusalException('The settings path is not exclusive to this scope. Nothing was removed.');
         }
         try {
-            $layers = $this->loader->load($this->resources->getDefaultsPath(), $this->app->cwd);
-            $local = SettingsLayerEnum::User === $this->layer ? $layers->userRaw : $layers->projectRaw;
+            // A failed file stat alone cannot distinguish absence from inaccessibility.
+            $entries = scandir($directory);
+            if (false === $entries) {
+                throw new ExtensionSetupRefusalException('Cannot inspect settings.yaml in the selected scope. Nothing was removed.');
+            }
+            $exists = \in_array(basename($path), $entries, true);
+            if ($exists && (!is_file($path) || !is_readable($path))) {
+                throw new ExtensionSetupRefusalException('Existing settings.yaml must be a readable regular file. Nothing was removed.');
+            }
+            $local = $exists ? $this->writer->readRequired($this->layer, $this->app->cwd) : [];
+            $installed = $this->installer->packages($this->layer, $this->app->cwd);
+            if (!isset($installed[$package])) {
+                throw new ExtensionSetupRefusalException('The package is not installed in this scope. Nothing was removed.');
+            }
+            foreach ($installed as $name => $metadata) {
+                $declared = $metadata['extra']['hatfield']['extension'] ?? null;
+                if (($name === $package && null !== $declared && $class !== $declared)
+                    || ($name !== $package && $class === $declared)) {
+                    throw new ExtensionSetupRefusalException('Installed package metadata conflicts with the trusted extension identity. Nothing was removed.');
+                }
+            }
             $changes = [];
             foreach (['extensions.enabled', 'forks.extensions.enabled', 'forks.extensions.always_on', 'agents.extensions.always_on'] as $listPath) {
                 $list = $this->value($local, $listPath);
@@ -115,9 +146,9 @@ final class ExtensionsSetupFlow
                     $changes[$listPath] = array_values(array_diff($list, [$class]));
                 }
             }
-            $remove = ['extensions.settings.'.$key];
+            $remove = ['extensions.settings.'.$identity['root']];
             $candidate = $this->writer->withChanges($local, $changes, $remove, $path);
-            if ($candidate !== $local && (!is_writable(\dirname($path)) || (is_file($path) && !is_writable($path)))) {
+            if ($candidate !== $local && (!is_writable(\dirname($path)) || !is_writable($path))) {
                 throw new ExtensionSetupRefusalException('Settings are not writable. Nothing was removed.');
             }
         } catch (ExtensionSetupRefusalException $error) {
@@ -284,7 +315,11 @@ final class ExtensionsSetupFlow
         if (!\is_string($class) || '' === $class) {
             throw new ExtensionSetupRefusalException('Package metadata does not declare an extension class. Install a release with setup configuration support.');
         }
+        $identity = self::PACKAGE_IDENTITIES[$package] ?? null;
         if (!$this->isBuiltIn($package)) {
+            if (null !== $identity && $identity['class'] !== $class) {
+                throw new ExtensionSetupRefusalException('The package declares a different extension class than the host catalog.');
+            }
             try {
                 $this->manager->loadAutoloaders();
                 $root = $this->installer->rootFor($this->layer, $this->app->cwd);
@@ -325,6 +360,15 @@ final class ExtensionsSetupFlow
         }
         if (!$root instanceof ArrayNode) {
             throw new ExtensionSetupRefusalException('The extension configuration schema must have a mapping root.');
+        }
+
+        if (null !== $identity && $root->getName() !== $identity['root']) {
+            throw new ExtensionSetupRefusalException('The extension configuration schema does not use its reserved settings root. No settings were changed.');
+        }
+
+        if (null === $identity && !$this->isBuiltIn($package)
+            && ($this->isBuiltIn($root->getName()) || \in_array($root->getName(), array_column(self::PACKAGE_IDENTITIES, 'root'), true))) {
+            throw new ExtensionSetupRefusalException('The extension configuration schema claims a settings root reserved for another extension. No settings were changed.');
         }
 
         return [$class, $configuration, $root];

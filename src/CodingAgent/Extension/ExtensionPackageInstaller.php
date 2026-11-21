@@ -41,6 +41,9 @@ final readonly class ExtensionPackageInstaller
         $packages = [];
         foreach ($installed['packages'] as $package) {
             if (\is_array($package) && \is_string($package['name'] ?? null)) {
+                if (isset($packages[$package['name']])) {
+                    throw new ExtensionPackageInstallException('Installed Composer metadata contains duplicate package names.');
+                }
                 $packages[$package['name']] = $package;
             }
         }
