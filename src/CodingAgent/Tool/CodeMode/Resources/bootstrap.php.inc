@@ -235,7 +235,9 @@ try {
         $file = $exception->getFile();
         $line = $exception->getLine();
         if (\is_string($file) && '' !== $file && $line > 0) {
-            $message .= \sprintf(' in %s on line %d', $file, $line);
+            $message .= $file === $scriptPath
+                ? ' in '.\Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnostics::scriptLocation($line)
+                : \sprintf(' in %s on line %d', $file, $line);
         }
         if (!mb_check_encoding($message, 'UTF-8') || $exception->getMessage() === \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::MALFORMED_MESSAGE) {
             $message = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::MALFORMED_MESSAGE;

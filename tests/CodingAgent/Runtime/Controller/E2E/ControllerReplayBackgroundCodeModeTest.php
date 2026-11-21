@@ -101,8 +101,12 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
                     $stderr = @file_get_contents($identities['one']['workspace'].'/stderr.log', length: 2048);
                     $this->fail($error->getMessage()."\nFirst invocation files: ".implode(', ', $files)."\nScript passed nested call: ".(is_file($this->tempDir.'/one.after') ? 'yes' : 'no')."\nPHP stderr: ".$stderr);
                 }
-                $this->assertStringContainsString('STDOUT_MARKER', json_encode($first['payload'], \JSON_THROW_ON_ERROR));
-                $this->assertStringContainsString('STDERR_MARKER', json_encode($first['payload'], \JSON_THROW_ON_ERROR));
+                $payload = json_encode($first['payload'], \JSON_THROW_ON_ERROR);
+                $this->assertStringContainsString('STDOUT_MARKER', $payload);
+                $this->assertStringContainsString('STDERR_MARKER', $payload);
+                if ($modelLaunch) {
+                    $this->assertStringContainsString('SUBMITTED_EXCEPTION in script.php(3)', $payload);
+                }
                 $this->assertSame($invocations['one'], $first['payload']['metadata']['background_completion']['invocation_id']);
             } else {
                 $this->assertCount(4, file($this->tempDir.'/requests.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES), 'Only the completed read, not the stopped host, advances the model.');
@@ -155,10 +159,13 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
         foreach (['one', 'two'] as $id) {
             $prefix = var_export($this->tempDir.'/'.$id, true);
             $command = ': > '.escapeshellarg($this->tempDir.'/'.$id.'.ready').'; IFS= read -r release < '.escapeshellarg($this->tempDir.'/release-'.$id).'; printf '.escapeshellarg('NESTED_'.$id);
-            $script = '$identity = ["pid" => getmypid(), "workspace" => __DIR__, "invocation" => getenv("HATFIELD_CODE_MODE_INVOCATION"), "local" => '.var_export($id, true).']; file_put_contents('.$prefix.'.".before", json_encode($identity)); $nested = tool("bash", '.var_export(['command' => $command], true).'); file_put_contents('.$prefix.'.".after", json_encode(["identity" => ["pid" => getmypid(), "workspace" => __DIR__, "invocation" => getenv("HATFIELD_CODE_MODE_INVOCATION"), "local" => $identity["local"]], "nested" => $nested])); echo "STDOUT_MARKER"; fwrite(STDERR, "STDERR_MARKER"); return $identity["local"];';
+            $script = '$identity = ["pid" => getmypid(), "workspace" => __DIR__, "invocation" => getenv("HATFIELD_CODE_MODE_INVOCATION"), "local" => '.var_export($id, true).']; file_put_contents('.$prefix.'.".before", json_encode($identity)); $nested = tool("bash", ["command" => '.var_export($command, true).']); file_put_contents('.$prefix.'.".after", json_encode(["identity" => ["pid" => getmypid(), "workspace" => __DIR__, "invocation" => getenv("HATFIELD_CODE_MODE_INVOCATION"), "local" => $identity["local"]], "nested" => $nested])); echo "STDOUT_MARKER"; fwrite(STDERR, "STDERR_MARKER"); return $identity["local"];';
             if ('one' === $id && 'targeted stop' === $this->dataName()) {
                 // The hook runs after the return commits. The second FIFO read has no release.
                 $script = 'register_shutdown_function(static function (): void { $hold = fopen('.var_export($this->tempDir.'/release-one', true).', "rb"); touch('.$prefix.'.".shutdown"); fgets($hold); touch('.$prefix.'.".shutdown-finished"); }); '.$script;
+            }
+            if ('one' === $id && 'model launch' === $this->dataName()) {
+                $script = str_replace('fwrite(STDERR, "STDERR_MARKER"); return $identity["local"];', "\nfwrite(STDERR, \"STDERR_MARKER\");\nthrow new RuntimeException(\"SUBMITTED_EXCEPTION\");", $script);
             }
             if ('two' === $id && 'model launch' === $this->dataName()) {
                 $script = str_replace('return $identity["local"];', 'notify_owner("PROGRESS_TWO"); return $identity["local"];', $script);

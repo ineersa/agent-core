@@ -77,6 +77,11 @@ final class CodeModeDiagnostics
         return $message;
     }
 
+    public static function scriptLocation(int $line, int $wrapperPrefixLines = 3): string
+    {
+        return 'script.php('.($line > $wrapperPrefixLines ? $line - $wrapperPrefixLines : $line).')';
+    }
+
     public static function normalizePaths(string $text, int $wrapperPrefixLines = 3): string
     {
         // Every supported path shape contains a slash. Avoid repeatedly scanning
@@ -86,11 +91,7 @@ final class CodeModeDiagnostics
         }
 
         $replace = static function (string $file, int $line) use ($wrapperPrefixLines): string {
-            if ('script' === $file && $line > $wrapperPrefixLines) {
-                $line -= $wrapperPrefixLines;
-            }
-
-            return $file.'.php('.$line.')';
+            return 'script' === $file ? self::scriptLocation($line, $wrapperPrefixLines) : 'bootstrap.php('.$line.')';
         };
 
         // PHP emits several path/line shapes. Keep one stable label and adjust
