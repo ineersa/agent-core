@@ -6,6 +6,7 @@ namespace Ineersa\HatfieldExt\TaskWorkflow\Claude;
 
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
@@ -16,6 +17,8 @@ use Mcp\Schema\Result\CallToolResult;
 use Mcp\Server;
 use Mcp\Server\RequestContext;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\MonotonicClock;
 
 /**
  * Builds the Claude Code stdio MCP server for task-workflow.
@@ -29,15 +32,20 @@ final readonly class TaskWorkflowMcpServerFactory
 {
     public const string RUN_ID = 'claude-code';
 
-    public function __construct(private LoggerInterface $logger)
-    {
+    public function __construct(
+        private LoggerInterface $logger,
+        private ExecInterface $exec = new ProcessExec(),
+        private ClockInterface $clock = new MonotonicClock(),
+    ) {
     }
 
     public function create(string $cwd, ?string $home, string $version): Server
     {
-        $host = new ClaudeExtensionHost($cwd, (new HatfieldSettingsReader($home))->extensionSettings($cwd), new ProcessExec());
+        $host = new ClaudeExtensionHost($cwd, (new HatfieldSettingsReader($home))->extensionSettings($cwd), $this->exec);
         // The plugin ships skills/ itself; do not write .hatfield/skills into the project.
-        $extension = new TaskWorkflowExtension(installSkill: false);
+        // MCP resumes its own fibers and does not drive Revolt. Amp delays there
+        // would be resumed early by the transport instead of their timers.
+        $extension = new TaskWorkflowExtension(installSkill: false, clock: $this->clock);
         $extension->setLogger($this->logger);
         $extension->register($host);
 

@@ -19,6 +19,8 @@ use Ineersa\CodingAgent\Extension\ExtensionUpdateService;
 use Ineersa\CodingAgent\Tests\Support\ExtensionUpdateFixture;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowConfiguration;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
@@ -27,6 +29,10 @@ final class ExtensionsSetupFlowTest extends PerMethodIsolatedKernelTestCase
 {
     protected const bool ISOLATE_HOME = true;
 
+    // This fixture declares an altered copy of a real extension class. PHP cannot
+    // unload it: isolate both incoming declarations and leakage to later tests.
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function testObservationalMemoryConfigureAndUninstallUseSelectedScope(): void
     {
         $package = 'ineersa/hatfield-ext-observational-memory';

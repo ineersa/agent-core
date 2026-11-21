@@ -16,6 +16,7 @@ use Ineersa\HatfieldExt\TaskWorkflow\Tool\MoveTaskHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\HookRunner;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorkspaceStateStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
+use Symfony\Component\Clock\MockClock;
 
 /** Stateful fake GitHub boundary; Git itself uses only the owned temporary remote. */
 final class TransitionFixture implements ExecInterface
@@ -33,6 +34,8 @@ final class TransitionFixture implements ExecInterface
     public string $issueState = 'open';
     public ?string $closeReason = null;
     public ?array $pr = null;
+    public int $unlinkedPrViews = 0;
+    public MockClock $clock;
     public array $calls = [];
     public array $hookResults = [];
     public array $hookCalls = [];
@@ -55,7 +58,8 @@ final class TransitionFixture implements ExecInterface
         $this->settings = $settings;
         $this->states = new WorkspaceStateStore($git, $root);
         $this->store = new GitHubTaskStore($this, $root, $settings);
-        $this->handler = new MoveTaskHandler($this->store, $git, new WorktreeManager($git), new PrManager($this, $root, $settings), new HookRunner($this), $this->states, $root, $settings);
+        $this->clock = new MockClock('2026-01-01T00:00:00Z');
+        $this->handler = new MoveTaskHandler($this->store, $git, new WorktreeManager($git), new PrManager($this, $root, $settings, $this->clock), new HookRunner($this), $this->states, $root, $settings);
     }
 
     public function record(): ?array
@@ -92,6 +96,12 @@ final class TransitionFixture implements ExecInterface
         }
         if ('pr' === $args[0]) {
             if ('view' === $args[1]) {
+                if ($this->unlinkedPrViews > 0) {
+                    --$this->unlinkedPrViews;
+
+                    return $this->json(array_replace($this->pr ?? throw new \LogicException('No fixture PR'), ['closingIssuesReferences' => []]));
+                }
+
                 return $this->json($this->pr ?? throw new \LogicException('No fixture PR'));
             }
             if ('merge' === $args[1]) {
