@@ -37,6 +37,22 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
         return $this->getEntityManager()->getConnection()->fetchFirstColumn('SELECT code_mode_id FROM background_process WHERE session_id = ? AND code_mode_id IS NOT NULL ORDER BY id', [$runId]);
     }
 
+    /** @return list<string> */
+    public function pendingCodeModeIds(string $runId): array
+    {
+        // Drive polling from the active deferred index, not the retained process
+        // catalog. A fenced launch still needs its pending outcome settled.
+        return $this->getEntityManager()->getConnection()->fetchFirstColumn(<<<'SQL'
+            SELECT invocation.deferred_id
+            FROM tool_deferred_completion invocation
+            WHERE invocation.tool_name = 'code_mode' AND invocation.status = 'pending' AND invocation.run_id = :run
+                AND EXISTS (
+                    SELECT 1 FROM background_process process
+                    WHERE process.code_mode_id = invocation.deferred_id AND process.session_id = invocation.run_id
+                )
+            SQL, ['run' => $runId]);
+    }
+
     public function fenceCodeModeLaunch(string $runId, string $id): void
     {
         $this->getEntityManager()->getConnection()->executeStatement('UPDATE background_process SET finished_at = CURRENT_TIMESTAMP WHERE session_id = ? AND code_mode_id = ? AND finished_at IS NULL', [$runId, $id]);

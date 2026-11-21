@@ -36,7 +36,7 @@ final readonly class CodeModeTerminalObserver
 
     public function observe(string $sessionId, string $runId): void
     {
-        foreach ($this->processes->controllerInvocationIds($runId) as $id) {
+        foreach ($this->processes->pendingControllerInvocationIds($runId) as $id) {
             try {
                 $this->settle($runId, $id);
             } catch (\Throwable $error) {

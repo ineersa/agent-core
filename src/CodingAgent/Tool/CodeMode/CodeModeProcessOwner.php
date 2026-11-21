@@ -48,6 +48,12 @@ final readonly class CodeModeProcessOwner
     }
 
     /** @return list<string> */
+    public function pendingControllerInvocationIds(string $runId): array
+    {
+        return $this->records->pendingCodeModeIds($runId);
+    }
+
+    /** @return list<string> */
     public function controllerInvocationIds(string $runId): array
     {
         return $this->records->codeModeIds($runId);
