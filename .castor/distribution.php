@@ -1134,7 +1134,7 @@ function distribution_smoke_code_mode($listener, array $pipes, string $tmp): voi
     $runId = '';
     $returned = false;
     $accepted = false;
-    $stopSent = false;
+    $stopping = null;
     $probeSent = false;
     $deadline = microtime(true) + 5;
     do {
@@ -1156,22 +1156,22 @@ function distribution_smoke_code_mode($listener, array $pipes, string $tmp): voi
                 return;
             }
         }
-        if ($returned && $accepted && !$stopSent && is_file($tmp.'/code-mode-group.json')) {
+        if ($returned && $accepted && null === $stopping && is_file($tmp.'/code-mode-group.json')) {
             [$pgid, $invocation] = json_decode(file_get_contents($tmp.'/code-mode-group.json'), true, flags: \JSON_THROW_ON_ERROR);
             $output = file_get_contents($tmp.'/code-mode-output.txt');
             if (!str_contains($output, $token) || !is_int($pgid) || $pgid <= 1 || $pgid === posix_getpgid(0) || !posix_kill(-$pgid, 0) || !is_string($invocation) || '' === $invocation) {
                 throw new RuntimeException('Packaged code-mode smoke: invalid nested read or group evidence.');
             }
             fwrite($pipes[0], json_encode(['v' => 1, 'id' => 'code-mode-stop', 'type' => 'stop_code_mode', 'runId' => $runId, 'payload' => ['deferred_id' => $invocation, 'tool_call_id' => 'call_code_mode_hold']], \JSON_THROW_ON_ERROR)."\n");
-            $stopSent = true;
+            $stopping = ['pgid' => $pgid, 'invocation' => $invocation];
         }
-        if ($stopSent && !$probeSent && !posix_kill(-$pgid, 0) && 3 === posix_get_last_error()) {
-            fwrite($pipes[0], json_encode(['v' => 1, 'id' => 'code-mode-alive', 'type' => 'stop_code_mode', 'runId' => $runId, 'payload' => ['deferred_id' => $invocation, 'tool_call_id' => 'call_code_mode_hold']], \JSON_THROW_ON_ERROR)."\n");
+        if (null !== $stopping && !$probeSent && !posix_kill(-$stopping['pgid'], 0) && 3 === posix_get_last_error()) {
+            fwrite($pipes[0], json_encode(['v' => 1, 'id' => 'code-mode-alive', 'type' => 'stop_code_mode', 'runId' => $runId, 'payload' => ['deferred_id' => $stopping['invocation'], 'tool_call_id' => 'call_code_mode_hold']], \JSON_THROW_ON_ERROR)."\n");
             $probeSent = true;
         }
         usleep(50_000);
     } while (microtime(true) < $deadline);
-    throw new RuntimeException(sprintf('Packaged code-mode smoke incomplete (returned=%d, accepted=%d, stop=%d, group gone=%d). %s', $returned, $accepted, $stopSent, $probeSent, stream_get_contents($pipes[2])));
+    throw new RuntimeException(sprintf('Packaged code-mode smoke incomplete (returned=%d, accepted=%d, stop=%d, group gone=%d). %s', $returned, $accepted, null !== $stopping, $probeSent, stream_get_contents($pipes[2])));
 }
 
 /** Prove packaged broker/worker operation and full-tree shutdown with a deterministic local provider. */
