@@ -198,7 +198,7 @@ final class BashTool implements HatfieldToolProviderInterface
                 ),
                 'For file operations such as reading, writing, editing, or viewing files, prefer the dedicated read/write/edit/view_image tools instead of bash cat/echo/editor pipelines.',
                 'Set backgrounded=true when you can continue other work without the command\'s result. The default, false, waits for completion. Background commands notify you when they finish; do not poll for completion. Use bg_status with the returned PID to inspect output or stop the command. Background launch is supported for direct bash calls, not calls inside code_mode.',
-                'If you only need to know when one operation finishes, run its native wait or watch command once in the background. Only completion notifies you, not intermediate output or status changes. After acceptance, only an explicit timeout applies, measured from launch.',
+                'If you only need to know when one operation finishes, run its native wait or watch command once in the background. Only completion notifies you, not intermediate output or status changes. After acceptance, the explicit timeout applies from launch. If omitted, the configured maximum applies from launch, or there is no deadline if no maximum is configured.',
                 'Output is capped to prevent excessively large responses. Very large output may be truncated and saved to a file for inspection.',
             ],
         );

@@ -18,29 +18,37 @@ declare(strict_types=1);
 function hatfield_code_mode_broker_call(string $operation, string $name, array $arguments): mixed
 {
     global $broker, $requests, $invocationId, $payloads;
-    $id = bin2hex(random_bytes(8));
-    $requests->send(new \Symfony\Component\Messenger\Envelope(
-        new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO($invocationId, $id, $name, $arguments, $operation, $invocationId),
-    ));
-    while (true) {
-        foreach ($broker->get() as $delivery) {
-            $message = $delivery->getMessage();
-            if (!$message instanceof \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeReplyDTO || $message->callId !== $id) {
+    static $mutex;
+    $mutex ??= new \Amp\Sync\LocalMutex();
+    // The transport and reply queue are shared by all Fibers in this script.
+    $lock = $mutex->acquire();
+    try {
+        $id = bin2hex(random_bytes(8));
+        $requests->send(new \Symfony\Component\Messenger\Envelope(
+            new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO($invocationId, $id, $name, $arguments, $operation, $invocationId),
+        ));
+        while (true) {
+            foreach ($broker->get() as $delivery) {
+                $message = $delivery->getMessage();
+                if (!$message instanceof \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeReplyDTO || $message->callId !== $id) {
+                    $broker->ack($delivery);
+                    continue;
+                }
+                $result = $payloads->read($message->payload);
                 $broker->ack($delivery);
-                continue;
+                if (!$result instanceof \Ineersa\AgentCore\Domain\Message\ToolCallResult || !\is_array($result->result)) {
+                    throw new RuntimeException('Invalid code-mode reply payload.');
+                }
+                $reply = $result->result;
+                if (true === ($reply['ok'] ?? false)) {
+                    return $reply['result'] ?? null;
+                }
+                throw new RuntimeException($reply['error'] ?? 'Code-mode call failed.');
             }
-            $result = $payloads->read($message->payload);
-            $broker->ack($delivery);
-            if (!$result instanceof \Ineersa\AgentCore\Domain\Message\ToolCallResult || !\is_array($result->result)) {
-                throw new RuntimeException('Invalid code-mode reply payload.');
-            }
-            $reply = $result->result;
-            if (true === ($reply['ok'] ?? false)) {
-                return $reply['result'] ?? null;
-            }
-            throw new RuntimeException($reply['error'] ?? 'Code-mode call failed.');
+            $broker->wait(1000, new \Amp\NullCancellation());
         }
-        $broker->wait(1000, new \Amp\NullCancellation());
+    } finally {
+        $lock->release();
     }
 }
 

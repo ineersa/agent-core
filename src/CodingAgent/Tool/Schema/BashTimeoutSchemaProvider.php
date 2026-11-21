@@ -27,7 +27,7 @@ final readonly class BashTimeoutSchemaProvider implements SchemaProviderInterfac
 
         return [
             'description' => \sprintf(
-                'Timeout in seconds (default: %d%s). Provide an explicit higher value for commands that need more than the default. After background acceptance only an explicit timeout applies, measured from launch.',
+                'Timeout in seconds (default: %d%s). Provide an explicit higher value for commands that need more than the default. After background acceptance the explicit timeout or, when omitted, the configured maximum applies from launch. Without either there is no deadline.',
                 $this->config->defaultTimeoutSeconds,
                 null === $max ? '' : \sprintf(', max: %d', $max),
             ),

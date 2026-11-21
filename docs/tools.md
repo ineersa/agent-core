@@ -55,6 +55,13 @@ applies to edits called from `code_mode`; it is an edit-lock limit, not a genera
 nested-tool deadline. Maintainer diagnostics are described in the repository's
 `docs/datadog.md`, under “Edit lock contention”.
 
+## Bash timeouts
+
+Foreground Bash uses its configured default when `timeout` is omitted, capped
+by any configured maximum. Once backgrounded, Bash honors an explicit timeout
+from launch. If `timeout` is omitted, the configured maximum applies from launch;
+without a configured maximum there is no background deadline.
+
 ## code_mode
 
 Enable `tools.code_mode.enabled: true` in settings and restart Hatfield. The tool
@@ -103,7 +110,7 @@ promise delivery, consumption, or a response. It does not interrupt a
 foreground tool wait or replace the script's final result.
 
 The owner comes from the invocation, including for background, scheduled,
-nested, and child-owned scripts. This is not `notify_parent`: existing mailbox
+and child-owned scripts. This is not `notify_parent`: existing mailbox
 rules determine when the owner sees the notice and whether it is forwarded.
 
 ### Trust and unsupported operations
@@ -113,14 +120,13 @@ Raw PHP filesystem/process functions bypass toolbox hooks and approvals. Use
 bubblewrap; it does not create one. Checkout/PHAR use their launching PHP CLI;
 fused native builds require `php` on PATH.
 
-`subagent`, `fork`, `agent_resume`, `agent_steer`, `notify_parent` and `ask_human`
-are unsupported inside code mode. Call them directly. Nested Bash/code-mode calls
-cannot detach; use a direct `backgrounded: true` call for background work.
+`code_mode`, `subagent`, `fork`, `agent_resume`, `agent_steer`, `notify_parent`
+and `ask_human` are unsupported inside code mode. Call them directly. Nested
+Bash calls cannot detach; use a direct `backgrounded: true` call for background work.
 Canonical PHP scripts in the session runtime use the broker for nested tool
 calls and do not depend on the worker that launched them. A script that loses
 its PHP process cannot resume, and an interrupted tool call may have an unknown
-outcome. A brokered `tool('code_mode', ...)` waits for the inner script without holding
-a shared tool slot.
+outcome.
 
 Related: [settings](settings.md), [human input](human-input.md),
 [approvals](approvals.md), [sessions](session-storage.md).

@@ -78,9 +78,16 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             // Deliberately do not service the queue until the launcher has returned.
             $fixture = $this->tmpDir.'/nested-read.txt';
             file_put_contents($fixture, 'broker nested read');
+            $otherFixture = $this->tmpDir.'/other-read.txt';
+            file_put_contents($otherFixture, 'distinct second read');
+            $contended = $this->tmpDir.'/contended';
             $script = 'try { tool("read", ["invalid list"]); } catch (RuntimeException $error) { $refusal = $error->getMessage(); }'
                 .' try { tool("code_mode", ["script" => "return 42;"]); } catch (RuntimeException $error) { $recursion = $error->getMessage(); }'
-                .' return [$refusal ?? null, tool("read", ["path" => '.var_export($fixture, true).']), $recursion ?? null];';
+                .' $first = \Amp\async(static fn () => tool("read", ["path" => '.var_export($fixture, true).']));'
+                .' $second = \Amp\async(static function () {'
+                .' \Revolt\EventLoop::queue(static fn () => touch('.var_export($contended, true).'));'
+                .' return tool("read", ["path" => '.var_export($otherFixture, true).']); });'
+                .' return [$refusal ?? null, $first->await(), $recursion ?? null, $second->await()];';
             $outcome = $accessor->with($context, static fn (): mixed => $tool(new CodeModeArgumentsDTO($script, 5)));
             $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
             $this->assertTrue($client->wait('code_mode_requests', 3000));
@@ -117,7 +124,15 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
 
                 return $handled;
             };
-            [, $invalidRequest, $outerRequest, $readRequest] = $consume(5);
+            [, $invalidRequest, $outerRequest] = $consume(3);
+            // Do not handle either read until both Fibers entered tool(). The
+            // queued marker runs only once the second Fiber has yielded.
+            $deadline = hrtime(true) + 3_000_000_000;
+            while (!is_file($contended) && hrtime(true) < $deadline) {
+                \Amp\delay(0.01);
+            }
+            $this->assertFileExists($contended);
+            [$readRequest] = $consume(3);
             $this->assertInstanceOf(CodeModeCallRequestDTO::class, $invalidRequest);
             $this->assertInstanceOf(CodeModeCallRequestDTO::class, $outerRequest);
             $this->assertInstanceOf(CodeModeCallRequestDTO::class, $readRequest);
@@ -154,6 +169,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $this->assertSame('Invalid code-mode call request.', $terminal['result'][0] ?? null);
             $this->assertStringContainsString('broker nested read', $terminal['result'][1]);
             $this->assertStringContainsString('Tool "code_mode" is not supported', $terminal['result'][2]);
+            $this->assertStringContainsString('distinct second read', $terminal['result'][3]);
             $this->assertSame([$outcome->deferredId], $owner->controllerInvocationIds($runId));
         } finally {
             if (null === $previous) {

@@ -17,7 +17,7 @@ final readonly class CodeModeRuntimeMaterializer
     {
         $root = \dirname(__DIR__, 4);
         $packages = array_column(json_decode($this->filesystem->readFile($root.'/composer.lock'), true, flags: \JSON_THROW_ON_ERROR)['packages'], null, 'name');
-        $pending = ['ineersa/sqlite-queue', 'symfony/serializer', 'symfony/property-access', 'symfony/validator', 'helgesverre/toon'];
+        $pending = ['amphp/sync', 'ineersa/sqlite-queue', 'symfony/serializer', 'symfony/property-access', 'symfony/validator', 'helgesverre/toon'];
         $seen = [];
         $autoload = [];
         while ([] !== $pending) {
