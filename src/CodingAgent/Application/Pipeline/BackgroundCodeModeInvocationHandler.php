@@ -65,7 +65,7 @@ final readonly class BackgroundCodeModeInvocationHandler implements RunMessageHa
         }
         $ack = ToolCallResultFactory::fromDeferredCorrelationAndCompletion(
             $correlation,
-            [['type' => 'text', 'text' => 'code_mode moved to background. The same host keeps running under its original deadline. Its result will arrive as a follow-up.']],
+            [['type' => 'text', 'text' => 'code_mode moved to background. Only an explicit timeout_seconds applies, measured from launch. Its result will arrive as a follow-up.']],
             ['backgrounded' => true],
             false,
             null,
