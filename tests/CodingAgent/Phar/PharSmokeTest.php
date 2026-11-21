@@ -125,29 +125,6 @@ final class PharSmokeTest extends TestCase
         distribution_smoke_packaged_process_topology($pharPath, isPhar: true);
     }
 
-    public function testPharMaterializesReadableCodeModeRuntime(): void
-    {
-        [, $pharPath] = $this->resolveArtifactCommand();
-        $dir = TestDirectoryIsolation::createProjectTempDir('phar-code-mode-runtime');
-        $this->isolatedHomeDirs[] = $dir;
-        $materialize = new Process([\PHP_BINARY, '-r', <<<'PHP'
-            require 'phar://'.$argv[1].'/vendor/autoload.php';
-            (new Ineersa\CodingAgent\Tool\CodeMode\CodeModeRuntimeMaterializer(new Symfony\Component\Filesystem\Filesystem()))->materialize($argv[2]);
-            PHP, $pharPath, $dir], $dir);
-        $materialize->mustRun();
-        $child = new Process([\PHP_BINARY, '-r', <<<'PHP'
-            require 'autoload.php';
-            if (!class_exists(Ineersa\SqliteQueue\Messenger\TransportFactory::class)
-                || !class_exists(Ineersa\CodingAgent\Session\SessionToolPayloadStore::class)
-                || class_exists(Ineersa\CodingAgent\Kernel::class)) {
-                exit(1);
-            }
-            echo HelgeSverre\Toon\Toon::encode(['runtime' => 'ready']);
-            PHP], $dir);
-        $child->mustRun();
-        $this->assertSame('runtime: ready', trim($child->getOutput()));
-    }
-
     public function testPharWorkerWrapperAloneCannotSatisfyReadiness(): void
     {
         require_once \dirname(__DIR__, 3).'/.castor/distribution.php';

@@ -113,7 +113,7 @@ final readonly class CodeModeProcessOwner
                     ? 'Code-mode invocation interrupted: '.$interruption.'.' : 'Code-mode invocation timed out.'];
             }
 
-            return $report() ?? ['ok' => false, 'error' => 'Code-mode subprocess exited without returning a value.'];
+            return $report();
         });
     }
 

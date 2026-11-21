@@ -914,6 +914,9 @@ services:
     arguments:
       $commandBus: '@agent.command.bus'
 
+  Ineersa\CodingAgent\Tool\CodeMode\CodeModeScriptToolbox:
+    public: true
+
   Ineersa\CodingAgent\Tool\CodeMode\CodeModeNestedToolExecutor:
     arguments:
       $toolboxLocator: !service_locator

@@ -63,10 +63,6 @@ from launch. If `timeout` is omitted, the configured maximum applies from launch
 without a configured maximum there is no background deadline.
 
 ## code_mode
-Broker delivery can repeat a nested tool request. Individual tools own idempotency if they need it.
-
-Broker delivery can repeat a nested tool request. Individual tools own idempotency if they need it.
-
 Enable `tools.code_mode.enabled: true` in settings and restart Hatfield. The tool
 accepts a PHP **function body** in `script`, not a file path. It is useful for
 multi-step tool work whose intermediate results do not need model interpretation.
@@ -126,10 +122,12 @@ fused native builds require `php` on PATH.
 `code_mode`, `subagent`, `fork`, `agent_resume`, `agent_steer`, `notify_parent`
 and `ask_human` are unsupported inside code mode. Call them directly. Nested
 Bash calls cannot detach; use a direct `backgrounded: true` call for background work.
-Canonical PHP scripts in the session runtime use the broker for nested tool
-calls and do not depend on the worker that launched them. A script that loses
-its PHP process cannot resume, and an interrupted tool call may have an unknown
-outcome.
+PHP boots the configured toolbox once per script and runs `tool()` locally.
+The final report goes through the session broker to a shared tool worker. The
+controller can resend the stored report once after observing exit and waiting
+60 seconds for a pending completion; it does not rerun the script. Fused
+installs include a matching companion PHAR beside the executable for external
+PHP. Bash does not require external PHP.
 
 Related: [settings](settings.md), [human input](human-input.md),
 [approvals](approvals.md), [sessions](session-storage.md).

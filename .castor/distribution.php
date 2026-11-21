@@ -1318,6 +1318,9 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
     $launchPath = $installDir.'/hatfield-renamed'.($isPhar ? '.phar' : '');
     \CastorTasks\copy_file_checked($artifactPath, $launchPath);
     chmod($launchPath, 0755);
+    if (!$isPhar && !$smokeBashWithoutPhp) {
+        \CastorTasks\copy_file_checked(dirname($artifactPath).'/hatfield.phar', $launchPath.'.phar');
+    }
 
     // macOS /var resolves to /private/var; launch with the same path the argv assertion expects.
     $launchPath = realpath($launchPath);

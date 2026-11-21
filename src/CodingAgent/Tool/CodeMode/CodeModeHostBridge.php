@@ -37,7 +37,6 @@ final readonly class CodeModeHostBridge
         private ToolBatchStoreInterface $batches,
         private MessageBusInterface $commandBus,
         private CodeModeProcessOwner $processOwner,
-        private CodeModeRuntimeMaterializer $runtime,
         private ToolBatchRunStoragePathsInterface $paths,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
@@ -176,7 +175,6 @@ final readonly class CodeModeHostBridge
         }
 
         $bootstrap = $this->materializeBootstrap($workspace['dir']);
-        $this->runtime->materialize($workspace['dir'].'/runtime');
         // Keep stderr for warnings/fatals, but suppress display_errors and Xdebug
         // stacks so each warning is not mirrored into stdout with a call stack.
         // Process's pipe reader can aggregate arbitrarily many bytes before
@@ -198,6 +196,10 @@ final readonly class CodeModeHostBridge
             .' 2> '.escapeshellarg($workspace['dir'].'/stderr.log');
         $cwd = $this->runtimeProcessConfig->runtimeCwd();
         $environment = [
+            'HATFIELD_CODE_MODE_AUTOLOAD' => $this->runtimeAutoload(),
+            'APP_ENV' => $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? 'prod',
+            'APP_SECRET' => $_SERVER['APP_SECRET'] ?? $_ENV['APP_SECRET'] ?? 'none',
+            'HATFIELD_CWD' => $cwd,
             'HATFIELD_CODE_MODE_SCRIPT' => $workspace['script'],
             'HATFIELD_CODE_MODE_RUN' => $runId,
             'HATFIELD_CODE_MODE_BATCH_DIR' => $this->paths->resolveToolBatchesDirectory($runId),
@@ -216,6 +218,22 @@ final readonly class CodeModeHostBridge
     private function formatMemoryLimit(int $memoryLimitMb): string
     {
         return max(1, $memoryLimitMb).'M';
+    }
+
+    private function runtimeAutoload(): string
+    {
+        $root = \dirname(__DIR__, 4);
+        if (!str_starts_with($root, 'phar://') || str_ends_with($root, '.phar')) {
+            return $root.'/vendor/autoload.php';
+        }
+        $runtime = 'phar://'.$this->runtimeProcessConfig->executablePath().'.phar';
+        $identity = '/'.\Ineersa\CodingAgent\Build\ApplicationBuildIdentity::GENERATED_RELATIVE_PATH;
+        if (!is_file($runtime.'/vendor/autoload.php') || !is_file($runtime.$identity)
+            || hash_file('sha256', $runtime.$identity) !== hash_file('sha256', $root.$identity)) {
+            throw new ToolCallException('Code mode requires the matching companion PHAR next to the Hatfield executable.', retryable: false);
+        }
+
+        return $runtime.'/vendor/autoload.php';
     }
 
     /**
