@@ -14,16 +14,53 @@ declare(strict_types=1);
  * The host materializes a real filesystem copy before spawning PHP CLI.
  */
 
+/** @param array<string, mixed> $arguments */
+function hatfield_code_mode_broker_call(string $operation, string $name, array $arguments): mixed
+{
+    global $broker, $requests, $invocationId, $payloads;
+    static $mutex;
+    $mutex ??= new \Amp\Sync\LocalMutex();
+    // The transport and reply queue are shared by all Fibers in this script.
+    $lock = $mutex->acquire();
+    try {
+        $id = bin2hex(random_bytes(8));
+        $requests->send(new \Symfony\Component\Messenger\Envelope(
+            new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO($invocationId, $id, $name, $arguments, $operation, $invocationId),
+        ));
+        while (true) {
+            foreach ($broker->get() as $delivery) {
+                $message = $delivery->getMessage();
+                if (!$message instanceof \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeReplyDTO || $message->callId !== $id) {
+                    $broker->ack($delivery);
+                    continue;
+                }
+                $result = $payloads->read($message->payload);
+                $broker->ack($delivery);
+                if (!$result instanceof \Ineersa\AgentCore\Domain\Message\ToolCallResult || !\is_array($result->result)) {
+                    throw new RuntimeException('Invalid code-mode reply payload.');
+                }
+                $reply = $result->result;
+                if (true === ($reply['ok'] ?? false)) {
+                    return $reply['result'] ?? null;
+                }
+                throw new RuntimeException($reply['error'] ?? 'Code-mode call failed.');
+            }
+            $broker->wait(1000, new \Amp\NullCancellation());
+        }
+    } finally {
+        $lock->release();
+    }
+}
+
 /** @param array<string, mixed> $frame */
 function hatfield_code_mode_terminal(array $frame): void
 {
     global $factory, $endpoint, $serializer, $invocationId, $runId, $payloads;
-    $identity = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeTerminalIdentity::forInvocation($runId, $invocationId);
-    $id = $identity->toolCallId;
-    $reference = $payloads->publishFirstResult(new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
+    $id = 'code-mode-terminal-'.$invocationId;
+    $reference = $payloads->publish(new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
         $runId, 0, $id, 0, $id, $id, 0, $frame, true !== $frame['ok'],
-    ), $identity);
-    $terminal = $factory->createTransport('sqlite-queue://code_mode_requests', $endpoint, $serializer);
+    ));
+    $terminal = $factory->createTransport('sqlite-queue://code_mode_terminal.'.$invocationId, $endpoint, $serializer);
     try {
         $terminal->send(new \Symfony\Component\Messenger\Envelope(
             new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeTerminalReportDTO($invocationId, $reference),
@@ -41,9 +78,7 @@ if (!\function_exists('notify_owner')) {
         if (\strlen($message) > 8192 || 1 !== preg_match('//u', $message)) {
             return ['status' => 'refused', 'reason' => 'invalid_message'];
         }
-        global $toolbox, $owner, $invocationId;
-
-        return $toolbox->notice($owner, $invocationId, $message);
+        return hatfield_code_mode_broker_call('notice', 'notify_owner', ['message' => $message]);
     }
 }
 
@@ -63,9 +98,22 @@ if (!\function_exists('tool')) {
             throw new InvalidArgumentException('Tool name must be a non-empty string.');
         }
 
-        global $toolbox, $owner;
+        $unsupported = [
+            'subagent',
+            'fork',
+            'agent_resume',
+            'agent_steer',
+            'notify_parent',
+            'ask_human',
+        ];
+        if (in_array($name, $unsupported, true)) {
+            throw new RuntimeException(sprintf(
+                'Tool "%s" is not supported inside code_mode. Child launches, agent communication, and interactive ask_human calls must run outside the script.',
+                $name,
+            ));
+        }
 
-        return $toolbox->tool($owner, $name, $arguments);
+        return hatfield_code_mode_broker_call('tool', $name, $arguments);
     }
 }
 
@@ -126,10 +174,7 @@ ini_set('log_errors', '1');
 ini_set('error_log', '');
 error_reporting(E_ALL);
 
-require getenv('HATFIELD_CODE_MODE_AUTOLOAD');
-$kernel = new \Ineersa\CodingAgent\Kernel(getenv('APP_ENV') ?: 'prod', false);
-$kernel->boot();
-$toolbox = $kernel->getContainer()->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeScriptToolbox::class);
+require __DIR__.'/runtime/autoload.php';
 $invocationId = getenv('HATFIELD_CODE_MODE_INVOCATION');
 $runId = getenv('HATFIELD_CODE_MODE_RUN');
 $batchDir = getenv('HATFIELD_CODE_MODE_BATCH_DIR');
@@ -141,6 +186,8 @@ $codec = new \Symfony\Component\Serializer\Serializer([$normalizer], [new \Symfo
 $serializer = new \Symfony\Component\Messenger\Transport\Serialization\Serializer($codec);
 $factory = new \Ineersa\SqliteQueue\Messenger\TransportFactory();
 $endpoint = ['endpoint' => getenv('HATFIELD_SQLITE_QUEUE_ENDPOINT')];
+$requests = $factory->createTransport('sqlite-queue://code_mode_requests', $endpoint, $serializer);
+$broker = $factory->createTransport('sqlite-queue://code_mode_reply.'.$invocationId, $endpoint, $serializer);
 $paths = new class($runId, $batchDir) implements \Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface {
     public function __construct(private string $runId, private string $path) {}
 
@@ -164,6 +211,7 @@ $payloads = new \Ineersa\CodingAgent\Session\SessionToolPayloadStore(
     $paths, $codec, \Symfony\Component\Validator\Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(),
     new \Symfony\Component\Filesystem\Filesystem(),
 );
+hatfield_code_mode_broker_call('admit', 'admit', []);
 
 register_shutdown_function(static function (): void {
     $error = error_get_last();
@@ -183,16 +231,15 @@ register_shutdown_function(static function (): void {
 });
 
 try {
-    $owner = $toolbox->open($runId, $invocationId);
     $result = (static function () use ($scriptPath): mixed {
         return include $scriptPath;
     })();
 
     $result = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::assertEncodable($result, 'Code-mode script return value');
-    register_shutdown_function(static fn () => hatfield_code_mode_terminal([
+    hatfield_code_mode_terminal([
         'ok' => true,
         'result' => $result,
-    ]));
+    ]);
     exit(0);
 } catch (Throwable $exception) {
     try {

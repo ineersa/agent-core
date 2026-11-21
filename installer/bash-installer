@@ -44,7 +44,7 @@ output() {
 cleanup() {
   local exit_code=$?
   if [[ -n "${INSTALL_TMP}" && -e "${INSTALL_TMP}" ]]; then
-    rm -f "${INSTALL_TMP}" "${INSTALL_TMP}.phar" 2>/dev/null || true
+    rm -f "${INSTALL_TMP}" 2>/dev/null || true
   fi
   if [[ -n "${TMPDIR_INSTALL}" && -d "${TMPDIR_INSTALL}" ]]; then
     rm -rf "${TMPDIR_INSTALL}" 2>/dev/null || true
@@ -261,23 +261,6 @@ if [[ "${actual_hash}" != "${expected_hash}" ]]; then
 fi
 output "  [*] SHA-256 verified" "success"
 
-# The native host does not need PHP. Install the checksummed companion for
-# code mode, which uses external PHP only when a script is launched.
-if [[ "${static}" == "true" ]]; then
-  companion="${TMPDIR_INSTALL}/hatfield.phar"
-  download "${download_url%/*}/hatfield.phar" "${companion}"
-  companion_line="$(grep -E '^[a-f0-9]{64}  hatfield\.phar$' "${tmp_sums}" || true)"
-  if command -v sha256sum >/dev/null 2>&1; then
-    companion_hash="$(sha256sum "${companion}" | awk '{print $1}')"
-  else
-    companion_hash="$(shasum -a 256 "${companion}" | awk '{print $1}')"
-  fi
-  if [[ -z "${companion_line}" || "${companion_hash}" != "${companion_line%% *}" ]]; then
-    output "  [ ] ERROR: checksum mismatch for companion hatfield.phar" "error"
-    exit 1
-  fi
-fi
-
 # Run --version against a candidate path (PHAR via host php, static direct).
 # On failure: print fail-closed message and return 1 so previous install is untouched.
 # Must be called in the main shell (not $(...)) so diagnostics stay on stdout.
@@ -363,9 +346,5 @@ fi
 # Candidate + same-dir INSTALL_TMP already checksum/version-smoked.
 # Final fallible/semantic step is atomic mv; exit status is mv status only.
 # Cleanup trap safely no-ops on the moved-away INSTALL_TMP path.
-if [[ "${static}" == "true" ]]; then
-  cp "${companion}" "${INSTALL_TMP}.phar"
-  mv -f "${INSTALL_TMP}.phar" "${dest}.phar"
-fi
 output "Installing to ${dest}..."
 mv -f "${INSTALL_TMP}" "${dest}"

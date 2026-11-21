@@ -20,14 +20,20 @@ sequenceDiagram
     Worker->>PHP: Launch with invocation identity and controller settlement authority
     Worker->>Worker: Record ownership and commit admission before starting PHP
     Worker->>Worker: Return deferred outcome; release slot
-    PHP->>PHP: Boot configured toolbox and run tool() locally
-    PHP->>Broker: Retain terminal value and publish its reference
-    Broker->>Worker: Deliver terminal report to shared consumer
-    Worker->>RC: Dispatch ordinary deferred completion
-    Owner->>Broker: Recover retained report once after exit and 60 seconds pending
+    PHP->>Broker: Publish code_mode_requests with invocation and call IDs
+    Broker->>Worker: Deliver request to available shared slot
+    Worker->>Worker: Validate and run existing toolbox
+    Worker->>Broker: Publish managed result reference to invocation reply queue
+    Broker-->>PHP: Correlated reply with managed tool payload reference
+    PHP->>Broker: Publish managed terminal reference
+    Broker->>Owner: Deliver report after native exit
+    Owner->>RC: Admit deferred completion
+    Owner->>Broker: Acknowledge terminal report
 ```
 
-The terminal envelope carries a managed reference. Owner notices use separate identities from terminal completion.
+The reply envelope carries a reference, not the result payload. Delivery may repeat; individual tools own idempotency if needed.
+The worker does not persist claims or replies in application state. Owner notices use separate identities
+from terminal completion.
 
 The script budget defaults to **1,800 seconds** with no tool-specific cap, memory to
 **256 MiB** (maximum **1,024**). The parent remaining tool budget can shorten it until background acceptance.
@@ -40,9 +46,9 @@ turning arbitrary PHP filesystem/process calls into async toolbox calls.
 
 Direct PHP bypasses hooks and approvals. Code mode inherits the launcher's
 sandbox, if any; it creates none. Source/PHAR builds reuse their launching PHP
-CLI; fused static builds need `php` on PATH and a version-matched companion PHAR
-beside the binary. The child boots the application kernel and uses the existing
-configured toolbox and read-side invocation state. Bash does not need system PHP.
+CLI; fused static builds need `php` on PATH. The launcher materializes a standalone
+Composer runtime from the installed locked packages before starting external PHP.
+The script process does not load the application kernel or open the state database.
 Deferred/interactive tools
 (`subagent`, `fork`, `agent_resume`, `agent_steer`, `notify_parent`, `ask_human`)
 are refused by the bridge.
@@ -57,6 +63,8 @@ admission at startup. `bg_status` controls Bash jobs, not PHP scripts.
 
 Scripts can invoke ordinary tools but cannot recursively launch `code_mode`.
 Calls without canonical correlation or a live session broker are refused.
+
+The worker validates and executes a nested request, publishes a managed result reference to the invocation reply queue, and then acknowledges the request. PHP waits for the matching call ID and resolves the reference using the payload store. The call ID correlates replies; it does not suppress execution on redelivery.
 
 ## Scheduling
 

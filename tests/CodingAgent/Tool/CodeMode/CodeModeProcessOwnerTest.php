@@ -46,7 +46,7 @@ final class CodeModeProcessOwnerTest extends IsolatedKernelTestCase
             }
             $expected = match ($case) {
                 'return-first', 'exit-first' => ['ok' => true, 'result' => 42],
-                'exit' => null,
+                'exit' => ['ok' => false, 'error' => 'Code-mode subprocess exited without returning a value.'],
                 'expired' => ['ok' => false, 'error' => 'Code-mode invocation timed out.'],
                 'stop' => ['ok' => false, 'error' => 'Code-mode invocation interrupted: stopped.'],
                 default => ['ok' => false, 'error' => 'Code-mode launch outcome is unknown; refusing to start it again.'],
