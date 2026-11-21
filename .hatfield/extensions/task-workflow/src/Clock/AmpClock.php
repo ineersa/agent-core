@@ -9,7 +9,7 @@ use Symfony\Component\Clock\MonotonicClock;
 
 use function Amp\delay;
 
-/** Backoff yields to Hatfield's event loop and also works in the Claude stdio host. */
+/** Backoff yields to Hatfield's Revolt event loop; foreign fiber hosts use a native clock. */
 final readonly class AmpClock implements ClockInterface
 {
     public function __construct(private ClockInterface $clock = new MonotonicClock())
