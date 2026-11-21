@@ -273,6 +273,13 @@ Use **F2** to switch between user and project scope. Installation alone does
 not enable an extension: use Configure and Save. Extension packages provide
 their own Symfony Config definitions.
 
+For an installed Composer extension, select **Uninstall** independently of
+**Configure**. Confirm the package name and scope: setup removes its direct Composer
+requirement, enablement entries, and extension settings block from that scope.
+It leaves the other scope and stored extension data alone. Setup refuses removal
+if it cannot identify the settings block or verify scope ownership. Disable built-in
+extensions through Configure instead. Restart Hatfield after uninstalling.
+
 Turning **Enabled for parent** off also turns that extension's fork and agent selections off in the form. Re-enabling the parent does not restore those selections automatically. Save to persist the choices; existing sessions need a restart to load them.
 
 New extension packages use a direct Composer requirement of `*`, allowing published

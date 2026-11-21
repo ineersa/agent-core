@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\CLI\Extensions;
 
 use Composer\Autoload\ClassLoader;
+use Ineersa\CodingAgent\CLI\Extensions\Exception\ExtensionSetupRefusalException;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -14,6 +15,7 @@ use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
 use Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension;
+use Ineersa\CodingAgent\Extension\Exception\ExtensionPackageUninstallException;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
 use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
@@ -75,43 +77,85 @@ final class ExtensionsSetupFlow
         $this->installer->install($this->layer, $this->app->cwd, $package);
     }
 
-    public function select(string $package): void
+    public function isBuiltIn(string $package): bool
     {
-        $row = $this->packages()[$package];
-        if (!\in_array($package, ['safe_guard', 'scheduling'], true)) {
-            $this->manager->loadAutoloaders();
+        return \in_array($package, ['safe_guard', 'scheduling'], true);
+    }
+
+    public function uninstall(string $package): void
+    {
+        if ($this->isBuiltIn($package)) {
+            throw new ExtensionSetupRefusalException('Built-in extensions cannot be uninstalled. Disable them in Configure.');
         }
-        $class = $row['class'];
-        if (null !== $class && class_exists($class, false)) {
-            // Reordering loaders cannot replace a class already declared at startup.
-            $declared = (new \ReflectionClass($class))->getFileName();
-            foreach (ClassLoader::getRegisteredLoaders() as $autoload) {
-                $resolved = $autoload->findFile($class);
-                if (false === $resolved) {
+        [$class, , $root] = $this->configurationFor($package);
+        $key = $root->getName();
+        if (!preg_match('/^[a-zA-Z0-9_-]+$/D', $key)) {
+            throw new ExtensionSetupRefusalException('Cannot identify a safe settings block to remove. Nothing was removed.');
+        }
+        $path = $this->writer->layerPath($this->layer, $this->app->cwd);
+        $other = $this->writer->layerPath(SettingsLayerEnum::User === $this->layer ? SettingsLayerEnum::Project : SettingsLayerEnum::User, $this->app->cwd);
+        $scopeRoot = realpath(\dirname($path, 2));
+        if (false === $scopeRoot || realpath(\dirname($path)) !== $scopeRoot.'/.hatfield'
+            || is_link($path) || realpath(\dirname($path)) === realpath(\dirname($other))) {
+            throw new ExtensionSetupRefusalException('The settings path is not exclusive to this scope. Nothing was removed.');
+        }
+        try {
+            $layers = $this->loader->load($this->resources->getDefaultsPath(), $this->app->cwd);
+            $local = SettingsLayerEnum::User === $this->layer ? $layers->userRaw : $layers->projectRaw;
+            $changes = [];
+            foreach (['extensions.enabled', 'forks.extensions.enabled', 'forks.extensions.always_on', 'agents.extensions.always_on'] as $listPath) {
+                $list = $this->value($local, $listPath);
+                if (null === $list) {
                     continue;
                 }
-                $canonical = realpath($resolved);
-                if ($declared !== (false !== $canonical ? $canonical : Path::canonicalize($resolved))) {
-                    throw new \RuntimeException('Restart hatfield setup to configure the installed package. This process already loaded another copy of its extension class; settings were not changed.');
+                if (!\is_array($list) || !array_is_list($list) || $list !== array_filter($list, is_string(...))) {
+                    throw new ExtensionSetupRefusalException('An enablement list in settings.yaml is invalid. Nothing was removed.');
                 }
-                break;
+                if (\in_array($class, $list, true)) {
+                    $changes[$listPath] = array_values(array_diff($list, [$class]));
+                }
+            }
+            $remove = ['extensions.settings.'.$key];
+            $candidate = $this->writer->withChanges($local, $changes, $remove, $path);
+            if ($candidate !== $local && (!is_writable(\dirname($path)) || (is_file($path) && !is_writable($path)))) {
+                throw new ExtensionSetupRefusalException('Settings are not writable. Nothing was removed.');
+            }
+        } catch (ExtensionSetupRefusalException $error) {
+            throw $error;
+        } catch (\Throwable $error) {
+            throw new ExtensionSetupRefusalException('Cannot read or prepare settings cleanup. Nothing was removed.', previous: $error);
+        }
+        try {
+            $this->installer->uninstall($this->layer, $this->app->cwd, $package);
+        } catch (ExtensionPackageUninstallException $error) {
+            throw new ExtensionSetupRefusalException($error->getMessage().' Settings were not changed.', previous: $error);
+        } catch (\Throwable $error) {
+            throw new ExtensionSetupRefusalException('Composer did not confirm removal. Check the Composer installation before retrying. Settings were not changed.', previous: $error);
+        }
+        if ($local !== $candidate) {
+            try {
+                $this->writer->setMany($this->layer, $this->app->cwd, $changes, $remove);
+            } catch (\Throwable $error) {
+                throw new ExtensionSetupRefusalException('Composer removed the package, but settings cleanup failed. Remove its enablement entries and settings block manually before restarting Hatfield.', previous: $error);
             }
         }
-        if (null === $class || !is_a($class, ConfigurableExtensionInterface::class, true)) {
-            throw new \RuntimeException('This package does not provide configuration. Install a provider-capable release; settings were not changed.');
-        }
+    }
+
+    public function select(string $package): void
+    {
+        [$class, $this->configuration, $root] = $this->configurationFor($package);
         $this->class = $class;
-        $this->configuration = (new $class())->getConfiguration();
-        $root = $this->configuration->getConfigTreeBuilder()->buildTree();
-        if (!$root instanceof ArrayNode) {
-            throw new \RuntimeException('Extension configuration must have a native array root.');
-        }
         $this->key = $root->getName();
-        $effective = $this->snapshot();
-        $this->settings = $effective['extensions']['settings'][$this->key] ?? [];
-        if (!\is_array($this->settings)) {
-            throw new \RuntimeException('Extension settings must be a mapping.');
+        try {
+            $effective = $this->snapshot();
+        } catch (\Throwable $error) {
+            throw new ExtensionSetupRefusalException('Cannot read settings for this scope. Check its settings.yaml and any inherited settings.', previous: $error);
         }
+        $settings = $effective['extensions']['settings'][$this->key] ?? [];
+        if (!\is_array($settings) || ([] !== $settings && array_is_list($settings))) {
+            throw new ExtensionSetupRefusalException('The extension settings block is not a mapping. Check settings.yaml before configuring it.');
+        }
+        $this->settings = $settings;
         $this->nodes = [];
         $this->collectNodes($root);
         $in = fn (string $path): bool => \in_array($class, $this->value($effective, $path) ?? [], true);
@@ -227,6 +271,63 @@ final class ExtensionsSetupFlow
         }
 
         return false;
+    }
+
+    /** @return array{class-string<ConfigurableExtensionInterface>, ConfigurationInterface, ArrayNode} */
+    private function configurationFor(string $package): array
+    {
+        $row = $this->packages()[$package] ?? null;
+        if (null === $row || !$row['installed']) {
+            throw new ExtensionSetupRefusalException('The package is not installed in this scope.');
+        }
+        $class = $row['class'];
+        if (!\is_string($class) || '' === $class) {
+            throw new ExtensionSetupRefusalException('Package metadata does not declare an extension class. Install a release with setup configuration support.');
+        }
+        if (!$this->isBuiltIn($package)) {
+            try {
+                $this->manager->loadAutoloaders();
+                $root = $this->installer->rootFor($this->layer, $this->app->cwd);
+                $autoload = realpath($root.'/vendor/autoload.php');
+                $loader = false === $autoload ? null : (ClassLoader::getRegisteredLoaders()[\dirname($autoload)] ?? null);
+                $entry = $loader?->findFile($class);
+                $metadata = $this->installer->packages($this->layer, $this->app->cwd)[$package] ?? [];
+                $relative = $metadata['install-path'] ?? null;
+                $install = \is_string($relative) && !Path::isAbsolute($relative) ? realpath($root.'/vendor/composer/'.$relative) : false;
+                $expected = \is_string($entry) ? realpath($entry) : false;
+                if (false === $install || false === $expected || !Path::isBasePath($install, $expected)) {
+                    throw new ExtensionSetupRefusalException('Cannot resolve the extension class from this scope’s installed package. Check its Composer autoloader and package metadata.');
+                }
+                if (!class_exists($class, false)) {
+                    $loader?->loadClass($class);
+                }
+                if (!class_exists($class, false)) {
+                    throw new ExtensionSetupRefusalException('The installed file did not declare the extension class. Check the package metadata.');
+                }
+                $declared = (new \ReflectionClass($class))->getFileName();
+                if (false === $declared || $expected !== realpath($declared)) {
+                    throw new ExtensionSetupRefusalException('Another copy of this extension class is already loaded. Restart setup and configure this scope first.');
+                }
+            } catch (ExtensionSetupRefusalException $error) {
+                throw $error;
+            } catch (\Throwable $error) {
+                throw new ExtensionSetupRefusalException('The installed extension class could not be loaded. Check the package’s Composer autoloader and compatibility with this Hatfield version.', previous: $error);
+            }
+        }
+        if (!is_a($class, ConfigurableExtensionInterface::class, true)) {
+            throw new ExtensionSetupRefusalException('The extension does not provide a configuration schema. Install a release with setup configuration support.');
+        }
+        try {
+            $configuration = (new $class())->getConfiguration();
+            $root = $configuration->getConfigTreeBuilder()->buildTree();
+        } catch (\Throwable $error) {
+            throw new ExtensionSetupRefusalException('The extension could not build its configuration schema. Check package compatibility with this Hatfield version.', previous: $error);
+        }
+        if (!$root instanceof ArrayNode) {
+            throw new ExtensionSetupRefusalException('The extension configuration schema must have a mapping root.');
+        }
+
+        return [$class, $configuration, $root];
     }
 
     /**

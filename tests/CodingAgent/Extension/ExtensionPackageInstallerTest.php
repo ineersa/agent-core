@@ -12,6 +12,24 @@ use PHPUnit\Framework\TestCase;
 
 final class ExtensionPackageInstallerTest extends TestCase
 {
+    public function testUninstallRemovesOnlyTheSelectedDirectRequirement(): void
+    {
+        $fixture = new ExtensionUpdateFixture();
+        try {
+            $fixture->seed();
+            $fixture->seed('home');
+            $before = $fixture->snapshot('home');
+            $installer = new ExtensionPackageInstaller(new SettingsPathResolver($fixture->directory, $fixture->directory.'/home'), $fixture->filesystem);
+            $installer->uninstall(SettingsLayerEnum::Project, $fixture->project(), 'test/update-extension');
+            $this->assertSame([], $installer->packages(SettingsLayerEnum::Project, $fixture->project()));
+            $this->assertSame($before, $fixture->snapshot('home'));
+            $manifest = json_decode(file_get_contents($fixture->root('project').'/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
+            $this->assertArrayNotHasKey('test/update-extension', $manifest['require'] ?? []);
+        } finally {
+            $fixture->close();
+        }
+    }
+
     public function testNewInstallationExplicitlyRequiresAnyVersionAndExistingInstallDoesNotRewriteIt(): void
     {
         $fixture = new ExtensionUpdateFixture();

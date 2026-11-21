@@ -17,6 +17,7 @@ use Ineersa\Tui\Setup\ExtensionsSetupScreen;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
@@ -28,6 +29,44 @@ use Symfony\Component\Yaml\Yaml;
 final class ExtensionsSetupScreenTest extends PerMethodIsolatedKernelTestCase
 {
     protected const bool ISOLATE_HOME = true;
+
+    public function testUninstallConfirmationIsReachableAfterConfigureRefusal(): void
+    {
+        $cwd = $this->isolatedCwd();
+        $this->assertSame($cwd.'/.hatfield', realpath($cwd.'/.hatfield'));
+        $this->assertFileDoesNotExist($cwd.'/.hatfield/extensions');
+        $this->assertFalse(is_link($cwd.'/.hatfield/extensions'));
+        $metadata = $cwd.'/.hatfield/extensions/vendor/composer/installed.json';
+        $package = 'ineersa/hatfield-ext-observational-memory';
+        (new Filesystem())->dumpFile($metadata, json_encode(['packages' => [['name' => $package]]], \JSON_THROW_ON_ERROR));
+        $before = file_get_contents($cwd.'/.hatfield/settings.yaml');
+        $terminal = new VirtualTerminal(columns: 150, rows: 40);
+        $tui = new Tui(terminal: $terminal);
+        $screen = new ExtensionsSetupScreen(self::getContainer()->get(ExtensionsSetupFlow::class), new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette()), new NullLogger());
+        $panel = new ContainerWidget();
+        $notice = new TextWidget('');
+        foreach (['tui' => $tui, 'panel' => $panel, 'notice' => $notice] as $property => $value) {
+            (new \ReflectionProperty($screen, $property))->setValue($screen, $value);
+        }
+        $tui->add($notice)->add($panel);
+        (new \ReflectionMethod($screen, 'menu'))->invoke($screen);
+        $tui->start();
+        try {
+            $terminal->simulateInput(str_repeat("\x1b[B", 3));
+            $terminal->simulateInput("\r");
+            $terminal->simulateInput("\r");
+            $this->assertStringContainsString('Configure failed in project scope. Package metadata does not declare an extension class.', $notice->getText());
+            $terminal->simulateInput("\x1b[B");
+            $terminal->simulateInput("\r"); // Enter uninstall confirmation, without ever opening the form.
+            $terminal->simulateInput("\x1b[B");
+            $terminal->simulateInput("\r");
+            $this->assertStringContainsString('Uninstall failed in project scope. Package metadata does not declare an extension class.', $notice->getText());
+            $this->assertSame($before, file_get_contents($cwd.'/.hatfield/settings.yaml'));
+            $this->assertFileExists($metadata);
+        } finally {
+            $tui->stop();
+        }
+    }
 
     public function testDisablingParentClearsChildControlsAndSavesWithoutManualYamlEdits(): void
     {
