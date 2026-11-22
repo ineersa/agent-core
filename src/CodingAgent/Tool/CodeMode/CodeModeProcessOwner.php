@@ -17,12 +17,15 @@ final readonly class CodeModeProcessOwner
     {
     }
 
-    /** @param array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string} $policy */
-    public function launch(string $runId, string $invocationId, string $workspace, string $command, int $startedAtNs, array $policy, ?\Closure $admit = null, ?int $standaloneTurn = null, ?string $afterExit = null): void
+    /**
+     * @param array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string} $policy
+     * @param array{queue: string, incarnation: string}|null                                                 $reply
+     */
+    public function launch(string $runId, string $invocationId, string $workspace, string $command, int $startedAtNs, array $policy, ?\Closure $admit = null, ?int $standaloneTurn = null, ?string $afterExit = null, ?array $reply = null): void
     {
         $prefix = $this->prefix($runId).hash('sha256', $invocationId);
 
-        $this->lifecycle->withSidecarLock($prefix.'.status', function () use ($runId, $prefix, $workspace, $command, $startedAtNs, $invocationId, $admit, $standaloneTurn, $policy, $afterExit): void {
+        $this->lifecycle->withSidecarLock($prefix.'.status', function () use ($runId, $prefix, $workspace, $command, $startedAtNs, $invocationId, $admit, $standaloneTurn, $policy, $afterExit, $reply): void {
             if (null !== $this->invocation($runId, $invocationId) || file_exists($prefix.'.pid')
                 || file_exists($prefix.'.status') || file_exists($prefix.'.log') || !$this->lifecycle->ownsSidecarPaths($prefix.'.log', $prefix.'.status')) {
                 throw new ToolCallException('Code-mode invocation already has launch evidence; refusing to start it again.', retryable: false);
@@ -31,7 +34,7 @@ final readonly class CodeModeProcessOwner
             // before ProcessLifecycle has a PID. Hold the native lock through launch.
             $this->store->insertRecord([
                 'session_id' => $runId, 'command' => 'code_mode', 'log_path' => $prefix.'.log', 'status_path' => $prefix.'.status',
-                'code_mode_id' => $invocationId, 'code_mode_launch' => json_encode(['workspace' => $workspace, 'startedAtNs' => $startedAtNs, 'standaloneTurn' => $standaloneTurn, 'policy' => $policy], \JSON_THROW_ON_ERROR),
+                'code_mode_id' => $invocationId, 'code_mode_launch' => json_encode(['workspace' => $workspace, 'startedAtNs' => $startedAtNs, 'standaloneTurn' => $standaloneTurn, 'policy' => $policy, 'reply' => $reply], \JSON_THROW_ON_ERROR),
             ]);
             $this->filesystem->mkdir($workspace.'/replies', 0700);
             $admit?->__invoke();
@@ -39,7 +42,7 @@ final readonly class CodeModeProcessOwner
         });
     }
 
-    /** @return array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}}|null */
+    /** @return array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, interruption?: string, reply?: array{queue: string, incarnation: string}|null, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}}|null */
     public function invocation(string $runId, string $invocationId): ?array
     {
         return $this->records->codeModeLaunch($runId, $invocationId);
@@ -105,6 +108,11 @@ final readonly class CodeModeProcessOwner
         $this->withReplyWorkspace($runId, $id, fn (string $workspace) => $this->removeReplyDirectory($workspace));
     }
 
+    public function recordInterruption(string $runId, string $id, string $reason): void
+    {
+        $this->records->recordCodeModeInterruption($runId, $id, $reason);
+    }
+
     /** @return array{ok: bool, result?: mixed, error?: string}|null */
     public function observeTerminal(string $runId, string $id, ?int $deadline, ?string $interruption, callable $report): ?array
     {
@@ -115,6 +123,7 @@ final readonly class CodeModeProcessOwner
             if (null === $invocation || !$this->lifecycle->ownsSidecarPaths(substr($status, 0, -7).'.log', $status)) {
                 return null;
             }
+            $interruption = $invocation['interruption'] ?? $interruption;
             $pid = $this->lifecycle->readPidFile($status);
             $exit = $this->lifecycle->readStatusFile($status);
             $running = null !== $pid && (null === $exit || -1 === $exit) && $this->lifecycle->isAlive($pid);

@@ -19,7 +19,7 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
         parent::__construct($registry, BackgroundProcess::class);
     }
 
-    /** @return array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}}|null */
+    /** @return array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, interruption?: string, reply?: array{queue: string, incarnation: string}|null, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}}|null */
     public function codeModeLaunch(string $runId, string $id): ?array
     {
         $row = $this->getEntityManager()->getConnection()->fetchAssociative('SELECT code_mode_launch, finished_at FROM background_process WHERE session_id = ? AND code_mode_id = ?', [$runId, $id]);
@@ -55,6 +55,14 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
             WHERE process.session_id = :run AND process.code_mode_id IS NOT NULL
                 AND process.finished_at IS NULL AND json_extract(process.code_mode_launch, '$.standaloneTurn') IS NOT NULL
             SQL, ['run' => $runId]);
+    }
+
+    public function recordCodeModeInterruption(string $runId, string $id, string $reason): void
+    {
+        $this->getEntityManager()->getConnection()->executeStatement(<<<'SQL'
+            UPDATE background_process SET code_mode_launch = json_set(code_mode_launch, '$.interruption', ?)
+            WHERE session_id = ? AND code_mode_id = ? AND json_extract(code_mode_launch, '$.interruption') IS NULL
+            SQL, [$reason, $runId, $id]);
     }
 
     public function fenceCodeModeLaunch(string $runId, string $id): void

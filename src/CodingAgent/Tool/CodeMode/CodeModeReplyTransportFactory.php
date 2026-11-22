@@ -8,10 +8,12 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Session\SessionToolPayloadStore;
 use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeReplyDTO;
+use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeStandaloneReplyDTO;
 use Ineersa\SqliteQueue\Messenger\Transport;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Stamp\BusNameStamp;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 
 final readonly class CodeModeReplyTransportFactory
@@ -60,9 +62,15 @@ final readonly class CodeModeReplyTransportFactory
         return $this->factory->createTransport('sqlite-queue://code_mode_requests', ['endpoint' => $this->endpoint], $this->serializer);
     }
 
-    public static function standaloneQueueId(string $runId, string $invocationId): string
+    /** @param array{queue: string, incarnation: string} $address */
+    public function sendStandalone(array $address, string $id, ToolPayloadReferenceDTO $reference): void
     {
-        return 'standalone-'.hash('sha256', json_encode([$runId, $invocationId], \JSON_THROW_ON_ERROR));
+        $transport = $this->create($address['queue']);
+        try {
+            $transport->send(new Envelope(new CodeModeStandaloneReplyDTO($address['incarnation'], $id, $reference), [new BusNameStamp('agent.execution.bus')]));
+        } finally {
+            $transport->close();
+        }
     }
 
     public function create(string $invocationId): Transport

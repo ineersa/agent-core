@@ -38,6 +38,7 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
         private readonly MessageBusInterface $bus,
         private readonly ?int $concurrencyLimit = 4,
         private readonly MessengerDeliveryEnvelopeRestorer $envelopes = new MessengerDeliveryEnvelopeRestorer(),
+        private readonly ?\Closure $beforeForcedDrain = null,
     ) {
         if (null !== $this->concurrencyLimit && $this->concurrencyLimit < 1) {
             throw new \InvalidArgumentException('FiberMessageExecutionStrategy concurrency limit must be a positive integer.');
@@ -122,6 +123,9 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
 
     public function flush(callable $onHandled, bool|float $force = false): bool
     {
+        if (true === $force) {
+            $this->beforeForcedDrain?->__invoke();
+        }
         $handled = $this->drainReady();
 
         if ([] === $this->pending) {

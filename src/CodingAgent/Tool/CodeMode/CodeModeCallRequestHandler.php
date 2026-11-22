@@ -80,7 +80,7 @@ final readonly class CodeModeCallRequestHandler
             return;
         }
         if ('admit' === $request->operation) {
-            if ($process['fenced'] || null !== $metadata?->interruptionReason) {
+            if ($process['fenced'] || isset($process['interruption']) || null !== $metadata?->interruptionReason) {
                 $reply = ['ok' => false, 'error' => 'Code-mode launch is no longer admitted.'];
             } else {
                 $reply = ['ok' => true];
@@ -93,6 +93,7 @@ final readonly class CodeModeCallRequestHandler
             try {
                 $parent = new RunCancellationToken($this->status, $runId);
                 $unavailable = fn (bool $backgrounded): bool => $this->processes->hasExited($runId, $rootId)
+                    || isset($this->processes->invocation($runId, $rootId)['interruption'])
                     || ($this->processes->deadline($runId, $rootId, $backgrounded) ?? \PHP_INT_MAX) <= hrtime(true);
                 $token = null !== $call ? new CodeModeCancellationToken($parent, $this->deferred, $rootId, $unavailable)
                     : new class($parent, $unavailable) implements \Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface {

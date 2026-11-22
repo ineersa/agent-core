@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\CodeMode;
 
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
@@ -13,6 +14,7 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeTerminalReportDTO;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
@@ -32,6 +34,7 @@ final readonly class CodeModeTerminalReportHandler
         private CodeModeDiagnosticsToolResultProcessor $diagnostics,
         private OutputCapToolResultProcessor $capResults,
         private CodeModeReplyTransportFactory $replies,
+        private RunOperationalStatusReaderInterface $status,
     ) {
     }
 
@@ -51,9 +54,13 @@ final readonly class CodeModeTerminalReportHandler
         $payload = $this->payloads->findFirstResult($identity);
         $result = null === $payload ? null : $this->payloads->read($payload);
         $reply = $result instanceof ToolCallResult ? $result->result : null;
+        $interruption = $metadata?->interruptionReason?->value;
+        if (null !== $invocation['standaloneTurn'] && (new RunCancellationToken($this->status, $runId))->isCancellationRequested()) {
+            $interruption = 'cancelled';
+        }
         $failure = $report->failure ?? ($this->processes->observeTerminal($runId, $report->invocationId,
             $this->processes->deadline($runId, $report->invocationId, null !== $metadata?->backgroundedAt),
-            $metadata?->interruptionReason?->value, static fn (): ?array => null)['error'] ?? null);
+            $interruption, static fn (): ?array => null)['error'] ?? null);
         if (null !== $failure) {
             $reply = ['ok' => false, 'error' => $failure];
         } elseif (!\is_array($reply) || !\is_bool($reply['ok'] ?? null)) {
@@ -68,7 +75,13 @@ final readonly class CodeModeTerminalReportHandler
 
             return;
         }
+        $address = $invocation['reply'] ?? null;
         $id = $report->invocationId;
+        if (null === $address) {
+            $this->processes->retireStandalone($runId, $id);
+
+            return;
+        }
         $tool = new ToolCall($id, 'code_mode', [], 0, $runId);
         $result = $this->process($tool, $invocation, $reply);
         $details = $result->details;
@@ -78,13 +91,13 @@ final readonly class CodeModeTerminalReportHandler
         $body = 'code-mode-'.bin2hex(random_bytes(32));
         $reference = $this->payloads->publish(new ToolCallResult($runId, $identity->turnNo, $identity->stepId, $identity->attempt,
             $body, $body, $identity->orderIndex, ['content' => $result->content, 'details' => $details], $result->isError));
-        $this->replies->send(CodeModeReplyTransportFactory::standaloneQueueId($runId, $id), $id, $reference);
+        $this->replies->sendStandalone($address, $id, $reference);
         $this->processes->retireStandalone($runId, $id);
     }
 
     /**
-     * @param array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}} $invocation
-     * @param array{ok: bool, result?: mixed, error?: string}                                                                                                                                        $reply
+     * @param array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, reply?: array{queue: string, incarnation: string}|null, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}} $invocation
+     * @param array{ok: bool, result?: mixed, error?: string}                                                                                                                                                                                                $reply
      */
     private function complete(DeferredToolCompletionCorrelation $call, array $invocation, array $reply): void
     {
@@ -96,8 +109,8 @@ final readonly class CodeModeTerminalReportHandler
     }
 
     /**
-     * @param array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}} $invocation
-     * @param array{ok: bool, result?: mixed, error?: string}                                                                                                                                        $reply
+     * @param array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, reply?: array{queue: string, incarnation: string}|null, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}} $invocation
+     * @param array{ok: bool, result?: mixed, error?: string}                                                                                                                                                                                                $reply
      */
     private function process(ToolCall $tool, array $invocation, array $reply): ToolResult
     {

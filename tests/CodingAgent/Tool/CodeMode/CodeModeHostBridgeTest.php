@@ -120,10 +120,10 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             );
             $execution = $container->get('agent.execution.bus');
             $bus = new RoutableMessageBus(new ServiceLocator(['agent.execution.bus' => static fn () => $execution]), $execution);
-            $consume = function (int $count) use ($transport, $bus): array {
+            $consume = function (int $count, array $receivers = []) use ($transport, $bus): array {
                 $events = new EventDispatcher();
                 $handled = [];
-                $worker = new Worker(['code_mode_requests' => $transport], $bus, $events, messageExecutionStrategy: new FiberMessageExecutionStrategy($bus, 1));
+                $worker = new Worker($receivers + ['code_mode_requests' => $transport], $bus, $events, messageExecutionStrategy: new FiberMessageExecutionStrategy($bus, 1));
                 $events->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use (&$handled, $worker, $count): void {
                     $handled[] = $event->getEnvelope()->getMessage();
                     if (\count($handled) === $count) {
@@ -206,6 +206,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
                 $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor::class),
                 $container->get(\Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor::class),
                 $replyFactory,
+                $container->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class),
             );
             try {
                 $handler($report);
@@ -224,6 +225,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $observer = new \Ineersa\CodingAgent\Runtime\Controller\CodeModeTerminalObserver(
                 $owner, $deferred, new NullLogger(),
                 new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory(new TransportFactory(), $payloads, $container->get('messenger.transport.symfony_serializer'), $paths->endpointPath),
+                $container->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class),
                 $clock,
             );
             $observer->observe($runId, $runId);
@@ -274,9 +276,27 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
                 && 'schedule:scheduled-occurrence' === $notice->identity
                 && 'Scheduled code_mode result ['.$job->payload['id']."]:\n42" === trim($notice->text)
                 && !$notice->interrupted));
-            $standalone = \Amp\async(static fn () => $scheduler->handle($api, $job->payload, 'scheduled-occurrence', null));
-            $consume(3); // admission, nested read and terminal delivery on one shared worker slot
-            $standalone->await();
+            $replies = $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeStandaloneRepliesService::class);
+            $receiver = $replies->open('tool-test');
+            try {
+                $standalone = \Amp\async(static fn () => $scheduler->handle($api, $job->payload, 'scheduled-occurrence', null));
+                $consume(4, [\Ineersa\CodingAgent\Tool\CodeMode\CodeModeStandaloneRepliesService::RECEIVER => $receiver]);
+                $standalone->await();
+            } finally {
+                $replies->close();
+            }
+
+            $previousSlot = getenv('HATFIELD_CODE_MODE_REPLY_SLOT');
+            putenv('HATFIELD_CODE_MODE_REPLY_SLOT=extension_agent');
+            try {
+                $standalone = \Amp\async(static fn () => $invoker->invoke(new \Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationRequestDTO(
+                    $runId, 'sequential-extension', 'code_mode', ['script' => $standaloneScript, 'timeout_seconds' => 5],
+                )));
+                $consume(3);
+                $this->assertSame('42', trim($standalone->await(new \Amp\TimeoutCancellation(3))->text));
+            } finally {
+                putenv(false === $previousSlot ? 'HATFIELD_CODE_MODE_REPLY_SLOT' : 'HATFIELD_CODE_MODE_REPLY_SLOT='.$previousSlot);
+            }
 
             // No waiting extension invocation is attached to this owned launch.
             $orphanWorkspace = $this->tmpDir.'/orphan-workspace';
@@ -298,6 +318,104 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             [$timeoutWakeup] = $consume(1);
             $this->assertSame('orphan-standalone', $timeoutWakeup->invocationId);
             $this->assertStringContainsString('timed out', $timeoutWakeup->failure);
+
+            $cancelledWorkspace = $this->tmpDir.'/cancelled-workspace';
+            $owner->launch($runId, 'cancelled-standalone', $cancelledWorkspace,
+                'read -r line < '.escapeshellarg($orphanRelease), hrtime(true),
+                ['explicitTimeout' => null, 'callerTimeout' => null, 'retainOutput' => false, 'attachmentOwner' => 'cancelled-standalone'],
+                standaloneTurn: 0);
+            $status = $this->createStub(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class);
+            $runStatus = \Ineersa\AgentCore\Domain\Run\RunStatus::Cancelling;
+            $status->method('findOperationalStatus')->willReturnCallback(static function () use (&$runStatus): \Ineersa\AgentCore\Contract\RunOperationalStatusDTO {
+                return new \Ineersa\AgentCore\Contract\RunOperationalStatusDTO($runStatus, 0);
+            });
+            $cancellationObserver = new \Ineersa\CodingAgent\Runtime\Controller\CodeModeTerminalObserver(
+                $owner, $deferred, new NullLogger(),
+                new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory(new TransportFactory(), $payloads, $container->get('messenger.transport.symfony_serializer'), $paths->endpointPath),
+                $status, $clock,
+            );
+            $cancellationObserver->observe($runId, $runId);
+            $runStatus = \Ineersa\AgentCore\Domain\Run\RunStatus::Running;
+            $cancellationObserver->observe($runId, $runId);
+            $this->assertTrue($owner->hasExited($runId, 'cancelled-standalone'));
+            $this->assertSame('cancelled', $owner->invocation($runId, 'cancelled-standalone')['interruption']);
+            [$cancelWakeup] = $consume(1);
+            $this->assertSame('cancelled-standalone', $cancelWakeup->invocationId);
+            $this->assertStringContainsString('interrupted: cancelled', $cancelWakeup->failure);
+
+            $toolReceiver = (new TransportFactory())->createTransport($paths->transportDsns()['HATFIELD_TOOL_TRANSPORT_DSN'], [], new \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer());
+            $toolReceiver->send(new \Symfony\Component\Messenger\Envelope((object) ['invocation' => 'shutdown-wait']));
+            $wait = $container->get(\Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber::class);
+            $replyService = new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeStandaloneRepliesService(
+                new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory(new TransportFactory(), $payloads, $container->get('messenger.transport.symfony_serializer'), $paths->endpointPath),
+                $payloads, $bus, $wait,
+            );
+            $entered = new \Amp\DeferredFuture();
+            $shutdownBus = new class($replyService, $entered, $runId) implements \Symfony\Component\Messenger\MessageBusInterface {
+                public function __construct(private \Ineersa\CodingAgent\Tool\CodeMode\CodeModeStandaloneRepliesService $replies, private \Amp\DeferredFuture $entered, private string $runId)
+                {
+                }
+
+                public function dispatch(object $message, array $stamps = []): \Symfony\Component\Messenger\Envelope
+                {
+                    $this->replies->register($this->runId, 'shutdown-wait');
+                    $this->entered->complete();
+                    try {
+                        $this->replies->await($this->runId, 'shutdown-wait');
+                    } finally {
+                        $this->replies->unregister($this->runId, 'shutdown-wait');
+                    }
+
+                    return \Symfony\Component\Messenger\Envelope::wrap($message, $stamps);
+                }
+            };
+            $events = new EventDispatcher();
+            $failure = new \Amp\DeferredFuture();
+            $events->addListener(\Symfony\Component\Messenger\Event\WorkerMessageFailedEvent::class, static fn ($event) => $failure->complete($event->getThrowable()));
+            $command = new \Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeCommand(
+                new RoutableMessageBus(new ServiceLocator([]), $shutdownBus),
+                new ServiceLocator(['tool' => static fn () => $toolReceiver, 'agent' => static fn () => $transport, 'code_mode_requests' => static fn () => $transport]),
+                $events, $container->get(\Ineersa\CodingAgent\Config\AppConfig::class), codeModeReplies: $replyService,
+            );
+            putenv('HATFIELD_CODE_MODE_REPLY_SLOT=tool-shutdown-test');
+            $guard = \Revolt\EventLoop::delay(3, static fn () => throw new \RuntimeException('Shutdown drain did not release the pending reply.'));
+            try {
+                $input = new \Symfony\Component\Console\Input\ArrayInput(['--transport' => 'tool', '--memory-limit' => (string) (memory_get_usage(true) + 64 * 1024 * 1024)]);
+                $input->bind($command->getDefinition());
+                $stopping = \Amp\async(static function () use ($entered, $command): void {
+                    $entered->getFuture()->await();
+                    $command->handleSignal(\SIGTERM);
+                });
+                $this->assertSame(0, $command->run($input, new \Symfony\Component\Console\Output\BufferedOutput()));
+                $stopping->await();
+                $error = $failure->getFuture()->await(new \Amp\TimeoutCancellation(1));
+                $this->assertInstanceOf(ToolCallException::class, $error);
+                $this->assertSame('Code-mode reply receiver stopped.', $error->getMessage());
+            } finally {
+                \Revolt\EventLoop::cancel($guard);
+                putenv(false === $previousSlot ? 'HATFIELD_CODE_MODE_REPLY_SLOT' : 'HATFIELD_CODE_MODE_REPLY_SLOT='.$previousSlot);
+            }
+
+            putenv('HATFIELD_CODE_MODE_REPLY_SLOT=extension_agent');
+            $input = new \Symfony\Component\Console\Input\ArrayInput([]);
+            $output = new \Symfony\Component\Console\Output\BufferedOutput();
+            $signal = new \Symfony\Component\Console\Event\ConsoleSignalEvent($command, $input, $output, \SIGTERM);
+            $signalDispatcher = $container->get('event_dispatcher');
+            $guard = \Revolt\EventLoop::delay(3, static fn () => throw new \RuntimeException('Scoped worker did not stop on the console signal.'));
+            try {
+                $replies->register($runId, 'scoped-shutdown');
+                \Revolt\EventLoop::queue(static fn () => $signalDispatcher->dispatch($signal, \Symfony\Component\Console\ConsoleEvents::SIGNAL));
+                try {
+                    $replies->await($runId, 'scoped-shutdown');
+                    $this->fail('Expected the scoped wait to fail on shutdown.');
+                } catch (ToolCallException $error) {
+                    $this->assertSame('Code-mode reply receiver stopped.', $error->getMessage());
+                }
+            } finally {
+                $replies->unregister($runId, 'scoped-shutdown');
+                \Revolt\EventLoop::cancel($guard);
+                putenv(false === $previousSlot ? 'HATFIELD_CODE_MODE_REPLY_SLOT' : 'HATFIELD_CODE_MODE_REPLY_SLOT='.$previousSlot);
+            }
         } finally {
             if (null === $previous) {
                 unset($_SERVER[$endpoint]);

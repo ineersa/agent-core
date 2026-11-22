@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeProcessOwner;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory;
 use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeTerminalReportDTO;
@@ -24,6 +26,7 @@ final class CodeModeTerminalObserver
         private readonly DeferredToolCompletionRepositoryInterface $deferred,
         private readonly LoggerInterface $logger,
         private readonly CodeModeReplyTransportFactory $replies,
+        private readonly RunOperationalStatusReaderInterface $status,
         private readonly ClockInterface $clock = new MonotonicClock(),
     ) {
     }
@@ -55,8 +58,15 @@ final class CodeModeTerminalObserver
             return;
         }
         $deadline = $this->processes->deadline($runId, $id, null !== $metadata?->backgroundedAt);
+        $interruption = $metadata?->interruptionReason?->value;
+        if (null !== $invocation['standaloneTurn'] && (new RunCancellationToken($this->status, $runId))->isCancellationRequested()) {
+            $interruption = 'cancelled';
+            if (!isset($invocation['interruption'])) {
+                $this->processes->recordInterruption($runId, $id, $interruption);
+            }
+        }
         $exited = false;
-        $failure = $this->processes->observeTerminal($runId, $id, $deadline, $metadata?->interruptionReason?->value, static function () use (&$exited): ?array {
+        $failure = $this->processes->observeTerminal($runId, $id, $deadline, $interruption, static function () use (&$exited): ?array {
             $exited = true;
 
             return null;

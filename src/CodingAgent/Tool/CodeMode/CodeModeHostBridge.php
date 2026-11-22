@@ -10,9 +10,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
-use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
@@ -26,7 +24,6 @@ use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\AskHumanTool;
-use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeReplyDTO;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Ineersa\SqliteQueue\Client;
 use Psr\Log\LoggerInterface;
@@ -36,7 +33,6 @@ use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\UuidV7;
-use Symfony\Component\Validator\Validation;
 
 /** Launches session-owned PHP; a shared worker delivers its durable return. */
 final readonly class CodeModeHostBridge
@@ -50,8 +46,7 @@ final readonly class CodeModeHostBridge
         private CodeModeProcessOwner $processOwner,
         private CodeModeRuntimeMaterializer $runtime,
         private ToolBatchRunStoragePathsInterface $paths,
-        private CodeModeReplyTransportFactory $replies,
-        private ToolPayloadStoreInterface $payloads,
+        private CodeModeStandaloneRepliesService $standaloneReplies,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -83,17 +78,19 @@ final readonly class CodeModeHostBridge
         }
         $workspace = $this->createWorkspace();
         $owned = false;
+        $reply = null;
         try {
+            $reply = $standalone ? $this->standaloneReplies->register($context->runId(), $id) : null;
             $this->writeScript($workspace['script'], $script);
             $this->startProcess($workspace, $token, $this->formatMemoryLimit($memoryLimitMb), $context->runId(), $id, $endpoint, [
                 'explicitTimeout' => $timeoutSeconds,
                 'callerTimeout' => $context->timeoutSeconds(),
                 'retainOutput' => $context->retainOutput(),
                 'attachmentOwner' => $context->attachmentOwnerToolCallId(),
-            ], $standalone ? $context->turnNo() : null);
+            ], $standalone ? $context->turnNo() : null, $reply);
             $owned = true;
             if ($standalone) {
-                return $this->awaitStandalone($context, $id, $endpoint);
+                return $this->standaloneReplies->await($context->runId(), $id);
             }
             if ($backgrounded) {
                 $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($context->runId(), $id, $context->toolCallId()));
@@ -101,64 +98,17 @@ final readonly class CodeModeHostBridge
 
             return new DeferredToolCompletionOutcome($id);
         } finally {
+            if (null !== $reply) {
+                $this->standaloneReplies->unregister($context->runId(), $id);
+            }
             if (!$owned && null === $this->processOwner->invocation($context->runId(), $id)) {
                 $this->cleanupWorkspace($workspace);
             }
         }
     }
 
-    private function awaitStandalone(ToolContext $context, string $id, string $endpoint): ToolResult
-    {
-        $runId = $context->runId();
-        $queue = CodeModeReplyTransportFactory::standaloneQueueId($runId, $id);
-        $transport = $this->replies->create($queue);
-        $client = Client::connect($endpoint);
-        $deadline = $this->processOwner->deadline($runId, $id, false);
-        $exitedAt = null;
-        try {
-            while (true) {
-                foreach ($transport->get() as $delivery) {
-                    $message = $delivery->getMessage();
-                    if (!$message instanceof CodeModeReplyDTO || $id !== $message->callId || $runId !== $message->payload->runId) {
-                        $transport->reject($delivery);
-                        continue;
-                    }
-                    $payload = $this->payloads->read($message->payload);
-                    if (!$payload instanceof ToolCallResult || !\is_array($payload->result)) {
-                        throw new ToolCallException('Invalid standalone code-mode reply.', retryable: false);
-                    }
-                    $transport->ack($delivery);
-                    $this->payloads->deleteCall($runId, $message->payload->toolCallId);
-
-                    return new ToolResult($id, CodeModeTool::NAME, $payload->result['content'], $payload->result['details'], $payload->isError);
-                }
-                $failure = $this->processOwner->observeTerminal($runId, $id, $deadline,
-                    $context->cancellationToken()->isCancellationRequested() ? 'cancelled' : null,
-                    static function () use (&$exitedAt): ?array {
-                        $exitedAt ??= hrtime(true);
-
-                        return null;
-                    });
-                if (null !== $failure) {
-                    throw new ToolCallException($failure['error'] ?? 'Code-mode subprocess failed.', retryable: false);
-                }
-                if (null !== $exitedAt && hrtime(true) - $exitedAt >= 60_000_000_000) {
-                    throw new ToolCallException('Code-mode subprocess exited without a delivered result.', retryable: false);
-                }
-                $client->wait('code_mode_reply.'.$queue, 100);
-            }
-        } finally {
-            $client->close();
-            $transport->close();
-        }
-    }
-
-    /**
-     * Register only an actual top-level handler invocation, after budget validation.
-     *
-     * Nested and no-context invocations have no deferred caller. Existing
-     * registrations retain their identity when the same intent is delivered again.
-     */
+    // Only a canonical agent-turn invocation has a batch correlation. Repeated
+    // delivery retains its existing deferred identity.
     private function prepareDeferred(ToolContext $parentContext): string
     {
         if ($this->contextAccessor->depth() > 1) {
@@ -248,9 +198,10 @@ final readonly class CodeModeHostBridge
 
     /**
      * @param array{dir: string, script: string, startedAtNs: int}                                           $workspace
+     * @param array{queue: string, incarnation: string}|null                                                 $reply
      * @param array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string} $policy
      */
-    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, string $runId, string $invocationId, string $endpoint, array $policy, ?int $standaloneTurn): void
+    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, string $runId, string $invocationId, string $endpoint, array $policy, ?int $standaloneTurn, ?array $reply): void
     {
         if ($cancelToken->isCancellationRequested()) {
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
@@ -291,7 +242,7 @@ final readonly class CodeModeHostBridge
         foreach ($environment as $name => $value) {
             $assignments .= $name.'='.escapeshellarg($value).' ';
         }
-        $this->processOwner->launch($runId, $invocationId, $workspace['dir'], 'cd '.escapeshellarg($cwd).' && '.$assignments.$shell, $workspace['startedAtNs'], policy: $policy, admit: null === $standaloneTurn ? fn () => $this->deferred->markReady($invocationId) : null, standaloneTurn: $standaloneTurn,
+        $this->processOwner->launch($runId, $invocationId, $workspace['dir'], 'cd '.escapeshellarg($cwd).' && '.$assignments.$shell, $workspace['startedAtNs'], policy: $policy, admit: null === $standaloneTurn ? fn () => $this->deferred->markReady($invocationId) : null, standaloneTurn: $standaloneTurn, reply: $reply,
             afterExit: 'HATFIELD_SQLITE_QUEUE_ENDPOINT='.escapeshellarg($endpoint).' '.implode(' ', array_map(escapeshellarg(...), [
                 ...$this->runtimeProcessConfig->executableCommand(), CodeModeWakeup::FLAG, $runId, $invocationId,
             ])),
