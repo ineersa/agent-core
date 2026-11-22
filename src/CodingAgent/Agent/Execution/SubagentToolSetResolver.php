@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\CodingAgent\Agent\Tool\AgentCancelTool;
 use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
 use Ineersa\CodingAgent\Agent\Tool\NotifyParentTool;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
@@ -26,7 +27,7 @@ use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
  *     remain after intersection.
  *
  * Parent runs and runs without recorded child policy cannot expose the
- * child-only notify_parent tool. Child policy cannot expose agent_steer.
+ * child-only notify_parent tool. Child policy cannot expose parent controls.
  *
  * This approach avoids mutating the global ToolRegistry and naturally
  * supports concurrent runs with different policies.
@@ -59,8 +60,8 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
             );
         }
 
-        // Older child metadata cannot enable parent-only steering either.
-        $allowedTools = array_values(array_diff($allowedTools, [AgentSteerTool::NAME]));
+        // Stored child metadata cannot override the parent-only control boundary.
+        $allowedTools = array_values(array_diff($allowedTools, [AgentSteerTool::NAME, AgentCancelTool::NAME]));
 
         // Intersect the inner toolset with the child's allowed tools.
         $allowedLookup = array_flip($allowedTools);

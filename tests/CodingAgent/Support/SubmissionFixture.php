@@ -36,13 +36,16 @@ final class SubmissionFixture
     public RunState $childState;
 
     /** @param list<string> $childTools */
-    public function __construct(private readonly ContainerInterface $container, array $childTools = ['notify_parent'])
-    {
+    public function __construct(
+        private readonly ContainerInterface $container,
+        array $childTools = ['notify_parent'],
+        AgentArtifactKindEnum $kind = AgentArtifactKindEnum::Subagent,
+    ) {
         $this->parent = $container->get(HatfieldSessionStore::class)->createSession();
         $this->child = 'child-'.Uuid::v7();
         $this->artifact = 'artifact-'.Uuid::v7();
         $this->lifecycle = 'batch-'.Uuid::v7();
-        $entry = $container->get(AgentArtifactRegistry::class)->create($this->parent, $this->artifact, $this->child, 'scout', AgentArtifactKindEnum::Subagent);
+        $entry = $container->get(AgentArtifactRegistry::class)->create($this->parent, $this->artifact, $this->child, 'scout', $kind);
         $container->get(AgentChildRunDirectory::class)->register($entry);
         $container->get(DeferredSubagentBatchRepository::class)->reserveBatch($this->lifecycle, $this->parent, 1, 'spawn', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, $this->child, $this->artifact, 'scout', 'task', 'model', 'medium'));
         $this->parentState = RunStateBuilder::running($this->parent)->withTurnNo(1)->withLastSeq(3)->withActiveStepId('step')->withPendingToolCalls(['spawn' => false, 'steer' => false])->build();

@@ -83,7 +83,7 @@ and safe starter-update instructions.
 - Concurrent writers must respect file and worktree ownership. Never assign concurrent writers to the same worktree.
 - Responses over 50,000 characters omit inline handoffs and return a notice with artifact references. The full handoffs remain available through `agent_retrieve`.
 - Default child denylist includes `hatfield_docs` (`agents.subagent_excluded_tools`). Empty list disables the denylist.
-- **Always stripped on every child:** `subagent`, `fork`, and `agent_resume` (no nested child launches/resumes), plus parent-only `agent_steer`.
+- **Always stripped on every child:** `subagent`, `fork`, and `agent_resume` (no nested child launches/resumes), plus parent-only `agent_steer` and `agent_cancel`.
 - Durable timeout: `agents.subagent_tool_timeout_seconds` (default `86400`, min `60`) schedules deferred-batch interruption. This is not a generic ToolExecutor cap.
 - Child extensions: `agents.extensions.always_on` ∪ per-agent frontmatter `extensions` only (does **not** use `forks.extensions.*` or parent `extensions.enabled`).
 
@@ -133,6 +133,18 @@ approval policy still apply. Neither tool works inside `code_mode`.
 Communication uses ordinary tool workers. If all eligible workers are occupied,
 submission waits; messaging has no reserved worker or preemption. Backgrounding a
 child wait does not create more execution capacity.
+
+## `agent_cancel`
+
+Use `agent_cancel` to stop a running subagent or fork, including one that was
+resumed. Only the main agent can use it, with either `artifact_id` or
+`agent_run_id` from its current session.
+
+`cancellation_requested` means the native request was submitted, not that the
+child has already stopped. Cancellation is cooperative; the child may finish
+before the request is applied. Check the normal completion or `agent_retrieve`
+for the actual outcome. Background a foreground child wait first if the main
+agent needs to run independently and issue the cancellation.
 
 ## `agent_resume`
 
