@@ -41,38 +41,36 @@ final readonly class CodeModeTerminalReportHandler
         if (null !== $metadata && (DeferredToolCompletionStatusEnum::Pending !== $metadata->status || 'code_mode' !== $metadata->reference->toolName)) {
             return;
         }
-        $runId = $metadata?->reference->runId ?? $report->payload->runId;
+        $runId = $metadata?->reference->runId ?? $report->runId;
         $call = null === $metadata ? null : $this->deferred->findByDeferredId($report->invocationId);
         $invocation = $this->processes->invocation($runId, $report->invocationId);
-        if (null === $invocation || $invocation['fenced'] || (null === $call && !isset($invocation['standalone']))) {
+        if (null === $invocation || $runId !== $report->runId || (!$invocation['fenced'] && !$this->processes->hasExited($runId, $report->invocationId)) || (null === $call && (null === $invocation['standaloneTurn'] || ($invocation['fenced'] && null === $report->failure)))) {
             return;
         }
         $identity = CodeModeTerminalIdentity::forInvocation($runId, $report->invocationId);
-        $payload = $report->payload;
-        if ('result' !== $payload->kind || $payload->runId !== $runId || $payload->toolCallId !== $identity->toolCallId
-            || $payload->stepId !== $identity->stepId || $payload->idempotencyKey !== $identity->idempotencyKey
-            || 0 !== $payload->turnNo || 0 !== $payload->attempt || 0 !== $payload->orderIndex) {
-            throw new \Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException('Invalid code-mode terminal correlation.');
-        }
-        $result = $this->payloads->read($payload);
+        $payload = $this->payloads->findFirstResult($identity);
+        $result = null === $payload ? null : $this->payloads->read($payload);
         $reply = $result instanceof ToolCallResult ? $result->result : null;
-        if (!\is_array($reply) || !\is_bool($reply['ok'] ?? null)) {
-            $reply = ['ok' => false, 'error' => 'Invalid code-mode terminal report.'];
+        $failure = $report->failure ?? ($this->processes->observeTerminal($runId, $report->invocationId,
+            $this->processes->deadline($runId, $report->invocationId, null !== $metadata?->backgroundedAt),
+            $metadata?->interruptionReason?->value, static fn (): ?array => null)['error'] ?? null);
+        if (null !== $failure) {
+            $reply = ['ok' => false, 'error' => $failure];
+        } elseif (!\is_array($reply) || !\is_bool($reply['ok'] ?? null)) {
+            $reply = ['ok' => false, 'error' => 'Code-mode subprocess exited without returning a value.'];
         }
-        // The terminal report is sent after script shutdown callbacks; no nested
-        // reply has a live reader now. Standalone terminal bodies are kept separately.
         $this->processes->retireReplies($runId, $report->invocationId);
         if (null !== $metadata?->interruptionReason) {
             $reply = ['ok' => false, 'error' => 'Code-mode invocation interrupted: '.$metadata->interruptionReason->value.'.'];
         }
         if (null !== $call) {
-            $this->complete($call, $invocation['workspace'], $reply);
+            $this->complete($call, $invocation, $reply);
 
             return;
         }
         $id = $report->invocationId;
         $tool = new ToolCall($id, 'code_mode', [], 0, $runId);
-        $result = $this->process($tool, $invocation['workspace'], $reply);
+        $result = $this->process($tool, $invocation, $reply);
         $details = $result->details;
         if (\is_array($details)) {
             unset($details['raw_result']); // The caller receives already processed content.
@@ -81,24 +79,36 @@ final readonly class CodeModeTerminalReportHandler
         $reference = $this->payloads->publish(new ToolCallResult($runId, $identity->turnNo, $identity->stepId, $identity->attempt,
             $body, $body, $identity->orderIndex, ['content' => $result->content, 'details' => $details], $result->isError));
         $this->replies->send(CodeModeReplyTransportFactory::standaloneQueueId($runId, $id), $id, $reference);
+        $this->processes->retireStandalone($runId, $id);
     }
 
-    /** @param array{ok: bool, result?: mixed, error?: string} $reply */
-    public function complete(DeferredToolCompletionCorrelation $call, string $workspace, array $reply): void
+    /**
+     * @param array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}} $invocation
+     * @param array{ok: bool, result?: mixed, error?: string}                                                                                                                                        $reply
+     */
+    private function complete(DeferredToolCompletionCorrelation $call, array $invocation, array $reply): void
     {
         $tool = new ToolCall($call->toolCallId, $call->toolName, $call->arguments, $call->orderIndex, $call->runId);
-        $result = $this->process($tool, $workspace, $reply);
+        $result = $this->process($tool, $invocation, $reply);
         // The usual deferred transport persists the canonical result and the
         // run-control admission path settles duplicate sends by correlation.
         $this->commandBus->dispatch(ToolCallResultFactory::fromDeferredCorrelationAndCompletion($call, $result->content, $result->details, $result->isError));
     }
 
-    /** @param array{ok: bool, result?: mixed, error?: string} $reply */
-    private function process(ToolCall $tool, string $workspace, array $reply): ToolResult
+    /**
+     * @param array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}} $invocation
+     * @param array{ok: bool, result?: mixed, error?: string}                                                                                                                                        $reply
+     */
+    private function process(ToolCall $tool, array $invocation, array $reply): ToolResult
     {
         $runId = $tool->runId ?? throw new \LogicException('Code-mode tool result requires a run ID.');
-        $capture = new CodeModeDiagnosticCapture($this->outputCap, $runId, $workspace,
-            fn (callable $write): string => $this->payloads->saveAttachment($runId, $tool->toolCallId, $write));
+        $policy = $invocation['policy'];
+        $tool = new ToolCall($tool->toolCallId, $tool->toolName, $tool->arguments, $tool->orderIndex, $runId, context: [
+            'retain_output' => $policy['retainOutput'],
+            'attachment_owner_tool_call_id' => $policy['attachmentOwner'],
+        ]);
+        $capture = new CodeModeDiagnosticCapture($this->outputCap, $runId, $invocation['workspace'],
+            fn (callable $write): string => $this->payloads->saveAttachment($runId, $policy['attachmentOwner'], $write));
         try {
             $diagnostics = is_file($capture->stdoutPath) && is_file($capture->stderrPath) ? $capture->prepare(3) : []; // Lines before user code in the materialized script.
         } catch (MalformedToolResultException $error) {

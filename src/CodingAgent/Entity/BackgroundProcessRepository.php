@@ -19,7 +19,7 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
         parent::__construct($registry, BackgroundProcess::class);
     }
 
-    /** @return array{workspace: string, startedAtNs: int, fenced: bool, standalone?: array{turn: int, timeout: ?int, callerTimeout?: ?int}}|null */
+    /** @return array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}}|null */
     public function codeModeLaunch(string $runId, string $id): ?array
     {
         $row = $this->getEntityManager()->getConnection()->fetchAssociative('SELECT code_mode_launch, finished_at FROM background_process WHERE session_id = ? AND code_mode_id = ?', [$runId, $id]);
@@ -50,6 +50,10 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
                     SELECT 1 FROM background_process process
                     WHERE process.code_mode_id = invocation.deferred_id AND process.session_id = invocation.run_id
                 )
+            UNION
+            SELECT process.code_mode_id FROM background_process process
+            WHERE process.session_id = :run AND process.code_mode_id IS NOT NULL
+                AND process.finished_at IS NULL AND json_extract(process.code_mode_launch, '$.standaloneTurn') IS NOT NULL
             SQL, ['run' => $runId]);
     }
 

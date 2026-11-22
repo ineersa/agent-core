@@ -82,22 +82,35 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $this->assertNotContains('fixture_echo', $registry->activeToolNames());
             $client = Client::connect($paths->endpointPath);
             $accessor = $container->get(StackToolExecutionContextAccessor::class);
-            $context = new ToolContext($runId, 1, 'broker-launch', 'code_mode', new NullCancellationToken(), 5, 0, null, stepId: 'code-mode-bridge-test-step');
+            $context = new ToolContext($runId, 1, 'broker-launch', 'code_mode', new NullCancellationToken(), 5, 0, null, stepId: 'code-mode-bridge-test-step', retainOutput: true, attachmentOwnerToolCallId: 'attachment-owner');
             $tool = $container->get(CodeModeTool::class);
             // Deliberately do not service the queue until the launcher has returned.
             $fixture = $this->tmpDir.'/nested-read.txt';
             file_put_contents($fixture, 'broker nested read');
             $otherFixture = $this->tmpDir.'/other-read.txt';
-            file_put_contents($otherFixture, 'distinct second read');
+            $nestedBytes = str_repeat('distinct retained read', 60000)."\n";
+            file_put_contents($otherFixture, $nestedBytes);
             $contended = $this->tmpDir.'/contended';
+            $shutdownReady = $this->tmpDir.'/shutdown-ready';
+            $shutdownRelease = $this->tmpDir.'/shutdown-release';
+            $this->assertTrue(posix_mkfifo($shutdownRelease, 0600));
             $script = 'try { $mcp = tool("fixture_echo", ["text" => "cold worker fixture"]); } catch (RuntimeException $error) { $mcp = $error->getMessage(); } try { tool("read", ["invalid list"]); } catch (RuntimeException $error) { $refusal = $error->getMessage(); }'
                 .' try { tool("code_mode", ["script" => "return 42;"]); } catch (RuntimeException $error) { $recursion = $error->getMessage(); }'
                 .' $first = \Amp\async(static fn () => tool("read", ["path" => '.var_export($fixture, true).']));'
                 .' $second = \Amp\async(static function () {'
                 .' \Revolt\EventLoop::queue(static fn () => touch('.var_export($contended, true).'));'
                 .' return tool("read", ["path" => '.var_export($otherFixture, true).']); });'
-                .' return [$refusal ?? null, $first->await(), $recursion ?? null, $second->await(), str_repeat("x", 600000), $mcp];';
-            $outcome = $accessor->with($context, static fn (): mixed => $tool(new CodeModeArgumentsDTO($script, 5)));
+                .' register_shutdown_function(static function () { register_shutdown_function(static function () {'
+                .' touch('.var_export($shutdownReady, true).'); file_get_contents('.var_export($shutdownRelease, true).'); echo "late-shutdown-diagnostics"; }); });'
+                .' return [$refusal ?? null, $first->await(), $recursion ?? null, $second->await(), str_repeat("x", 1100000), $mcp];';
+            $container->get(\Ineersa\CodingAgent\Extension\ExtensionHookRegistry::class)->addToolCallRewriteHook('code_mode', new class implements \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface {
+                public function rewriteArguments(\Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO $context): ?array
+                {
+                    return array_replace($context->arguments, ['timeout_seconds' => 30]);
+                }
+            });
+            $toolbox = $container->get(\Symfony\AI\Agent\Toolbox\ToolboxInterface::class);
+            $outcome = $accessor->with($context, static fn () => $toolbox->execute(new \Symfony\AI\Platform\Result\ToolCall('broker-launch', 'code_mode', ['script' => $script, 'timeout_seconds' => 90]))->getResult());
             $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
             $this->assertTrue($client->wait('code_mode_requests', 3000));
             $transport = (new TransportFactory())->createTransport(
@@ -151,7 +164,18 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $this->assertSame($outcome->deferredId, $readRequest->rootId);
             $record = $owner->invocation($runId, $readRequest->invocationId);
             $this->assertNotNull($record);
-            $this->assertTrue($client->wait('code_mode_requests', 3000));
+            $this->assertSame(['explicitTimeout' => 30, 'callerTimeout' => 5, 'retainOutput' => true, 'attachmentOwner' => 'attachment-owner'], $record['policy']);
+            $this->assertSame($record['startedAtNs'] + 5_000_000_000, $owner->deadline($runId, $outcome->deferredId, false));
+            $this->assertSame($record['startedAtNs'] + 30_000_000_000, $owner->deadline($runId, $outcome->deferredId, true));
+            $deadline = hrtime(true) + 3_000_000_000;
+            while (!is_file($shutdownReady) && hrtime(true) < $deadline) {
+                \Amp\delay(0.01);
+            }
+            $this->assertFileExists($shutdownReady);
+            $this->assertFalse($owner->hasExited($runId, $outcome->deferredId));
+            $this->assertNull($client->receive('code_mode_requests'));
+            file_put_contents($shutdownRelease, 'release');
+            $this->assertTrue($client->wait('code_mode_requests', 3000), implode('', array_map(file_get_contents(...), glob($this->isolatedCwd().'/.hatfield/tmp/bg/*.log'))));
             $report = null;
             foreach ($transport->get() as $delivery) {
                 $report = $delivery->getMessage();
@@ -198,7 +222,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $this->assertTrue($owner->hasExited($runId, $outcome->deferredId));
             $clock = new \Symfony\Component\Clock\MockClock();
             $observer = new \Ineersa\CodingAgent\Runtime\Controller\CodeModeTerminalObserver(
-                $owner, $deferred, new NullLogger(), $payloads, $handler,
+                $owner, $deferred, new NullLogger(),
                 new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory(new TransportFactory(), $payloads, $container->get('messenger.transport.symfony_serializer'), $paths->endpointPath),
                 $clock,
             );
@@ -212,14 +236,19 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             [$recovered] = $consume(1);
             $this->assertEquals($report, $recovered);
             $this->assertNull($client->receive('code_mode_requests'));
-            $terminal = $payloads->read($report->payload)->result;
+            $terminal = $payloads->read($payloads->findFirstResult(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeTerminalIdentity::forInvocation($runId, $outcome->deferredId)))->result;
             $this->assertNotNull($terminal);
             $this->assertTrue($terminal['ok'], $terminal['error'] ?? 'Expected a successful nested read.');
             $this->assertSame('Invalid code-mode call request.', $terminal['result'][0] ?? null);
             $this->assertStringContainsString('broker nested read', $terminal['result'][1]);
             $this->assertStringContainsString('Tool "code_mode" is not supported', $terminal['result'][2]);
-            $this->assertStringContainsString('distinct second read', $terminal['result'][3]);
-            $this->assertSame(str_repeat('x', 600000), $terminal['result'][4]);
+            $nestedPath = $terminal['result'][3]['output_cap']['saved_path'];
+            $container->get(\Ineersa\CodingAgent\Tool\OutputCap::class)->cleanupRun($runId, 'test');
+            $this->assertSame(hash('sha256', $nestedBytes), hash_file('sha256', $nestedPath));
+            $attachments = array_column($payloads->attachmentReferences($runId, 'attachment-owner'), 'path');
+            $this->assertContains($nestedPath, $attachments);
+            $this->assertTrue(array_any($attachments, static fn (string $path): bool => $path !== $nestedPath && str_contains((string) file_get_contents($path), str_repeat('x', 1100000)) && str_contains((string) file_get_contents($path), 'late-shutdown-diagnostics')));
+            $this->assertSame(str_repeat('x', 1100000), $terminal['result'][4]);
             $this->assertStringContainsString('echo: cold worker fixture', json_encode($terminal['result'][5], \JSON_THROW_ON_ERROR));
             $this->assertSame([$outcome->deferredId], $owner->controllerInvocationIds($runId));
 
@@ -248,6 +277,27 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $standalone = \Amp\async(static fn () => $scheduler->handle($api, $job->payload, 'scheduled-occurrence', null));
             $consume(3); // admission, nested read and terminal delivery on one shared worker slot
             $standalone->await();
+
+            // No waiting extension invocation is attached to this owned launch.
+            $orphanWorkspace = $this->tmpDir.'/orphan-workspace';
+            $orphanReady = $this->tmpDir.'/orphan-ready';
+            $orphanRelease = $this->tmpDir.'/orphan-release';
+            $this->assertTrue(posix_mkfifo($orphanRelease, 0600));
+            $owner->launch($runId, 'orphan-standalone', $orphanWorkspace,
+                'touch '.escapeshellarg($orphanReady).'; read -r line < '.escapeshellarg($orphanRelease),
+                hrtime(true) - 2_000_000_000, ['explicitTimeout' => 1, 'callerTimeout' => null, 'retainOutput' => false, 'attachmentOwner' => 'orphan-standalone'],
+                standaloneTurn: 0);
+            $deadline = hrtime(true) + 3_000_000_000;
+            while (!is_file($orphanReady) && hrtime(true) < $deadline) {
+                \Amp\delay(0.01);
+            }
+            $this->assertFileExists($orphanReady);
+            $observer->observe($runId, $runId);
+            $observer->observe($runId, $runId);
+            $this->assertTrue($owner->hasExited($runId, 'orphan-standalone'));
+            [$timeoutWakeup] = $consume(1);
+            $this->assertSame('orphan-standalone', $timeoutWakeup->invocationId);
+            $this->assertStringContainsString('timed out', $timeoutWakeup->failure);
         } finally {
             if (null === $previous) {
                 unset($_SERVER[$endpoint]);
@@ -311,7 +361,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
         self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
             new \Ineersa\AgentCore\Domain\Run\RunState($runId, \Ineersa\AgentCore\Domain\Run\RunStatus::Running),
         );
-        $call = new ExecuteToolCall($runId, 1, 'code-mode-bridge-test-step', 1, 'key-'.$toolCallId, $toolCallId, 'code_mode', [], 0);
+        $call = new ExecuteToolCall($runId, 1, 'code-mode-bridge-test-step', 1, 'key-'.$toolCallId, $toolCallId, 'code_mode', ['timeout_seconds' => 90], 0);
         $batches = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
         \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::register(
             new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batches),

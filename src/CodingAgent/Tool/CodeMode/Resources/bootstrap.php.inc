@@ -63,20 +63,13 @@ function hatfield_code_mode_broker_call(string $operation, string $name, array $
 /** @param array<string, mixed> $frame */
 function hatfield_code_mode_terminal(array $frame): void
 {
-    global $factory, $endpoint, $serializer, $invocationId, $runId, $payloads;
+    global $invocationId, $runId, $payloads;
     $identity = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeTerminalIdentity::forInvocation($runId, $invocationId);
     $id = $identity->toolCallId;
-    $reference = $payloads->publishFirstResult(new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
+    $payloads->publishFirstResult(new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
         $runId, 0, $id, 0, $id, $id, 0, $frame, true !== $frame['ok'],
     ), $identity);
-    $terminal = $factory->createTransport('sqlite-queue://code_mode_requests', $endpoint, $serializer);
-    try {
-        $terminal->send(new \Symfony\Component\Messenger\Envelope(
-            new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeTerminalReportDTO($invocationId, $reference),
-        ));
-    } finally {
-        $terminal->close();
-    }
+
 }
 
 if (!\function_exists('notify_owner')) {
@@ -261,7 +254,7 @@ register_shutdown_function(static function () use ($frame): void {
     try {
         hatfield_code_mode_terminal($frame);
     } catch (Throwable $error) {
-        fwrite(STDERR, "Code-mode failed to deliver its terminal report: ".$error->getMessage()."\n");
+        fwrite(STDERR, "Code-mode failed to retain its terminal report: ".$error->getMessage()."\n");
     }
 });
 exit($frame['ok'] ? 0 : 1);

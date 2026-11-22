@@ -17,12 +17,12 @@ final readonly class CodeModeProcessOwner
     {
     }
 
-    /** @param array{turn: int, timeout: ?int, callerTimeout?: ?int}|null $standalone */
-    public function launch(string $runId, string $invocationId, string $workspace, string $command, int $startedAtNs, ?\Closure $admit = null, ?array $standalone = null): void
+    /** @param array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string} $policy */
+    public function launch(string $runId, string $invocationId, string $workspace, string $command, int $startedAtNs, array $policy, ?\Closure $admit = null, ?int $standaloneTurn = null, ?string $afterExit = null): void
     {
         $prefix = $this->prefix($runId).hash('sha256', $invocationId);
 
-        $this->lifecycle->withSidecarLock($prefix.'.status', function () use ($runId, $prefix, $workspace, $command, $startedAtNs, $invocationId, $admit, $standalone): void {
+        $this->lifecycle->withSidecarLock($prefix.'.status', function () use ($runId, $prefix, $workspace, $command, $startedAtNs, $invocationId, $admit, $standaloneTurn, $policy, $afterExit): void {
             if (null !== $this->invocation($runId, $invocationId) || file_exists($prefix.'.pid')
                 || file_exists($prefix.'.status') || file_exists($prefix.'.log') || !$this->lifecycle->ownsSidecarPaths($prefix.'.log', $prefix.'.status')) {
                 throw new ToolCallException('Code-mode invocation already has launch evidence; refusing to start it again.', retryable: false);
@@ -31,15 +31,15 @@ final readonly class CodeModeProcessOwner
             // before ProcessLifecycle has a PID. Hold the native lock through launch.
             $this->store->insertRecord([
                 'session_id' => $runId, 'command' => 'code_mode', 'log_path' => $prefix.'.log', 'status_path' => $prefix.'.status',
-                'code_mode_id' => $invocationId, 'code_mode_launch' => json_encode(['workspace' => $workspace, 'startedAtNs' => $startedAtNs, 'standalone' => $standalone], \JSON_THROW_ON_ERROR),
+                'code_mode_id' => $invocationId, 'code_mode_launch' => json_encode(['workspace' => $workspace, 'startedAtNs' => $startedAtNs, 'standaloneTurn' => $standaloneTurn, 'policy' => $policy], \JSON_THROW_ON_ERROR),
             ]);
             $this->filesystem->mkdir($workspace.'/replies', 0700);
             $admit?->__invoke();
-            $this->lifecycle->launchProcess($command, $prefix.'.pid', $prefix.'.log', $prefix.'.status');
+            $this->lifecycle->launchProcess($command, $prefix.'.pid', $prefix.'.log', $prefix.'.status', $afterExit);
         });
     }
 
-    /** @return array{workspace: string, startedAtNs: int, fenced: bool, standalone?: array{turn: int, timeout: ?int, callerTimeout?: ?int}}|null */
+    /** @return array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}}|null */
     public function invocation(string $runId, string $invocationId): ?array
     {
         return $this->records->codeModeLaunch($runId, $invocationId);
@@ -58,13 +58,14 @@ final readonly class CodeModeProcessOwner
     }
 
     /** The inherited foreground budget is evaluated against each original launch, never snapshotted at a nested call. */
-    public function deadline(string $runId, string $id, bool $backgrounded, ?int $rootTimeout, ?int $launcherTimeout): ?int
+    public function deadline(string $runId, string $id, bool $backgrounded): ?int
     {
         $process = $this->invocation($runId, $id);
         if (null === $process) {
             return 0;
         }
-        $limit = $rootTimeout;
+        $limit = $process['policy']['explicitTimeout'];
+        $launcherTimeout = $process['policy']['callerTimeout'];
         if (!$backgrounded) {
             $limit ??= \Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS;
             if (null !== $launcherTimeout && $launcherTimeout > 0) {
@@ -81,7 +82,9 @@ final readonly class CodeModeProcessOwner
         $status = $this->prefix($runId).hash('sha256', $id).'.status';
         $pid = $this->lifecycle->readPidFile($status);
 
-        return null !== $this->lifecycle->readStatusFile($status) || (null !== $pid && !$this->lifecycle->isAlive($pid));
+        $exit = $this->lifecycle->readStatusFile($status);
+
+        return (null !== $exit && -1 !== $exit) || (null !== $pid && !$this->lifecycle->isAlive($pid));
     }
 
     /** Serialize body creation against retirement, never hold the lock while sending to the broker. */
@@ -136,6 +139,11 @@ final readonly class CodeModeProcessOwner
 
             return $report();
         });
+    }
+
+    public function retireStandalone(string $runId, string $id): void
+    {
+        $this->records->fenceCodeModeLaunch($runId, $id);
     }
 
     public function cleanup(string $runId): void

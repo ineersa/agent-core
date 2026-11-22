@@ -49,9 +49,10 @@ final readonly class CodeModeCallRequestHandler
         if (null === $process || null === $runId || $rootId !== $request->invocationId) {
             throw new UnrecoverableMessageHandlingException('Code-mode invocation is not ready.');
         }
-        $standalone = $process['standalone'] ?? null;
+        $standaloneTurn = $process['standaloneTurn'];
+        $policy = $process['policy'];
         $call = null;
-        if (null === $metadata && null !== $standalone) {
+        if (null === $metadata && null !== $standaloneTurn) {
             $ref = CodeModeTerminalIdentity::forInvocation($runId, $rootId);
         } else {
             if (null === $metadata || DeferredToolCompletionStatusEnum::Pending !== $metadata->status || null === $metadata->readyAt || CodeModeTool::NAME !== $metadata->reference->toolName) {
@@ -63,7 +64,7 @@ final readonly class CodeModeCallRequestHandler
                 throw new UnrecoverableMessageHandlingException('Code-mode invocation evidence does not match the canonical call.');
             }
         }
-        $turn = $call?->turnNo() ?? $standalone['turn'] ?? 0;
+        $turn = $call?->turnNo() ?? $standaloneTurn ?? 0;
         $ownerId = $call->toolCallId ?? $rootId;
         $respond = function (array $reply) use ($runId, $request, $ref): void {
             $body = $this->processes->withReplyWorkspace($runId, $request->invocationId,
@@ -88,12 +89,11 @@ final readonly class CodeModeCallRequestHandler
 
             return;
         }
-        $execute = function () use ($request, $call, $rootId, $standalone, $runId, $turn, $ownerId): array {
+        $execute = function () use ($request, $call, $rootId, $policy, $runId, $turn, $ownerId): array {
             try {
-                $explicit = $call->args['timeout_seconds'] ?? $standalone['timeout'] ?? null;
                 $parent = new RunCancellationToken($this->status, $runId);
                 $unavailable = fn (bool $backgrounded): bool => $this->processes->hasExited($runId, $rootId)
-                    || ($this->processes->deadline($runId, $rootId, $backgrounded, \is_int($explicit) ? $explicit : null, $call->timeoutSeconds ?? $standalone['callerTimeout'] ?? null) ?? \PHP_INT_MAX) <= hrtime(true);
+                    || ($this->processes->deadline($runId, $rootId, $backgrounded) ?? \PHP_INT_MAX) <= hrtime(true);
                 $token = null !== $call ? new CodeModeCancellationToken($parent, $this->deferred, $rootId, $unavailable)
                     : new class($parent, $unavailable) implements \Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface {
                         public function __construct(private RunCancellationToken $parent, private \Closure $unavailable)
@@ -128,7 +128,7 @@ final readonly class CodeModeCallRequestHandler
                 if (!\in_array($request->name, $active->allowListNames, true)) {
                     return ['ok' => false, 'error' => \sprintf('Tool "%s" is not in the active execution allowlist.', $request->name)];
                 }
-                $owner = new ToolContext($runId, $turn, $ownerId, 'code_mode', $token, null, $call->orderIndex ?? 0, stepId: $call?->stepId(), parentModel: $call?->parentModel);
+                $owner = new ToolContext($runId, $turn, $ownerId, 'code_mode', $token, null, $call->orderIndex ?? 0, stepId: $call?->stepId(), parentModel: $call?->parentModel, retainOutput: $policy['retainOutput'], attachmentOwnerToolCallId: $policy['attachmentOwner']);
                 $id = 'code-mode-'.hash('sha256', $request->invocationId.':'.$request->callId);
                 $value = $this->contexts->with($owner, fn (): mixed => $this->executor->execute($id, $request->name, $request->arguments, $owner, $token));
                 if ($value instanceof DeferredToolCompletionOutcome || $value instanceof ToolExecutionHumanInputSuspension) {

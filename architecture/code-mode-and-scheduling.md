@@ -14,6 +14,7 @@ state transitions; it does not execute scripts or nested tools.
 sequenceDiagram
     participant Worker as Shared tool consumer
     participant PHP as Session-owned PHP subprocess
+    participant Wrapper as Native process wrapper
     participant Broker as SQLite-backed session broker
     participant Owner as Controller process observer
     participant RC as run_control
@@ -25,8 +26,11 @@ sequenceDiagram
     Worker->>Worker: Validate and run existing toolbox
     Worker->>Broker: Publish managed result reference to invocation reply queue
     Broker-->>PHP: Correlated reply with managed tool payload reference
-    PHP->>Broker: Publish managed terminal reference
-    Broker->>Worker: Deliver terminal report
+    PHP->>PHP: Retain raw terminal result
+    PHP-->>Wrapper: Exit after shutdown callbacks
+    Wrapper->>Broker: Record native status, then publish wakeup
+    Broker->>Worker: Deliver terminal wakeup
+    Worker->>Worker: Verify exit and process retained result
     Worker->>RC: Dispatch deferred completion
     Owner->>Broker: Recover retained report once after exit and 60 seconds pending
 ```
@@ -65,7 +69,7 @@ Scripts can invoke ordinary tools but cannot recursively launch `code_mode`.
 A live session broker is required. Standalone extension calls use their own run and invocation IDs, without an agent-turn batch; the shared worker returns their processed terminal result over the broker to the waiting caller. For canonical calls, only the shared worker delivers normal completion to run control. The observer supervises native processes and may resend a retained report after confirmed exit; it does not process normal success.
 
 The worker validates and executes a nested request, publishes a managed result reference to the invocation reply queue, and then acknowledges the request. PHP waits for the matching call ID and resolves the reference using the payload store. The call ID correlates replies; it does not suppress execution on redelivery.
-Nested reply bodies belong to the script workspace. PHP deletes each body after acknowledging its delivery. The process owner removes the remaining bodies when the script sends its terminal report or exits, and prevents late workers from recreating that scope. Terminal reports and standalone terminal replies use separate storage.
+Nested reply bodies belong to the script workspace. PHP deletes each body after acknowledging its delivery. The process owner removes the remaining bodies after the script exits, and prevents late workers from recreating that scope. Terminal reports and standalone terminal replies use separate storage.
 
 ## Scheduling
 

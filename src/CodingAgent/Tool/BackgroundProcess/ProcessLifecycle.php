@@ -54,7 +54,7 @@ final class ProcessLifecycle
      *
      * @throws \RuntimeException on launch failure
      */
-    public function launchProcess(string $command, string $pidFile, string $logFile, string $statusFile): array
+    public function launchProcess(string $command, string $pidFile, string $logFile, string $statusFile, ?string $afterExit = null): array
     {
         $bash = (new ExecutableFinder())->find('bash');
         if (null === $bash) {
@@ -71,11 +71,12 @@ final class ProcessLifecycle
         //  5. Waits for the child on the normal path, stores child RC
         //     in a variable before echo so exit reflects child outcome
         $shellCode = \sprintf(
-            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || { echo claimed; exit 73; }; set +o noclobber; if ! { exec 4>> %s; }; then echo log-open-failed; exit 74; fi; echo $$ || exit 74; exec </dev/null >&4 2>&1 4>&-; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > "$STATUS_FILE"; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > "$STATUS_FILE"; exit $RC',
+            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || { echo claimed; exit 73; }; set +o noclobber; if ! { exec 4>> %s; }; then echo log-open-failed; exit 74; fi; echo $$ || exit 74; exec </dev/null >&4 2>&1 4>&-; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; after_exit() { %s; }; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > "$STATUS_FILE"; after_exit; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > "$STATUS_FILE"; after_exit; exit $RC',
             escapeshellarg($pidFile),
             escapeshellarg($logFile),
             escapeshellarg($command),
             escapeshellarg($statusFile),
+            $afterExit ?? ':',
         );
 
         // The fork parent only reports whether it could fork. The detached

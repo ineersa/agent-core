@@ -37,7 +37,7 @@ final class CodeModeProcessOwnerTest extends IsolatedKernelTestCase
             $owner = new CodeModeProcessOwner(new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $root), new NullLogger(), new LockFactory(new FlockStore($root)), TestProcessRuntime::source()), $container->get(\Ineersa\CodingAgent\Entity\BackgroundProcessRepository::class), $store);
             $prefix = $root.'/code-mode-'.hash('sha256', 'run').'-'.hash('sha256', 'invocation');
             $store->insertRecord(['session_id' => 'run', 'code_mode_id' => 'invocation', 'code_mode_launch' => json_encode([
-                'workspace' => $workspace, 'startedAtNs' => hrtime(true) - 10_000_000_000, 'parent' => null,
+                'workspace' => $workspace, 'startedAtNs' => hrtime(true) - 10_000_000_000, 'standaloneTurn' => null, 'policy' => ['explicitTimeout' => 30, 'callerTimeout' => 5, 'retainOutput' => true, 'attachmentOwner' => 'call'],
             ], \JSON_THROW_ON_ERROR)]);
             if ('stop' === $case || 'expired' === $case) {
                 $fs->dumpFile($prefix.'.status', "143\n");
@@ -57,7 +57,7 @@ final class CodeModeProcessOwnerTest extends IsolatedKernelTestCase
                 $this->assertTrue($owner->invocation('run', 'invocation')['fenced']);
                 $this->assertSame($expected, $owner->observeTerminal('run', 'invocation', null, null, static fn (): ?array => null));
                 $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
-                $owner->launch('run', 'invocation', $workspace, 'false', hrtime(true));
+                $owner->launch('run', 'invocation', $workspace, 'false', hrtime(true), ['explicitTimeout' => null, 'callerTimeout' => null, 'retainOutput' => false, 'attachmentOwner' => 'call']);
             }
         } finally {
             TestDirectoryIsolation::removeDirectory($root);

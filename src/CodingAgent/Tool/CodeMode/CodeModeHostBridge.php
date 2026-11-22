@@ -85,10 +85,15 @@ final readonly class CodeModeHostBridge
         $owned = false;
         try {
             $this->writeScript($workspace['script'], $script);
-            $this->startProcess($workspace, $token, $this->formatMemoryLimit($memoryLimitMb), $context->runId(), $id, $endpoint, $standalone ? ['turn' => $context->turnNo(), 'timeout' => $timeoutSeconds, 'callerTimeout' => $context->timeoutSeconds()] : null);
+            $this->startProcess($workspace, $token, $this->formatMemoryLimit($memoryLimitMb), $context->runId(), $id, $endpoint, [
+                'explicitTimeout' => $timeoutSeconds,
+                'callerTimeout' => $context->timeoutSeconds(),
+                'retainOutput' => $context->retainOutput(),
+                'attachmentOwner' => $context->attachmentOwnerToolCallId(),
+            ], $standalone ? $context->turnNo() : null);
             $owned = true;
             if ($standalone) {
-                return $this->awaitStandalone($context, $id, $endpoint, $timeoutSeconds);
+                return $this->awaitStandalone($context, $id, $endpoint);
             }
             if ($backgrounded) {
                 $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($context->runId(), $id, $context->toolCallId()));
@@ -102,13 +107,13 @@ final readonly class CodeModeHostBridge
         }
     }
 
-    private function awaitStandalone(ToolContext $context, string $id, string $endpoint, ?int $timeout): ToolResult
+    private function awaitStandalone(ToolContext $context, string $id, string $endpoint): ToolResult
     {
         $runId = $context->runId();
         $queue = CodeModeReplyTransportFactory::standaloneQueueId($runId, $id);
         $transport = $this->replies->create($queue);
         $client = Client::connect($endpoint);
-        $deadline = $this->processOwner->deadline($runId, $id, false, $timeout, $context->timeoutSeconds());
+        $deadline = $this->processOwner->deadline($runId, $id, false);
         $exitedAt = null;
         try {
             while (true) {
@@ -242,10 +247,10 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * @param array{dir: string, script: string, startedAtNs: int}      $workspace
-     * @param array{turn: int, timeout: ?int, callerTimeout: ?int}|null $standalone
+     * @param array{dir: string, script: string, startedAtNs: int}                                           $workspace
+     * @param array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string} $policy
      */
-    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, string $runId, string $invocationId, string $endpoint, ?array $standalone): void
+    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, string $runId, string $invocationId, string $endpoint, array $policy, ?int $standaloneTurn): void
     {
         if ($cancelToken->isCancellationRequested()) {
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
@@ -286,7 +291,11 @@ final readonly class CodeModeHostBridge
         foreach ($environment as $name => $value) {
             $assignments .= $name.'='.escapeshellarg($value).' ';
         }
-        $this->processOwner->launch($runId, $invocationId, $workspace['dir'], 'cd '.escapeshellarg($cwd).' && '.$assignments.$shell, $workspace['startedAtNs'], admit: null === $standalone ? fn () => $this->deferred->markReady($invocationId) : null, standalone: $standalone);
+        $this->processOwner->launch($runId, $invocationId, $workspace['dir'], 'cd '.escapeshellarg($cwd).' && '.$assignments.$shell, $workspace['startedAtNs'], policy: $policy, admit: null === $standaloneTurn ? fn () => $this->deferred->markReady($invocationId) : null, standaloneTurn: $standaloneTurn,
+            afterExit: 'HATFIELD_SQLITE_QUEUE_ENDPOINT='.escapeshellarg($endpoint).' '.implode(' ', array_map(escapeshellarg(...), [
+                ...$this->runtimeProcessConfig->executableCommand(), CodeModeWakeup::FLAG, $runId, $invocationId,
+            ])),
+        );
     }
 
     private function formatMemoryLimit(int $memoryLimitMb): string

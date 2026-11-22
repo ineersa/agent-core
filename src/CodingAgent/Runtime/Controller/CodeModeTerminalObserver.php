@@ -6,11 +6,8 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
-use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeProcessOwner;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory;
-use Ineersa\CodingAgent\Tool\CodeMode\CodeModeTerminalIdentity;
-use Ineersa\CodingAgent\Tool\CodeMode\CodeModeTerminalReportHandler;
 use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeTerminalReportDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\ClockInterface;
@@ -26,8 +23,6 @@ final class CodeModeTerminalObserver
         private readonly CodeModeProcessOwner $processes,
         private readonly DeferredToolCompletionRepositoryInterface $deferred,
         private readonly LoggerInterface $logger,
-        private readonly ToolPayloadStoreInterface $payloads,
-        private readonly CodeModeTerminalReportHandler $completion,
         private readonly CodeModeReplyTransportFactory $replies,
         private readonly ClockInterface $clock = new MonotonicClock(),
     ) {
@@ -53,36 +48,20 @@ final class CodeModeTerminalObserver
     {
         $invocation = $this->processes->invocation($runId, $id);
         $metadata = $this->deferred->findMetadataByDeferredId($id);
-        if (null === $metadata || $runId !== $metadata->reference->runId || 'code_mode' !== $metadata->reference->toolName) {
+        if (null === $invocation || (null === $invocation['standaloneTurn'] && (
+            null === $metadata || $runId !== $metadata->reference->runId || 'code_mode' !== $metadata->reference->toolName
+            || DeferredToolCompletionStatusEnum::Completed === $metadata->status
+        ))) {
             return;
         }
-        if (DeferredToolCompletionStatusEnum::Completed === $metadata->status) {
-            unset($this->exits[$runId][$id]);
-
-            return;
-        }
-        if (null === $invocation) {
-            return;
-        }
-        $call = $this->deferred->findByDeferredId($id);
-        if (null === $call) {
-            return;
-        }
-        $explicit = $call->arguments['timeout_seconds'] ?? null;
-        $explicit = \is_int($explicit) ? $explicit : null;
-        $deadline = $this->processes->deadline($runId, $id, null !== $metadata->backgroundedAt, $explicit, $call->timeoutSeconds);
+        $deadline = $this->processes->deadline($runId, $id, null !== $metadata?->backgroundedAt);
         $exited = false;
-        $failure = $this->processes->observeTerminal($runId, $id, $deadline, $metadata->interruptionReason?->value, static function () use (&$exited): ?array {
+        $failure = $this->processes->observeTerminal($runId, $id, $deadline, $metadata?->interruptionReason?->value, static function () use (&$exited): ?array {
             $exited = true;
 
             return null;
         });
-        if (null !== $failure) {
-            $this->completion->complete($call, $invocation['workspace'], $failure);
-
-            return;
-        }
-        if (!$exited) {
+        if (!$exited && null === $failure) {
             return;
         }
         $now = $this->clock->now()->getTimestamp();
@@ -90,19 +69,14 @@ final class CodeModeTerminalObserver
             $this->exits[$runId][$id] = $now;
         }
         $observed = $this->exits[$runId][$id];
-        if (null === $observed || $now - $observed < 60) {
+        if (null === $observed || (null === $failure && $now - $observed < 60)) {
             return;
         }
-        $reference = $this->payloads->findFirstResult(CodeModeTerminalIdentity::forInvocation($runId, $id));
-        if (null === $reference) {
-            $this->completion->complete($call, $invocation['workspace'], ['ok' => false, 'error' => 'Code-mode subprocess exited without returning a value.']);
-        } else {
-            $transport = $this->replies->terminal();
-            try {
-                $transport->send(new Envelope(new CodeModeTerminalReportDTO($id, $reference)));
-            } finally {
-                $transport->close();
-            }
+        $transport = $this->replies->terminal();
+        try {
+            $transport->send(new Envelope(new CodeModeTerminalReportDTO($runId, $id, $failure['error'] ?? null)));
+        } finally {
+            $transport->close();
         }
         $this->exits[$runId][$id] = null;
     }

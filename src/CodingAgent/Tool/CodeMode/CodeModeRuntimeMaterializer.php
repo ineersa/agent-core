@@ -57,7 +57,6 @@ final readonly class CodeModeRuntimeMaterializer
             'CodingAgent/Tool/CodeMode/CodeModeValueCodec.php',
             'CodingAgent/Tool/CodeMode/DTO/CodeModeCallRequestDTO.php',
             'CodingAgent/Tool/CodeMode/DTO/CodeModeReplyDTO.php',
-            'CodingAgent/Tool/CodeMode/DTO/CodeModeTerminalReportDTO.php',
         ] as $file) {
             $this->filesystem->copy($root.'/src/'.$file, $target.'/src/'.$file);
         }
