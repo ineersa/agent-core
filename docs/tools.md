@@ -63,7 +63,6 @@ from launch. If `timeout` is omitted, the configured maximum applies from launch
 without a configured maximum there is no background deadline.
 
 ## code_mode
-Broker delivery can repeat a nested tool request. Individual tools own idempotency if they need it.
 
 Broker delivery can repeat a nested tool request. Individual tools own idempotency if they need it.
 
