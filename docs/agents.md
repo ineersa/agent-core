@@ -136,10 +136,9 @@ child wait does not create more execution capacity.
 
 ## `agent_cancel`
 
-Use `agent_cancel` instead of steering when you want work to stop. The main
-agent can call it directly (not in `code_mode`) with exactly one `artifact_id`
-or `agent_run_id` for a current active direct subagent or fork, including a
-resumed child. It does not stop siblings or resume terminal children.
+Use `agent_cancel` to stop a running subagent or fork, including one that was
+resumed. Only the main agent can use it, with either `artifact_id` or
+`agent_run_id` from its current session.
 
 `cancellation_requested` means the native request was submitted, not that the
 child has already stopped. Cancellation is cooperative; the child may finish

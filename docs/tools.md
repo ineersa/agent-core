@@ -28,7 +28,7 @@ bypass approvals or sandbox it.
 | `agent_resume` | Continue an existing parent-owned child/fork. |
 | `agent_retrieve` | Read existing handoff/metadata/history, not launch work. |
 | `agent_steer` / `notify_parent` | Native active-child guidance/notices; not human input. |
-| `agent_cancel` | Request cancellation of one active direct subagent or fork. |
+| `agent_cancel` | Stop a running subagent or fork. |
 | `schedule` | Optional recurring Bash/code-mode work; enable Scheduling first. |
 
 Task-board and observational-memory tools come from optional extensions, not every

@@ -47,10 +47,9 @@ final readonly class AgentCancelTool implements HatfieldToolProviderInterface
     {
         return new ToolDefinitionDTO(
             name: self::NAME,
-            description: 'Request native cancellation of one active direct subagent or fork, including a resumed child. Supply exactly one child handle. Acknowledges the request, not that the child has stopped.',
+            description: 'Stop a running subagent or fork in this session. Provide either its artifact ID or its run ID, not both. The result confirms the request, not that the agent has stopped.',
             handler: $this,
-            promptLine: 'agent_cancel artifact_id=<id>|agent_run_id=<uuid> — request cancellation of one active direct child',
-            promptGuidelines: ['Call directly, outside code_mode. Unlike agent_steer, cancellation does not depend on the child following instructions. Use agent_retrieve for the final status and any handoff.'],
+            promptLine: 'agent_cancel artifact_id=<id>|agent_run_id=<uuid> — stop a running subagent or fork',
             mainOnly: true,
         );
     }

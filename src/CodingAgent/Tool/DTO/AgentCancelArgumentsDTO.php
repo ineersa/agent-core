@@ -11,9 +11,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 final readonly class AgentCancelArgumentsDTO
 {
     public function __construct(
-        #[Schema(description: 'Current direct child artifact id. Supply exactly one child handle.')]
+        #[Schema(description: 'Artifact ID of the subagent or fork to stop.')]
         #[Assert\NotBlank(normalizer: 'trim', allowNull: true)] public ?string $artifact_id = null,
-        #[Schema(description: 'Current direct child run id. Supply exactly one child handle.')]
+        #[Schema(description: 'Run ID of the subagent or fork to stop.')]
         #[Assert\NotBlank(normalizer: 'trim', allowNull: true)] public ?string $agent_run_id = null,
     ) {
     }
