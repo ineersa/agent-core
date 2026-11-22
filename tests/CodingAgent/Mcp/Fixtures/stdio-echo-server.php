@@ -29,12 +29,12 @@ $server = Server::builder()
     ->setInstructions('Test echo server for MCP integration tests.')
     ->setLogger(new Psr\Log\NullLogger())
     ->addTool(
-        handler: static function (array $arguments): array {
+        handler: static function (string $text): array {
             return [
                 'content' => [
                     [
                         'type' => 'text',
-                        'text' => 'echo: '.($arguments['text'] ?? ''),
+                        'text' => 'echo: '.$text,
                     ],
                 ],
             ];
@@ -54,9 +54,7 @@ $server = Server::builder()
         ],
     )
     ->addTool(
-        handler: static function (array $arguments): array {
-            $input = $arguments['input'] ?? '';
-
+        handler: static function (string $input): array {
             return [
                 'content' => [
                     [

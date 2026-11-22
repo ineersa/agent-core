@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
@@ -31,7 +32,7 @@ final class CodeModeTool implements HatfieldToolProviderInterface
     ) {
     }
 
-    public function __invoke(#[MapToolArguments] CodeModeArgumentsDTO $arguments): DeferredToolCompletionOutcome
+    public function __invoke(#[MapToolArguments] CodeModeArgumentsDTO $arguments): DeferredToolCompletionOutcome|ToolResult
     {
         return $this->hostBridge->execute(
             $arguments->script,

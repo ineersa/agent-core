@@ -79,7 +79,7 @@ final class ExtensionToolInvokerTest extends IsolatedKernelTestCase
         $this->assertStringContainsString($direct->outputs[0]->path, $direct->text);
         $standaloneCodeMode = $invoker->invoke(new ToolInvocationRequestDTO($run, 'outer', 'code_mode', ['script' => 'return 42;'], true));
         $this->assertTrue($standaloneCodeMode->isError);
-        $this->assertStringContainsString('Code-mode launch requires a valid session invocation.', $standaloneCodeMode->text);
+        $this->assertStringContainsString('Code-mode session broker unavailable.', $standaloneCodeMode->text);
 
         $container->get(OutputCap::class)->cleanupRun($run, 'test-retained-output');
         $reference = $direct->outputs[0];

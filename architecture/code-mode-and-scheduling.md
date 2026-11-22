@@ -15,9 +15,9 @@ sequenceDiagram
     participant Worker as Shared tool consumer
     participant PHP as Session-owned PHP subprocess
     participant Broker as SQLite-backed session broker
-    participant Owner as Controller completion poller
+    participant Owner as Controller process observer
     participant RC as run_control
-    Worker->>PHP: Launch with invocation identity and controller settlement authority
+    Worker->>PHP: Launch with session-owned invocation identity
     Worker->>Worker: Record ownership and commit admission before starting PHP
     Worker->>Worker: Return deferred outcome; release slot
     PHP->>Broker: Publish code_mode_requests with invocation and call IDs
@@ -26,9 +26,9 @@ sequenceDiagram
     Worker->>Broker: Publish managed result reference to invocation reply queue
     Broker-->>PHP: Correlated reply with managed tool payload reference
     PHP->>Broker: Publish managed terminal reference
-    Broker->>Owner: Deliver report after native exit
-    Owner->>RC: Admit deferred completion
-    Owner->>Broker: Acknowledge terminal report
+    Broker->>Worker: Deliver terminal report
+    Worker->>RC: Dispatch deferred completion
+    Owner->>Broker: Recover retained report once after exit and 60 seconds pending
 ```
 
 The reply envelope carries a reference, not the result payload. Delivery may repeat; individual tools own idempotency if needed.
@@ -62,9 +62,10 @@ fenced and reported as an unknown launch, never replayed. PHP checks committed
 admission at startup. `bg_status` controls Bash jobs, not PHP scripts.
 
 Scripts can invoke ordinary tools but cannot recursively launch `code_mode`.
-Calls without canonical correlation or a live session broker are refused.
+A live session broker is required. Standalone extension calls use their own run and invocation IDs, without an agent-turn batch; the shared worker returns their processed terminal result over the broker to the waiting caller. For canonical calls, only the shared worker delivers normal completion to run control. The observer supervises native processes and may resend a retained report after confirmed exit; it does not process normal success.
 
 The worker validates and executes a nested request, publishes a managed result reference to the invocation reply queue, and then acknowledges the request. PHP waits for the matching call ID and resolves the reference using the payload store. The call ID correlates replies; it does not suppress execution on redelivery.
+Nested reply bodies belong to the script workspace. PHP deletes each body after acknowledging its delivery. The process owner removes the remaining bodies when the script sends its terminal report or exits, and prevents late workers from recreating that scope. Terminal reports and standalone terminal replies use separate storage.
 
 ## Scheduling
 

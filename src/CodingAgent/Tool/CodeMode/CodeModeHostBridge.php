@@ -10,8 +10,11 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
 use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
@@ -23,6 +26,7 @@ use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\AskHumanTool;
+use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeReplyDTO;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Ineersa\SqliteQueue\Client;
 use Psr\Log\LoggerInterface;
@@ -34,7 +38,7 @@ use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\UuidV7;
 use Symfony\Component\Validator\Validation;
 
-/** Launches session-owned PHP; the controller settles its durable return. */
+/** Launches session-owned PHP; a shared worker delivers its durable return. */
 final readonly class CodeModeHostBridge
 {
     public function __construct(
@@ -46,15 +50,17 @@ final readonly class CodeModeHostBridge
         private CodeModeProcessOwner $processOwner,
         private CodeModeRuntimeMaterializer $runtime,
         private ToolBatchRunStoragePathsInterface $paths,
+        private CodeModeReplyTransportFactory $replies,
+        private ToolPayloadStoreInterface $payloads,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
-    public function execute(string $script, ?int $timeoutSeconds = null, int $memoryLimitMb = CodeModeArgumentsDTO::DEFAULT_MEMORY_LIMIT_MB, bool $backgrounded = false): DeferredToolCompletionOutcome
+    public function execute(string $script, ?int $timeoutSeconds = null, int $memoryLimitMb = CodeModeArgumentsDTO::DEFAULT_MEMORY_LIMIT_MB, bool $backgrounded = false): DeferredToolCompletionOutcome|ToolResult
     {
         $context = $this->contextAccessor->current();
-        if (null === $context || '' === $context->runId() || null === $context->stepId() || CodeModeTool::NAME !== $context->toolName()) {
+        if (null === $context || '' === $context->runId() || CodeModeTool::NAME !== $context->toolName()) {
             throw new ToolCallException('Code-mode launch requires a valid session invocation.', retryable: false);
         }
         $endpoint = $_SERVER['HATFIELD_SQLITE_QUEUE_ENDPOINT'] ?? $_ENV['HATFIELD_SQLITE_QUEUE_ENDPOINT'] ?? getenv('HATFIELD_SQLITE_QUEUE_ENDPOINT');
@@ -67,7 +73,11 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException('Code-mode session broker unavailable.', retryable: false, previous: $error);
         }
         $token = $context->cancellationToken();
-        $id = $this->prepareDeferred($context);
+        $standalone = null === $context->stepId();
+        if ($standalone && ($backgrounded || '' === $context->toolCallId())) {
+            throw new ToolCallException('Standalone code-mode requires a foreground invocation.', retryable: false);
+        }
+        $id = $standalone ? $context->toolCallId() : $this->prepareDeferred($context);
         if ($token->isCancellationRequested()) {
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
         }
@@ -75,8 +85,11 @@ final readonly class CodeModeHostBridge
         $owned = false;
         try {
             $this->writeScript($workspace['script'], $script);
-            $this->startProcess($workspace, $token, $this->formatMemoryLimit($memoryLimitMb), $context->runId(), $id, $endpoint);
+            $this->startProcess($workspace, $token, $this->formatMemoryLimit($memoryLimitMb), $context->runId(), $id, $endpoint, $standalone ? ['turn' => $context->turnNo(), 'timeout' => $timeoutSeconds, 'callerTimeout' => $context->timeoutSeconds()] : null);
             $owned = true;
+            if ($standalone) {
+                return $this->awaitStandalone($context, $id, $endpoint, $timeoutSeconds);
+            }
             if ($backgrounded) {
                 $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($context->runId(), $id, $context->toolCallId()));
             }
@@ -86,6 +99,52 @@ final readonly class CodeModeHostBridge
             if (!$owned && null === $this->processOwner->invocation($context->runId(), $id)) {
                 $this->cleanupWorkspace($workspace);
             }
+        }
+    }
+
+    private function awaitStandalone(ToolContext $context, string $id, string $endpoint, ?int $timeout): ToolResult
+    {
+        $runId = $context->runId();
+        $queue = CodeModeReplyTransportFactory::standaloneQueueId($runId, $id);
+        $transport = $this->replies->create($queue);
+        $client = Client::connect($endpoint);
+        $deadline = $this->processOwner->deadline($runId, $id, false, $timeout, $context->timeoutSeconds());
+        $exitedAt = null;
+        try {
+            while (true) {
+                foreach ($transport->get() as $delivery) {
+                    $message = $delivery->getMessage();
+                    if (!$message instanceof CodeModeReplyDTO || $id !== $message->callId || $runId !== $message->payload->runId) {
+                        $transport->reject($delivery);
+                        continue;
+                    }
+                    $payload = $this->payloads->read($message->payload);
+                    if (!$payload instanceof ToolCallResult || !\is_array($payload->result)) {
+                        throw new ToolCallException('Invalid standalone code-mode reply.', retryable: false);
+                    }
+                    $transport->ack($delivery);
+                    $this->payloads->deleteCall($runId, $message->payload->toolCallId);
+
+                    return new ToolResult($id, CodeModeTool::NAME, $payload->result['content'], $payload->result['details'], $payload->isError);
+                }
+                $failure = $this->processOwner->observeTerminal($runId, $id, $deadline,
+                    $context->cancellationToken()->isCancellationRequested() ? 'cancelled' : null,
+                    static function () use (&$exitedAt): ?array {
+                        $exitedAt ??= hrtime(true);
+
+                        return null;
+                    });
+                if (null !== $failure) {
+                    throw new ToolCallException($failure['error'] ?? 'Code-mode subprocess failed.', retryable: false);
+                }
+                if (null !== $exitedAt && hrtime(true) - $exitedAt >= 60_000_000_000) {
+                    throw new ToolCallException('Code-mode subprocess exited without a delivered result.', retryable: false);
+                }
+                $client->wait('code_mode_reply.'.$queue, 100);
+            }
+        } finally {
+            $client->close();
+            $transport->close();
         }
     }
 
@@ -182,8 +241,11 @@ final readonly class CodeModeHostBridge
         return $target;
     }
 
-    /** @param array{dir: string, script: string, startedAtNs: int} $workspace */
-    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, string $runId, string $invocationId, string $endpoint): void
+    /**
+     * @param array{dir: string, script: string, startedAtNs: int}      $workspace
+     * @param array{turn: int, timeout: ?int, callerTimeout: ?int}|null $standalone
+     */
+    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, string $runId, string $invocationId, string $endpoint, ?array $standalone): void
     {
         if ($cancelToken->isCancellationRequested()) {
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
@@ -224,7 +286,7 @@ final readonly class CodeModeHostBridge
         foreach ($environment as $name => $value) {
             $assignments .= $name.'='.escapeshellarg($value).' ';
         }
-        $this->processOwner->launch($runId, $invocationId, $workspace['dir'], 'cd '.escapeshellarg($cwd).' && '.$assignments.$shell, $workspace['startedAtNs'], admit: fn () => $this->deferred->markReady($invocationId));
+        $this->processOwner->launch($runId, $invocationId, $workspace['dir'], 'cd '.escapeshellarg($cwd).' && '.$assignments.$shell, $workspace['startedAtNs'], admit: null === $standalone ? fn () => $this->deferred->markReady($invocationId) : null, standalone: $standalone);
     }
 
     private function formatMemoryLimit(int $memoryLimitMb): string

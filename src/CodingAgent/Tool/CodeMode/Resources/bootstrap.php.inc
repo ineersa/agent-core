@@ -17,7 +17,7 @@ declare(strict_types=1);
 /** @param array<string, mixed> $arguments */
 function hatfield_code_mode_broker_call(string $operation, string $name, array $arguments): mixed
 {
-    global $broker, $requests, $invocationId, $payloads;
+    global $broker, $requests, $invocationId, $replyPayloads;
     static $mutex;
     $mutex ??= new \Amp\Sync\LocalMutex();
     // The transport and reply queue are shared by all Fibers in this script.
@@ -25,17 +25,25 @@ function hatfield_code_mode_broker_call(string $operation, string $name, array $
     try {
         $id = bin2hex(random_bytes(8));
         $requests->send(new \Symfony\Component\Messenger\Envelope(
-            new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO($invocationId, $id, $name, $arguments, $operation, $invocationId),
+            new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO($invocationId, $id, $name, $arguments, $operation, $invocationId, getenv('HATFIELD_CODE_MODE_RUN')),
         ));
         while (true) {
             foreach ($broker->get() as $delivery) {
                 $message = $delivery->getMessage();
-                if (!$message instanceof \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeReplyDTO || $message->callId !== $id) {
+                if (!$message instanceof \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeReplyDTO) {
                     $broker->ack($delivery);
                     continue;
                 }
-                $result = $payloads->read($message->payload);
+                $payload = $message->payload;
+                if ('result' !== $payload->kind || $payload->runId !== getenv('HATFIELD_CODE_MODE_RUN') || 1 !== preg_match('/^code-mode-[a-f0-9]{64}$/D', $payload->toolCallId)) {
+                    throw new RuntimeException('Invalid code-mode reply reference.');
+                }
+                $result = $message->callId === $id ? $replyPayloads->read($payload) : null;
                 $broker->ack($delivery);
+                $replyPayloads->deleteCall($payload->runId, $payload->toolCallId);
+                if ($message->callId !== $id) {
+                    continue;
+                }
                 if (!$result instanceof \Ineersa\AgentCore\Domain\Message\ToolCallResult || !\is_array($result->result)) {
                     throw new RuntimeException('Invalid code-mode reply payload.');
                 }
@@ -56,11 +64,12 @@ function hatfield_code_mode_broker_call(string $operation, string $name, array $
 function hatfield_code_mode_terminal(array $frame): void
 {
     global $factory, $endpoint, $serializer, $invocationId, $runId, $payloads;
-    $id = 'code-mode-terminal-'.$invocationId;
-    $reference = $payloads->publish(new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
+    $identity = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeTerminalIdentity::forInvocation($runId, $invocationId);
+    $id = $identity->toolCallId;
+    $reference = $payloads->publishFirstResult(new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
         $runId, 0, $id, 0, $id, $id, 0, $frame, true !== $frame['ok'],
-    ));
-    $terminal = $factory->createTransport('sqlite-queue://code_mode_terminal.'.$invocationId, $endpoint, $serializer);
+    ), $identity);
+    $terminal = $factory->createTransport('sqlite-queue://code_mode_requests', $endpoint, $serializer);
     try {
         $terminal->send(new \Symfony\Component\Messenger\Envelope(
             new \Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeTerminalReportDTO($invocationId, $reference),
@@ -204,6 +213,7 @@ $payloads = new \Ineersa\CodingAgent\Session\SessionToolPayloadStore(
     $paths, $codec, \Symfony\Component\Validator\Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(),
     new \Symfony\Component\Filesystem\Filesystem(),
 );
+$replyPayloads = $payloads->forWorkspaceReplies($runId, __DIR__);
 hatfield_code_mode_broker_call('admit', 'admit', []);
 
 register_shutdown_function(static function (): void {
@@ -229,31 +239,29 @@ try {
     })();
 
     $result = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::assertEncodable($result, 'Code-mode script return value');
-    hatfield_code_mode_terminal([
-        'ok' => true,
-        'result' => $result,
-    ]);
-    exit(0);
+    $frame = ['ok' => true, 'result' => $result];
 } catch (Throwable $exception) {
-    try {
-        $message = $exception->getMessage();
-        $file = $exception->getFile();
-        $line = $exception->getLine();
-        if (\is_string($file) && '' !== $file && $line > 0) {
-            $message .= $file === $scriptPath
-                ? ' in '.\Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnostics::scriptLocation($line)
-                : \sprintf(' in %s on line %d', $file, $line);
-        }
-        if (!mb_check_encoding($message, 'UTF-8') || $exception->getMessage() === \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::MALFORMED_MESSAGE) {
-            $message = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::MALFORMED_MESSAGE;
-        }
-        hatfield_code_mode_terminal([
-            'ok' => false,
-            'error' => $message,
-        ]);
-    } catch (Throwable $deliveryException) {
-        // Preserve the execution/read failure when the peer cannot receive it.
-        fwrite(\STDERR, $message."\nCode-mode failed to deliver its error result: ".$deliveryException->getMessage()."\n");
+    $message = $exception->getMessage();
+    $file = $exception->getFile();
+    $line = $exception->getLine();
+    if (\is_string($file) && '' !== $file && $line > 0) {
+        $message .= $file === $scriptPath
+            ? ' in '.\Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnostics::scriptLocation($line)
+            : \sprintf(' in %s on line %d', $file, $line);
     }
-    exit(1);
+    if (!mb_check_encoding($message, 'UTF-8') || $exception->getMessage() === \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::MALFORMED_MESSAGE) {
+        $message = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::MALFORMED_MESSAGE;
+    }
+    $frame = ['ok' => false, 'error' => $message];
 }
+
+// Register after the script so its shutdown callbacks run under supervision
+// and finish writing their diagnostics before a worker can complete the call.
+register_shutdown_function(static function () use ($frame): void {
+    try {
+        hatfield_code_mode_terminal($frame);
+    } catch (Throwable $error) {
+        fwrite(STDERR, "Code-mode failed to deliver its terminal report: ".$error->getMessage()."\n");
+    }
+});
+exit($frame['ok'] ? 0 : 1);

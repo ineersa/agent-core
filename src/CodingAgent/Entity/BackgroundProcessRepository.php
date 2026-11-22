@@ -19,7 +19,7 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
         parent::__construct($registry, BackgroundProcess::class);
     }
 
-    /** @return array{workspace: string, startedAtNs: int, fenced: bool}|null */
+    /** @return array{workspace: string, startedAtNs: int, fenced: bool, standalone?: array{turn: int, timeout: ?int, callerTimeout?: ?int}}|null */
     public function codeModeLaunch(string $runId, string $id): ?array
     {
         $row = $this->getEntityManager()->getConnection()->fetchAssociative('SELECT code_mode_launch, finished_at FROM background_process WHERE session_id = ? AND code_mode_id = ?', [$runId, $id]);

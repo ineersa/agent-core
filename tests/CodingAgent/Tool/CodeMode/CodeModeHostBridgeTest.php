@@ -70,6 +70,16 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
         try {
             $supervisor->start($paths);
             $_SERVER[$endpoint] = $paths->endpointPath;
+            $catalog = $container->get(\Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface::class);
+            $catalog->write($runId, new \Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO(runId: $runId, servers: [
+                'fixture' => new \Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO('fixture', 'stdio', \Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum::CONNECTED, tools: [
+                    new \Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO('fixture_echo', 'fixture', 'echo', 'Echo fixture text', [
+                        'type' => 'object', 'properties' => ['text' => ['type' => 'string']], 'required' => ['text'],
+                    ]),
+                ]),
+            ]));
+            $registry = $container->get(\Ineersa\CodingAgent\Tool\ToolRegistry::class);
+            $this->assertNotContains('fixture_echo', $registry->activeToolNames());
             $client = Client::connect($paths->endpointPath);
             $accessor = $container->get(StackToolExecutionContextAccessor::class);
             $context = new ToolContext($runId, 1, 'broker-launch', 'code_mode', new NullCancellationToken(), 5, 0, null, stepId: 'code-mode-bridge-test-step');
@@ -80,13 +90,13 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $otherFixture = $this->tmpDir.'/other-read.txt';
             file_put_contents($otherFixture, 'distinct second read');
             $contended = $this->tmpDir.'/contended';
-            $script = 'try { tool("read", ["invalid list"]); } catch (RuntimeException $error) { $refusal = $error->getMessage(); }'
+            $script = 'try { $mcp = tool("fixture_echo", ["text" => "cold worker fixture"]); } catch (RuntimeException $error) { $mcp = $error->getMessage(); } try { tool("read", ["invalid list"]); } catch (RuntimeException $error) { $refusal = $error->getMessage(); }'
                 .' try { tool("code_mode", ["script" => "return 42;"]); } catch (RuntimeException $error) { $recursion = $error->getMessage(); }'
                 .' $first = \Amp\async(static fn () => tool("read", ["path" => '.var_export($fixture, true).']));'
                 .' $second = \Amp\async(static function () {'
                 .' \Revolt\EventLoop::queue(static fn () => touch('.var_export($contended, true).'));'
                 .' return tool("read", ["path" => '.var_export($otherFixture, true).']); });'
-                .' return [$refusal ?? null, $first->await(), $recursion ?? null, $second->await(), str_repeat("x", 600000)];';
+                .' return [$refusal ?? null, $first->await(), $recursion ?? null, $second->await(), str_repeat("x", 600000), $mcp];';
             $outcome = $accessor->with($context, static fn (): mixed => $tool(new CodeModeArgumentsDTO($script, 5)));
             $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
             $this->assertTrue($client->wait('code_mode_requests', 3000));
@@ -123,7 +133,8 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
 
                 return $handled;
             };
-            [, $invalidRequest, $outerRequest] = $consume(3);
+            [, $mcpRequest, $invalidRequest, $outerRequest] = $consume(4);
+            $this->assertSame('fixture_echo', $mcpRequest->name);
             // Do not handle either read until both Fibers entered tool(). The
             // queued marker runs only once the second Fiber has yielded.
             $deadline = hrtime(true) + 3_000_000_000;
@@ -140,69 +151,68 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $this->assertSame($outcome->deferredId, $readRequest->rootId);
             $record = $owner->invocation($runId, $readRequest->invocationId);
             $this->assertNotNull($record);
-            $terminalTransport = $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory::class)->terminal($outcome->deferredId);
+            $this->assertTrue($client->wait('code_mode_requests', 3000));
             $report = null;
-            $deadline = hrtime(true) + 3_000_000_000;
-            do {
-                $terminal = $owner->observeTerminal($runId, $outcome->deferredId, null, null, static function () use ($terminalTransport, $container, &$report): ?array {
-                    foreach ($terminalTransport->get() as $delivery) {
-                        $message = $delivery->getMessage();
-                        $terminalTransport->ack($delivery);
-
-                        self::assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeTerminalReportDTO::class, $message);
-                        $report = $message;
-                        $result = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class)->read($message->payload);
-                        self::assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ToolCallResult::class, $result);
-                        self::assertIsArray($result->result);
-
-                        return $result->result;
-                    }
-
-                    return null;
-                });
-                if (null !== $terminal) {
-                    break;
-                }
-                \Amp\delay(0.01);
-            } while (hrtime(true) < $deadline);
-            $this->assertNotNull($report);
-            // Requeue the same report to exercise the controller receiver independently
-            // of the payload inspection above. A reserved row is still in the broker.
-            $terminalTransport->send(new \Symfony\Component\Messenger\Envelope($report));
-            $queue = 'code_mode_terminal.'.$outcome->deferredId;
-            $brokerDb = new \PDO('sqlite:'.$paths->databasePath);
-            $query = $brokerDb->prepare('SELECT reserved_until FROM queue_messages WHERE queue = ?');
-            $reservation = static function () use ($query, $queue): mixed {
-                $query->execute([$queue]);
-                $value = $query->fetchColumn();
-                $query->closeCursor();
-
-                return $value;
-            };
-            $commandBus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
-            $canonical = null;
-            $commandBus->expects($this->once())->method('dispatch')->willReturnCallback(static function (object $message) use (&$canonical, $reservation): \Symfony\Component\Messenger\Envelope {
-                self::assertIsInt($reservation());
-                self::assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ToolCallResult::class, $message);
-                $canonical = $message;
-
-                return new \Symfony\Component\Messenger\Envelope($message);
-            });
-            $deferred = $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class);
+            foreach ($transport->get() as $delivery) {
+                $report = $delivery->getMessage();
+                $transport->ack($delivery);
+                break;
+            }
+            $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeTerminalReportDTO::class, $report);
             $payloads = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class);
-            $observer = new \Ineersa\CodingAgent\Runtime\Controller\CodeModeTerminalObserver(
-                $owner, $deferred, $commandBus, new NullLogger(), $container->get(\Ineersa\CodingAgent\Tool\OutputCap::class), $payloads,
+            $deferred = $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class);
+            $replyFactory = $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory::class);
+            $replyStore = $container->get(\Ineersa\CodingAgent\Session\SessionToolPayloadStore::class)->forWorkspaceReplies($runId, $record['workspace']);
+            $this->assertSame([], glob($record['workspace'].'/replies/*'), 'The script has acknowledged and deleted all consumed bodies.');
+            $root = $deferred->findMetadataByDeferredId($outcome->deferredId)->reference;
+            $publish = static fn () => $owner->withReplyWorkspace($runId, $outcome->deferredId,
+                static fn (string $workspace) => $replyFactory->publish($workspace, $root, ['ok' => true, 'result' => 42]));
+            $unread = $publish();
+            $replyFactory->send($outcome->deferredId, 'unread', $unread);
+            $orphan = $publish(); // A persisted body whose send did not reach the broker.
+            $this->assertSame(42, $replyStore->read($unread)->result['result']);
+            $this->assertSame(42, $replyStore->read($orphan)->result['result']);
+            $busFailure = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+            $busFailure->expects($this->once())->method('dispatch')->willReturnCallback(static function ($message) use ($payloads, $deferred, $outcome): never {
+                $payloads->publishFirstResult($message, $deferred->findMetadataByDeferredId($outcome->deferredId)->reference);
+                throw new \RuntimeException('Simulated send failure after retention');
+            });
+            $handler = new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeTerminalReportHandler(
+                $owner, $deferred, $busFailure, $container->get(\Ineersa\CodingAgent\Tool\OutputCap::class), $payloads,
                 $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor::class),
                 $container->get(\Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor::class),
-                $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory::class),
+                $replyFactory,
+            );
+            try {
+                $handler($report);
+                $this->fail('Expected the simulated terminal dispatch failure');
+            } catch (\RuntimeException $error) {
+                $this->assertSame('Simulated send failure after retention', $error->getMessage());
+            }
+            $this->assertDirectoryDoesNotExist($record['workspace'].'/replies');
+            $this->assertNull($publish(), 'An in-flight worker cannot recreate the retired reply scope.');
+            $deadline = hrtime(true) + 3_000_000_000;
+            while (!$owner->hasExited($runId, $outcome->deferredId) && hrtime(true) < $deadline) {
+                \Amp\delay(0.01);
+            }
+            $this->assertTrue($owner->hasExited($runId, $outcome->deferredId));
+            $clock = new \Symfony\Component\Clock\MockClock();
+            $observer = new \Ineersa\CodingAgent\Runtime\Controller\CodeModeTerminalObserver(
+                $owner, $deferred, new NullLogger(), $payloads, $handler,
+                new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory(new TransportFactory(), $payloads, $container->get('messenger.transport.symfony_serializer'), $paths->endpointPath),
+                $clock,
             );
             $observer->observe($runId, $runId);
-            $this->assertNotNull($canonical);
-            $this->assertIsInt($reservation(), 'Dispatch alone must not acknowledge the terminal report.');
-            $deferred->acceptResultReference($outcome->deferredId, $payloads->publish($canonical));
+            $clock->sleep(59);
             $observer->observe($runId, $runId);
-            $this->assertFalse($reservation(), 'Canonical admission allows acknowledgement.');
-            $terminalTransport->close();
+            $this->assertNull($client->receive('code_mode_requests'));
+            $clock->sleep(1);
+            $observer->observe($runId, $runId);
+            $observer->observe($runId, $runId);
+            [$recovered] = $consume(1);
+            $this->assertEquals($report, $recovered);
+            $this->assertNull($client->receive('code_mode_requests'));
+            $terminal = $payloads->read($report->payload)->result;
             $this->assertNotNull($terminal);
             $this->assertTrue($terminal['ok'], $terminal['error'] ?? 'Expected a successful nested read.');
             $this->assertSame('Invalid code-mode call request.', $terminal['result'][0] ?? null);
@@ -210,13 +220,41 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $this->assertStringContainsString('Tool "code_mode" is not supported', $terminal['result'][2]);
             $this->assertStringContainsString('distinct second read', $terminal['result'][3]);
             $this->assertSame(str_repeat('x', 600000), $terminal['result'][4]);
+            $this->assertStringContainsString('echo: cold worker fixture', json_encode($terminal['result'][5], \JSON_THROW_ON_ERROR));
             $this->assertSame([$outcome->deferredId], $owner->controllerInvocationIds($runId));
+
+            $invoker = new \Ineersa\CodingAgent\Extension\ExtensionToolInvoker(
+                static fn () => $container->get(\Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface::class),
+                $accessor, $container->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class),
+                $container->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class),
+                $container->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore::class),
+                $payloads, $container->get(\Symfony\Component\Serializer\Normalizer\DenormalizerInterface::class),
+                $runId, $container->get(\Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface::class),
+            );
+            $standaloneScript = 'if (!str_contains(tool("read", ["path" => '.var_export($fixture, true).']), "broker nested read")) { throw new RuntimeException("Unexpected read result"); } return 42;';
+            $api = $this->createMock(\Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface::class);
+            $api->method('getCwd')->willReturn($this->isolatedCwd());
+            $api->method('tools')->willReturn($invoker);
+            $scheduler = new \Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension();
+            $scheduler->register($api);
+            $scheduler->onAfterSessionStart(new \Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookContextDTO($runId));
+            $scheduler(['action' => 'create', 'tool' => 'code_mode', 'arguments' => ['script' => $standaloneScript, 'timeout_seconds' => 5], 'every' => '30 seconds'],
+                new \Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO($runId));
+            [$job] = iterator_to_array($scheduler->jobs($runId), false);
+            $api->expects($this->once())->method('notifyOwner')->with($this->callback(static fn ($notice) => $notice->runId === $runId
+                && 'schedule:scheduled-occurrence' === $notice->identity
+                && 'Scheduled code_mode result ['.$job->payload['id']."]:\n42" === trim($notice->text)
+                && !$notice->interrupted));
+            $standalone = \Amp\async(static fn () => $scheduler->handle($api, $job->payload, 'scheduled-occurrence', null));
+            $consume(3); // admission, nested read and terminal delivery on one shared worker slot
+            $standalone->await();
         } finally {
             if (null === $previous) {
                 unset($_SERVER[$endpoint]);
             } else {
                 $_SERVER[$endpoint] = $previous;
             }
+            $container->get(\Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface::class)->disconnectAll($runId);
             $client?->close();
             $owner->cleanup($runId);
             $supervisor->shutdownUntil(microtime(true) + 5.0);
@@ -256,9 +294,23 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
         }
     }
 
+    protected static function configureIsolatedProjectBeforeKernelBoot(string $projectDir): void
+    {
+        $directory = realpath($projectDir.'/.hatfield');
+        if ($directory !== $projectDir.'/.hatfield' || file_exists($directory.'/mcp.json') || is_link($directory.'/mcp.json')) {
+            throw new \LogicException('Expected a disposable, empty MCP fixture destination.');
+        }
+        (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/mcp.json', json_encode(['mcpServers' => [
+            'fixture' => ['command' => \PHP_BINARY, 'args' => [__DIR__.'/../../Mcp/Fixtures/stdio-echo-server.php']],
+        ]], \JSON_THROW_ON_ERROR));
+    }
+
     private function prepareTopLevelRegistration(string $toolCallId): string
     {
         $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('code mode bridge '.$toolCallId);
+        self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
+            new \Ineersa\AgentCore\Domain\Run\RunState($runId, \Ineersa\AgentCore\Domain\Run\RunStatus::Running),
+        );
         $call = new ExecuteToolCall($runId, 1, 'code-mode-bridge-test-step', 1, 'key-'.$toolCallId, $toolCallId, 'code_mode', [], 0);
         $batches = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
         \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::register(

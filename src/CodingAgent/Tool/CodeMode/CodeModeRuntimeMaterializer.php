@@ -53,6 +53,7 @@ final readonly class CodeModeRuntimeMaterializer
             'CodingAgent/Session/SessionToolPayloadStore.php',
             'CodingAgent/Session/ToolBatchRunStoragePathsInterface.php',
             'CodingAgent/Tool/CodeMode/CodeModeDiagnostics.php',
+            'CodingAgent/Tool/CodeMode/CodeModeTerminalIdentity.php',
             'CodingAgent/Tool/CodeMode/CodeModeValueCodec.php',
             'CodingAgent/Tool/CodeMode/DTO/CodeModeCallRequestDTO.php',
             'CodingAgent/Tool/CodeMode/DTO/CodeModeReplyDTO.php',
