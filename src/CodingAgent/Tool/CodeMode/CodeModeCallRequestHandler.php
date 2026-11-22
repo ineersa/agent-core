@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
@@ -41,7 +42,7 @@ final readonly class CodeModeCallRequestHandler
     {
         $rootId = $request->rootId ?? $request->invocationId;
         $metadata = $this->deferred->findMetadataByDeferredId($rootId);
-        if (null === $metadata || 'pending' !== $metadata->status || null === $metadata->readyAt || 'code_mode' !== $metadata->reference->toolName) {
+        if (null === $metadata || DeferredToolCompletionStatusEnum::Pending !== $metadata->status || null === $metadata->readyAt || 'code_mode' !== $metadata->reference->toolName) {
             throw new UnrecoverableMessageHandlingException('Code-mode invocation is not ready.');
         }
         $ref = $metadata->reference;

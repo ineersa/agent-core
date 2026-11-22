@@ -32,6 +32,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Platform\Platform;
@@ -61,8 +62,13 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
         $this->entityManager = static::getContainer()->get('doctrine.orm.default_entity_manager');
         $this->tempDir = TestDirectoryIsolation::createProjectTempDir('hatfield-ext-agent-thinking', 0o750);
         $this->homeDir = $this->tempDir.'/home';
-        mkdir($this->homeDir.'/.hatfield', 0777, true);
-        file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
+        $settingsDir = $this->homeDir.'/.hatfield';
+        TestDirectoryIsolation::ensureDirectory($settingsDir);
+        $this->assertSame($settingsDir, realpath($settingsDir));
+        $settingsPath = $settingsDir.'/settings.yaml';
+        $this->assertFileDoesNotExist($settingsPath);
+        $this->assertFalse(is_link($settingsPath));
+        file_put_contents($settingsPath, "tui:\n    theme: cyberpunk\n");
     }
 
     protected function tearDown(): void
@@ -86,7 +92,7 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
             instructions: 'sys',
             input: 'user',
             maxDurationSeconds: 300,
-            thinkingLevel: 'off',
+            thinkingLevel: ThinkingLevelEnum::Off,
         ));
 
         $this->assertCount(1, $seen);
@@ -138,7 +144,7 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
             instructions: 'sys',
             input: 'user',
             maxDurationSeconds: 300,
-            thinkingLevel: 'off',
+            thinkingLevel: ThinkingLevelEnum::Off,
         ));
 
         $this->assertCount(1, $seen);
@@ -164,7 +170,7 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
             sessionId: $sessionId,
             instructions: 'Answer.',
             input: 'Hi.',
-            thinkingLevel: 'off',
+            thinkingLevel: ThinkingLevelEnum::Off,
         ));
 
         $this->assertCount(1, $seen);

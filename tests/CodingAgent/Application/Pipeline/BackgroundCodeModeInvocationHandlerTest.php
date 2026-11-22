@@ -17,6 +17,8 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
@@ -167,7 +169,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
             $delivery = new DeliverBackgroundCompletionDTO($run, $call->deferredId, 'retained', $run, $call->deferredId, $metadata->reference);
             $this->admit($run, $container->get(BackgroundCompletionRunHandler::class)->handle($delivery, $state)->postCommitActions);
         } elseif (\in_array($phase, ['cancelled', 'history_discarded'], true)) {
-            $repository->interrupt($call->deferredId, $phase);
+            $repository->interrupt($call->deferredId, DeferredToolInterruptionReasonEnum::from($phase));
         } elseif (\in_array($phase, ['historical', 'successor'], true)) {
             $repository->markCompleted($call->deferredId);
             $container->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace($state->with(['turnNo' => 'historical' === $phase ? 2 : 1, 'pendingToolCalls' => []]));
@@ -183,8 +185,8 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
         $outstanding = !\in_array($phase, ['cancelled', 'history_discarded', 'historical'], true);
         $this->assertSame($outstanding, $metadata->continuationRequired);
         $this->assertSame($outstanding, $repository->runRequiresContinuation($run));
-        $this->assertSame(\in_array($phase, ['cancelled', 'history_discarded'], true) ? $phase : ($outstanding ? 'controller_lost' : null), $metadata->interruptionReason);
-        $this->assertSame(\in_array($phase, ['cancelled', 'history_discarded', 'historical', 'receipt', 'successor'], true) ? 'completed' : 'pending', $metadata->status);
+        $this->assertSame(\in_array($phase, ['cancelled', 'history_discarded'], true) ? DeferredToolInterruptionReasonEnum::from($phase) : ($outstanding ? DeferredToolInterruptionReasonEnum::ControllerLost : null), $metadata->interruptionReason);
+        $this->assertSame(\in_array($phase, ['cancelled', 'history_discarded', 'historical', 'receipt', 'successor'], true) ? DeferredToolCompletionStatusEnum::Completed : DeferredToolCompletionStatusEnum::Pending, $metadata->status);
         if (!$outstanding) {
             return;
         }
@@ -201,7 +203,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
         $connection->rollBack();
         $em->clear();
         $this->assertTrue($repository->runRequiresContinuation($run));
-        $this->assertSame('controller_lost', $repository->findMetadataByDeferredId($call->deferredId)->interruptionReason);
+        $this->assertSame(DeferredToolInterruptionReasonEnum::ControllerLost, $repository->findMetadataByDeferredId($call->deferredId)->interruptionReason);
     }
 
     public static function controllerLossCases(): iterable
@@ -248,7 +250,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
             $container->get(CodeModeBackgroundCoordinationHandler::class)->controllerStarting(new \Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent($run));
         }
         if ($lost) {
-            $repository->interrupt($first->deferredId, 'controller_lost');
+            $repository->interrupt($first->deferredId, DeferredToolInterruptionReasonEnum::ControllerLost);
             $repository->requireContinuation($first->deferredId, true);
         }
         if ('stopped' === $reason) {
@@ -265,7 +267,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
         $this->assertSame($terminal || 'stopped' !== $reason, $otherToken->isCancellationRequested());
         $this->assertSame(RunStatus::Running, $state->status);
         if ($terminal) {
-            $this->assertSame('completed', $repository->status($first->deferredId), 'Stop retires retained terminal evidence without another worker delivery or restart.');
+            $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $repository->status($first->deferredId), 'Stop retires retained terminal evidence without another worker delivery or restart.');
             $work = $container->get(\Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider::class)->snapshot($run)->work;
             $this->assertNotContains($first->deferredId, array_column($work, 'id'));
             $repository->markCompleted($other->deferredId);
@@ -279,13 +281,13 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
 
             return;
         }
-        $this->assertSame('pending', $repository->status($first->deferredId), 'Stop is not physical completion.');
-        $this->assertSame($reason, $repository->findMetadataByDeferredId($first->deferredId)->interruptionReason);
+        $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $repository->status($first->deferredId), 'Stop is not physical completion.');
+        $this->assertSame(DeferredToolInterruptionReasonEnum::from($reason), $repository->findMetadataByDeferredId($first->deferredId)->interruptionReason);
         $delivery = new DeliverBackgroundCompletionDTO($run, $first->deferredId, 'late', $run, $first->deferredId, $repository->findMetadataByDeferredId($first->deferredId)->reference);
         $retired = $container->get(BackgroundCompletionRunHandler::class)->handle($delivery, $state);
         $this->assertSame([], $retired->events);
         $this->admit($run, $retired->postCommitActions);
-        $this->assertSame('completed', $repository->status($first->deferredId));
+        $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $repository->status($first->deferredId));
         $this->assertTrue($token->isCancellationRequested());
     }
 
@@ -333,7 +335,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
             $replayed = $container->get(RunStateReducer::class)->replay($state, $ack->events);
             $this->assertSame($ack->nextState->pendingToolCalls, $replayed->pendingToolCalls);
             $this->admit($runId, $ack->postCommitActions);
-            $this->assertSame('pending', $repository->status($id));
+            $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $repository->status($id));
         }
         $details = $ackFirst ? ['model_notifications' => [['id' => 'cap', 'source' => 'output_cap', 'kind' => 'output_capped', 'severity' => 'warning', 'delivery' => 'tool_result_replace', 'text' => 'PREVIEW: first result; Saved full output: /owned/artifact.txt', 'tool_call_id' => 'call', 'tool_name' => 'code_mode']]] : [];
         $result = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => 'FIRST']], $details, isError: !$ready);
@@ -352,7 +354,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
         }
         $reference = $repository->findMetadataByDeferredId($id)->acceptedResultReference;
         $this->assertNotNull($reference);
-        $this->assertSame('pending', $repository->status($id), 'Transport publication is not admission.');
+        $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $repository->status($id), 'Transport publication is not admission.');
         $bus->dispatch(ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => 'SECOND']]));
         if ($remote) {
             $sealed = array_find(array_reverse($container->get('messenger.transport.run_control')->getSent()), static fn ($envelope): bool => $envelope->getMessage() instanceof ToolPayloadMessage)->getMessage();
@@ -370,7 +372,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
             $delivery = $container->get(BackgroundCompletionRunHandler::class)->handle($notices[0], $ack->nextState);
             $this->admit($runId, $delivery->postCommitActions);
             $this->assertSame([], $container->get(BackgroundCompletionRunHandler::class)->handle($notices[1], $ack->nextState)->events);
-            $this->assertSame('completed', $repository->status($id));
+            $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $repository->status($id));
             if ($fenceReceipt) {
                 $hook = $container->get(CodeModeBackgroundCoordinationHandler::class);
                 $actions = $hook->prepareAfterTurnCommit(AfterTurnCommitHookContext::fromRunState($ack->nextState->with(['status' => RunStatus::Cancelling]), [], 0), 1);
@@ -378,12 +380,12 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
                 $decision = $container->get(BackgroundCompletionConsumptionPolicy::class)->prepare($ack->nextState,
                     new PendingCommand($runId, 'append_message', $id, ['provenance' => new BackgroundCompletionProvenanceDTO($id, $runId, $id)]));
                 $this->assertNotNull($decision->retirementReason);
-                $this->assertSame('completed', $repository->status($id), 'Interruption never reopens durable admission.');
+                $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $repository->status($id), 'Interruption never reopens durable admission.');
             }
         } else {
             $admission = $container->get(ToolCallResultHandler::class)->handle($retained, $state);
             $this->admit($runId, $admission->postCommitActions);
-            $this->assertSame('completed', $repository->status($id));
+            $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $repository->status($id));
         }
     }
 

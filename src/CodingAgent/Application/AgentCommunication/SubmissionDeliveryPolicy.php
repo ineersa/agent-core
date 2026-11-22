@@ -11,6 +11,8 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
+use Ineersa\CodingAgent\Agent\Tool\NotifyParentTool;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\SubmissionProvenanceDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\SubmissionReceiptDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -31,7 +33,7 @@ final readonly class SubmissionDeliveryPolicy implements CommandConsumptionPolic
 
     public function destination(SubmissionReceiptDTO $receipt): string
     {
-        return 'agent_steer' === $receipt->toolName ? $receipt->childRunId : $receipt->parentRunId;
+        return AgentSteerTool::NAME === $receipt->toolName ? $receipt->childRunId : $receipt->parentRunId;
     }
 
     public function refusal(SubmissionReceiptDTO $receipt, RunState $state): ?string
@@ -56,12 +58,12 @@ final readonly class SubmissionDeliveryPolicy implements CommandConsumptionPolic
             || \in_array($childStatus, [RunStatus::Failed, RunStatus::Cancelled, RunStatus::Cancelling], true)) {
             return 'Agent submission owner was cancelled or failed.';
         }
-        if ('agent_steer' === $receipt->toolName && $childStatus->isTerminal()) {
+        if (AgentSteerTool::NAME === $receipt->toolName && $childStatus->isTerminal()) {
             return 'Steering cannot resume a terminal child.';
         }
         // Only notices revive the parent. Accepted steering remains valid when
         // its source finishes normally before the child's next safe boundary.
-        if ('notify_parent' === $receipt->toolName && RunStatus::Completed === $parentStatus) {
+        if (NotifyParentTool::NAME === $receipt->toolName && RunStatus::Completed === $parentStatus) {
             if (!$receipt->backgrounded || $childStatus->isTerminal() || null !== $state->parentRunId) {
                 return 'Only a current running background child may continue its idle parent.';
             }

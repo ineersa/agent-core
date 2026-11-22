@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
@@ -22,7 +23,7 @@ use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
  */
 final class SubagentToolHandler
 {
-    public const string NAME = 'subagent';
+    public const string NAME = ChildLaunchToolName::SUBAGENT;
 
     public const string DESCRIPTION = 'Launch one subagent with agent and task. By default, wait for completion and return its handoff. Set backgrounded=true to continue other work while the subagent runs; you will be notified when it finishes. Do not poll for completion. Responses over 50,000 characters return artifact references instead. Use agent_retrieve for omitted handoffs or additional detail.';
 

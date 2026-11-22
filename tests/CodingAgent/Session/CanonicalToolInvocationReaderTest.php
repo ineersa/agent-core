@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -214,7 +215,7 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         $batches->method('loadCallReference')->willReturn($reference);
         $batches->expects($this->never())->method('delete');
         $deferred = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
-        $deferred->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('deferred', $reference, 'pending'));
+        $deferred->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('deferred', $reference, DeferredToolCompletionStatusEnum::Pending));
         $deferred->expects($this->once())->method('findByDeferredId')->willReturn(new DeferredToolCompletionCorrelation('deferred', 'indexed', 1, 'model-step', $call->attempt(), $call->idempotencyKey(), 'call', 'subagent', [], 0));
         $deferred->expects($this->never())->method('markCompleted');
         $payloads = $this->createMock(ToolPayloadStoreInterface::class);

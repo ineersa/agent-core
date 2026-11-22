@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
+use Ineersa\CodingAgent\Agent\Tool\NotifyParentTool;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -37,7 +39,7 @@ final class AutomaticMessageWidget extends AbstractWidget implements ParentInter
         $agent = $producer['agent_communication'] ?? null;
         $completion = $producer['background_completion'] ?? null;
         $this->label = match (true) {
-            \is_array($agent) => 'agent_steer' === ($agent['tool_name'] ?? null) ? 'Parent guidance' : 'Agent notice',
+            \is_array($agent) => AgentSteerTool::NAME === ($agent['tool_name'] ?? null) ? 'Parent guidance' : 'Agent notice',
             \is_array($producer['agent_task'] ?? null) => 'Agent task',
             true === ($producer['system_reminder'] ?? null) => 'System reminder',
             default => match ($completion['kind'] ?? 'completion') {
@@ -92,8 +94,8 @@ final class AutomaticMessageWidget extends AbstractWidget implements ParentInter
         $prefix = '';
         if (\is_array($agent)) {
             $relationship = match ($agent['tool_name'] ?? null) {
-                'agent_steer' => 'parent task owner (guidance)',
-                'notify_parent' => 'child (informational notice)',
+                AgentSteerTool::NAME => 'parent task owner (guidance)',
+                NotifyParentTool::NAME => 'child (informational notice)',
                 default => null,
             };
             if (null !== $relationship) {

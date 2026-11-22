@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\ExtensionApi\Agent;
 
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -76,28 +77,16 @@ final class AgentCallRequestDTOTest extends TestCase
             sessionId: 'run-1',
             instructions: 'sys',
             input: 'user',
-            thinkingLevel: 'off',
+            thinkingLevel: ThinkingLevelEnum::Off,
         );
 
-        $this->assertSame('off', $dto->thinkingLevel);
+        $this->assertSame(ThinkingLevelEnum::Off, $dto->thinkingLevel);
         $this->assertNull((new AgentCallRequestDTO(
             model: 'llama_cpp_test/test',
             sessionId: 'run-1',
             instructions: 'sys',
             input: 'user',
         ))->thinkingLevel);
-    }
-
-    public function testRejectsUnknownThinkingLevel(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        new AgentCallRequestDTO(
-            model: 'llama_cpp_test/test',
-            sessionId: 'run-1',
-            instructions: 'sys',
-            input: 'user',
-            thinkingLevel: 'disabled',
-        );
     }
 
     public function testRejectsAliasModel(): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Setup;
 
+use Ineersa\CodingAgent\CLI\Extensions\Exception\ExtensionSetupRefusalException;
 use Ineersa\CodingAgent\CLI\Extensions\ExtensionsSetupFlow;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -79,7 +80,7 @@ final class ExtensionsSetupScreen
     {
         $items = [];
         foreach ($this->flow->packages() as $id => $row) {
-            $status = $row['installed'] ? $this->theme->success('Installed · Configure') : $this->theme->muted('Available · Install');
+            $status = $row['installed'] ? $this->theme->success($this->flow->isBuiltIn($id) ? 'Installed · Configure' : 'Installed · Configure / Uninstall') : $this->theme->muted('Available · Install');
             $package = str_starts_with($id, 'ineersa/hatfield-ext-');
             $items[] = [
                 'value' => $id,
@@ -101,16 +102,58 @@ final class ExtensionsSetupScreen
                         $this->menu();
                     }
                 }, $this->menu(...));
-            } else {
+            } elseif ($this->flow->isBuiltIn($id)) {
                 $this->form($id);
+            } else {
+                $this->choose([
+                    ['value' => 'configure', 'label' => 'Configure'],
+                    ['value' => 'uninstall', 'label' => 'Uninstall'],
+                ], function (string $action) use ($id): void {
+                    if ('configure' === $action) {
+                        $this->form($id);
+                    } else {
+                        $this->confirmUninstall($id);
+                    }
+                }, $this->menu(...));
             }
         }, $this->leave(...));
     }
 
     private function form(string $package): void
     {
-        $this->flow->select($package);
-        $this->showForm($package);
+        $scope = $this->flow->layer->value;
+        try {
+            $this->flow->select($package);
+            $this->showForm($package);
+        } catch (\Throwable $error) {
+            $this->actionRefused('Configure', $scope, $error, 'Unable to open the settings form. Check package compatibility and settings.yaml.');
+        }
+    }
+
+    private function confirmUninstall(string $package): void
+    {
+        $layer = $this->flow->layer;
+        $this->choose([
+            ['value' => 'cancel', 'label' => 'Cancel uninstall'],
+            ['value' => 'uninstall', 'label' => 'Uninstall '.$package.' from '.$layer->value.' scope and delete its settings'],
+        ], function (string $answer) use ($package, $layer): void {
+            if ('uninstall' === $answer && $layer === $this->flow->layer) {
+                try {
+                    $this->flow->uninstall($package);
+                    $this->notice->setText('Uninstalled from '.$layer->value.' scope. Restart Hatfield to reload extensions.');
+                } catch (\Throwable $error) {
+                    $this->actionRefused('Uninstall', $layer->value, $error, 'Unable to prepare removal. Check package metadata and settings.yaml.');
+                }
+            }
+            $this->menu();
+        }, $this->menu(...));
+    }
+
+    private function actionRefused(string $action, string $scope, \Throwable $error, string $fallback): void
+    {
+        $this->logger->notice('extension.setup.refused', ['component' => 'extensions_setup', 'event_type' => 'extension.setup.refused', 'exception_class' => $error::class, 'cause_class' => null !== $error->getPrevious() ? $error->getPrevious()::class : null]);
+        $reason = $error instanceof ExtensionSetupRefusalException ? $error->getMessage() : $fallback;
+        $this->notice->setText($this->theme->error($action.' failed in '.$scope.' scope. '.$reason));
     }
 
     private function showForm(string $package): void

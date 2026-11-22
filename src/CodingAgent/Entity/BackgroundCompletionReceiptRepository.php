@@ -6,10 +6,13 @@ namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionReceiptDTO;
+use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Symfony\Component\Serializer\Encoder\DecoderInterface;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
@@ -72,11 +75,11 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
                 SELECT 1 FROM owned_runs owner
                 CROSS JOIN tool_deferred_completion invocation ON invocation.run_id = owner.run_id
                 LEFT JOIN background_completion_receipt receipt ON receipt.identity = invocation.deferred_id
-                WHERE invocation.tool_name = 'code_mode' AND invocation.status = 'pending'
+                WHERE invocation.tool_name = :tool AND invocation.status = :pending
                     AND invocation.backgrounded_at IS NOT NULL AND receipt.identity IS NULL
-                    AND (invocation.interruption_reason IS NULL OR invocation.interruption_reason = 'controller_lost')
+                    AND (invocation.interruption_reason IS NULL OR invocation.interruption_reason = :controller_lost)
             )
-            SQL, ['root' => $rootRunId]);
+            SQL, ['root' => $rootRunId, 'tool' => CodeModeTool::NAME, 'controller_lost' => DeferredToolInterruptionReasonEnum::ControllerLost->value, 'pending' => DeferredToolCompletionStatusEnum::Pending->value]);
     }
 
     /** @return list<BackgroundCompletionReceiptDTO> */

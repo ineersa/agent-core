@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -63,17 +64,17 @@ final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
             foreach ($context->client->foregroundBash($runId) as $candidate) {
                 $candidates[] = [
                     'label' => \sprintf('Bash %s (PID %d)', $candidate->toolCallId, $candidate->pid),
-                    'command' => new UserCommand('background_bash', payload: ['record_id' => $candidate->id, 'tool_call_id' => $candidate->toolCallId]),
+                    'command' => new UserCommand(UserCommandTypeEnum::BackgroundBash, payload: ['record_id' => $candidate->id, 'tool_call_id' => $candidate->toolCallId]),
                 ];
             }
             foreach ($context->client->foregroundChildren($runId) as $candidate) {
                 $candidates[] = [
                     'label' => $candidate->label,
-                    'command' => new UserCommand('background_child', payload: ['lifecycle_id' => $candidate->lifecycleId, 'tool_call_id' => $candidate->toolCallId]),
+                    'command' => new UserCommand(UserCommandTypeEnum::BackgroundChild, payload: ['lifecycle_id' => $candidate->lifecycleId, 'tool_call_id' => $candidate->toolCallId]),
                 ];
             }
             foreach ($context->client->backgroundWork($runId)->codeMode as $candidate) {
-                $candidates[] = ['label' => $candidate->label, 'command' => new UserCommand('background_code_mode', payload: ['deferred_id' => $candidate->lifecycleId, 'tool_call_id' => $candidate->toolCallId])];
+                $candidates[] = ['label' => $candidate->label, 'command' => new UserCommand(UserCommandTypeEnum::BackgroundCodeMode, payload: ['deferred_id' => $candidate->lifecycleId, 'tool_call_id' => $candidate->toolCallId])];
             }
             if ([] === $candidates) {
                 return;

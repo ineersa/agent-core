@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
@@ -231,7 +232,7 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $payloads = $this->createMock(ToolPayloadStoreInterface::class);
         $payloads->expects($this->never())->method('read');
         $deferred = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
-        $deferred->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), 'pending'));
+        $deferred->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), DeferredToolCompletionStatusEnum::Pending));
         $deferred->expects($this->never())->method('findByDeferredId');
         $deferred->expects($this->exactly(2))->method('markCompleted')->with('deferred');
         $batches = $this->createMock(ToolBatchStoreInterface::class);
@@ -254,7 +255,7 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $completed = false;
         $deferred = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
         $deferred->method('findMetadataByDeferredId')->willReturnCallback(function () use (&$completed): DeferredToolCompletionMetadataDTO {
-            return new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), $completed ? 'completed' : 'pending');
+            return new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), $completed ? DeferredToolCompletionStatusEnum::Completed : DeferredToolCompletionStatusEnum::Pending);
         });
         $deferred->expects($this->never())->method('findByDeferredId');
         $deferred->expects($this->exactly(2))->method('markCompleted')->willReturnCallback(static function () use (&$completed): void {
@@ -343,7 +344,7 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $payloads = $this->createMock(ToolPayloadStoreInterface::class);
         $payloads->expects($this->never())->method('read');
         $deferred = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
-        $metadata = new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), 'completed');
+        $metadata = new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), DeferredToolCompletionStatusEnum::Completed);
         $deferred->method('findMetadataByDeferredId')->willReturn($metadata);
         $deferred->expects($this->never())->method('markCompleted');
         $data = get_object_vars($this->reference('result'));

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Command;
 
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -35,15 +36,15 @@ final class SubagentLiveInputPolicyTest extends TestCase
     #[Test]
     public function childUserCommandTypeUsesActivity(): void
     {
-        $this->assertSame('steer', $this->policy->childUserCommandType(true));
-        $this->assertSame('follow_up', $this->policy->childUserCommandType(false));
+        $this->assertSame(UserCommandTypeEnum::Steer, $this->policy->childUserCommandType(true));
+        $this->assertSame(UserCommandTypeEnum::FollowUp, $this->policy->childUserCommandType(false));
     }
 
     #[Test]
     public function dispatchConfirmationMessages(): void
     {
-        $this->assertStringContainsString('steer', $this->policy->dispatchConfirmationMessage('steer', 'scout'));
-        $this->assertStringContainsString('follow_up', $this->policy->dispatchConfirmationMessage('follow_up', 'scout'));
+        $this->assertStringContainsString('steer', $this->policy->dispatchConfirmationMessage(UserCommandTypeEnum::Steer, 'scout'));
+        $this->assertStringContainsString('follow_up', $this->policy->dispatchConfirmationMessage(UserCommandTypeEnum::FollowUp, 'scout'));
     }
 
     #[Test]

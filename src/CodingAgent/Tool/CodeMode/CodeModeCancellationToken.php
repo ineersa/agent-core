@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tool\CodeMode;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 
 final class CodeModeCancellationToken implements CancellationTokenInterface
 {
@@ -21,7 +22,7 @@ final class CodeModeCancellationToken implements CancellationTokenInterface
         $metadata = $this->deferred->findMetadataByDeferredId($this->id);
         $this->backgrounded = $this->backgrounded || null !== $metadata?->backgroundedAt;
 
-        return $this->cancelled = $this->cancelled || 'pending' !== $metadata?->status || null !== $metadata->interruptionReason
+        return $this->cancelled = $this->cancelled || DeferredToolCompletionStatusEnum::Pending !== $metadata?->status || null !== $metadata->interruptionReason
             || (null !== $this->invocationUnavailable && ($this->invocationUnavailable)($this->backgrounded))
             || (!$this->backgrounded && $this->parent->isCancellationRequested());
     }

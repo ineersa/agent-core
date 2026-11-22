@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
@@ -187,7 +188,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->assertSame($runId, $loaded->runId);
         $this->assertSame('call-db', $loaded->toolCallId);
         $this->assertSame(30, $loaded->timeoutSeconds);
-        $this->assertSame('pending', $repo->status($correlation->deferredId));
+        $this->assertSame(DeferredToolCompletionStatusEnum::Pending, $repo->status($correlation->deferredId));
 
         $canonical = $this->registerDoctrineCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: '660e8400-e29b-41d4-a716-446655440001',

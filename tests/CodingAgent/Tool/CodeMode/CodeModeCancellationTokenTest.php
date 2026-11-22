@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeCancellationToken;
@@ -22,9 +23,9 @@ final class CodeModeCancellationTokenTest extends TestCase
         $acceptedAt = new \DateTimeImmutable('@1');
         $repository = $this->createStub(DeferredToolCompletionRepositoryInterface::class);
         $repository->method('findMetadataByDeferredId')->willReturnOnConsecutiveCalls(
-            new DeferredToolCompletionMetadataDTO('id', $reference, 'pending'),
-            new DeferredToolCompletionMetadataDTO('id', $reference, 'pending', backgroundedAt: $acceptedAt),
-            new DeferredToolCompletionMetadataDTO('id', $reference, 'pending', backgroundedAt: $acceptedAt, interruptionReason: 'stop'),
+            new DeferredToolCompletionMetadataDTO('id', $reference, DeferredToolCompletionStatusEnum::Pending),
+            new DeferredToolCompletionMetadataDTO('id', $reference, DeferredToolCompletionStatusEnum::Pending, backgroundedAt: $acceptedAt),
+            new DeferredToolCompletionMetadataDTO('id', $reference, DeferredToolCompletionStatusEnum::Pending, backgroundedAt: $acceptedAt, interruptionReason: \Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum::Stopped),
         );
         $token = new CodeModeCancellationToken($parent, $repository, 'id');
 
@@ -38,7 +39,7 @@ final class CodeModeCancellationTokenTest extends TestCase
         $parent = $this->createStub(CancellationTokenInterface::class);
         $reference = new ToolPayloadReferenceDTO('correlation', 'run', 1, 'step', 1, 'key', 'call', 0, 'code_mode', str_repeat('a', 64), 1);
         $repository = $this->createStub(DeferredToolCompletionRepositoryInterface::class);
-        $repository->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('id', $reference, 'pending'));
+        $repository->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('id', $reference, DeferredToolCompletionStatusEnum::Pending));
         $unavailable = false;
         $token = new CodeModeCancellationToken($parent, $repository, 'id', invocationUnavailable: static function () use (&$unavailable): bool { return $unavailable; });
         $work = new \Fiber(static function () use ($token): bool {

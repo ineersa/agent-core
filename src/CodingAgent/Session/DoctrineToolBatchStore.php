@@ -8,6 +8,7 @@ use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
@@ -133,21 +134,21 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
     {
         $this->sanitizeRunId($runId);
 
-        return (bool) $this->connection->fetchOne("SELECT CASE WHEN EXISTS (SELECT 1 FROM tool_deferred_completion WHERE run_id = ? AND status = 'pending') THEN 1 ELSE EXISTS (SELECT 1 FROM tool_batch b WHERE b.run_id = ? AND (b.finalized = 0 OR b.awaiting_human_input_json <> '[]' OR b.pending_queue_json <> '[]' OR b.in_flight_json <> '[]')) END", [$runId, $runId]);
+        return (bool) $this->connection->fetchOne("SELECT CASE WHEN EXISTS (SELECT 1 FROM tool_deferred_completion WHERE run_id = ? AND status = ?) THEN 1 ELSE EXISTS (SELECT 1 FROM tool_batch b WHERE b.run_id = ? AND (b.finalized = 0 OR b.awaiting_human_input_json <> '[]' OR b.pending_queue_json <> '[]' OR b.in_flight_json <> '[]')) END", [$runId, DeferredToolCompletionStatusEnum::Pending->value, $runId]);
     }
 
     public function findUnresolvedToolCallIds(string $runId, array $toolCallIds): array
     {
         $this->sanitizeRunId($runId);
         $unresolved = [];
-        // Two IN lists plus run IDs use at most 802 bound parameters per chunk,
+        // Two IN lists, two run IDs and one status use at most 803 bound parameters per chunk,
         // below SQLite's traditional 999-parameter limit.
         foreach (array_chunk(array_values(array_unique($toolCallIds)), 400) as $ids) {
-            $sql = "SELECT tool_call_id FROM tool_deferred_completion WHERE run_id = ? AND status = 'pending' AND tool_call_id IN (?)
+            $sql = "SELECT tool_call_id FROM tool_deferred_completion WHERE run_id = ? AND status = ? AND tool_call_id IN (?)
                 UNION
                 SELECT c.tool_call_id FROM tool_batch_call c JOIN tool_batch b ON b.run_id = c.run_id AND b.turn_no = c.turn_no AND b.step_id = c.step_id
                 WHERE c.run_id = ? AND c.tool_call_id IN (?) AND (b.finalized = 0 OR b.awaiting_human_input_json <> '[]' OR b.pending_queue_json <> '[]' OR b.in_flight_json <> '[]')";
-            foreach ($this->connection->fetchFirstColumn($sql, [$runId, $ids, $runId, $ids], [ParameterType::STRING, ArrayParameterType::STRING, ParameterType::STRING, ArrayParameterType::STRING]) as $id) {
+            foreach ($this->connection->fetchFirstColumn($sql, [$runId, DeferredToolCompletionStatusEnum::Pending->value, $ids, $runId, $ids], [ParameterType::STRING, ParameterType::STRING, ArrayParameterType::STRING, ParameterType::STRING, ArrayParameterType::STRING]) as $id) {
                 $unresolved[] = (string) $id;
             }
         }
@@ -287,8 +288,8 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
                 // Early code_mode registrations stay pending until this
                 // verified batch-result admission commits.
                 $this->connection->executeStatement(
-                    "UPDATE tool_deferred_completion SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE run_id = ? AND turn_no = ? AND step_id = ? AND tool_call_id = ? AND status = 'pending' AND backgrounded_at IS NULL AND accepted_result_reference_json IS NOT NULL",
-                    [$runId, $turnNo, $stepId, $toolCallId],
+                    'UPDATE tool_deferred_completion SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE run_id = ? AND turn_no = ? AND step_id = ? AND tool_call_id = ? AND status = ? AND backgrounded_at IS NULL AND accepted_result_reference_json IS NOT NULL',
+                    [DeferredToolCompletionStatusEnum::Completed->value, $runId, $turnNo, $stepId, $toolCallId, DeferredToolCompletionStatusEnum::Pending->value],
                 );
             }
         };
@@ -297,21 +298,24 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
     private function deleteSettled(string $runId, ?int $turnNo = null, ?string $stepId = null): void
     {
         $this->sanitizeRunId($runId);
-        $where = "b.run_id = ? AND b.finalized = 1 AND b.awaiting_human_input_json = '[]' AND b.pending_queue_json = '[]' AND b.in_flight_json = '[]' AND NOT EXISTS (SELECT 1 FROM tool_deferred_completion d WHERE d.run_id = b.run_id AND d.turn_no = b.turn_no AND d.step_id = b.step_id AND d.status = 'pending')";
+        $where = "b.run_id = ? AND b.finalized = 1 AND b.awaiting_human_input_json = '[]' AND b.pending_queue_json = '[]' AND b.in_flight_json = '[]' AND NOT EXISTS (SELECT 1 FROM tool_deferred_completion d WHERE d.run_id = b.run_id AND d.turn_no = b.turn_no AND d.step_id = b.step_id AND d.status = ?)";
         $outerWhere = 'run_id = ?';
-        $params = [$runId];
+        $outerParams = [$runId];
+        $params = [$runId, DeferredToolCompletionStatusEnum::Pending->value];
         if (null !== $turnNo) {
             $where .= ' AND b.turn_no = ? AND b.step_id = ?';
             $outerWhere .= ' AND turn_no = ? AND step_id = ?';
+            $outerParams[] = $turnNo;
+            $outerParams[] = $stepId;
             $params[] = $turnNo;
             $params[] = $stepId;
         }
         $callIds = $this->connection->fetchFirstColumn("SELECT c.tool_call_id FROM tool_batch_call c JOIN tool_batch b ON b.run_id = c.run_id AND b.turn_no = c.turn_no AND b.step_id = c.step_id WHERE $where", $params);
         // Commit reference deletion before touching files, while retaining the
         // same run critical section through the survivor check and file cleanup.
-        $this->connection->transactional(function () use ($where, $outerWhere, $params): void {
+        $this->connection->transactional(function () use ($where, $outerWhere, $outerParams, $params): void {
             foreach (['tool_batch_result', 'tool_batch_call'] as $table) {
-                $this->connection->executeStatement("DELETE FROM $table WHERE $outerWhere AND EXISTS (SELECT 1 FROM tool_batch b WHERE b.run_id = $table.run_id AND b.turn_no = $table.turn_no AND b.step_id = $table.step_id AND $where)", array_merge($params, $params));
+                $this->connection->executeStatement("DELETE FROM $table WHERE $outerWhere AND EXISTS (SELECT 1 FROM tool_batch b WHERE b.run_id = $table.run_id AND b.turn_no = $table.turn_no AND b.step_id = $table.step_id AND $where)", array_merge($outerParams, $params));
             }
             $this->connection->executeStatement("DELETE FROM tool_batch AS b WHERE $where", $params);
         });

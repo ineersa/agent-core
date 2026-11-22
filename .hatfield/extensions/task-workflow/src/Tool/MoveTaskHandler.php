@@ -18,6 +18,7 @@ use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\GitHubTaskStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskStatusEnum;
 use Ineersa\HatfieldExt\TaskWorkflow\Validation\TaskInputMapper;
+use Ineersa\HatfieldExt\TaskWorkflow\Worktree\HookReasonEnum;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\HookRunner;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorkspaceStateStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
@@ -169,7 +170,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             $state['setup_attempted'] = true;
             $state['pending_operation'] = 'start';
             $this->save($task, $state);
-            $result = $this->runHook('setup', 'start', $task, $state, $base, $control);
+            $result = $this->runHook('setup', HookReasonEnum::Start, $task, $state, $base, $control);
             if (!$this->hookSucceeded($result)) {
                 return $this->hookFailure('setup', $task, $state, $result);
             }
@@ -196,7 +197,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             throw new TaskTransitionException('Associated PR is closed or merged; reconcile it before submitting.');
         }
         $base = $pr->baseBranch ?? $this->settings->baseBranch;
-        $result = $this->runHook('validate', 'review', $task, $state, $base, $control);
+        $result = $this->runHook('validate', HookReasonEnum::Review, $task, $state, $base, $control);
         if (!$this->hookSucceeded($result)) {
             return $this->hookFailure('validate', $task, $state, $result);
         }
@@ -238,7 +239,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
     private function finish(GitHubTaskDTO $task, ?array $state, TaskInputDTO $input, TaskStatusEnum $to, InvocationControl $control): string
     {
         $done = TaskStatusEnum::DONE === $to;
-        $reason = $done ? 'done' : 'cancel';
+        $reason = $done ? HookReasonEnum::Done : HookReasonEnum::Cancel;
         $pr = $this->resolvePr($task, $state, $input, $control);
         if ($done && null === $pr) {
             throw new TaskTransitionException('DONE requires a verified task PR, including on repeated finalization.');
@@ -281,15 +282,15 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             $pr = $this->pr->close($pr, $control);
         }
         $previousReason = $state['cleanup_reason'] ?? null;
-        $cleanupComplete = true === ($state['cleanup_complete'] ?? false) && $previousReason === $reason;
-        $state = $this->states->beginCleanup($this->settings->repository, $task->number, $reason);
+        $cleanupComplete = true === ($state['cleanup_complete'] ?? false) && $previousReason === $reason->value;
+        $state = $this->states->beginCleanup($this->settings->repository, $task->number, $reason->value);
         if (!$cleanupComplete) {
             $result = $this->runHook('cleanup', $reason, $task, $state, $pr->baseBranch ?? $this->settings->baseBranch, $control);
             if (!$this->hookSucceeded($result)) {
                 return $this->hookFailure('cleanup', $task, $state, $result);
             }
             $state['cleanup_complete'] = true;
-            $state['cleanup_reason'] = $reason;
+            $state['cleanup_reason'] = $reason->value;
             $this->save($task, $state);
         }
         if ('' !== $state['worktree']) {
@@ -301,7 +302,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         if ($done) {
             // Validate the integrated checkout after removal, not the pre-merge task
             // tree. Failure retains recovery evidence and must not publish DONE.
-            $result = $this->runHook('validate', 'done', $task, $state, $pr->baseBranch, $control);
+            $result = $this->runHook('validate', HookReasonEnum::Done, $task, $state, $pr->baseBranch, $control);
             if (!$this->hookSucceeded($result)) {
                 return $this->hookFailure('validate', $task, $state, $result);
             }
@@ -398,13 +399,13 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
     }
 
     /** @param array<string,mixed> $state */
-    private function runHook(string $name, string $reason, GitHubTaskDTO $task, array $state, string $base, InvocationControl $control): ExecResultDTO
+    private function runHook(string $name, HookReasonEnum $reason, GitHubTaskDTO $task, array $state, string $base, InvocationControl $control): ExecResultDTO
     {
         $hook = $this->settings->hooks[$name] ?? null;
         if (null === $hook) {
             throw new TaskTransitionException('Required '.$name.' project hook is not configured.');
         }
-        if (\in_array($reason, ['start', 'review'], true) || ('' !== $state['worktree'] && false !== @lstat($state['worktree']))) {
+        if ($reason->requiresWorktree() || ('' !== $state['worktree'] && false !== @lstat($state['worktree']))) {
             $this->worktrees->assertOwned($this->primaryRoot, new WorkspaceBindingDTO($state['branch'], $state['worktree']), $control);
         }
 
@@ -418,7 +419,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             'HATFIELD_TASK_WORKTREE' => $state['worktree'],
             'HATFIELD_TASK_WORKTREE_EXISTS' => is_dir($state['worktree']) ? '1' : '0',
             'HATFIELD_TASK_SETUP_ATTEMPTED' => true === ($state['setup_attempted'] ?? false) ? '1' : '0',
-            'HATFIELD_TASK_REASON' => $reason,
+            'HATFIELD_TASK_REASON' => $reason->value,
             'HATFIELD_TASK_RESOURCE_ID' => $state['resource_id'],
             'HATFIELD_TASK_DATA_DIR' => $state['data_dir'],
         ], $control);

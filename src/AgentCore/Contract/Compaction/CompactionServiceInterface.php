@@ -78,7 +78,7 @@ interface CompactionServiceInterface
         string $runId,
         int $turnNo,
         array $messages,
-        string $trigger = 'manual',
+        string $trigger = CompactionTriggerEnum::Manual->value,
         ?string $customInstructions = null,
         ?string $activeModel = null,
     ): MessageSnapshotCompactionResult;

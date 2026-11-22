@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Exception\BackgroundProcessUnavailableException;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueEnv;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
@@ -446,23 +447,15 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->ensureProcessRunning();
 
         $type = match ($command->type) {
-            'steer', 'message' => 'user_message',
-            'follow_up' => 'follow_up',
-            'append_message' => 'append_message',
-            'answer_human' => 'answer_human',
-            'shell_command' => 'shell_command',
-            'background_bash' => 'background_bash',
-            'background_child' => 'background_child',
-            'background_code_mode' => 'background_code_mode',
-            'stop_code_mode' => 'stop_code_mode',
-            'select_history_turn' => 'select_history_turn',
-            default => throw new \InvalidArgumentException(\sprintf('Unknown command type: "%s"', $command->type)),
+            UserCommandTypeEnum::Steer, UserCommandTypeEnum::Message => 'user_message',
+            UserCommandTypeEnum::Cancel => throw new \InvalidArgumentException(\sprintf('Unknown command type: "%s"', $command->type->value)),
+            default => $command->type->value,
         };
 
-        $payload = match ($type) {
-            'background_bash', 'background_child', 'background_code_mode', 'stop_code_mode' => $command->payload,
-            'shell_command' => ['text' => $command->text],
-            'select_history_turn' => array_filter([
+        $payload = match ($command->type) {
+            UserCommandTypeEnum::BackgroundBash, UserCommandTypeEnum::BackgroundChild, UserCommandTypeEnum::BackgroundCodeMode, UserCommandTypeEnum::StopCodeMode => $command->payload,
+            UserCommandTypeEnum::ShellCommand => ['text' => $command->text],
+            UserCommandTypeEnum::SelectHistoryTurn => array_filter([
                 'turn_no' => $command->payload['turn_no'] ?? null,
                 'role' => $command->payload['role'] ?? null,
             ], static fn (mixed $v): bool => null !== $v),
@@ -555,7 +548,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         $cmd = new RuntimeCommand(
             id: uniqid('cmd_', true),
-            type: 'cancel',
+            type: UserCommandTypeEnum::Cancel->value,
             runId: $runId,
         );
 
@@ -634,7 +627,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         $cmd = new RuntimeCommand(
             id: uniqid('cmd_', true),
-            type: 'shell_command',
+            type: UserCommandTypeEnum::ShellCommand->value,
             runId: $sessionId,
             payload: [
                 'text' => $command,

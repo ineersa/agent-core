@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
@@ -58,7 +59,7 @@ final readonly class ExecuteToolCallWorker
             $execute = function () use ($message): ?ToolCallResult {
                 $outcome = $this->execute($message);
                 if (null === $outcome) {
-                    if ('completed' === $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId)) {
+                    if (DeferredToolCompletionStatusEnum::Completed === $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId)) {
                         return null;
                     }
                     $registration = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
@@ -111,7 +112,7 @@ final readonly class ExecuteToolCallWorker
         if (null !== $metadata) {
             // Prepared-but-not-ready rows still need first execution.
             // Completed or ready pending rows are already deferred and must not rerun.
-            if ('completed' === $metadata->status || null !== $metadata->readyAt) {
+            if (DeferredToolCompletionStatusEnum::Completed === $metadata->status || null !== $metadata->readyAt) {
                 return null;
             }
         }

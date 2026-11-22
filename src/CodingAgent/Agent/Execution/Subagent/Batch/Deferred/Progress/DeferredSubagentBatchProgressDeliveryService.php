@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress;
 
 use Doctrine\ORM\OptimisticLockException;
+use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
@@ -71,7 +72,7 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
                 parentTurnNo: $batch->parentTurnNo,
                 parentToolCallId: $batch->parentToolCallId,
                 parentOrderIndex: $batch->parentOrderIndex,
-                toolName: 'subagent',
+                toolName: ChildLaunchToolName::SUBAGENT,
                 progress: $payload,
                 lifecycleId: $batch->lifecycleId,
                 revision: $batch->aggregateProgressRevision,

@@ -9,6 +9,7 @@ use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Assets\TaskWorkflowSkillInstaller;
+use Ineersa\HatfieldExt\TaskWorkflow\Clock\AmpClock;
 use Ineersa\HatfieldExt\TaskWorkflow\Command\InitializeTasksCommandHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Command\TasksCommandHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
@@ -30,6 +31,7 @@ use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
 final class TaskWorkflowExtension implements ConfigurableExtensionInterface, LoggerAwareInterface
@@ -39,8 +41,10 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
     /**
      * @param bool $installSkill Mirror the bundled skill into `.hatfield/skills` for Hatfield; hosts that ship the skill themselves (the Claude Code plugin) pass false
      */
-    public function __construct(private readonly bool $installSkill = true)
-    {
+    public function __construct(
+        private readonly bool $installSkill = true,
+        private readonly ClockInterface $clock = new AmpClock(),
+    ) {
         $this->logger = new NullLogger();
     }
 
@@ -77,7 +81,7 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
         }
         $states = new WorkspaceStateStore($git, $primary);
         $store = new GitHubTaskStore($exec, $primary, $settings);
-        $pr = new PrManager($exec, $primary, $settings);
+        $pr = new PrManager($exec, $primary, $settings, $this->clock);
         $api->registerPromptContributor(new WorkflowPrompt($primary, $settings->repository));
         $statuses = array_map(static fn (TaskStatusEnum $status): string => $status->value, TaskStatusEnum::cases());
         $text = ['type' => 'string'];

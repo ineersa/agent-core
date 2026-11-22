@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -64,12 +65,12 @@ final class CodeModeTerminalObserver
         if (null === $metadata || $runId !== $metadata->reference->runId || 'code_mode' !== $metadata->reference->toolName) {
             return;
         }
-        if ('completed' === $metadata->status || null !== $metadata->acceptedResultReference) {
+        if (DeferredToolCompletionStatusEnum::Completed === $metadata->status || null !== $metadata->acceptedResultReference) {
             $this->acknowledge($id);
 
             return;
         }
-        if (null === $invocation || 'pending' !== $metadata->status) {
+        if (null === $invocation) {
             return;
         }
         $call = $this->deferred->findByDeferredId($id);
@@ -79,7 +80,7 @@ final class CodeModeTerminalObserver
         $explicit = $call->arguments['timeout_seconds'] ?? null;
         $explicit = \is_int($explicit) ? $explicit : null;
         $deadline = $this->processes->deadline($runId, $id, null !== $metadata->backgroundedAt, $explicit, $call->timeoutSeconds);
-        $reply = $this->processes->observeTerminal($runId, $id, $deadline, $metadata->interruptionReason, fn (): ?array => $this->receive($runId, $id));
+        $reply = $this->processes->observeTerminal($runId, $id, $deadline, $metadata->interruptionReason?->value, fn (): ?array => $this->receive($runId, $id));
         if (null === $reply) {
             return;
         }

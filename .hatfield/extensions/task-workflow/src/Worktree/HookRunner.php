@@ -24,7 +24,8 @@ final class HookRunner
         foreach (self::CONTEXT_KEYS as $key) {
             $env[$key] = $context[$key] ?? throw new \InvalidArgumentException('Missing hook context: '.$key);
         }
-        if (!\in_array($env['HATFIELD_TASK_REASON'], ['start', 'review', 'done', 'cancel'], true) || $timeout <= 0 || !is_finite($timeout)) {
+        $reason = HookReasonEnum::tryFrom($env['HATFIELD_TASK_REASON']);
+        if (null === $reason || $timeout <= 0 || !is_finite($timeout)) {
             throw new \InvalidArgumentException('Invalid hook reason or timeout.');
         }
         $root = realpath($primaryRoot);
@@ -41,7 +42,7 @@ final class HookRunner
         // noninteractive startup injection instead of relying on --norc alone.
         $env['BASH_ENV'] = '/dev/null';
         $env['GIT_TERMINAL_PROMPT'] = '0';
-        $cwd = \in_array($env['HATFIELD_TASK_REASON'], ['done', 'cancel'], true) ? $root : $env['HATFIELD_TASK_WORKTREE'];
+        $cwd = $reason->requiresWorktree() ? $env['HATFIELD_TASK_WORKTREE'] : $root;
         if (null !== ($interrupt = $control?->interrupted())) {
             return new ExecResultDTO(stdout: '', stderr: $interrupt['message'], exitCode: -1, timedOut: isset($interrupt['timed_out']), cancelled: isset($interrupt['cancelled']));
         }

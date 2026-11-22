@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
+use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
@@ -251,7 +252,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             $policy = $this->resolveToolPolicy($toolCall['name'], $activeSet);
             $parentModel = $message->model;
             $launchContext = null;
-            if ('fork' === $toolCall['name'] || 'subagent' === $toolCall['name']) {
+            if (ChildLaunchToolName::FORK === $toolCall['name'] || ChildLaunchToolName::SUBAGENT === $toolCall['name']) {
                 $producingModel = trim($message->model);
                 if ('' === $producingModel) {
                     throw new \RuntimeException(\sprintf('Cannot dispatch %s tool call %s: LlmStepResult model is required for immutable child launch inheritance.', $toolCall['name'], $toolCall['id']));
@@ -268,7 +269,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                     toolCallId: $toolCall['id'],
                     model: $producingModel,
                     agentsContext: $this->extractUserContextSource($messages, 'agents_context'),
-                    messages: 'fork' === $toolCall['name'] ? $messages : [],
+                    messages: ChildLaunchToolName::FORK === $toolCall['name'] ? $messages : [],
                 );
             }
 

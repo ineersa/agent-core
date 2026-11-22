@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
+use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\CommitSubagentProgress;
@@ -61,7 +62,7 @@ final readonly class CommitSubagentProgressHandler implements RunMessageHandler
         }
 
         $event = new RunEvent($message->runId(), 0, $message->turnNo(), RunEventTypeEnum::ToolExecutionUpdate->value, [
-            'tool_call_id' => $message->toolCallId, 'tool_name' => 'subagent', 'delta' => '',
+            'tool_call_id' => $message->toolCallId, 'tool_name' => ChildLaunchToolName::SUBAGENT, 'delta' => '',
             'subagent_progress' => $message->progress, 'order_index' => $message->orderIndex,
         ]);
 

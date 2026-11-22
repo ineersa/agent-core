@@ -12,11 +12,18 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
+use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
+use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
+use Ineersa\CodingAgent\Agent\Tool\NotifyParentTool;
+use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
+use Ineersa\CodingAgent\Tool\AskHumanTool;
+use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Ineersa\SqliteQueue\Client;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -47,7 +54,7 @@ final readonly class CodeModeHostBridge
     public function execute(string $script, ?int $timeoutSeconds = null, int $memoryLimitMb = CodeModeArgumentsDTO::DEFAULT_MEMORY_LIMIT_MB, bool $backgrounded = false): DeferredToolCompletionOutcome
     {
         $context = $this->contextAccessor->current();
-        if (null === $context || '' === $context->runId() || null === $context->stepId() || 'code_mode' !== $context->toolName()) {
+        if (null === $context || '' === $context->runId() || null === $context->stepId() || CodeModeTool::NAME !== $context->toolName()) {
             throw new ToolCallException('Code-mode launch requires a valid session invocation.', retryable: false);
         }
         $endpoint = $_SERVER['HATFIELD_SQLITE_QUEUE_ENDPOINT'] ?? $_ENV['HATFIELD_SQLITE_QUEUE_ENDPOINT'] ?? getenv('HATFIELD_SQLITE_QUEUE_ENDPOINT');
@@ -160,7 +167,14 @@ final readonly class CodeModeHostBridge
             if (false === $contents) {
                 throw new \RuntimeException(\sprintf('Unable to read code-mode bootstrap from "%s".', $source));
             }
-            $this->filesystem->dumpFile($target, $contents);
+            $this->filesystem->dumpFile($target, str_replace('/* @unsupported-tools@ */ []', var_export([
+                SubagentToolHandler::NAME,
+                ForkToolHandler::NAME,
+                AgentResumeToolHandler::NAME,
+                AgentSteerTool::NAME,
+                NotifyParentTool::NAME,
+                AskHumanTool::NAME,
+            ], true), $contents));
         } catch (\Throwable $exception) {
             throw new ToolCallException('Failed to materialize code-mode bootstrap for subprocess execution.', retryable: true, previous: $exception);
         }

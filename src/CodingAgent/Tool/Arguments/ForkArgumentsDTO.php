@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Arguments;
 
-use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -24,7 +24,7 @@ final class ForkArgumentsDTO
         )]
         public readonly ?string $model = null,
         #[Schema(description: 'Optional reasoning/thinking level.')]
-        #[Assert\Choice(choices: ModelResolver::LEVELS, message: 'fork thinking must be one of: {{ choices }}.')]
+        #[Assert\Choice(callback: [ThinkingLevelEnum::class, 'values'], message: 'fork thinking must be one of: {{ choices }}.')]
         public readonly ?string $thinking = null,
         #[Schema(description: 'Run in the background so you can continue other work without waiting for completion. Default false.')]
         public readonly bool $backgrounded = false,

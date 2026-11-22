@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
@@ -356,7 +357,7 @@ class ModelResolverTest extends TestCase
 
         $levels = $resolver->getSupportedReasoningLevels('');
 
-        $this->assertSame(ModelResolver::LEVELS, $levels);
+        $this->assertSame(ThinkingLevelEnum::values(), $levels);
     }
 
     // ──────────────────────────────────────────────

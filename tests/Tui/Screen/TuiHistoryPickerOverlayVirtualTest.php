@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Screen;
 
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryEntryView;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
@@ -44,7 +45,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         $oldState->handle = new \Ineersa\CodingAgent\Runtime\Contract\RunHandle($run, 'attached');
         $oldState->lastSeq = $store->latestSequenceFor($run);
         $oldState->sessionReady = true;
-        $oldClient->send($run, new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'select_history_turn', payload: ['turn_no' => $turn, 'role' => $role]));
+        $oldClient->send($run, new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: UserCommandTypeEnum::SelectHistoryTurn, payload: ['turn_no' => $turn, 'role' => $role]));
         $this->consumeMaintenance();
         $oldTicks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
         $expected = 'user' === $role ? 'U1' : (1 === $turn ? $next : '');
@@ -112,7 +113,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         $oldState->handle = new \Ineersa\CodingAgent\Runtime\Contract\RunHandle($run, 'attached');
         $oldState->lastSeq = $store->latestSequenceFor($run);
         $oldState->sessionReady = true;
-        $oldClient->send($run, new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'select_history_turn', payload: ['turn_no' => $turn, 'role' => 'assistant']));
+        $oldClient->send($run, new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: UserCommandTypeEnum::SelectHistoryTurn, payload: ['turn_no' => $turn, 'role' => 'assistant']));
         $this->consumeMaintenance();
         $oldTicks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
         $this->assertSame(1 === $turn ? $next : '', $oldTui->screen()->editorText());

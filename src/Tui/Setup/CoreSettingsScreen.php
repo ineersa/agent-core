@@ -7,11 +7,11 @@ namespace Ineersa\Tui\Setup;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\CodingAgent\CLI\Providers\ProvidersSetupFlowInterface;
 use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
-use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsResolutionDTO;
 use Ineersa\CodingAgent\Config\SettingsValueDTO;
 use Ineersa\CodingAgent\Config\SetupSettingsService;
+use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use Ineersa\Tui\Theme\TuiTheme;
 use Psr\Log\LoggerInterface;
@@ -76,7 +76,7 @@ final class CoreSettingsScreen
             $choices = fn (): array => match ($key) {
                 'tui.theme' => $this->themes->getNames(),
                 'ai.default_model', 'compaction.model', 'forks.model' => [self::inherit($key), ...$providers->configuredModelRefs()],
-                'ai.default_reasoning', 'compaction.thinking_level', 'forks.thinking_level' => [self::inherit($key), ...ModelResolver::LEVELS],
+                'ai.default_reasoning', 'compaction.thinking_level', 'forks.thinking_level' => [self::inherit($key), ...ThinkingLevelEnum::values()],
                 default => [],
             };
             $submenu = \is_bool($sample) ? null : function () use ($label, $help, $context, $choices, $key, $sample, $layer, $removeHint, $tui): SelectListWidget {

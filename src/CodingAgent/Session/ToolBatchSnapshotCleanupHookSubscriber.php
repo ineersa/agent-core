@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
+use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
@@ -45,7 +46,7 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
                 // LlmStepResultHandler publishes launch input only for these
                 // tools. Terminal results include synchronous launch failures;
                 // approval suspension has no terminal event and retains input.
-                if (\in_array($event->payload['tool_result']['result']['tool_name'] ?? null, ['fork', 'subagent'], true)) {
+                if (\in_array($event->payload['tool_result']['result']['tool_name'] ?? null, [ChildLaunchToolName::FORK, ChildLaunchToolName::SUBAGENT], true)) {
                     $launchInputIds[] = $event->payload['tool_result']['tool_call_id'];
                 }
                 // Direct shell outcomes have no SQL batch to trigger cleanup,

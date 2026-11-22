@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
+use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
+use Ineersa\CodingAgent\Agent\Tool\AgentRetrieveTool;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
@@ -39,7 +42,7 @@ final class OutputCap
      *
      * @var list<string>
      */
-    private const array DOCUMENT_REPORT_TOOL_NAMES = ['fork', 'subagent', 'agent_resume', 'agent_retrieve', 'code_mode'];
+    private const array DOCUMENT_REPORT_TOOL_NAMES = [ChildLaunchToolName::FORK, ChildLaunchToolName::SUBAGENT, AgentResumeToolHandler::NAME, AgentRetrieveTool::NAME, CodeModeTool::NAME];
 
     private bool $cleanedUp = false;
 
@@ -110,7 +113,7 @@ final class OutputCap
             return $path;
         }
 
-        if ($isError && 'code_mode' !== $toolName) {
+        if ($isError && CodeModeTool::NAME !== $toolName) {
             return null;
         }
 

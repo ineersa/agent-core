@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
 use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
@@ -729,8 +730,8 @@ final class ToolExecutor implements ToolExecutorInterface
         ToolLaunchContextDTO $launchContext,
     ): void {
         $expectedKind = match ($toolName) {
-            'fork' => ToolLaunchContextDTO::KIND_FORK,
-            'subagent' => ToolLaunchContextDTO::KIND_SUBAGENT,
+            ChildLaunchToolName::FORK => ToolLaunchContextDTO::KIND_FORK,
+            ChildLaunchToolName::SUBAGENT => ToolLaunchContextDTO::KIND_SUBAGENT,
             default => null,
         };
         if (null === $expectedKind || $launchContext->kind !== $expectedKind) {

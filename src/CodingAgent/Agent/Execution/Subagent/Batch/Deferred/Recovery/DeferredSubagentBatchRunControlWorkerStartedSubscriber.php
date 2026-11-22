@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery;
 
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -68,7 +69,7 @@ final readonly class DeferredSubagentBatchRunControlWorkerStartedSubscriber
                 continue;
             }
 
-            if (null === $batch->backgroundedAt && 'pending' !== $this->deferredToolCompletionRepository->status($batch->lifecycleId)) {
+            if (null === $batch->backgroundedAt && DeferredToolCompletionStatusEnum::Pending !== $this->deferredToolCompletionRepository->status($batch->lifecycleId)) {
                 continue;
             }
 

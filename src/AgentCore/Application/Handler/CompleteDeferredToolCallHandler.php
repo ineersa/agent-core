@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
@@ -25,7 +26,7 @@ final readonly class CompleteDeferredToolCallHandler
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function __invoke(CompleteDeferredToolCall $message): void
     {
-        if ('completed' === $this->deferredRepository->status($message->deferredId)) {
+        if (DeferredToolCompletionStatusEnum::Completed === $this->deferredRepository->status($message->deferredId)) {
             return;
         }
         $correlation = $this->deferredRepository->findByDeferredId($message->deferredId);
@@ -49,7 +50,7 @@ final readonly class CompleteDeferredToolCallHandler
         ]);
 
         try {
-            if ('completed' === $this->deferredRepository->status($message->deferredId)) {
+            if (DeferredToolCompletionStatusEnum::Completed === $this->deferredRepository->status($message->deferredId)) {
                 return;
             }
 

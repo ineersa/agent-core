@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
@@ -61,7 +62,7 @@ final class TickPollListenerChildHitlTest extends TestCase
 
         $coordinator->answer('yes');
         $this->assertNotNull($sent);
-        $this->assertSame('answer_human', $sent[1]->type);
+        $this->assertSame(UserCommandTypeEnum::AnswerHuman, $sent[1]->type);
         $this->assertSame('q_child_1', $sent[1]->payload['question_id'] ?? null);
         $this->assertTrue($sent[1]->payload['answer'] ?? false);
     }

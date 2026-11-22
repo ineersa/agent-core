@@ -28,6 +28,21 @@ final class MoveTaskHandlerTest extends TestCase
         $this->fixture->workspace->close();
     }
 
+    public function testReviewCompletesInOneCallWhenTheCreatedPrLinksLate(): void
+    {
+        $this->move('IN-PROGRESS');
+        $this->fixture->unlinkedPrViews = 2;
+        $started = $this->fixture->clock->now();
+
+        $this->move('CODE-REVIEW');
+
+        $this->assertSame('CODE-REVIEW', $this->fixture->status);
+        $this->assertSame('https://github.com/acme/project/pull/9', $this->fixture->record()['pr_url']);
+        $this->assertEquals($started->modify('+3 seconds'), $this->fixture->clock->now());
+        $creates = array_filter($this->fixture->calls, static fn (array $call): bool => 'gh' === $call[0] && ['pr', 'create'] === \array_slice($call[1], 0, 2));
+        $this->assertCount(1, $creates);
+    }
+
     public function testTaskStartReviewAndDone(): void
     {
         $this->move('IN-PROGRESS');

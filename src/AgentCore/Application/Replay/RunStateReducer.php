@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Replay;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
+use Ineersa\AgentCore\Domain\Event\AgentCommandKindEnum;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -244,7 +246,7 @@ final readonly class RunStateReducer
     {
         $kind = \is_string($payload['kind'] ?? null) ? $payload['kind'] : null;
 
-        if ('shell_command' === $kind) {
+        if (AgentCommandKindEnum::ShellCommand->value === $kind) {
             $key = \is_string($payload['idempotency_key'] ?? null) ? $payload['idempotency_key'] : null;
             if (null === $key || '' === $key) {
                 return $state;
@@ -298,7 +300,7 @@ final readonly class RunStateReducer
         // Message commands append prompt context.
         // These lifecycle advances abandon any outstanding human-input queue so a
         // later response cannot target a superseded question behind a new wait.
-        if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
+        if (true === AgentCommandKindEnum::fromPayload($kind)?->appendsMessage()) {
             $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
             if (null !== $messagePayload) {
                 $msg = AgentMessage::fromPayload($messagePayload);
@@ -369,7 +371,7 @@ final readonly class RunStateReducer
         }
 
         // cancel: transition to Cancelling and drop outstanding human-input waits.
-        if ('cancel' === $kind) {
+        if (AgentCommandKindEnum::Cancel->value === $kind) {
             $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
 
             return $state->with([
@@ -704,7 +706,7 @@ final readonly class RunStateReducer
             }
         }
 
-        $trigger = \is_string($payload['trigger'] ?? null) ? $payload['trigger'] : 'manual';
+        $trigger = \is_string($payload['trigger'] ?? null) ? $payload['trigger'] : CompactionTriggerEnum::Manual->value;
         $continueAfterCompaction = (bool) ($payload['continue_after_compaction'] ?? false);
         $finalStatus = ReplayLifecycleStatus::afterCompaction($continueAfterCompaction);
 

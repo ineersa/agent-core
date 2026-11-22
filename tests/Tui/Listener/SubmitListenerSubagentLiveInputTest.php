@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
@@ -75,7 +76,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
             ->method('send')
             ->with(
                 'child-run-1',
-                $this->callback(static fn (UserCommand $cmd): bool => 'steer' === $cmd->type && 'next step please' === $cmd->text),
+                $this->callback(static fn (UserCommand $cmd): bool => UserCommandTypeEnum::Steer === $cmd->type && 'next step please' === $cmd->text),
             );
 
         $screen = $this->dispatchSubmit('next step please');

@@ -12,6 +12,8 @@ use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
@@ -938,12 +940,12 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             $sourceEvents = $sourceRun === $runId ? $events : $this->canonicalHistory($sourceRun);
             foreach ($ids as $id) {
                 $metadata = $this->deferred->findMetadataByDeferredId($id);
-                if (null === $metadata || \in_array($metadata->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true)) {
+                if (null === $metadata || true === $metadata->interruptionReason?->preventsContinuation()) {
                     continue;
                 }
-                $requiresContinuation = $metadata->continuationRequired || ('pending' === $metadata->status && 'controller_lost' === $metadata->interruptionReason);
+                $requiresContinuation = $metadata->continuationRequired || (DeferredToolCompletionStatusEnum::Pending === $metadata->status && DeferredToolInterruptionReasonEnum::ControllerLost === $metadata->interruptionReason);
                 $admitted = 0 < $this->receipts->count(['deferredId' => $id, 'destinationRunId' => $runId, 'disposition' => 'pending']);
-                if (!$requiresContinuation && !$admitted && !('pending' === $metadata->status && null === $metadata->interruptionReason && null !== $metadata->acceptedResultReference)) {
+                if (!$requiresContinuation && !$admitted && !(DeferredToolCompletionStatusEnum::Pending === $metadata->status && null === $metadata->interruptionReason && null !== $metadata->acceptedResultReference)) {
                     continue;
                 }
                 $mailboxContinuation = $mailboxContinuation || $admitted;
@@ -955,7 +957,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 if ($sourceEvents instanceof RepairResult) {
                     return $sourceEvents;
                 }
-                if ('completed' === $metadata->status) {
+                if (DeferredToolCompletionStatusEnum::Completed === $metadata->status) {
                     $ref = $metadata->reference;
                     $resolved = false;
                     foreach ($sourceEvents as $event) {
@@ -1048,7 +1050,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     private function isDeferredChildCall(RunState $state, string $toolCallId): bool
     {
         return $this->deferredBatches->hasLaunchedPendingParentToolCall($state->runId, $state->turnNo, $toolCallId)
-            || null !== $this->deferred->findOneBy(['runId' => $state->runId, 'turnNo' => $state->turnNo, 'stepId' => $state->activeStepId, 'toolCallId' => $toolCallId, 'status' => 'pending']);
+            || null !== $this->deferred->findOneBy(['runId' => $state->runId, 'turnNo' => $state->turnNo, 'stepId' => $state->activeStepId, 'toolCallId' => $toolCallId, 'status' => DeferredToolCompletionStatusEnum::Pending]);
     }
 
     /**

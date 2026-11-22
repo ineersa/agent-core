@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
+use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 
@@ -47,7 +48,7 @@ final class ActivityStateMachine
                  && (RunActivityStateEnum::Completed === $current
                      || (\in_array($current, [RunActivityStateEnum::Cancelled, RunActivityStateEnum::Failed], true)
                          && $event->seq > 0
-                         && 'manual' === ($event->payload['trigger'] ?? null))))
+                         && CompactionTriggerEnum::Manual->value === ($event->payload['trigger'] ?? null))))
             && !self::allowsContinuationAfterTerminal($event)) {
             return $current;
         }

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -30,7 +31,7 @@ final readonly class AnswerHumanHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if ('answer_human' !== $event->command->type) {
+        if (UserCommandTypeEnum::AnswerHuman->value !== $event->command->type) {
             return;
         }
 
@@ -80,7 +81,7 @@ final readonly class AnswerHumanHandler
         // through AgentRunner::answerHuman() → CoreCommand(HumanResponse) →
         // run_control consumer → ApplyCommandHandler → extension answer subscriber.
         $this->client->send($runId, new UserCommand(
-            type: 'answer_human',
+            type: UserCommandTypeEnum::AnswerHuman,
             payload: [
                 'question_id' => $questionId,
                 'answer' => $answer,

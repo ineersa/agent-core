@@ -7,6 +7,11 @@ session controller through long-lived JSONL stdin/stdout pipes; in-process mode
 is available for tests and simple runs. The controller owns the session lock,
 broker and consumer processes, not run transitions.
 
+`AgentSessionClient::send()` takes a `UserCommand` with a `UserCommandTypeEnum`.
+Process mode maps `message` and `steer` to the `user_message` wire command.
+The `cancel` discriminator is not supported by `send()`; callers use the
+separate cancellation APIs. `RuntimeCommand` wire discriminators remain strings.
+
 ## Admission and delivery
 
 The controller ACKs commands before dispatch. An accepted command can still fail

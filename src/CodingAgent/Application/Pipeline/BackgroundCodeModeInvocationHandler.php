@@ -9,12 +9,15 @@ use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkCodeModeBackgroundedDTO;
+use Ineersa\CodingAgent\Tool\CodeModeTool;
 
 final readonly class BackgroundCodeModeInvocationHandler implements RunMessageHandler
 {
@@ -36,18 +39,18 @@ final readonly class BackgroundCodeModeInvocationHandler implements RunMessageHa
         }
         $metadata = $this->deferred->findMetadataByDeferredId($message->deferredId);
         if ($message->stop) {
-            return null !== $metadata && 'pending' === $metadata->status && null !== $metadata->backgroundedAt
-                && (('controller_lost' === $metadata->interruptionReason) || (null === $metadata->interruptionReason && null === $metadata->acceptedResultReference))
+            return null !== $metadata && DeferredToolCompletionStatusEnum::Pending === $metadata->status && null !== $metadata->backgroundedAt
+                && ((DeferredToolInterruptionReasonEnum::ControllerLost === $metadata->interruptionReason) || (null === $metadata->interruptionReason && null === $metadata->acceptedResultReference))
                 && $metadata->reference->runId === $state->runId && $metadata->reference->toolCallId === $message->toolCallId
-                && 'code_mode' === $metadata->reference->toolName
-                ? new HandlerResult(postCommitActions: [new DispatchLocalMetadataMessageDTO(new MarkCodeModeBackgroundedDTO($message->deferredId, new \DateTimeImmutable(), 'stopped'))])
+                && CodeModeTool::NAME === $metadata->reference->toolName
+                ? new HandlerResult(postCommitActions: [new DispatchLocalMetadataMessageDTO(new MarkCodeModeBackgroundedDTO($message->deferredId, new \DateTimeImmutable(), DeferredToolInterruptionReasonEnum::Stopped))])
                 : new HandlerResult();
         }
         if (false !== ($state->pendingToolCalls[$message->toolCallId] ?? null)) {
             return new HandlerResult();
         }
         if (null === $metadata
-            || 'pending' !== $metadata->status
+            || DeferredToolCompletionStatusEnum::Pending !== $metadata->status
             || null === $metadata->readyAt
             || null !== $metadata->backgroundedAt
             || null !== $metadata->acceptedResultReference
@@ -56,7 +59,7 @@ final readonly class BackgroundCodeModeInvocationHandler implements RunMessageHa
             || $metadata->reference->toolCallId !== $message->toolCallId
             || $metadata->reference->turnNo !== $state->turnNo
             || $metadata->reference->stepId !== ($state->activeStepId ?? '')
-            || 'code_mode' !== $metadata->reference->toolName) {
+            || CodeModeTool::NAME !== $metadata->reference->toolName) {
             return new HandlerResult();
         }
         $correlation = $this->deferred->findByDeferredId($message->deferredId);

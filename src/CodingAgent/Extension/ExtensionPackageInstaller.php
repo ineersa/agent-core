@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Extension;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Extension\Exception\ExtensionPackageInstallException;
+use Ineersa\CodingAgent\Extension\Exception\ExtensionPackageUninstallException;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
@@ -40,11 +41,48 @@ final readonly class ExtensionPackageInstaller
         $packages = [];
         foreach ($installed['packages'] as $package) {
             if (\is_array($package) && \is_string($package['name'] ?? null)) {
+                if (isset($packages[$package['name']])) {
+                    throw new ExtensionPackageInstallException('Installed Composer metadata contains duplicate package names.');
+                }
                 $packages[$package['name']] = $package;
             }
         }
 
         return $packages;
+    }
+
+    public function uninstall(SettingsLayerEnum $layer, string $cwd, string $package): void
+    {
+        $root = $this->rootFor($layer, $cwd);
+        $other = $this->rootFor(SettingsLayerEnum::User === $layer ? SettingsLayerEnum::Project : SettingsLayerEnum::User, $cwd);
+        $parent = realpath(\dirname($root, 2));
+        if (false === $parent || realpath($root) !== $parent.'/.hatfield/extensions' || realpath($root) === realpath($other)) {
+            throw new ExtensionPackageUninstallException('The extension installation is not exclusive to the selected scope.');
+        }
+        foreach (['composer.json', 'composer.lock', 'vendor', 'vendor/composer', 'vendor/bin', 'vendor/composer/installed.json', 'vendor/composer/installed.php'] as $path) {
+            $target = $root.'/'.$path;
+            if ((file_exists($target) || is_link($target)) && realpath($target) !== $parent.'/.hatfield/extensions/'.$path) {
+                throw new ExtensionPackageUninstallException('A Composer path redirects outside the selected installation.');
+            }
+        }
+        $manifest = json_decode(file_get_contents($root.'/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
+        if (!isset($manifest['require'][$package]) || isset($manifest['require-dev'][$package]) || !isset($this->packages($layer, $cwd)[$package])) {
+            throw new ExtensionPackageUninstallException('Only a directly installed runtime requirement can be removed.');
+        }
+        $composer = (new ExecutableFinder())->find('composer');
+        if (null === $composer) {
+            throw new ExtensionPackageUninstallException('Composer executable was not found on PATH.');
+        }
+        $process = new Process(
+            [$composer, 'remove', '--no-plugins', '--no-scripts', '--no-interaction', '--no-ansi', '--minimal-changes', '--', $package],
+            $root,
+            ExtensionUpdateService::environment($root),
+            timeout: 300,
+        );
+        $process->mustRun();
+        if (isset($this->packages($layer, $cwd)[$package])) {
+            throw new ExtensionPackageUninstallException('The requirement was removed but Composer still lists the package; check whether another package requires it.');
+        }
     }
 
     public function install(SettingsLayerEnum $layer, string $cwd, string $package): void

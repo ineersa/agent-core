@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
@@ -1443,7 +1444,7 @@ final class TickPollListenerTest extends TestCase
             ->with(
                 $runId,
                 $this->callback(static fn ($cmd): bool => $cmd instanceof UserCommand
-                    && 'follow_up' === $cmd->type
+                    && UserCommandTypeEnum::FollowUp === $cmd->type
                     && 'Continue after compact' === $cmd->text
                 ),
             );
@@ -1527,7 +1528,7 @@ final class TickPollListenerTest extends TestCase
             ->with(
                 $runId,
                 $this->callback(static fn ($cmd): bool => $cmd instanceof UserCommand
-                    && 'follow_up' === $cmd->type
+                    && UserCommandTypeEnum::FollowUp === $cmd->type
                     && 'Continue after cancel' === $cmd->text
                 ),
             );

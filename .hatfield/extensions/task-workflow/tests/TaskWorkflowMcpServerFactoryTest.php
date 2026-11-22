@@ -5,13 +5,45 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\TaskWorkflow\Tests;
 
 use Ineersa\HatfieldExt\TaskWorkflow\Claude\TaskWorkflowMcpServerFactory;
+use Ineersa\HatfieldExt\TaskWorkflow\Tests\Support\TransitionFixture;
 use Ineersa\HatfieldExt\TaskWorkflow\Tests\Support\WorkspaceFixture;
 use Mcp\Server\Transport\StdioTransport;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Yaml\Yaml;
 
 final class TaskWorkflowMcpServerFactoryTest extends TestCase
 {
+    public function testLateLinkingUsesTheHostClockInsideTheStdioHandlerFiber(): void
+    {
+        $fixture = new TransitionFixture();
+        try {
+            $this->writeSettings($fixture->workspace, Yaml::dump(['extensions' => ['settings' => ['task_workflow' => [
+                'repository' => 'acme/project',
+                'worktree_root' => $fixture->settings->worktreeRoot,
+                'hooks' => $fixture->settings->hooks,
+            ]]]], 8));
+            $fixture->unlinkedPrViews = 2;
+            $start = $fixture->clock->now();
+            // A native-compatible virtual clock never suspends the MCP-owned
+            // handler fiber. An accidental AmpClock here cannot advance it.
+            $factory = new TaskWorkflowMcpServerFactory(new NullLogger(), $fixture, $fixture->clock);
+
+            $responses = $this->exchange($fixture->workspace, [
+                ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'move_task', 'arguments' => ['task' => '7', 'to' => 'IN-PROGRESS']]],
+                ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call', 'params' => ['name' => 'move_task', 'arguments' => ['task' => '7', 'to' => 'CODE-REVIEW']]],
+            ], $factory);
+
+            $this->assertFalse($responses[3]['result']['isError']);
+            $this->assertStringContainsString('Validation passed; PR ready for review.', $responses[3]['result']['content'][0]['text']);
+            $this->assertSame('CODE-REVIEW', $fixture->status);
+            $this->assertEquals($start->modify('+3 seconds'), $fixture->clock->now());
+            $this->assertDirectoryDoesNotExist($fixture->workspace->root.'/.hatfield/skills');
+        } finally {
+            $fixture->workspace->close();
+        }
+    }
+
     public function testServesRegisteredToolsAndCommandsOverStdioWithoutInstallingHatfieldSkill(): void
     {
         $workspace = new WorkspaceFixture();
@@ -63,7 +95,7 @@ final class TaskWorkflowMcpServerFactoryTest extends TestCase
      *
      * @return array<int, array<string, mixed>> Responses keyed by request id
      */
-    private function exchange(WorkspaceFixture $workspace, array $requests): array
+    private function exchange(WorkspaceFixture $workspace, array $requests, ?TaskWorkflowMcpServerFactory $factory = null): array
     {
         $messages = [
             ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'test', 'version' => '1']]],
@@ -80,7 +112,7 @@ final class TaskWorkflowMcpServerFactoryTest extends TestCase
         $this->assertIsResource($output);
 
         // The workspace directory stands in for HOME, so no user settings leak in.
-        $server = (new TaskWorkflowMcpServerFactory(new NullLogger()))->create($workspace->root, $workspace->directory, 'test');
+        $server = ($factory ?? new TaskWorkflowMcpServerFactory(new NullLogger()))->create($workspace->root, $workspace->directory, 'test');
         $server->run(new StdioTransport($input, $output));
 
         // The transport closes both streams when input ends.

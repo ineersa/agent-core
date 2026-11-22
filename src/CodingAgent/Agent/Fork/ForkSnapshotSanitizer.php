@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Fork;
 
+use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 
 /**
@@ -81,7 +82,7 @@ final class ForkSnapshotSanitizer
                 continue;
             }
 
-            if (isset($toolCall['name']) && 'fork' === $toolCall['name']) {
+            if (isset($toolCall['name']) && ChildLaunchToolName::FORK === $toolCall['name']) {
                 return true;
             }
         }

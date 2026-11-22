@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Protocol;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Domain\Event\AgentCommandKindEnum;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
@@ -461,7 +462,7 @@ final class RuntimeEventTranslator
             );
         }
 
-        if ('cancel' === $kind) {
+        if (AgentCommandKindEnum::Cancel->value === $kind) {
             return new RuntimeEvent(
                 type: RuntimeEventTypeEnum::CancellationRequested->value,
                 runId: $runEvent->runId,
@@ -470,7 +471,7 @@ final class RuntimeEventTranslator
             );
         }
 
-        if ('shell_command' === $kind) {
+        if (AgentCommandKindEnum::ShellCommand->value === $kind) {
             $idempotencyKey = (string) ($p['idempotency_key'] ?? '');
 
             return new RuntimeEvent(
@@ -485,7 +486,7 @@ final class RuntimeEventTranslator
             );
         }
 
-        if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
+        if (true === AgentCommandKindEnum::fromPayload($kind)?->appendsMessage()) {
             // Extract message text from the serialized message payload
             // included by CommandMailboxPolicy. Preserve non-empty message
             // metadata for presentation provenance (opaque to AgentCore).
@@ -507,7 +508,7 @@ final class RuntimeEventTranslator
 
                 return new RuntimeEvent(RuntimeEventTypeEnum::ModelNotification->value, $runEvent->runId, $runEvent->seq, ModelNotificationCodec::toEventSpecs($this->normalizer, [$notification])[0]['payload']);
             }
-            if ('append_message' === $kind && 'agent_communication' === ($messagePayload['role'] ?? null)
+            if (AgentCommandKindEnum::AppendMessage->value === $kind && 'agent_communication' === ($messagePayload['role'] ?? null)
                 && \is_array($metadata) && \is_array($metadata['agent_communication'] ?? null)) {
                 // System transcript blocks are presentation, not system-role
                 // authority. Keep the canonical custom-role message unchanged
@@ -564,7 +565,7 @@ final class RuntimeEventTranslator
             return null;
         }
 
-        if (!\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
+        if (true !== AgentCommandKindEnum::fromPayload($kind)?->appendsMessage()) {
             return null;
         }
 
@@ -573,7 +574,7 @@ final class RuntimeEventTranslator
         // user.message_queued for follow_up only causes a brief ⏳ flicker with no
         // user value. Steer/append_message while the run is active still need the
         // pending-queue affordance until agent_command_applied arrives.
-        if ('follow_up' === $kind) {
+        if (AgentCommandKindEnum::FollowUp->value === $kind) {
             return null;
         }
 

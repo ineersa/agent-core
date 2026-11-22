@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Compaction;
 
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
+use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
 use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -247,7 +248,7 @@ final class AutoCompactionHookSubscriber implements EssentialAfterTurnHookInterf
 
         return [new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new CompactRun(
             runId: $runId, turnNo: $runState->turnNo, stepId: $stepId, attempt: 1,
-            idempotencyKey: hash('sha256', $runId.'|'.$stepId), trigger: 'auto',
+            idempotencyKey: hash('sha256', $runId.'|'.$stepId), trigger: CompactionTriggerEnum::Auto->value,
         ))];
     }
 

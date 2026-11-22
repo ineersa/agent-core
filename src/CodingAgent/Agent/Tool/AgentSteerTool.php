@@ -17,6 +17,8 @@ use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 final readonly class AgentSteerTool implements HatfieldToolProviderInterface
 {
+    public const string NAME = 'agent_steer';
+
     public function __construct(private StackToolExecutionContextAccessor $context, private SubmissionFactory $submissions, private ToolRuntime $runtime)
     {
     }
@@ -35,7 +37,7 @@ final readonly class AgentSteerTool implements HatfieldToolProviderInterface
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
-            name: 'agent_steer',
+            name: self::NAME,
             description: 'Send short guidance to one current active direct subagent or fork, including its current agent_resume activity. Requires exactly one child handle. Returns a persisted source receipt, not confirmation of delivery or attention. Never resumes a terminal child.',
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,

@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Agent\Messenger;
 
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
+use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
+use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
 use Symfony\Component\Messenger\Middleware\StackInterface;
@@ -22,9 +24,6 @@ use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
  */
 final readonly class SubagentExecuteToolCallRoutingMiddleware implements MiddlewareInterface
 {
-    public const string SUBAGENT_TOOL_NAME = 'subagent';
-    public const string AGENT_RESUME_TOOL_NAME = 'agent_resume';
-
     public function handle(Envelope $envelope, StackInterface $stack): Envelope
     {
         $message = $envelope->getMessage();
@@ -42,7 +41,7 @@ final readonly class SubagentExecuteToolCallRoutingMiddleware implements Middlew
             return $stack->next()->handle($envelope, $stack);
         }
 
-        if (!\in_array($toolName, [self::SUBAGENT_TOOL_NAME, self::AGENT_RESUME_TOOL_NAME], true)) {
+        if (!\in_array($toolName, [SubagentToolHandler::NAME, AgentResumeToolHandler::NAME], true)) {
             return $stack->next()->handle($envelope, $stack);
         }
 

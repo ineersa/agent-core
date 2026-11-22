@@ -98,14 +98,7 @@ if (!\function_exists('tool')) {
             throw new InvalidArgumentException('Tool name must be a non-empty string.');
         }
 
-        $unsupported = [
-            'subagent',
-            'fork',
-            'agent_resume',
-            'agent_steer',
-            'notify_parent',
-            'ask_human',
-        ];
+        $unsupported = /* @unsupported-tools@ */ [];
         if (in_array($name, $unsupported, true)) {
             throw new RuntimeException(sprintf(
                 'Tool "%s" is not supported inside code_mode. Child launches, agent communication, and interactive ask_human calls must run outside the script.',

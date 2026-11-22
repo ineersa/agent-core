@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\AnswerHumanHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
@@ -46,7 +47,7 @@ final class AnswerHumanHandlerTest extends TestCase
         $handler($event);
 
         $this->assertNotNull($this->spyClient->lastCommand);
-        $this->assertSame('answer_human', $this->spyClient->lastCommand->type);
+        $this->assertSame(UserCommandTypeEnum::AnswerHuman, $this->spyClient->lastCommand->type);
         $this->assertSame('sg_abc', $this->spyClient->lastCommand->payload['question_id'] ?? null);
         $this->assertSame('✅ Allow', $this->spyClient->lastCommand->payload['answer'] ?? null);
     }
@@ -216,7 +217,7 @@ final class AnswerHumanHandlerTest extends TestCase
         // NOT be rejected as ProtocolError. If a future refactor reverts the
         // gate to '' === (string) $answer, this test fails.
         $this->assertNotNull($this->spyClient->lastCommand);
-        $this->assertSame('answer_human', $this->spyClient->lastCommand->type);
+        $this->assertSame(UserCommandTypeEnum::AnswerHuman, $this->spyClient->lastCommand->type);
         $this->assertSame('q_confirm', $this->spyClient->lastCommand->payload['question_id'] ?? null);
         $this->assertFalse($this->spyClient->lastCommand->payload['answer'] ?? null);
     }
@@ -240,7 +241,7 @@ final class AnswerHumanHandlerTest extends TestCase
 
         // Boolean true must dispatch (confirm "Yes" answers).
         $this->assertNotNull($this->spyClient->lastCommand);
-        $this->assertSame('answer_human', $this->spyClient->lastCommand->type);
+        $this->assertSame(UserCommandTypeEnum::AnswerHuman, $this->spyClient->lastCommand->type);
         $this->assertSame('q_confirm', $this->spyClient->lastCommand->payload['question_id'] ?? null);
         $this->assertTrue($this->spyClient->lastCommand->payload['answer'] ?? null);
     }
