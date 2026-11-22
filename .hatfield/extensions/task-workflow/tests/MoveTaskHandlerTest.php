@@ -28,6 +28,37 @@ final class MoveTaskHandlerTest extends TestCase
         $this->fixture->workspace->close();
     }
 
+    public function testAdoptToTodoSucceedsWithoutStartingWorkAndIsSafeToRepeat(): void
+    {
+        $this->fixture->status = '';
+        $this->fixture->issueState = 'closed';
+        $this->fixture->closeReason = 'completed';
+
+        $result = $this->move('TODO', ['adopt' => true]);
+        $this->assertStringContainsString('status: TODO', $result);
+        $this->assertSame('TODO', $this->fixture->status);
+        $this->assertSame('closed', $this->fixture->issueState);
+        $this->assertSame('completed', $this->fixture->closeReason);
+
+        $this->fixture->calls = [];
+        $this->assertSame($result, $this->move('TODO', ['adopt' => true]));
+        $this->assertSame([], array_filter($this->fixture->calls, static fn (array $call): bool => 'gh' === $call[0] && \in_array('POST', $call[1], true)));
+        $this->assertSame([], $this->fixture->hookCalls);
+        $this->assertNull($this->fixture->record());
+    }
+
+    public function testTodoIsOnlyAnAdoptionDestinationNotAWorkflowRewind(): void
+    {
+        $this->fixture->status = '';
+        $this->refused(fn () => $this->move('TODO'));
+        $this->assertSame('', $this->fixture->status);
+
+        $this->fixture->status = 'IN-PROGRESS';
+        $this->refused(fn () => $this->move('TODO', ['adopt' => true]));
+        $this->assertSame('IN-PROGRESS', $this->fixture->status);
+        $this->assertSame([], $this->fixture->hookCalls);
+    }
+
     public function testReviewCompletesInOneCallWhenTheCreatedPrLinksLate(): void
     {
         $this->move('IN-PROGRESS');

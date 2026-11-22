@@ -95,6 +95,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $shutdownRelease = $this->tmpDir.'/shutdown-release';
             $this->assertTrue(posix_mkfifo($shutdownRelease, 0600));
             $script = 'try { $mcp = tool("fixture_echo", ["text" => "cold worker fixture"]); } catch (RuntimeException $error) { $mcp = $error->getMessage(); } try { tool("read", ["invalid list"]); } catch (RuntimeException $error) { $refusal = $error->getMessage(); }'
+                .' try { tool("agent_cancel", ["artifact_id" => "unused"]); throw new LogicException("Nested agent_cancel was accepted"); } catch (RuntimeException $error) { if (!str_contains($error->getMessage(), "not supported inside code_mode")) { throw $error; } }'
                 .' try { tool("code_mode", ["script" => "return 42;"]); } catch (RuntimeException $error) { $recursion = $error->getMessage(); }'
                 .' $first = \Amp\async(static fn () => tool("read", ["path" => '.var_export($fixture, true).']));'
                 .' $second = \Amp\async(static function () {'

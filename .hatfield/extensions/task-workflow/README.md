@@ -242,8 +242,8 @@ QA-report object or permanent task-level validation-passed flag.
   or work-log arguments exist.
 - `move_task(task, to, from?, adopt?, pr?, branch?, acceptedHead?, prTitle?, prBody?)`:
   transitions own hooks, Git/PR operations and recovery. `from` guards expected
-  source Workflow. `adopt=true` explicitly adopts an unmanaged ordinary issue as
-  TODO, including historical closed issues; native closure never implies cleanup.
+  source Workflow. `to: "TODO", adopt: true` tracks an issue without starting work
+  or reopening it. On TODO it is a no-op.
   Select ambiguous native PR/branch relationships explicitly. `acceptedHead`
   identifies the inspected/reviewed completion revision, required without a local
   submitted-SHA checkpoint. It is not merge authorization or a review bypass.
