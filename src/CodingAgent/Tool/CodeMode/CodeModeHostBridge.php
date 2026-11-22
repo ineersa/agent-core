@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\CodingAgent\Agent\Tool\AgentCancelTool;
 use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
 use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
@@ -519,6 +520,7 @@ final readonly class CodeModeHostBridge
                 SubagentToolHandler::NAME,
                 ForkToolHandler::NAME,
                 AgentResumeToolHandler::NAME,
+                AgentCancelTool::NAME,
                 AgentSteerTool::NAME,
                 NotifyParentTool::NAME,
                 AskHumanTool::NAME,

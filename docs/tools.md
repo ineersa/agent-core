@@ -28,6 +28,7 @@ bypass approvals or sandbox it.
 | `agent_resume` | Continue an existing parent-owned child/fork. |
 | `agent_retrieve` | Read existing handoff/metadata/history, not launch work. |
 | `agent_steer` / `notify_parent` | Native active-child guidance/notices; not human input. |
+| `agent_cancel` | Request cancellation of one active direct subagent or fork. |
 | `schedule` | Optional recurring Bash/code-mode work; enable Scheduling first. |
 
 Task-board and observational-memory tools come from optional extensions, not every
@@ -110,7 +111,7 @@ Raw PHP filesystem/process functions bypass toolbox hooks and approvals. Use
 bubblewrap; it does not create one. Checkout/PHAR use their launching PHP CLI;
 fused native builds require `php` on PATH.
 
-`subagent`, `fork`, `agent_resume`, `agent_steer`, `notify_parent` and `ask_human`
+`subagent`, `fork`, `agent_resume`, `agent_cancel`, `agent_steer`, `notify_parent` and `ask_human`
 are unsupported inside code mode. Call them directly. Nested Bash/code-mode calls
 cannot detach; use a direct `backgrounded: true` call for background work.
 A background PHP script still depends on its original host worker and cannot
