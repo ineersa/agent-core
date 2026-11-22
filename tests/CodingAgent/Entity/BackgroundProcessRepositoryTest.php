@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Entity;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletion;
@@ -26,7 +27,7 @@ final class BackgroundProcessRepositoryTest extends IsolatedKernelTestCase
             $invocation->runId = 'foreign' === $id ? 'other' : 'main';
             $invocation->deferredId = $invocation->toolCallId = $id;
             $invocation->toolName = 'code_mode';
-            $invocation->status = 'settled' === $id ? 'completed' : 'pending';
+            $invocation->status = 'settled' === $id ? DeferredToolCompletionStatusEnum::Completed : DeferredToolCompletionStatusEnum::Pending;
             $em->persist($invocation);
             if ('unlaunched' === $id) {
                 continue;
