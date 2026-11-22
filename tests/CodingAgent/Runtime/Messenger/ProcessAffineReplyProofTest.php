@@ -61,6 +61,7 @@ final class ProcessAffineReplyProofTest extends TestCase
         }
     }
 
+    // @phpstan-ignore shipmonk.deadMethod (Called by the fresh PHP subprocess entry point above.)
     public function produce(SessionSqliteQueuePaths $paths): void
     {
         $work = $this->transport($paths, 'code_mode_requests');
