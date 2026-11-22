@@ -79,6 +79,9 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
                     }
                 }
             }
+            if ($input->adopt && TaskStatusEnum::TODO === $to && TaskStatusEnum::TODO === $current->status) {
+                return ToolResult::text('Issue is tracked with Workflow TODO.', ['task' => $current]);
+            }
             $allowed = match ($to) {
                 TaskStatusEnum::IN_PROGRESS => \in_array($current->status, [TaskStatusEnum::TODO, TaskStatusEnum::IN_PROGRESS, TaskStatusEnum::CODE_REVIEW], true),
                 TaskStatusEnum::CODE_REVIEW => TaskStatusEnum::IN_PROGRESS === $current->status,
