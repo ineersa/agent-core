@@ -37,7 +37,7 @@ final class LlmFiberConsumeWaitSubscriber implements EventSubscriberInterface
 {
     private const int DEFAULT_WAIT_BUDGET_MILLISECONDS = 1_000;
 
-    /** @var \WeakMap<Command, true> */
+    /** @var \WeakMap<LlmFiberConsumeCommand, true> */
     private \WeakMap $armedCommands;
 
     /** @var \WeakMap<Worker, DeferredCancellation> */
@@ -92,7 +92,11 @@ final class LlmFiberConsumeWaitSubscriber implements EventSubscriberInterface
         }
 
         $names = $event->getWorker()->getMetadata()->getTransportNames();
-        if (!\in_array($names, [['llm'], ['tool', 'agent']], true)) {
+        $reply = $command->replyReceiver();
+        if (null !== $reply) {
+            array_shift($names); // The private reply receiver has priority over shared work.
+        }
+        if (!\in_array($names, [['llm'], ['tool', 'agent', 'code_mode_requests']], true)) {
             return;
         }
         $owner = null;
@@ -109,10 +113,23 @@ final class LlmFiberConsumeWaitSubscriber implements EventSubscriberInterface
             $queues[] = $receiver->queueName();
         }
 
-        $stop = new DeferredCancellation();
-        $this->stopsByWorker[$event->getWorker()] = $stop;
-        $this->stopsByCommand[$command] = $stop;
-        $this->waitsByWorker[$event->getWorker()] = static fn (int $timeoutMilliseconds, Cancellation $cancellation): bool => $owner->waitAny($queues, $timeoutMilliseconds, $cancellation);
+        if (null !== $reply) {
+            $queues[] = $reply->queueName();
+        }
+        $this->bind($event->getWorker(), $owner, $queues);
+        $this->stopsByCommand[$command] = $this->stopsByWorker[$event->getWorker()];
+    }
+
+    /** @param list<string> $queues */
+    public function bind(Worker $worker, Transport $owner, array $queues): void
+    {
+        $this->stopsByWorker[$worker] = new DeferredCancellation();
+        $this->waitsByWorker[$worker] = static fn (int $timeoutMilliseconds, Cancellation $cancellation): bool => $owner->waitAny($queues, $timeoutMilliseconds, $cancellation);
+    }
+
+    public function release(Worker $worker): void
+    {
+        $this->onWorkerStopped(new WorkerStoppedEvent($worker));
     }
 
     public function onWorkerRunning(WorkerRunningEvent $event): void
@@ -202,7 +219,7 @@ final class LlmFiberConsumeWaitSubscriber implements EventSubscriberInterface
         return false;
     }
 
-    private function takeArmedCommand(): ?Command
+    private function takeArmedCommand(): ?LlmFiberConsumeCommand
     {
         foreach ($this->armedCommands as $command => $_) {
             unset($this->armedCommands[$command]);

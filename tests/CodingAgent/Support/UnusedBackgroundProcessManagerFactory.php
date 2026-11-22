@@ -24,7 +24,7 @@ final class UnusedBackgroundProcessManagerFactory
 
         return new BackgroundProcessManager(
             new ProcessStore($entityManager),
-            new ProcessLifecycle($config, $logger, new LockFactory(new FlockStore())),
+            new ProcessLifecycle($config, $logger, new LockFactory(new FlockStore()), TestProcessRuntime::source()),
             $config,
             $logger,
         );

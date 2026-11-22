@@ -124,6 +124,11 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
             $currentEnv = getenv();
             $env = \is_array($currentEnv) ? $currentEnv : $_ENV;
             $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = '1';
+            if ('tool' === $transportName) {
+                $env['HATFIELD_CODE_MODE_REPLY_SLOT'] = 'tool-'.$instanceId;
+            } elseif ('extension_agent' === $transportName) {
+                $env['HATFIELD_CODE_MODE_REPLY_SLOT'] = 'extension_agent';
+            }
 
             if (\in_array($transportName, ['llm', 'tool'], true)) {
                 // Same-process Fiber capacity replaces execution process pools.

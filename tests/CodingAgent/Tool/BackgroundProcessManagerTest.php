@@ -22,6 +22,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Support\TestProcessRuntime;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -366,7 +367,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertCount(1, $pidFiles);
         $pid = (int) file_get_contents($pidFiles[0]);
         $status = substr($pidFiles[0], 0, -4).'.status';
-        $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $this->directory.'/bg'), new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $this->directory.'/bg'), new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $this->assertFalse($lifecycle->isAlive($pid), 'Failed storage must not leave an owned foreground process running.');
         $this->assertFileExists(substr($pidFiles[0], 0, -4).'.log');
         $this->assertSame([], $this->store->sessionSnapshots($this->runId));
@@ -440,7 +441,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     private function newManager(?LoggerInterface $logger = null): BackgroundProcessManager
     {
         $config = new BackgroundProcessConfig(storageDir: $this->directory.'/bg', stopGraceSeconds: 0);
-        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
 
         return new BackgroundProcessManager($this->store, $lifecycle, $config, $logger ?? new NullLogger());
     }

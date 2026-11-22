@@ -23,7 +23,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 /** Immutable, content-addressed data shared by transport and the batch index. */
 final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterface
 {
-    /** @param array{run_id: string, path: string}|null $runRoot */
+    /** @param array{run_id: string, path: string, workspace_replies?: true}|null $runRoot */
     public function __construct(
         private ToolBatchRunStoragePathsInterface $paths,
         private SerializerInterface&NormalizerInterface&DenormalizerInterface $serializer,
@@ -41,6 +41,13 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
         }
 
         return new self($this->paths, $this->serializer, $this->validator, $this->filesystem, ['run_id' => $runId, 'path' => $root]);
+    }
+
+    public function forWorkspaceReplies(string $runId, string $workspace): self
+    {
+        $this->root($runId);
+
+        return new self($this->paths, $this->serializer, $this->validator, $this->filesystem, ['run_id' => $runId, 'path' => $workspace.'/replies', 'workspace_replies' => true]);
     }
 
     public function publish(ExecuteToolCall|ExecuteShellToolCall|ToolCallResult $message): ToolPayloadReferenceDTO
@@ -263,6 +270,14 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
 
     private function seal(ToolPayloadReferenceDTO $reference, string $json): void
     {
+        if ($this->runRoot['workspace_replies'] ?? false) {
+            // The process owner holds the invocation lock for these writes.
+            // Do not acquire the session lock inside it: session deletion can
+            // hold that lock while retiring native processes.
+            $this->sealOwned($reference, $json);
+
+            return;
+        }
         $this->withStorage($reference->runId, fn () => $this->sealOwned($reference, $json));
     }
 

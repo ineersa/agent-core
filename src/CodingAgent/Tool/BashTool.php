@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\NativeBashObservationDTO;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeCancellationToken;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
@@ -50,7 +51,14 @@ final class BashTool implements HatfieldToolProviderInterface
             $context = $this->contextAccessor->current();
             $sessionId = $context?->runId();
             $cancelToken = $context?->cancellationToken();
-            $deadline = hrtime(true) + $timeout * 1_000_000_000;
+            $parentTimeout = $context?->timeoutSeconds();
+            if (!$cancelToken instanceof CodeModeCancellationToken && null !== $parentTimeout && $parentTimeout > 0) {
+                $timeout = min($timeout, $parentTimeout);
+            }
+            $now = hrtime(true);
+            $deadline = $this->deadline($now, $timeout);
+            $backgroundTimeout = $arguments->timeout ?? $this->config->maxTimeoutSeconds;
+            $backgroundDeadline = null === $backgroundTimeout ? null : $this->deadline($now, $backgroundTimeout);
 
             $outerInvocation = 1 === $this->contextAccessor->depth();
             $topLevelModel = null !== $context?->stepId() && $outerInvocation;
@@ -62,17 +70,18 @@ final class BashTool implements HatfieldToolProviderInterface
                 $command,
                 $sessionId,
                 $outerInvocation ? $toolCallId : null,
-                $deadline,
+                $backgroundDeadline,
                 backgroundRequested: $arguments->backgrounded,
                 // Nested code-mode calls have random IDs and are not replayed.
                 // Their caller retains output, but owns native-sidecar cleanup.
                 invocationKey: $outerInvocation && null !== $context ? json_encode([$context->turnNo(), $context->stepId(), $toolCallId], \JSON_THROW_ON_ERROR) : null,
+                foregroundDeadlineNanoseconds: $deadline,
             );
             $pid = $startResult->pid;
             $statusPath = $startResult->statusPath;
             $logPath = $startResult->logPath;
             $retainedOutputPath = null;
-            $deadline = $startResult->deadlineNanoseconds ?? $deadline;
+            $deadline = min($deadline, $startResult->deadlineNanoseconds ?? $deadline);
             if ($startResult->accepted) {
                 return $this->backgroundAcknowledgment($pid);
             }
@@ -155,7 +164,7 @@ final class BashTool implements HatfieldToolProviderInterface
                         if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
                             return $this->cancelNative($statusPath, $sessionId, $pid, $toolCallId);
                         }
-                        if (!$this->manager->acceptResolvedBackground($candidate, $cancelToken)) {
+                        if (!$this->manager->acceptResolvedBackground($candidate, $cancelToken, $deadline)) {
                             continue;
                         }
 
@@ -183,21 +192,29 @@ final class BashTool implements HatfieldToolProviderInterface
             promptLine: 'bash command [timeout=N] [backgrounded=true|false] — execute a shell command',
             promptGuidelines: [
                 \sprintf(
-                    'Bash commands time out after %d seconds by default. Always provide the timeout argument with an explicit higher value when a command needs more time, up to the %d-second maximum.',
+                    'Bash commands time out after %d seconds by default. Always provide the timeout argument with an explicit higher value when a command needs more time%s.',
                     $this->config->defaultTimeoutSeconds,
-                    $this->config->maxTimeoutSeconds,
+                    null === $this->config->maxTimeoutSeconds ? '' : \sprintf(', up to the %d-second maximum', $this->config->maxTimeoutSeconds),
                 ),
                 'For file operations such as reading, writing, editing, or viewing files, prefer the dedicated read/write/edit/view_image tools instead of bash cat/echo/editor pipelines.',
                 'Set backgrounded=true when you can continue other work without the command\'s result. The default, false, waits for completion. Background commands notify you when they finish; do not poll for completion. Use bg_status with the returned PID to inspect output or stop the command. Background launch is supported for direct bash calls, not calls inside code_mode.',
-                'If you only need to know when one operation finishes, run its native wait or watch command once in the background. Only completion notifies you, not intermediate output or status changes. The original timeout still applies.',
+                'If you only need to know when one operation finishes, run its native wait or watch command once in the background. Only completion notifies you, not intermediate output or status changes. After acceptance, the explicit timeout applies from launch. If omitted, the configured maximum applies from launch, or there is no deadline if no maximum is configured.',
                 'Output is capped to prevent excessively large responses. Very large output may be truncated and saved to a file for inspection.',
             ],
         );
     }
 
+    private function deadline(int $now, int $timeout): int
+    {
+        // Native launch evidence stores an integer monotonic deadline.
+        return $timeout > intdiv(\PHP_INT_MAX - $now, 1_000_000_000)
+            ? \PHP_INT_MAX
+            : $now + $timeout * 1_000_000_000;
+    }
+
     private function resolveTimeout(BashArgumentsDTO $arguments): int
     {
-        return $arguments->timeout ?? $this->config->defaultTimeoutSeconds;
+        return $arguments->timeout ?? min($this->config->defaultTimeoutSeconds, $this->config->maxTimeoutSeconds ?? \PHP_INT_MAX);
     }
 
     private function cancelNative(

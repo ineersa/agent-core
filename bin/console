@@ -50,6 +50,13 @@ $workerArgv = $_SERVER['argv'] ?? [];
 if (Ineersa\CodingAgent\Runtime\Messenger\InternalSqliteWorkerBootstrap::matches($workerArgv)) {
     Ineersa\CodingAgent\Runtime\Messenger\InternalSqliteWorkerBootstrap::tryRun($workerArgv);
 }
+if (Ineersa\CodingAgent\Runtime\Process\DetachedProcessLauncher::FLAG === ($workerArgv[1] ?? null)) {
+    Ineersa\CodingAgent\Runtime\Process\DetachedProcessLauncher::run($workerArgv);
+}
+if (Ineersa\CodingAgent\Tool\CodeMode\CodeModeWakeup::FLAG === ($workerArgv[1] ?? null)) {
+    Ineersa\CodingAgent\Tool\CodeMode\CodeModeWakeup::send($workerArgv[2], $workerArgv[3], (string) getenv('HATFIELD_SQLITE_QUEUE_ENDPOINT'));
+    exit(0);
+}
 unset($workerArgv);
 
 // ── Early --cwd resolution ───────────────────────────────────────────────

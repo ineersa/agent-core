@@ -97,7 +97,9 @@ exact native evidence and process-group ownership before stopping anything.
 The controller stops owned consumers, scoped background jobs, then the broker
 and helper. On later startup it must acquire the same session-owner lock before
 reaping matching leftovers. Accepted background Bash survives worker recycling,
-not controller shutdown. Code-mode scripts depend on the original host worker.
+not controller shutdown. Code-mode scripts also survive worker recycling. Shared
+workers deliver normal completion; the controller supervises the script and can
+recover a retained terminal report after confirmed exit.
 
 Consumer restarts are bounded to **3 per key in 60 seconds**. Restarting a worker
 is not repair of a stranded effect. Broker death is terminal for the session;

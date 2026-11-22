@@ -6,46 +6,70 @@
 
 `CodeModeTool` is an opt-in ordinary parallel tool, not a new worker role or an
 LLM-generated-response adapter. `CodeModeHostBridge` launches an owned PHP CLI
-subprocess with a minimal bootstrap. The script talks to the original tool worker
-through private IPC; nested calls use the existing toolbox, hooks and approval
-policy rather than a second tool implementation.
+subprocess. For canonical invocations in the session runtime, the shared tool
+consumer launches PHP and returns a deferred outcome. `run_control` manages
+state transitions; it does not execute scripts or nested tools.
 
 ```mermaid
 sequenceDiagram
+    participant Worker as Shared tool consumer
+    participant PHP as Session-owned PHP subprocess
+    participant Wrapper as Native process wrapper
+    participant Broker as SQLite-backed session broker
+    participant Owner as Controller process observer
     participant RC as run_control
-    participant Host as Tool consumer Fiber
-    participant PHP as PHP script subprocess
-    participant Toolbox as Existing toolbox
-    RC->>Host: Execute code_mode intent
-    Host->>Host: Check policy and remaining budget
-    Host->>PHP: Start bootstrap and accept private socket
-    Host->>Host: Register deferred correlation / readiness
-    PHP->>Host: tool(name, arguments)
-    Host->>Toolbox: Invoke registered tool with remaining budget
-    Toolbox-->>Host: JSON-compatible value or failure
-    Host-->>PHP: RPC response
-    PHP-->>Host: Return value and diagnostics
-    Host->>RC: Ordinary or deferred completion
+    Worker->>PHP: Launch with session-owned invocation identity
+    Worker->>Worker: Record ownership and commit admission before starting PHP
+    Worker->>Worker: Return deferred outcome; release slot
+    PHP->>Broker: Publish code_mode_requests with invocation and call IDs
+    Broker->>Worker: Deliver request to available shared slot
+    Worker->>Worker: Validate and run existing toolbox
+    Worker->>Broker: Publish managed result reference to invocation reply queue
+    Broker-->>PHP: Correlated reply with managed tool payload reference
+    PHP->>PHP: Retain raw terminal result
+    PHP-->>Wrapper: Exit after shutdown callbacks
+    Wrapper->>Broker: Record native status, then publish wakeup
+    Broker->>Worker: Deliver terminal wakeup
+    Worker->>Worker: Verify exit and process retained result
+    Worker->>RC: Dispatch deferred completion
+    Owner->>Broker: Recover retained report once after exit and 60 seconds pending
 ```
 
-The script budget defaults to **1,800 seconds** (maximum **3,600**), memory to
-**256 MiB** (maximum **1,024**). The parent remaining tool budget can shorten it.
-Nested calls receive cooperative budget metadata; a synchronously blocking
-handler can overrun until it returns. Scripts yield at host-side I/O, not by
+The reply envelope carries a reference, not the result payload. Delivery may repeat; individual tools own idempotency if needed.
+The worker does not persist claims or replies in application state. Owner notices use separate identities
+from terminal completion.
+
+The script budget defaults to **1,800 seconds** with no tool-specific cap, memory to
+**256 MiB** (maximum **1,024**). The parent remaining tool budget can shorten it until background acceptance.
+After acceptance only an explicit launch-relative timeout applies.
+Nested calls observe the current script deadline through a live cancellation
+token, not a snapshot in `ToolContext::timeoutSeconds()`. Detaching releases
+the inherited limit even for a nested call already running; an explicit script
+timeout still applies. A synchronously blocking handler can overrun until it returns. Scripts yield at host-side I/O, not by
 turning arbitrary PHP filesystem/process calls into async toolbox calls.
 
 Direct PHP bypasses hooks and approvals. Code mode inherits the launcher's
 sandbox, if any; it creates none. Source/PHAR builds reuse their launching PHP
-CLI; fused static builds need `php` on PATH. Deferred/interactive tools
+CLI; fused static builds need `php` on PATH. The launcher materializes a standalone
+Composer runtime from the installed locked packages before starting external PHP.
+The script process does not load the application kernel or open the state database.
+Deferred/interactive tools
 (`subagent`, `fork`, `agent_resume`, `agent_steer`, `notify_parent`, `ask_human`)
 are refused by the bridge.
 
-Direct `backgrounded: true` calls use the existing deferred completion lifecycle.
-The host keeps a worker Fiber and its private IPC connection until settlement;
-worker loss interrupts the script, including backgrounded scripts. Readiness
-prevents automatic replay but does not prove liveness or exactly-once startup.
-`bg_status` controls Bash jobs, not PHP scripts. Script stdout/stderr capture is
-bounded independently; oversized diagnostics use run-owned output artifacts.
+Direct `backgrounded: true` uses the existing deferred completion lifecycle.
+Canonical launches reserve a row in the Doctrine background-process catalog and
+run in separate native process groups with invocation-keyed PID and status
+sidecars. The controller can stop the group and clean its workspace, including
+when no PID was published. A reservation abandoned before native startup is
+fenced and reported as an unknown launch, never replayed. PHP checks committed
+admission at startup. `bg_status` controls Bash jobs, not PHP scripts.
+
+Scripts can invoke ordinary tools but cannot recursively launch `code_mode`.
+A live session broker is required. Standalone extension calls use their own run and invocation IDs, without an agent-turn batch; the shared worker returns their processed terminal result over the broker to the waiting caller. Tool workers receive standalone results through a slot-addressed Messenger receiver and resolve the caller’s suspended invocation only when the process incarnation matches. The sequential extension job worker runs a scoped Symfony Worker for that reply receiver only; it does not reserve another extension job. Controller startup hooks run before the tool consumer starts and cannot invoke broker-backed code mode synchronously. For canonical calls, only the shared worker delivers normal completion to run control. The observer supervises native processes and may resend a retained report after confirmed exit; it does not process normal success.
+
+The worker validates and executes a nested request, publishes a managed result reference to the invocation reply queue, and then acknowledges the request. PHP waits for the matching call ID and resolves the reference using the payload store. The call ID correlates replies; it does not suppress execution on redelivery.
+Nested reply bodies belong to the script workspace. PHP deletes each body after acknowledging its delivery. The process owner removes the remaining bodies after the script exits, and prevents late workers from recreating that scope. Terminal reports and standalone terminal replies use separate storage.
 
 ## Scheduling
 

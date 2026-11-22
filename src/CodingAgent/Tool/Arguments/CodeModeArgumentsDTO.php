@@ -13,7 +13,6 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class CodeModeArgumentsDTO
 {
     public const int DEFAULT_TIMEOUT_SECONDS = 1800;
-    public const int MAX_TIMEOUT_SECONDS = 3600;
     public const int DEFAULT_MEMORY_LIMIT_MB = 256;
     public const int MAX_MEMORY_LIMIT_MB = 1024;
 
@@ -22,16 +21,14 @@ final class CodeModeArgumentsDTO
         #[Assert\NotBlank(normalizer: 'trim', message: 'The "script" argument is required and must be a non-empty string.')]
         public readonly string $script,
         #[Schema(
-            description: 'Script wall-clock budget in seconds (default '.self::DEFAULT_TIMEOUT_SECONDS.', max '.self::MAX_TIMEOUT_SECONDS.'). The remaining parent tool budget wins when smaller. Nested tool calls receive the remaining budget cooperatively.',
+            description: 'Script wall-clock budget in seconds (default '.self::DEFAULT_TIMEOUT_SECONDS.'). Before background acceptance the remaining parent tool budget wins when smaller. After acceptance only an explicit timeout applies, measured from launch. Nested tool calls observe the live script deadline through cooperative cancellation, not a fixed per-call timeout.',
             minimum: 1,
-            maximum: self::MAX_TIMEOUT_SECONDS,
         )]
         #[Assert\Range(
             min: 1,
-            max: self::MAX_TIMEOUT_SECONDS,
-            notInRangeMessage: 'The "timeout_seconds" argument must be an integer between {{ min }} and {{ max }}.',
+            minMessage: 'The "timeout_seconds" argument must be a positive integer.',
         )]
-        public readonly int $timeout_seconds = self::DEFAULT_TIMEOUT_SECONDS,
+        public readonly ?int $timeout_seconds = null,
         #[Schema(
             description: 'PHP memory_limit for the script subprocess in mebibytes (default '.self::DEFAULT_MEMORY_LIMIT_MB.', max '.self::MAX_MEMORY_LIMIT_MB.').',
             minimum: 1,

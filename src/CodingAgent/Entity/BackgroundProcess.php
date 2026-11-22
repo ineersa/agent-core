@@ -102,6 +102,13 @@ class BackgroundProcess
     #[ORM\Column(name: 'updated_at', type: 'datetime_immutable')]
     public \DateTimeImmutable $updatedAt;
 
+    #[ORM\Column(name: 'code_mode_id', length: 36, unique: true, nullable: true)]
+    public ?string $codeModeId = null;
+
+    /** @var array<string, mixed>|null */
+    #[ORM\Column(name: 'code_mode_launch', type: 'json', nullable: true)]
+    public ?array $codeModeLaunch = null;
+
     /** No-arg constructor for Doctrine hydration. Sets timestamp defaults. */
     public function __construct()
     {

@@ -56,7 +56,16 @@ applies to edits called from `code_mode`; it is an edit-lock limit, not a genera
 nested-tool deadline. Maintainer diagnostics are described in the repository's
 `docs/datadog.md`, under “Edit lock contention”.
 
+## Bash timeouts
+
+Foreground Bash uses its configured default when `timeout` is omitted, capped
+by any configured maximum. Once backgrounded, Bash honors an explicit timeout
+from launch. If `timeout` is omitted, the configured maximum applies from launch;
+without a configured maximum there is no background deadline.
+
 ## code_mode
+
+Broker delivery can repeat a nested tool request. Individual tools own idempotency if they need it.
 
 Enable `tools.code_mode.enabled: true` in settings and restart Hatfield. The tool
 accepts a PHP **function body** in `script`, not a file path. It is useful for
@@ -84,12 +93,15 @@ floats, invalid UTF-8 and cycles fail. Missing/null returns show `null`;
 
 | Argument | Default | Maximum |
 |---|---|---|
-| `timeout_seconds` | `1800` | `3600` |
+| `timeout_seconds` | `1800` | No tool-specific cap |
 | `memory_limit_mb` | `256` | `1024` |
 | `backgrounded` | `false` | Boolean |
 
-The remaining parent tool budget can shorten the script deadline. Nested handlers
-receive a cooperative budget, not a guarantee that synchronous code is preempted.
+The foreground default and remaining parent tool budget apply until background
+acceptance. After acceptance only an explicit deadline applies, measured from
+launch. Nested handlers observe the current script deadline through cooperative
+cancellation, not a fixed per-call timeout. Cancellation does not preempt
+synchronously blocking code.
 Stdout/stderr accompany the return value; large diagnostics use saved artifacts
 and normal output caps. Prefer a small final `return` to dumping intermediates.
 
@@ -101,7 +113,7 @@ promise delivery, consumption, or a response. It does not interrupt a
 foreground tool wait or replace the script's final result.
 
 The owner comes from the invocation, including for background, scheduled,
-nested, and child-owned scripts. This is not `notify_parent`: existing mailbox
+and child-owned scripts. This is not `notify_parent`: existing mailbox
 rules determine when the owner sees the notice and whether it is forwarded.
 
 ### Trust and unsupported operations
@@ -111,11 +123,13 @@ Raw PHP filesystem/process functions bypass toolbox hooks and approvals. Use
 bubblewrap; it does not create one. Checkout/PHAR use their launching PHP CLI;
 fused native builds require `php` on PATH.
 
-`subagent`, `fork`, `agent_resume`, `agent_cancel`, `agent_steer`, `notify_parent` and `ask_human`
-are unsupported inside code mode. Call them directly. Nested Bash/code-mode calls
-cannot detach; use a direct `backgrounded: true` call for background work.
-A background PHP script still depends on its original host worker and cannot
-restore its stack after worker loss.
+`code_mode`, `subagent`, `fork`, `agent_resume`, `agent_cancel`, `agent_steer`,
+`notify_parent` and `ask_human` are unsupported inside code mode. Call them directly. Nested
+Bash calls cannot detach; use a direct `backgrounded: true` call for background work.
+Canonical PHP scripts in the session runtime use the broker for nested tool
+calls and do not depend on the worker that launched them. A script that loses
+its PHP process cannot resume, and an interrupted tool call may have an unknown
+outcome.
 
 Related: [settings](settings.md), [human input](human-input.md),
 [approvals](approvals.md), [sessions](session-storage.md).

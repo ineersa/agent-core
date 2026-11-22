@@ -19,7 +19,10 @@ work Ctrl+B keeps its cursor-left behavior.
 
 Completion arrives automatically. Continue independent work, or end the turn;
 do not sleep or poll just to wait. Inspect output only for a concrete decision,
-diagnosis or requested progress check. Backgrounding does not reset timeouts.
+diagnosis or requested progress check. For Bash and code mode, acceptance (including Ctrl+B) ends the foreground default
+and inherited launch budget. Only an explicitly supplied timeout continues,
+measured from the original launch. Without one there is no wall deadline after
+acceptance. Stop controls and session shutdown still apply.
 Nested `tool()` calls inside code mode cannot background Bash or another script.
 
 ## Inspect and stop
@@ -43,14 +46,14 @@ through `agent_retrieve`.
 
 ### Ownership and recovery limits
 
-- Bash detaches the same process, never launches a second copy. Its original
-  deadline continues. Only explicitly accepted jobs are visible to `bg_status`.
+- Bash detaches the same process, never launches a second copy. Only explicitly accepted jobs are visible to `bg_status`.
 - Accepted Bash survives worker recycling, not controller shutdown/restart.
   Shutdown stops owned jobs but retains native evidence for unresolved replay.
   Missing exit status does not mean an external action did not happen.
-- Background code mode keeps its PHP stack/socket and original host worker.
-  `/bg` can request cooperative stop. Worker loss cannot restore a lost PHP stack;
-  repair must not rerun the script as a replacement.
+- Canonical background code mode runs as a session-owned PHP process. It uses
+  the session broker for nested calls rather than a socket to the launching
+  worker. `/bg` can request stop. Losing PHP still loses its stack; Hatfield
+  does not rerun the script. Session shutdown stops the job.
 - Background child launch/resume releases the parent's wait; the same child keeps
   its deadline and later supplies a handoff. Retrieve its existing artifact rather
   than launching a duplicate. A child Bash completion can be forwarded to the root

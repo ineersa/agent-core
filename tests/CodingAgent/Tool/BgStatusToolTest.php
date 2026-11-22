@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Support\TestProcessRuntime;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
@@ -77,7 +78,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         // ProcessStore comes from the container (real Doctrine schema, no manual ORM).
         $store = static::getContainer()->get(ProcessStore::class);
-        $lifecycle = new ProcessLifecycle($this->config, new NullLogger(), new LockFactory(new FlockStore()));
+        $lifecycle = new ProcessLifecycle($this->config, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->config, new NullLogger());
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->tool = new BgStatusTool(

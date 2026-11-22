@@ -19,6 +19,62 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
         parent::__construct($registry, BackgroundProcess::class);
     }
 
+    /** @return array{workspace: string, startedAtNs: int, fenced: bool, standaloneTurn: ?int, interruption?: string, reply?: array{queue: string, incarnation: string}|null, policy: array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string}}|null */
+    public function codeModeLaunch(string $runId, string $id): ?array
+    {
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative('SELECT code_mode_launch, finished_at FROM background_process WHERE session_id = ? AND code_mode_id = ?', [$runId, $id]);
+        if (false === $row) {
+            return null;
+        }
+        $launch = json_decode($row['code_mode_launch'], true, flags: \JSON_THROW_ON_ERROR);
+
+        return $launch + ['fenced' => null !== $row['finished_at']];
+    }
+
+    /** @return list<string> */
+    public function codeModeIds(string $runId): array
+    {
+        return $this->getEntityManager()->getConnection()->fetchFirstColumn('SELECT code_mode_id FROM background_process WHERE session_id = ? AND code_mode_id IS NOT NULL ORDER BY id', [$runId]);
+    }
+
+    /** @return list<string> */
+    public function pendingCodeModeIds(string $runId): array
+    {
+        // Drive polling from the active deferred index, not the retained process
+        // catalog. A fenced launch still needs its pending outcome settled.
+        return $this->getEntityManager()->getConnection()->fetchFirstColumn(<<<'SQL'
+            SELECT invocation.deferred_id
+            FROM tool_deferred_completion invocation
+            WHERE invocation.tool_name = 'code_mode' AND invocation.status = 'pending' AND invocation.run_id = :run
+                AND EXISTS (
+                    SELECT 1 FROM background_process process
+                    WHERE process.code_mode_id = invocation.deferred_id AND process.session_id = invocation.run_id
+                )
+            UNION
+            SELECT process.code_mode_id FROM background_process process
+            WHERE process.session_id = :run AND process.code_mode_id IS NOT NULL
+                AND process.finished_at IS NULL AND json_extract(process.code_mode_launch, '$.standaloneTurn') IS NOT NULL
+            SQL, ['run' => $runId]);
+    }
+
+    public function recordCodeModeInterruption(string $runId, string $id, string $reason): void
+    {
+        $this->getEntityManager()->getConnection()->executeStatement(<<<'SQL'
+            UPDATE background_process SET code_mode_launch = json_set(code_mode_launch, '$.interruption', ?)
+            WHERE session_id = ? AND code_mode_id = ? AND json_extract(code_mode_launch, '$.interruption') IS NULL
+            SQL, [$reason, $runId, $id]);
+    }
+
+    public function fenceCodeModeLaunch(string $runId, string $id): void
+    {
+        $this->getEntityManager()->getConnection()->executeStatement('UPDATE background_process SET finished_at = CURRENT_TIMESTAMP WHERE session_id = ? AND code_mode_id = ? AND finished_at IS NULL', [$runId, $id]);
+    }
+
+    public function removeCodeModeLaunch(string $runId, string $id): void
+    {
+        $this->getEntityManager()->getConnection()->delete('background_process', ['session_id' => $runId, 'code_mode_id' => $id]);
+    }
+
     /** @return list<array<string, mixed>> */
     public function findOwnedBackgroundWork(string $rootRunId, ?int $observedRecordId): array
     {

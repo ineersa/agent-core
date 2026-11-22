@@ -1,0 +1,56 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
+
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeCancellationToken;
+use PHPUnit\Framework\TestCase;
+
+/** @covers \Ineersa\CodingAgent\Tool\CodeMode\CodeModeCancellationToken */
+final class CodeModeCancellationTokenTest extends TestCase
+{
+    public function testAcceptanceIgnoresLauncherCancellationButKeepsStop(): void
+    {
+        $parent = $this->createStub(CancellationTokenInterface::class);
+        $parent->method('isCancellationRequested')->willReturnOnConsecutiveCalls(false, true);
+        $reference = new ToolPayloadReferenceDTO('correlation', 'run', 1, 'step', 1, 'key', 'call', 0, 'code_mode', str_repeat('a', 64), 1);
+        $acceptedAt = new \DateTimeImmutable('@1');
+        $repository = $this->createStub(DeferredToolCompletionRepositoryInterface::class);
+        $repository->method('findMetadataByDeferredId')->willReturnOnConsecutiveCalls(
+            new DeferredToolCompletionMetadataDTO('id', $reference, DeferredToolCompletionStatusEnum::Pending),
+            new DeferredToolCompletionMetadataDTO('id', $reference, DeferredToolCompletionStatusEnum::Pending, backgroundedAt: $acceptedAt),
+            new DeferredToolCompletionMetadataDTO('id', $reference, DeferredToolCompletionStatusEnum::Pending, backgroundedAt: $acceptedAt, interruptionReason: \Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum::Stopped),
+        );
+        $token = new CodeModeCancellationToken($parent, $repository, 'id');
+
+        $this->assertFalse($token->isCancellationRequested());
+        $this->assertFalse($token->isCancellationRequested());
+        $this->assertTrue($token->isCancellationRequested());
+    }
+
+    public function testBlockedWorkChecksInvocationAgainBeforeItsEffect(): void
+    {
+        $parent = $this->createStub(CancellationTokenInterface::class);
+        $reference = new ToolPayloadReferenceDTO('correlation', 'run', 1, 'step', 1, 'key', 'call', 0, 'code_mode', str_repeat('a', 64), 1);
+        $repository = $this->createStub(DeferredToolCompletionRepositoryInterface::class);
+        $repository->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('id', $reference, DeferredToolCompletionStatusEnum::Pending));
+        $unavailable = false;
+        $token = new CodeModeCancellationToken($parent, $repository, 'id', invocationUnavailable: static function () use (&$unavailable): bool { return $unavailable; });
+        $work = new \Fiber(static function () use ($token): bool {
+            \Fiber::suspend();
+
+            return !$token->isCancellationRequested();
+        });
+        $this->assertFalse($token->isCancellationRequested());
+        $work->start();
+        $unavailable = true;
+        $work->resume();
+        $this->assertFalse($work->getReturn());
+    }
+}

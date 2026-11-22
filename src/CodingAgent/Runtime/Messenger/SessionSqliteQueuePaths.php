@@ -62,7 +62,7 @@ final readonly class SessionSqliteQueuePaths
     }
 
     /**
-     * Build the six durable Messenger DSNs that share this broker endpoint.
+     * Build the durable Messenger DSNs that share this broker endpoint.
      *
      * Queue names are not session-suffixed: the database file is already
      * per-session, so suffixes only burn identity length for no isolation gain.
@@ -71,6 +71,7 @@ final readonly class SessionSqliteQueuePaths
      *     HATFIELD_RUN_CONTROL_TRANSPORT_DSN: string,
      *     HATFIELD_LLM_TRANSPORT_DSN: string,
      *     HATFIELD_TOOL_TRANSPORT_DSN: string,
+     *     HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN: string,
      *     HATFIELD_AGENT_TRANSPORT_DSN: string,
      *     HATFIELD_MCP_TRANSPORT_DSN: string,
      *     HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN: string
@@ -83,6 +84,7 @@ final readonly class SessionSqliteQueuePaths
         return [
             'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => $this->dsn('run_control', $endpoint),
             'HATFIELD_LLM_TRANSPORT_DSN' => $this->dsn('llm', $endpoint),
+            'HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN' => $this->dsn('code_mode_requests', $endpoint),
             'HATFIELD_TOOL_TRANSPORT_DSN' => $this->dsn('tool', $endpoint),
             'HATFIELD_AGENT_TRANSPORT_DSN' => $this->dsn('agent', $endpoint),
             'HATFIELD_MCP_TRANSPORT_DSN' => $this->dsn('mcp', $endpoint),

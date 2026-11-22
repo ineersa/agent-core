@@ -50,6 +50,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         );
 
         $runId = $toolCall->runId ?? ($toolCall->context['run_id'] ?? null);
+        $attachmentOwner = $toolCall->context['attachment_owner_tool_call_id'] ?? $toolCall->toolCallId;
         $retain = \is_string($runId) && (true === ($toolCall->context['retain_output'] ?? false) || (CodeModeTool::NAME === $toolCall->toolName && null !== $this->deferred->findByRunAndToolCall($runId, $toolCall->toolCallId)));
         $raw = \is_array($result->details) ? ($result->details['raw_result'] ?? null) : null;
         $captured = 'read' === $toolCall->toolName && \is_array($raw) ? ($raw['output_cap'] ?? null) : null;
@@ -61,7 +62,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             $capResult = new OutputCapResult($savedPath, null, null, null, $notice, $bytes);
         } else {
             $capResult = $this->outputCap->capIfNeeded($text, \is_string($runId) ? $runId : null, $path,
-                $retain ? fn (callable $write): string => $this->payloads->saveAttachment($runId, $toolCall->toolCallId, $write) : null);
+                $retain ? fn (callable $write): string => $this->payloads->saveAttachment($runId, \is_string($attachmentOwner) ? $attachmentOwner : $toolCall->toolCallId, $write) : null);
         }
         if (null === $capResult) {
             return $result;

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeStandaloneRepliesService;
+use Ineersa\SqliteQueue\Messenger\Transport;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
@@ -48,6 +50,8 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
 
     private ?Worker $worker = null;
 
+    private ?Transport $replyReceiver = null;
+
     /**
      * @param EventDispatcherInterface&ListenerIntrospectionInterface $eventDispatcher
      */
@@ -57,6 +61,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly AppConfig $appConfig,
         private readonly ?LoggerInterface $logger = null,
+        private readonly ?CodeModeStandaloneRepliesService $codeModeReplies = null,
     ) {
         parent::__construct();
         // Supervisor keeps these explicit in argv; configure them here so their
@@ -100,6 +105,11 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         return false;
     }
 
+    public function replyReceiver(): ?Transport
+    {
+        return $this->replyReceiver;
+    }
+
     protected function initialize(InputInterface $input, OutputInterface $output): void
     {
         // Do not arm Application::setAlarmInterval here. Under Amp/UvDriver,
@@ -116,7 +126,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         }
         // Keep consuming the durable agent queue after consolidation, including
         // messages accepted by an older controller before its last shutdown.
-        $transportNames = 'tool' === $transport ? ['tool', 'agent'] : ['llm'];
+        $transportNames = 'tool' === $transport ? ['tool', 'agent', 'code_mode_requests'] : ['llm'];
         $receivers = [];
         foreach ($transportNames as $name) {
             if (!$this->receiverLocator->has($name)) {
@@ -126,10 +136,18 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
             $receiver = $this->receiverLocator->get($name);
             $receivers[$name] = $receiver;
         }
+        $slot = getenv('HATFIELD_CODE_MODE_REPLY_SLOT');
+        if ('tool' === $transport && false !== $slot && null !== $this->codeModeReplies) {
+            $this->replyReceiver = $this->codeModeReplies->open($slot);
+            $receivers = [CodeModeStandaloneRepliesService::RECEIVER => $this->replyReceiver] + $receivers;
+        }
         $concurrency = 'tool' === $transport
             ? null
             : $this->appConfig->runtime->llmConcurrency;
-        $strategy = new FiberMessageExecutionStrategy($this->routableBus, $concurrency);
+        // Symfony stops receiving before its forced drain. Unblock reply waiters
+        // then, but keep the transport open for in-flight acknowledgements.
+        $strategy = new FiberMessageExecutionStrategy($this->routableBus, $concurrency,
+            beforeForcedDrain: null === $this->replyReceiver ? null : $this->codeModeReplies->stopWaiting(...));
 
         $memoryLimit = (string) ($input->getOption('memory-limit') ?? self::MEMORY_LIMIT);
         $eventDispatcher = new ScopedEventDispatcher($this->eventDispatcher);
@@ -197,6 +215,10 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
             }
             $this->worker = null;
             $strategy->shutdown();
+            if (null !== $this->replyReceiver) {
+                $this->codeModeReplies?->close();
+                $this->replyReceiver = null;
+            }
         }
 
         return Command::SUCCESS;

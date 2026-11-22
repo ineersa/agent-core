@@ -78,7 +78,7 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         $this->assertSame('one', $dto->task);
     }
 
-    public function testContainerSchemaExposesConfiguredBashTimeoutBounds(): void
+    public function testContainerSchemaOmitsBashMaximumByDefault(): void
     {
         $config = self::getContainer()->get(BashToolConfig::class);
         $timeout = $this->toolboxParameterSchema('bash', 'timeout');
@@ -87,9 +87,10 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
 
         // Settings-derived schema fragment: same BashToolConfig the runtime
         // BashTimeoutMax constraint consumes.
-        $this->assertSame($config->maxTimeoutSeconds, $timeout['maximum']);
+        $this->assertNull($config->maxTimeoutSeconds);
+        $this->assertArrayNotHasKey('maximum', $timeout);
         $this->assertSame(
-            \sprintf('Timeout in seconds (default: %d, max: %d). Provide an explicit higher value for commands that need more than the default.', $config->defaultTimeoutSeconds, $config->maxTimeoutSeconds),
+            \sprintf('Timeout in seconds (default: %d). Provide an explicit higher value for commands that need more than the default. After background acceptance the explicit timeout or, when omitted, the configured maximum applies from launch. Without either there is no deadline.', $config->defaultTimeoutSeconds),
             $timeout['description'],
         );
     }
@@ -117,15 +118,12 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testContainerValidatorRejectsBashTimeoutAboveConfiguredMax(): void
+    public function testContainerValidatorAcceptsBashTimeoutAboveOneHour(): void
     {
-        $config = self::getContainer()->get(BashToolConfig::class);
         $toolbox = new FaultTolerantToolbox(self::getContainer()->get(ToolboxInterface::class));
+        $result = $toolbox->execute(new ToolCall('call-bash-long', 'bash', ['command' => 'echo accepted', 'timeout' => 3601]));
 
-        $result = $toolbox->execute(new ToolCall('call-bash-max', 'bash', ['command' => 'echo hi', 'timeout' => $config->maxTimeoutSeconds + 1]));
-
-        $message = (string) $result->getResult();
-        $this->assertStringContainsString(\sprintf('Timeout must not exceed %d seconds (%d provided).', $config->maxTimeoutSeconds, $config->maxTimeoutSeconds + 1), $message);
+        $this->assertStringContainsString('accepted', (string) $result->getResult());
     }
 
     public function testContainerValidatorEnforcesReadFileTargetClassConstraint(): void

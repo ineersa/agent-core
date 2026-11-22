@@ -45,6 +45,8 @@
 # not round-trip correctly through the default Symfony Serializer.
 
 parameters:
+    env(HATFIELD_SQLITE_QUEUE_ENDPOINT): ''
+    env(HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN): 'in-memory://'
     env(HATFIELD_AGENT_TRANSPORT_DSN): 'sync://'
     env(HATFIELD_MCP_TRANSPORT_DSN): 'in-memory://'
     env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN): 'sync://'
@@ -91,6 +93,9 @@ framework:
             tool:
                 dsn: '%env(HATFIELD_TOOL_TRANSPORT_DSN)%'
                 serializer: 'messenger.transport.native_php_serializer'
+            code_mode_requests:
+                dsn: '%env(HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN)%'
+                serializer: messenger.transport.symfony_serializer
             agent:       '%env(HATFIELD_AGENT_TRANSPORT_DSN)%'
             mcp:         '%env(HATFIELD_MCP_TRANSPORT_DSN)%'
             # Dedicated async worker for extension-owned agent jobs (Observer, etc.).
@@ -104,6 +109,7 @@ framework:
                 dsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 
         routing:
+            Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO: code_mode_requests
             Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO: run_control
             # ToolPayloadMiddleware selects tool/agent/mcp/run_control through
             # TransportNamesStamp. Inline tool messages have no fallback route.

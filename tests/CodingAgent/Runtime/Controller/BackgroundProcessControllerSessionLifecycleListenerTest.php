@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Support\TestProcessRuntime;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -46,7 +47,7 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $config = new BackgroundProcessConfig(storageDir: $this->tmpDir, stopGraceSeconds: 0);
         $logger = new TestLogger();
         $this->store = static::getContainer()->get(ProcessStore::class);
-        $this->lifecycle = new ProcessLifecycle($config, $logger, new LockFactory(new FlockStore()));
+        $this->lifecycle = new ProcessLifecycle($config, $logger, new LockFactory(new FlockStore()), TestProcessRuntime::source());
         $this->manager = new BackgroundProcessManager($this->store, $this->lifecycle, $config, $logger);
         $listener = new BackgroundProcessControllerSessionLifecycleListener(
             static::getContainer()->get(BackgroundProcessCompletionPoller::class),

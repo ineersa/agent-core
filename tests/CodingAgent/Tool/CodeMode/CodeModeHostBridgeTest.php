@@ -4,86 +4,35 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
-use Amp\DeferredFuture;
-use Amp\TimeoutCancellation;
-use Ineersa\AgentCore\Application\Handler\HookDispatcher;
-use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
-use Ineersa\AgentCore\Application\Pipeline\RunCommit;
-use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
-use Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer;
-use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
-use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
-use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
-use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
-use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
-use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
-use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
-use Ineersa\AgentCore\Domain\Tool\ToolResult;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
-use Ineersa\CodingAgent\Application\Pipeline\CodeModeBackgroundCoordinationHandler;
-use Ineersa\CodingAgent\Config\OutputCapConfig;
-use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
-use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\CodingAgent\Runtime\Messenger\FiberMessageExecutionStrategy;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
-use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
-use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\CodingAgent\Tests\Tool\Support\InodeLockHolder;
-use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
-use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
-use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
-use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
-use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
-use Ineersa\CodingAgent\Tool\CodeMode\CodeModeIpc;
+use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeProcessOwner;
+use Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeCallRequestDTO;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
-use Ineersa\CodingAgent\Tool\Edit\EditLockDiagnosticsService;
-use Ineersa\CodingAgent\Tool\Edit\PatchApplier;
-use Ineersa\CodingAgent\Tool\Edit\PatchFailureFormatter;
-use Ineersa\CodingAgent\Tool\EditFileTool;
-use Ineersa\CodingAgent\Tool\OutputCap;
-use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
-use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
-use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
-use Ineersa\CodingAgent\Tool\ToolRegistry;
-use Ineersa\CodingAgent\Tool\ToolRuntime;
-use PHPUnit\Framework\Attributes\DataProvider;
+use Ineersa\SqliteQueue\Client;
+use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Psr\Log\NullLogger;
-use Revolt\EventLoop;
-use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
-use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
-use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
-use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
-use Symfony\AI\Platform\Result\ToolCall;
-use Symfony\Component\Clock\ClockInterface;
-use Symfony\Component\Clock\MockClock;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
-use Symfony\Component\Messenger\Exception\HandlerFailedException;
-use Symfony\Component\Messenger\Handler\HandlersLocator;
-use Symfony\Component\Messenger\MessageBus;
-use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
-use Symfony\Component\Process\Process;
-use Symfony\Component\Uid\Uuid;
-use Symfony\Component\Validator\Validation;
+use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
+use Symfony\Component\Messenger\Event\WorkerRunningEvent;
+use Symfony\Component\Messenger\RoutableMessageBus;
+use Symfony\Component\Messenger\Worker;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge
- * @covers \Ineersa\CodingAgent\Tool\CodeMode\CodeModeIpc
  *
  * @requires OS Linux
  */
@@ -103,1224 +52,435 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
         parent::tearDown();
     }
 
-    public function testAcceptAfterChildExitStillReceivesQueuedReturnFrame(): void
+    #[\DAMA\DoctrineTestBundle\PHPUnit\SkipDatabaseRollback]
+    public function testBrokerLaunchReturnsBeforeItsNestedRequestIsHandled(): void
     {
-        $socketPath = $this->tmpDir.'/bridge.sock';
-        $server = stream_socket_server('unix://'.$socketPath, $errno, $errstr);
-        $this->assertIsResource($server, \sprintf('Failed to listen: [%d] %s', $errno, $errstr));
-        stream_set_blocking($server, false);
-
-        $childScript = $this->tmpDir.'/child.php';
-        file_put_contents($childScript, <<<'PHP'
-<?php
-declare(strict_types=1);
-$socket = getenv('HATFIELD_CODE_MODE_SOCKET');
-$connection = stream_socket_client('unix://'.$socket, $errno, $errstr, 5.0);
-if (false === $connection) {
-    fwrite(STDERR, "connect failed: $errstr\n");
-    exit(2);
-}
-$payload = json_encode(['type' => 'return', 'ok' => true, 'result' => 42], JSON_THROW_ON_ERROR);
-$packet = pack('N', strlen($payload)).$payload;
-fwrite($connection, $packet);
-fclose($connection);
-exit(0);
-PHP);
-
-        $process = new Process([\PHP_BINARY, $childScript], $this->tmpDir, [
-            'HATFIELD_CODE_MODE_SOCKET' => $socketPath,
-        ]);
-        $process->start();
-
-        $this->waitUntilProcessExits($process);
-        $this->assertFalse($process->isRunning(), 'Child must exit before accept to prove the queued-connection race');
-        $this->assertSame(0, $process->getExitCode());
-
-        // Same order the host uses after observing child death: accept once more.
-        $connection = @stream_socket_accept($server, 0.0);
-        $this->assertIsResource($connection, 'Queued connection must still be accept()able after peer exit');
-        stream_set_blocking($connection, false);
-
-        $frame = CodeModeIpc::read($connection);
-        fclose($connection);
-        fclose($server);
-
-        $this->assertSame([
-            'type' => 'return',
-            'ok' => true,
-            'result' => 42,
-        ], $frame);
-    }
-
-    public function testServeReadsReturnQueuedDuringPostWaitOutputDrain(): void
-    {
-        [$host, $peer] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, 0);
-        stream_set_blocking($host, false);
-        $process = new class($peer) extends Process {
-            private int $polls = 0;
-            private bool $armed = false;
-
-            public function __construct(private mixed $peer)
-            {
-                parent::__construct(['unused']);
-                $this->armed = true;
-            }
-
-            public function isRunning(): bool
-            {
-                if (!$this->armed) {
-                    return false;
-                }
-                if (2 === ++$this->polls) {
-                    // First readiness wait saw no data. Its subsequent output
-                    // drain unblocks a child which queues the frame and exits.
-                    CodeModeIpc::write($this->peer, ['type' => 'return', 'ok' => true, 'result' => 42]);
-                }
-
-                return $this->polls < 2;
-            }
-        };
+        $container = self::getContainer();
+        $entry = \dirname(__DIR__, 4).'/bin/console';
+        $locator = $this->createStub(\Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator::class);
+        $locator->method('path')->willReturn($entry);
+        $locator->method('command')->willReturn([\PHP_BINARY, $entry]);
+        $supervisor = new SessionSqliteQueueBrokerSupervisor(new NullLogger(), new RuntimeProcessConfig($locator, $this->tmpDir));
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir, 'code-mode-broker');
+        $endpoint = 'HATFIELD_SQLITE_QUEUE_ENDPOINT';
+        $previous = $_SERVER[$endpoint] ?? null;
+        $runId = $this->prepareTopLevelRegistration('broker-launch');
+        $owner = $container->get(CodeModeProcessOwner::class);
+        $client = null;
         try {
-            $method = new \ReflectionMethod(CodeModeHostBridge::class, 'serve');
-            $this->assertSame(42, $method->invoke($this->bridge(), $host, $process, null, new NullCancellationToken(), 5, hrtime(true)));
-        } finally {
-            fclose($host);
-            fclose($peer);
-        }
-    }
-
-    public function testFailedSuccessReplyIsNotRetriedAsAnErrorReply(): void
-    {
-        [$host, $peer] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, 0);
-        stream_set_blocking($host, false);
-        // Saturate the socket before invoking the handler so its writer must wait.
-        while (0 < fwrite($host, str_repeat('x', 8192))) {
-        }
-        $original = new \RuntimeException('original reply failure');
-        $waits = 0;
-        $waiter = static function () use (&$waits, $original): void {
-            if (++$waits > 1) {
-                throw new \RuntimeException('secondary reply failure');
-            }
-            throw $original;
-        };
-
-        try {
-            $method = new \ReflectionMethod(CodeModeHostBridge::class, 'handleToolRequest');
-            $method->invoke($this->bridgeWithToolbox(static fn () => null), $host, ['id' => 'reply', 'name' => 'noop'], null, new NullCancellationToken(), 10, hrtime(true), $waiter);
-            $this->fail('Expected the reply writer to fail.');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame($original, $exception);
-            $this->assertSame(1, $waits);
-        } finally {
-            fclose($host);
-            fclose($peer);
-        }
-    }
-
-    public function testOversizedNestedResultRemainsCatchableByTheScript(): void
-    {
-        $bridge = $this->bridgeWithToolbox(static fn (): string => str_repeat('x', CodeModeIpc::MAX_FRAME_BYTES + 1));
-
-        $this->assertSame(['recovered' => true], $this->runScript($bridge, <<<'PHP'
-try {
-    tool('oversized');
-} catch (RuntimeException $exception) {
-    return ['recovered' => str_contains($exception->getMessage(), 'IPC frame exceeds 8388608 bytes')];
-}
-return ['recovered' => false];
-PHP));
-    }
-
-    public function testUndeliverableRetryableToolErrorCannotRetryTheWholeScript(): void
-    {
-        $original = new ToolCallException('nested transient failure', retryable: true);
-        $bridge = $this->bridgeWithToolbox(static function () use ($original): never {
-            throw $original;
-        });
-
-        try {
-            $this->runScript($bridge, 'global $connection; stream_socket_shutdown($connection, STREAM_SHUT_RD); tool("retryable");');
-            $this->fail('Expected the disconnected error reply to fail.');
-        } catch (ToolCallException $exception) {
-            $this->assertFalse($exception->retryable());
-            $this->assertStringContainsString('nested transient failure', $exception->getMessage());
-            $this->assertSame($original, $exception->getPrevious()?->getPrevious());
-        }
-    }
-
-    public function testToolFailureSurvivesAnUndeliverableErrorReply(): void
-    {
-        [$host, $peer] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, 0);
-        fclose($peer);
-        $original = new \RuntimeException('original nested tool failure');
-        $bridge = $this->bridgeWithToolbox(static function () use ($original): never {
-            throw $original;
-        });
-
-        try {
-            $method = new \ReflectionMethod(CodeModeHostBridge::class, 'handleToolRequest');
-            $method->invoke($bridge, $host, ['id' => 'failure', 'name' => 'noop'], null, new NullCancellationToken(), 10, hrtime(true), null);
-            $this->fail('Expected the nested tool to fail.');
-        } catch (ToolCallException $exception) {
-            $this->assertSame($original, $exception->getPrevious());
-            $this->assertStringContainsString($original->getMessage(), $exception->getMessage());
-            $this->assertFalse($exception->retryable());
-        } finally {
-            fclose($host);
-        }
-    }
-
-    public function testBlockedSocketWaitRetainsDeadlineAndCancellationOwnership(): void
-    {
-        [$host, $peer] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, 0);
-        $process = new Process(['unused']);
-        $method = new \ReflectionMethod(CodeModeHostBridge::class, 'waitWhileBlocked');
-        $cancelled = new class implements CancellationTokenInterface {
-            public function isCancellationRequested(): bool
-            {
-                return true;
-            }
-        };
-
-        try {
-            foreach ([[new NullCancellationToken(), hrtime(true) - 2_000_000_000, 'timed out'], [$cancelled, hrtime(true), 'cancelled']] as [$token, $startedAt, $message]) {
-                try {
-                    $method->invoke($this->bridge(), $host, $process, $token, 1, $startedAt, false);
-                    $this->fail('Expected the existing host wait guard to terminate.');
-                } catch (ToolCallException $exception) {
-                    $this->assertStringContainsString($message, $exception->getMessage());
-                }
-            }
-        } finally {
-            fclose($host);
-            fclose($peer);
-        }
-    }
-
-    public function testNestedToolWaitIsIndependentOfPhpDefaultSocketTimeout(): void
-    {
-        if ('Linux' !== \PHP_OS_FAMILY || !is_readable('/proc/self/status')) {
-            $this->markTestSkipped('Pending-read readiness requires readable Linux process status.');
-        }
-        // Only the spawned CLI reads this disposable additional ini directory.
-        $this->assertSame($this->tmpDir, realpath($this->tmpDir));
-        $this->assertFalse(is_link($this->tmpDir));
-        file_put_contents($this->tmpDir.'/socket-timeout.ini', "default_socket_timeout=0\n");
-        $previous = getenv('PHP_INI_SCAN_DIR');
-        $previousEnv = $_ENV;
-        $previousServer = $_SERVER;
-        $scanned = php_ini_scanned_files();
-        $directories = false === $scanned ? [] : array_unique(array_map(\dirname(...), preg_split('/,\\s*/', trim($scanned)) ?: []));
-        $_ENV['PHP_INI_SCAN_DIR'] = $_SERVER['PHP_INI_SCAN_DIR'] = implode(\PATH_SEPARATOR, [...$directories, $this->tmpDir]);
-        putenv('PHP_INI_SCAN_DIR='.$_ENV['PHP_INI_SCAN_DIR']);
-        $calls = [];
-        $pidMarker = $this->tmpDir.'/script.pid';
-        $readinessUnsupported = false;
-
-        try {
-            $bridge = $this->bridgeWithToolbox(function (string $name) use (&$calls, $pidMarker, &$readinessUnsupported): void {
-                $calls[] = $name;
-                $pid = (int) file_get_contents($pidMarker);
-                $this->assertGreaterThan(1, $pid);
-                $statusPath = '/proc/'.$pid.'/status';
-                if (!is_readable($statusPath)) {
-                    $readinessUnsupported = true;
-
-                    return;
-                }
-
-                // The request is already received; this child has no other
-                // blocking operations. Withhold the reply until it is sleeping
-                // in its socket read, rather than relying on a delayed reply.
-                $pending = new DeferredFuture();
-                $watcher = EventLoop::repeat(0.001, static function () use ($statusPath, $pending): void {
-                    if ($pending->isComplete()) {
-                        return;
-                    }
-                    $status = @file_get_contents($statusPath);
-                    if (false === $status || preg_match('/^State:\\s+[ZX]\\b/m', $status)) {
-                        $pending->error(new \RuntimeException('Script exited before waiting for the tool reply.'));
-                    } elseif (preg_match('/^State:\\s+S\\b/m', $status)) {
-                        $pending->complete(true);
-                    }
-                });
-                try {
-                    // Safety cap only; the process-state predicate releases us.
-                    $this->assertTrue($pending->getFuture()->await(new TimeoutCancellation(2)));
-                } finally {
-                    EventLoop::cancel($watcher);
+            $supervisor->start($paths);
+            $_SERVER[$endpoint] = $paths->endpointPath;
+            $catalog = $container->get(\Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface::class);
+            $catalog->write($runId, new \Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO(runId: $runId, servers: [
+                'fixture' => new \Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO('fixture', 'stdio', \Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum::CONNECTED, tools: [
+                    new \Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO('fixture_echo', 'fixture', 'echo', 'Echo fixture text', [
+                        'type' => 'object', 'properties' => ['text' => ['type' => 'string']], 'required' => ['text'],
+                    ]),
+                ]),
+            ]));
+            $registry = $container->get(\Ineersa\CodingAgent\Tool\ToolRegistry::class);
+            $this->assertNotContains('fixture_echo', $registry->activeToolNames());
+            $client = Client::connect($paths->endpointPath);
+            $accessor = $container->get(StackToolExecutionContextAccessor::class);
+            $context = new ToolContext($runId, 1, 'broker-launch', 'code_mode', new NullCancellationToken(), 5, 0, null, stepId: 'code-mode-bridge-test-step', retainOutput: true, attachmentOwnerToolCallId: 'attachment-owner');
+            $tool = $container->get(CodeModeTool::class);
+            // Deliberately do not service the queue until the launcher has returned.
+            $fixture = $this->tmpDir.'/nested-read.txt';
+            file_put_contents($fixture, 'broker nested read');
+            $otherFixture = $this->tmpDir.'/other-read.txt';
+            $nestedBytes = str_repeat('distinct retained read', 60000)."\n";
+            file_put_contents($otherFixture, $nestedBytes);
+            $contended = $this->tmpDir.'/contended';
+            $shutdownReady = $this->tmpDir.'/shutdown-ready';
+            $shutdownRelease = $this->tmpDir.'/shutdown-release';
+            $this->assertTrue(posix_mkfifo($shutdownRelease, 0600));
+            $script = 'try { $mcp = tool("fixture_echo", ["text" => "cold worker fixture"]); } catch (RuntimeException $error) { $mcp = $error->getMessage(); } try { tool("read", ["invalid list"]); } catch (RuntimeException $error) { $refusal = $error->getMessage(); }'
+                .' try { tool("agent_cancel", ["artifact_id" => "unused"]); throw new LogicException("Nested agent_cancel was accepted"); } catch (RuntimeException $error) { if (!str_contains($error->getMessage(), "not supported inside code_mode")) { throw $error; } }'
+                .' try { tool("code_mode", ["script" => "return 42;"]); } catch (RuntimeException $error) { $recursion = $error->getMessage(); }'
+                .' $first = \Amp\async(static fn () => tool("read", ["path" => '.var_export($fixture, true).']));'
+                .' $second = \Amp\async(static function () {'
+                .' \Revolt\EventLoop::queue(static fn () => touch('.var_export($contended, true).'));'
+                .' return tool("read", ["path" => '.var_export($otherFixture, true).']); });'
+                .' register_shutdown_function(static function () { register_shutdown_function(static function () {'
+                .' touch('.var_export($shutdownReady, true).'); file_get_contents('.var_export($shutdownRelease, true).'); echo "late-shutdown-diagnostics"; }); });'
+                .' return [$refusal ?? null, $first->await(), $recursion ?? null, $second->await(), str_repeat("x", 1100000), $mcp];';
+            $container->get(\Ineersa\CodingAgent\Extension\ExtensionHookRegistry::class)->addToolCallRewriteHook('code_mode', new class implements \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface {
+                public function rewriteArguments(\Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO $context): ?array
+                {
+                    return array_replace($context->arguments, ['timeout_seconds' => 30]);
                 }
             });
-            $this->assertSame(['socket_timeout' => '0', 'result' => null], $this->runScript($bridge, 'file_put_contents('.var_export($pidMarker, true).', (string) getmypid()); return ["socket_timeout" => ini_get("default_socket_timeout"), "result" => tool("noop")];'));
-            if ($readinessUnsupported) {
-                $this->markTestSkipped('Child process status is not readable in this environment.');
+            $toolbox = $container->get(\Symfony\AI\Agent\Toolbox\ToolboxInterface::class);
+            $outcome = $accessor->with($context, static fn () => $toolbox->execute(new \Symfony\AI\Platform\Result\ToolCall('broker-launch', 'code_mode', ['script' => $script, 'timeout_seconds' => 90]))->getResult());
+            $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
+            $this->assertTrue($client->wait('code_mode_requests', 3000));
+            $transport = (new TransportFactory())->createTransport(
+                $paths->transportDsns()['HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN'],
+                [],
+                $container->get('messenger.transport.symfony_serializer'),
+            );
+            $execution = $container->get('agent.execution.bus');
+            $bus = new RoutableMessageBus(new ServiceLocator(['agent.execution.bus' => static fn () => $execution]), $execution);
+            $consume = function (int $count, array $receivers = []) use ($transport, $bus): array {
+                $events = new EventDispatcher();
+                $handled = [];
+                $worker = new Worker($receivers + ['code_mode_requests' => $transport], $bus, $events, messageExecutionStrategy: new FiberMessageExecutionStrategy($bus, 1));
+                $events->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use (&$handled, $worker, $count): void {
+                    $handled[] = $event->getEnvelope()->getMessage();
+                    if (\count($handled) === $count) {
+                        $worker->stop();
+                    }
+                });
+                $events->addListener(\Symfony\Component\Messenger\Event\WorkerMessageFailedEvent::class, static function ($event): void {
+                    throw $event->getThrowable();
+                });
+                $deadline = hrtime(true) + 3_000_000_000;
+                $events->addListener(WorkerRunningEvent::class, static function (WorkerRunningEvent $event) use ($deadline): void {
+                    if (hrtime(true) >= $deadline) {
+                        $event->getWorker()->stop();
+                    } elseif ($event->isWorkerIdle()) {
+                        \Amp\delay(0.01);
+                    }
+                });
+                $worker->run(['fetch_size' => 1, 'sleep' => 0]);
+                $this->assertCount($count, $handled);
+
+                return $handled;
+            };
+            [, $mcpRequest, $invalidRequest, $outerRequest] = $consume(4);
+            $this->assertSame('fixture_echo', $mcpRequest->name);
+            // Do not handle either read until both Fibers entered tool(). The
+            // queued marker runs only once the second Fiber has yielded.
+            $deadline = hrtime(true) + 3_000_000_000;
+            while (!is_file($contended) && hrtime(true) < $deadline) {
+                \Amp\delay(0.01);
             }
-            $this->assertSame(['noop'], $calls);
-        } finally {
-            putenv(false === $previous ? 'PHP_INI_SCAN_DIR' : 'PHP_INI_SCAN_DIR='.$previous);
-            $_ENV = $previousEnv;
-            $_SERVER = $previousServer;
-        }
-    }
-
-    public function testScriptFailureSurvivesAnUndeliverableReturnFrame(): void
-    {
-        try {
-            $this->runScript($this->bridge(), 'global $connection; stream_socket_shutdown($connection, STREAM_SHUT_RDWR); throw new RuntimeException("original script failure");');
-            $this->fail('Expected the disconnected child to fail.');
-        } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('original script failure', $exception->getMessage());
-            $this->assertStringContainsString('Code-mode failed to deliver its error result', $exception->getMessage());
-        }
-    }
-
-    public function testExecuteReturnsScalarAndArrayFromFastScripts(): void
-    {
-        $bridge = $this->bridge();
-
-        $this->assertSame(42, $this->runScript($bridge, 'return 42;'));
-        $this->assertSame(
-            ['direct' => true, 'n' => 2],
-            $this->runScript($bridge, "return ['direct' => true, 'n' => 2];"),
-        );
-    }
-
-    public function testOwnerNoticesAreSubmittedBeforeTheScriptReturns(): void
-    {
-        $bus = new TestMessageBus();
-        $bridge = $this->bridgeWithToolbox(static fn (string $name): null => null, commandBus: $bus);
-        $runId = $this->ensurePreparedRegistration('code-mode-bridge-test');
-        $result = $this->runScript($bridge, <<<'PHP'
-            $first = notify_owner(str_repeat('é', 4096));
-            $second = notify_owner('still running');
-            $invalid = [notify_owner('  '), notify_owner("\xff"), notify_owner(str_repeat('é', 4097))];
-
-            return ['final', $first, $second, $invalid];
-            PHP, runId: $runId);
-
-        $this->assertCount(2, $bus->messages);
-        $this->assertSame('final', $result[0]);
-        $this->assertSame(array_fill(0, 3, ['status' => 'refused', 'reason' => 'invalid_message']), $result[3]);
-        foreach ($bus->messages as $index => $notice) {
-            $this->assertInstanceOf(DeliverBackgroundCompletionDTO::class, $notice);
-            $this->assertSame($runId, $notice->runId());
-            $this->assertSame('code-mode-bridge-test-1', $notice->origin['tool_call_id']);
-            $this->assertNull($notice->deferredId);
-            $this->assertSame(['status' => 'submitted', 'notice_id' => $notice->identity], $result[$index + 1]);
-        }
-        $this->assertNotSame($result[1]['notice_id'], $result[2]['notice_id']);
-        $this->assertSame(['status' => 'refused', 'reason' => 'owner_unavailable'], $bridge->execute('return notify_owner("no owner");'));
-    }
-
-    public function testExecuteToonHelpersDecodeAndRejectGarbage(): void
-    {
-        $bridge = $this->bridge();
-
-        $decoded = $this->runScript($bridge, 'return toon_decode("a: 1\\n");');
-        $this->assertSame(['a' => 1], $decoded);
-
-        $encoded = $this->runScript($bridge, "return toon_encode(['x' => 2]);");
-        $this->assertSame('x: 2', $encoded);
-
-        try {
-            // Unbalanced quotes are a real decode failure; many malformed maps still parse.
-            $this->runScript($bridge, "return toon_decode('\"unterminated');");
-            $this->fail('Expected ToolCallException for garbage TOON');
-        } catch (ToolCallException $exception) {
-            $this->assertNotSame('', $exception->getMessage());
-        }
-    }
-
-    public function testUnsupportedToolsRejectedBeforeInvocation(): void
-    {
-        $calls = [];
-        $bridge = $this->bridgeWithToolbox(static function (string $name) use (&$calls): never {
-            $calls[] = $name;
-            throw new \RuntimeException('toolbox should not execute '.$name);
-        });
-
-        foreach (['subagent', 'fork', 'agent_resume', 'agent_cancel', 'agent_steer', 'notify_parent', 'ask_human'] as $toolName) {
+            $this->assertFileExists($contended);
+            [$readRequest] = $consume(2);
+            $this->assertInstanceOf(CodeModeCallRequestDTO::class, $invalidRequest);
+            $this->assertInstanceOf(CodeModeCallRequestDTO::class, $outerRequest);
+            $this->assertInstanceOf(CodeModeCallRequestDTO::class, $readRequest);
+            $this->assertSame($outcome->deferredId, $outerRequest->invocationId);
+            $this->assertSame($outcome->deferredId, $readRequest->invocationId);
+            $this->assertSame($outcome->deferredId, $readRequest->rootId);
+            $record = $owner->invocation($runId, $readRequest->invocationId);
+            $this->assertNotNull($record);
+            $this->assertSame(['explicitTimeout' => 30, 'callerTimeout' => 5, 'retainOutput' => true, 'attachmentOwner' => 'attachment-owner'], $record['policy']);
+            $this->assertSame($record['startedAtNs'] + 5_000_000_000, $owner->deadline($runId, $outcome->deferredId, false));
+            $this->assertSame($record['startedAtNs'] + 30_000_000_000, $owner->deadline($runId, $outcome->deferredId, true));
+            $deadline = hrtime(true) + 3_000_000_000;
+            while (!is_file($shutdownReady) && hrtime(true) < $deadline) {
+                \Amp\delay(0.01);
+            }
+            $this->assertFileExists($shutdownReady);
+            $this->assertFalse($owner->hasExited($runId, $outcome->deferredId));
+            $this->assertNull($client->receive('code_mode_requests'));
+            file_put_contents($shutdownRelease, 'release');
+            $this->assertTrue($client->wait('code_mode_requests', 3000), implode('', array_map(file_get_contents(...), glob($this->isolatedCwd().'/.hatfield/tmp/bg/*.log'))));
+            $report = null;
+            foreach ($transport->get() as $delivery) {
+                $report = $delivery->getMessage();
+                $transport->ack($delivery);
+                break;
+            }
+            $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeTerminalReportDTO::class, $report);
+            $payloads = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class);
+            $deferred = $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class);
+            $replyFactory = $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory::class);
+            $replyStore = $container->get(\Ineersa\CodingAgent\Session\SessionToolPayloadStore::class)->forWorkspaceReplies($runId, $record['workspace']);
+            $this->assertSame([], glob($record['workspace'].'/replies/*'), 'The script has acknowledged and deleted all consumed bodies.');
+            $root = $deferred->findMetadataByDeferredId($outcome->deferredId)->reference;
+            $publish = static fn () => $owner->withReplyWorkspace($runId, $outcome->deferredId,
+                static fn (string $workspace) => $replyFactory->publish($workspace, $root, ['ok' => true, 'result' => 42]));
+            $unread = $publish();
+            $replyFactory->send($outcome->deferredId, 'unread', $unread);
+            $orphan = $publish(); // A persisted body whose send did not reach the broker.
+            $this->assertSame(42, $replyStore->read($unread)->result['result']);
+            $this->assertSame(42, $replyStore->read($orphan)->result['result']);
+            $busFailure = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+            $busFailure->expects($this->once())->method('dispatch')->willReturnCallback(static function ($message) use ($payloads, $deferred, $outcome): never {
+                $payloads->publishFirstResult($message, $deferred->findMetadataByDeferredId($outcome->deferredId)->reference);
+                throw new \RuntimeException('Simulated send failure after retention');
+            });
+            $handler = new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeTerminalReportHandler(
+                $owner, $deferred, $busFailure, $container->get(\Ineersa\CodingAgent\Tool\OutputCap::class), $payloads,
+                $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor::class),
+                $container->get(\Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor::class),
+                $replyFactory,
+                $container->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class),
+            );
             try {
-                $this->runScript($bridge, "return tool('".$toolName."', ['x' => 1]);");
-                $this->fail('Expected rejection for '.$toolName);
-            } catch (ToolCallException $exception) {
-                $this->assertStringContainsString($toolName, $exception->getMessage());
-                $this->assertStringContainsString('not supported inside code_mode', $exception->getMessage());
+                $handler($report);
+                $this->fail('Expected the simulated terminal dispatch failure');
+            } catch (\RuntimeException $error) {
+                $this->assertSame('Simulated send failure after retention', $error->getMessage());
             }
-        }
-
-        $this->assertSame([], $calls, 'Unsupported tools must be rejected before toolbox invocation');
-    }
-
-    public function testLossyReturnValuesAreRejected(): void
-    {
-        $bridge = $this->bridge();
-
-        try {
-            $this->runScript($bridge, 'return INF;');
-            $this->fail('Expected ToolCallException for INF');
-        } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('unsupported IPC value', $exception->getMessage());
-            $this->assertFalse($exception->retryable());
-        }
-
-        try {
-            $this->runScript($bridge, 'return function () {};');
-            $this->fail('Expected ToolCallException for Closure');
-        } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('unsupported IPC value', $exception->getMessage());
-            $this->assertFalse($exception->retryable());
-        }
-
-        try {
-            $this->runScript($bridge, 'return new DateTimeImmutable("2026-01-01T00:00:00Z");');
-            $this->fail('Expected ToolCallException for object');
-        } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('unsupported IPC value', $exception->getMessage());
-            $this->assertFalse($exception->retryable());
-        }
-    }
-
-    public function testMemoryLimitIsAppliedAndFatalSurfacesOnStderr(): void
-    {
-        $bridge = $this->bridge();
-
-        try {
-            // Force an allocation larger than the configured child memory_limit without sleeping.
-            $this->runScript(
-                $bridge,
-                '$chunks = []; for ($i = 0; $i < 64; ++$i) { $chunks[] = str_repeat("x", 1024 * 1024); } return count($chunks);',
-                memoryLimitMb: 8,
+            $this->assertDirectoryDoesNotExist($record['workspace'].'/replies');
+            $this->assertNull($publish(), 'An in-flight worker cannot recreate the retired reply scope.');
+            $deadline = hrtime(true) + 3_000_000_000;
+            while (!$owner->hasExited($runId, $outcome->deferredId) && hrtime(true) < $deadline) {
+                \Amp\delay(0.01);
+            }
+            $this->assertTrue($owner->hasExited($runId, $outcome->deferredId));
+            $clock = new \Symfony\Component\Clock\MockClock();
+            $observer = new \Ineersa\CodingAgent\Runtime\Controller\CodeModeTerminalObserver(
+                $owner, $deferred, new NullLogger(),
+                new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory(new TransportFactory(), $payloads, $container->get('messenger.transport.symfony_serializer'), $paths->endpointPath),
+                $container->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class),
+                $clock,
             );
-            $this->fail('Expected memory exhaustion failure');
-        } catch (ToolCallException $exception) {
-            $message = $exception->getMessage();
-            $this->assertStringContainsString('Allowed memory size', $message);
-        }
-    }
+            $observer->observe($runId, $runId);
+            $clock->sleep(59);
+            $observer->observe($runId, $runId);
+            $this->assertNull($client->receive('code_mode_requests'));
+            $clock->sleep(1);
+            $observer->observe($runId, $runId);
+            $observer->observe($runId, $runId);
+            [$recovered] = $consume(1);
+            $this->assertEquals($report, $recovered);
+            $this->assertNull($client->receive('code_mode_requests'));
+            $terminal = $payloads->read($payloads->findFirstResult(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeTerminalIdentity::forInvocation($runId, $outcome->deferredId)))->result;
+            $this->assertNotNull($terminal);
+            $this->assertTrue($terminal['ok'], $terminal['error'] ?? 'Expected a successful nested read.');
+            $this->assertSame('Invalid code-mode call request.', $terminal['result'][0] ?? null);
+            $this->assertStringContainsString('broker nested read', $terminal['result'][1]);
+            $this->assertStringContainsString('Tool "code_mode" is not supported', $terminal['result'][2]);
+            $nestedPath = $terminal['result'][3]['output_cap']['saved_path'];
+            $container->get(\Ineersa\CodingAgent\Tool\OutputCap::class)->cleanupRun($runId, 'test');
+            $this->assertSame(hash('sha256', $nestedBytes), hash_file('sha256', $nestedPath));
+            $attachments = array_column($payloads->attachmentReferences($runId, 'attachment-owner'), 'path');
+            $this->assertContains($nestedPath, $attachments);
+            $this->assertTrue(array_any($attachments, static fn (string $path): bool => $path !== $nestedPath && str_contains((string) file_get_contents($path), str_repeat('x', 1100000)) && str_contains((string) file_get_contents($path), 'late-shutdown-diagnostics')));
+            $this->assertSame(str_repeat('x', 1100000), $terminal['result'][4]);
+            $this->assertStringContainsString('echo: cold worker fixture', json_encode($terminal['result'][5], \JSON_THROW_ON_ERROR));
+            $this->assertSame([$outcome->deferredId], $owner->controllerInvocationIds($runId));
 
-    public function testRequestedTimeoutIsCappedBySmallerParentBudget(): void
-    {
-        $bridge = $this->bridge();
-        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
-
-        $runId = $this->prepareTopLevelRegistration('code-mode-bridge-test-request-cap');
-        try {
-            $accessor->with(
-                new ToolContext(
-                    runId: $runId,
-                    turnNo: 1,
-                    toolCallId: 'code-mode-bridge-test-request-cap',
-                    toolName: 'code_mode',
-                    cancellationToken: new NullCancellationToken(),
-                    timeoutSeconds: 1,
-                    orderIndex: 0,
-                    humanInputAnswer: null,
-                    stepId: 'code-mode-bridge-test-step',
-                    parentModel: null,
-                ),
-                static function () use ($bridge): mixed {
-                    return $bridge->execute(
-                        'for ($i = 0, $end = hrtime(true) + 3_000_000_000; hrtime(true) < $end; ++$i) {} return $i;',
-                        120,
-                        256,
-                    );
-                },
+            $invoker = new \Ineersa\CodingAgent\Extension\ExtensionToolInvoker(
+                static fn () => $container->get(\Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface::class),
+                $accessor, $container->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class),
+                $container->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class),
+                $container->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore::class),
+                $payloads, $container->get(\Symfony\Component\Serializer\Normalizer\DenormalizerInterface::class),
+                $runId, $container->get(\Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface::class),
             );
-            $this->fail('Expected timeout');
-        } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('timed out after 1 seconds', $exception->getMessage());
-        }
-    }
-
-    public function testRequestedMemoryLimitIsPropagatedToChildIni(): void
-    {
-        $bridge = $this->bridge();
-
-        $limit = $this->runScript(
-            $bridge,
-            'return ini_get("memory_limit");',
-            memoryLimitMb: 64,
-        );
-
-        $this->assertSame('64M', $limit);
-    }
-
-    public function testNestedToolReceivesRemainingScriptBudget(): void
-    {
-        $seenTimeouts = [];
-        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
-
-        $locator = new class($accessor, $seenTimeouts) implements \Psr\Container\ContainerInterface {
-            /** @param list<int|null> $seenTimeouts */
-            public function __construct(
-                private StackToolExecutionContextAccessor $accessor,
-                private array &$seenTimeouts,
-            ) {
+            $standaloneScript = 'if (!str_contains(tool("read", ["path" => '.var_export($fixture, true).']), "broker nested read")) { throw new RuntimeException("Unexpected read result"); } return 42;';
+            $api = $this->createMock(\Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface::class);
+            $api->method('getCwd')->willReturn($this->isolatedCwd());
+            $api->method('tools')->willReturn($invoker);
+            $scheduler = new \Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension();
+            $scheduler->register($api);
+            $scheduler->onAfterSessionStart(new \Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookContextDTO($runId));
+            $scheduler(['action' => 'create', 'tool' => 'code_mode', 'arguments' => ['script' => $standaloneScript, 'timeout_seconds' => 5], 'every' => '30 seconds'],
+                new \Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO($runId));
+            [$job] = iterator_to_array($scheduler->jobs($runId), false);
+            $api->expects($this->once())->method('notifyOwner')->with($this->callback(static fn ($notice) => $notice->runId === $runId
+                && 'schedule:scheduled-occurrence' === $notice->identity
+                && 'Scheduled code_mode result ['.$job->payload['id']."]:\n42" === trim($notice->text)
+                && !$notice->interrupted));
+            $replies = $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeStandaloneRepliesService::class);
+            $receiver = $replies->open('tool-test');
+            try {
+                $standalone = \Amp\async(static fn () => $scheduler->handle($api, $job->payload, 'scheduled-occurrence', null));
+                $consume(4, [\Ineersa\CodingAgent\Tool\CodeMode\CodeModeStandaloneRepliesService::RECEIVER => $receiver]);
+                $standalone->await();
+            } finally {
+                $replies->close();
             }
 
-            public function get(string $id): mixed
-            {
-                if ('toolbox' !== $id) {
-                    throw new \RuntimeException('Unexpected locator id: '.$id);
-                }
-
-                $accessor = $this->accessor;
-                $seenTimeouts = &$this->seenTimeouts;
-
-                return new class($accessor, $seenTimeouts) implements \Symfony\AI\Agent\Toolbox\ToolboxInterface {
-                    /** @param list<int|null> $seenTimeouts */
-                    public function __construct(
-                        private StackToolExecutionContextAccessor $accessor,
-                        private array &$seenTimeouts,
-                    ) {
-                    }
-
-                    public function getTools(): array
-                    {
-                        return [];
-                    }
-
-                    public function execute(ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
-                    {
-                        $context = $this->accessor->current();
-                        $this->seenTimeouts[] = $context?->timeoutSeconds();
-
-                        return new \Symfony\AI\Agent\Toolbox\ToolResult($toolCall, ['timeout' => $context?->timeoutSeconds()]);
-                    }
-                };
+            $previousSlot = getenv('HATFIELD_CODE_MODE_REPLY_SLOT');
+            putenv('HATFIELD_CODE_MODE_REPLY_SLOT=extension_agent');
+            try {
+                $standalone = \Amp\async(static fn () => $invoker->invoke(new \Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationRequestDTO(
+                    $runId, 'sequential-extension', 'code_mode', ['script' => $standaloneScript, 'timeout_seconds' => 5],
+                )));
+                $consume(3);
+                $this->assertSame('42', trim($standalone->await(new \Amp\TimeoutCancellation(3))->text));
+            } finally {
+                putenv(false === $previousSlot ? 'HATFIELD_CODE_MODE_REPLY_SLOT' : 'HATFIELD_CODE_MODE_REPLY_SLOT='.$previousSlot);
             }
 
-            public function has(string $id): bool
-            {
-                return 'toolbox' === $id;
+            // No waiting extension invocation is attached to this owned launch.
+            $orphanWorkspace = $this->tmpDir.'/orphan-workspace';
+            $orphanReady = $this->tmpDir.'/orphan-ready';
+            $orphanRelease = $this->tmpDir.'/orphan-release';
+            $this->assertTrue(posix_mkfifo($orphanRelease, 0600));
+            $owner->launch($runId, 'orphan-standalone', $orphanWorkspace,
+                'touch '.escapeshellarg($orphanReady).'; read -r line < '.escapeshellarg($orphanRelease),
+                hrtime(true) - 2_000_000_000, ['explicitTimeout' => 1, 'callerTimeout' => null, 'retainOutput' => false, 'attachmentOwner' => 'orphan-standalone'],
+                standaloneTurn: 0);
+            $deadline = hrtime(true) + 3_000_000_000;
+            while (!is_file($orphanReady) && hrtime(true) < $deadline) {
+                \Amp\delay(0.01);
             }
-        };
+            $this->assertFileExists($orphanReady);
+            $observer->observe($runId, $runId);
+            $observer->observe($runId, $runId);
+            $this->assertTrue($owner->hasExited($runId, 'orphan-standalone'));
+            [$timeoutWakeup] = $consume(1);
+            $this->assertSame('orphan-standalone', $timeoutWakeup->invocationId);
+            $this->assertStringContainsString('timed out', $timeoutWakeup->failure);
 
-        $bridge = new CodeModeHostBridge(
-            $accessor,
-            self::getContainer()->get(ToolRuntime::class),
-            $locator,
-            self::getContainer()->get(RuntimeProcessConfig::class),
-            self::getContainer()->get(OutputCap::class),
-            self::getContainer()->get(DeferredToolCompletionRepository::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
-            self::getContainer()->get(ToolPayloadStoreInterface::class),
-            self::getContainer()->get('agent.command.bus'),
-        );
-
-        $runId = $this->prepareTopLevelRegistration('code-mode-bridge-test-budget');
-        $result = $accessor->with(
-            new ToolContext(
-                runId: $runId,
-                turnNo: 1,
-                toolCallId: 'code-mode-bridge-test-budget',
-                toolName: 'code_mode',
-                cancellationToken: new NullCancellationToken(),
-                timeoutSeconds: 5,
-                orderIndex: 0,
-                humanInputAnswer: null,
-                stepId: 'code-mode-bridge-test-step',
-                parentModel: null,
-            ),
-            static fn (): mixed => $bridge->execute("\$end = hrtime(true) + 1_200_000_000; while (hrtime(true) < \$end) {} return tool('read', ['path' => 'README.md']);", 5, 256),
-        );
-
-        $this->assertIsArray($result);
-        $this->assertArrayHasKey('timeout', $result);
-        $this->assertIsInt($result['timeout']);
-        // Parent budget is 5s; after waiting >1s the nested call must see a reduced remaining budget.
-        $this->assertLessThan(5, $result['timeout']);
-        $this->assertGreaterThan(0, $result['timeout']);
-        $this->assertSame([$result['timeout']], $seenTimeouts);
-    }
-
-    public function testNestedCodeModeEnvelopeIsUnwrappedToRawValue(): void
-    {
-        $seen = [];
-        $bridge = $this->bridgeWithToolbox(static function (string $name) use (&$seen): void {
-            $seen[] = $name;
-        });
-
-        // Replace toolbox to return a nested code_mode envelope and assert unwrap.
-        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
-        $locator = new class($accessor) implements \Psr\Container\ContainerInterface {
-            public function __construct(private StackToolExecutionContextAccessor $accessor)
-            {
-            }
-
-            public function get(string $id): mixed
-            {
-                if ('toolbox' !== $id) {
-                    throw new \RuntimeException('Unexpected locator id: '.$id);
-                }
-
-                return new class implements \Symfony\AI\Agent\Toolbox\ToolboxInterface {
-                    public function getTools(): array
-                    {
-                        return [];
-                    }
-
-                    public function execute(ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
-                    {
-                        return new \Symfony\AI\Agent\Toolbox\ToolResult(
-                            $toolCall,
-                            [
-                                'code_mode_value' => ['nested' => true],
-                                'code_mode_diagnostics' => ['stdout' => 'child-out'],
-                            ],
-                        );
-                    }
-                };
-            }
-
-            public function has(string $id): bool
-            {
-                return 'toolbox' === $id;
-            }
-        };
-
-        $bridge = new CodeModeHostBridge(
-            $accessor,
-            self::getContainer()->get(ToolRuntime::class),
-            $locator,
-            self::getContainer()->get(RuntimeProcessConfig::class),
-            self::getContainer()->get(OutputCap::class),
-            self::getContainer()->get(DeferredToolCompletionRepository::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
-            self::getContainer()->get(ToolPayloadStoreInterface::class),
-            self::getContainer()->get('agent.command.bus'),
-        );
-
-        $result = $this->runScript($bridge, "return tool('code_mode', ['script' => 'return 1;']);");
-        $this->assertSame(['nested' => true], $result);
-    }
-
-    public function testToonEncodeRejectsUnsupportedValuesAndDecodeKeepsScalarText(): void
-    {
-        $bridge = $this->bridge();
-
-        try {
-            $this->runScript($bridge, 'return toon_encode(function () {});');
-            $this->fail('Expected ToolCallException for unsupported toon_encode input');
-        } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('unsupported IPC value', $exception->getMessage());
-            $this->assertFalse($exception->retryable());
-        }
-
-        $this->assertSame('plain text', $this->runScript($bridge, "return toon_decode('plain text');"));
-    }
-
-    public function testStdoutAndStderrDiagnosticsAreReturnedSeparately(): void
-    {
-        $bridge = $this->bridge();
-
-        $result = $this->runScript($bridge, 'echo "hello-out"; fwrite(STDERR, "hello-err\\n"); return 7;');
-        $this->assertInstanceOf(CodeModeExecutionResult::class, $result);
-        $this->assertSame(7, $result->result);
-        $this->assertStringContainsString('hello-out', $result->diagnostics['stdout'] ?? '');
-        $this->assertStringContainsString('hello-err', $result->diagnostics['stderr'] ?? '');
-    }
-
-    public function testNullReturnIsPreserved(): void
-    {
-        $bridge = $this->bridge();
-
-        $this->assertNull($this->runScript($bridge, 'return null;'));
-        $this->assertNull($this->runScript($bridge, '// no return'));
-    }
-
-    public function testDieWithoutReturnReportsExitWithoutReturning(): void
-    {
-        $bridge = $this->bridge();
-
-        try {
-            $this->runScript($bridge, "die('died-message');");
-            $this->fail('Expected ToolCallException for die without return');
-        } catch (ToolCallException $exception) {
-            $message = $exception->getMessage();
-            $this->assertStringContainsString('exited without returning a value', $message);
-            $this->assertStringContainsString('died-message', $message);
-            $this->assertStringContainsString('exit code 0', $message);
-        }
-    }
-
-    public function testToolRejectsExtraArguments(): void
-    {
-        $bridge = $this->bridge();
-
-        try {
-            $this->runScript($bridge, "return tool('read', ['path' => 'README.md'], 'extra');");
-            $this->fail('Expected ToolCallException for extra tool() arguments');
-        } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('at most two arguments', $exception->getMessage());
-        }
-    }
-
-    public function testDiagnosticPathsUseStableScriptNameAndAdjustedLine(): void
-    {
-        $bridge = $this->bridge();
-
-        try {
-            $this->runScript($bridge, "throw new RuntimeException('boom-line');");
-            $this->fail('Expected ToolCallException for thrown exception');
-        } catch (ToolCallException $exception) {
-            $message = $exception->getMessage();
-            $this->assertStringContainsString('boom-line', $message);
-            // Path normalization applies to process diagnostics; exception messages from
-            // IPC may not include file paths. Force a warning path assertion via stderr.
-        }
-
-        try {
-            $this->runScript($bridge, '$x = $undefinedVar; return 1;');
-            // warning + return still succeeds with diagnostics
-        } catch (ToolCallException $exception) {
-            $this->fail('Undefined variable warning should not fail the script: '.$exception->getMessage());
-        }
-
-        $result = $this->runScript($bridge, '$x = $undefinedVar; return 1;');
-        $this->assertInstanceOf(CodeModeExecutionResult::class, $result);
-        $stderr = $result->diagnostics['stderr'] ?? '';
-        $stdout = $result->diagnostics['stdout'] ?? '';
-        $combined = $stdout."\n".$stderr;
-        $this->assertStringContainsString('Warning:', $combined);
-        $this->assertStringContainsString('script.php(', $combined);
-        $this->assertDoesNotMatchRegularExpression('#/tmp/[^\\s:]+/script\\.php#', $combined);
-        $this->assertMatchesRegularExpression('#script\\.php\\(1\\)#', $combined);
-        $this->assertSame(1, substr_count($combined, 'Undefined variable'));
-        // Source prevention: display_errors=0 + xdebug.mode=off keeps the
-        // warning on stderr once, without an stdout mirror or Xdebug stack.
-        $this->assertSame('', $stdout);
-        $this->assertNotSame('', $stderr);
-        $this->assertStringNotContainsString('Stack', $stderr);
-        $this->assertStringNotContainsString('Call Stack', $stderr);
-    }
-
-    public function testHugeStdoutPreservesHeadAndTailThroughHostCapture(): void
-    {
-        $bridge = $this->bridge();
-        // Host regression: >50k stdout must keep unique head and tail markers.
-        // Lower layers cannot prove Symfony Process capture without a real subprocess.
-        $result = $this->runScript(
-            $bridge,
-            'echo "HEAD-MARKER-".str_repeat("X", 60000)."TAIL-MARKER"; return "tiny";',
-        );
-        $this->assertInstanceOf(CodeModeExecutionResult::class, $result);
-        $this->assertSame('tiny', $result->result);
-        $stdout = $result->diagnostics['stdout'] ?? '';
-        $this->assertNotSame('', $stdout);
-        $this->assertGreaterThan(50_000, \strlen($stdout));
-        $this->assertStringStartsWith('HEAD-MARKER-', $stdout);
-        $this->assertStringEndsWith('TAIL-MARKER', $stdout);
-        $this->assertStringContainsString(str_repeat('X', 60_000), $stdout);
-
-        $block = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnostics::renderBlock($result->diagnostics);
-        $this->assertStringStartsWith("code_mode diagnostics\nstdout:\n", $block);
-        $this->assertStringNotContainsString('diagnostics truncated', $block);
-        $this->assertSame(\strlen($stdout), \strlen($block) - \strlen("code_mode diagnostics\nstdout:\n"));
-    }
-
-    public function testHugeStdoutEarlyExitPreservesHeadAndTailMarkers(): void
-    {
-        $bridge = $this->bridge();
-
-        try {
-            $this->runScript(
-                $bridge,
-                'echo "ERR-HEAD-".str_repeat("Y", 60000)."ERR-TAIL"; exit(0);',
+            $cancelledWorkspace = $this->tmpDir.'/cancelled-workspace';
+            $owner->launch($runId, 'cancelled-standalone', $cancelledWorkspace,
+                'read -r line < '.escapeshellarg($orphanRelease), hrtime(true),
+                ['explicitTimeout' => null, 'callerTimeout' => null, 'retainOutput' => false, 'attachmentOwner' => 'cancelled-standalone'],
+                standaloneTurn: 0);
+            $status = $this->createStub(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class);
+            $runStatus = \Ineersa\AgentCore\Domain\Run\RunStatus::Cancelling;
+            $status->method('findOperationalStatus')->willReturnCallback(static function () use (&$runStatus): \Ineersa\AgentCore\Contract\RunOperationalStatusDTO {
+                return new \Ineersa\AgentCore\Contract\RunOperationalStatusDTO($runStatus, 0);
+            });
+            $cancellationObserver = new \Ineersa\CodingAgent\Runtime\Controller\CodeModeTerminalObserver(
+                $owner, $deferred, new NullLogger(),
+                new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory(new TransportFactory(), $payloads, $container->get('messenger.transport.symfony_serializer'), $paths->endpointPath),
+                $status, $clock,
             );
-            $this->fail('Expected ToolCallException for early exit without return');
-        } catch (ToolCallException $exception) {
-            $message = $exception->getMessage();
-            $this->assertStringContainsString('exited without returning a value', $message);
-            $this->assertStringContainsString('ERR-HEAD-', $message);
-            $this->assertStringContainsString('ERR-TAIL', $message);
-            $this->assertStringContainsString(str_repeat('Y', 60_000), $message);
-            $this->assertStringNotContainsString('diagnostics truncated', $message);
-        }
-    }
+            $cancellationObserver->observe($runId, $runId);
+            $runStatus = \Ineersa\AgentCore\Domain\Run\RunStatus::Running;
+            $cancellationObserver->observe($runId, $runId);
+            $this->assertTrue($owner->hasExited($runId, 'cancelled-standalone'));
+            $this->assertSame('cancelled', $owner->invocation($runId, 'cancelled-standalone')['interruption']);
+            [$cancelWakeup] = $consume(1);
+            $this->assertSame('cancelled-standalone', $cancelWakeup->invocationId);
+            $this->assertStringContainsString('interrupted: cancelled', $cancelWakeup->failure);
 
-    public function testTypeErrorUsesNormalizedScriptPath(): void
-    {
-        $bridge = $this->bridge();
-
-        try {
-            $this->runScript($bridge, 'strlen([]);');
-            $this->fail('Expected ToolCallException for TypeError');
-        } catch (ToolCallException $exception) {
-            $message = $exception->getMessage();
-            $this->assertStringContainsString('script.php(', $message);
-            $this->assertDoesNotMatchRegularExpression('#/tmp/[^\\s:]+/script\\.php#', $message);
-            $this->assertMatchesRegularExpression('#script\\.php\\(\\d+\\)#', $message);
-        }
-    }
-
-    public function testParseErrorReportsNormalizedScriptPathAndLine(): void
-    {
-        $bridge = $this->bridge();
-
-        try {
-            $this->runScript($bridge, 'echo (');
-            $this->fail('Expected ToolCallException for parse error');
-        } catch (ToolCallException $exception) {
-            $message = $exception->getMessage();
-            $this->assertStringContainsString('script.php(', $message);
-            $this->assertDoesNotMatchRegularExpression('#/tmp/[^\\s:]+/script\\.php#', $message);
-            $this->assertMatchesRegularExpression('#script\\.php\\(\\d+\\)#', $message);
-        }
-    }
-
-    public function testFusedNativePackagingResolvesPhpFromPath(): void
-    {
-        $finder = new \Symfony\Component\Process\ExecutableFinder();
-        $phpFromPath = $finder->find('php');
-        $this->assertIsString($phpFromPath);
-        $this->assertNotSame('', $phpFromPath);
-
-        $locator = new class implements \Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator {
-            public function path(): string
-            {
-                return '/tmp/hatfield.linux-amd64';
-            }
-
-            /** @return list<string> */
-            public function command(): array
-            {
-                return ['/tmp/hatfield.linux-amd64'];
-            }
-        };
-
-        $bridge = new CodeModeHostBridge(
-            self::getContainer()->get(StackToolExecutionContextAccessor::class),
-            self::getContainer()->get(ToolRuntime::class),
-            new class implements \Psr\Container\ContainerInterface {
-                public function get(string $id): mixed
+            $toolReceiver = (new TransportFactory())->createTransport($paths->transportDsns()['HATFIELD_TOOL_TRANSPORT_DSN'], [], new \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer());
+            $toolReceiver->send(new \Symfony\Component\Messenger\Envelope((object) ['invocation' => 'shutdown-wait']));
+            $wait = $container->get(\Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber::class);
+            $replyService = new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeStandaloneRepliesService(
+                new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeReplyTransportFactory(new TransportFactory(), $payloads, $container->get('messenger.transport.symfony_serializer'), $paths->endpointPath),
+                $payloads, $bus, $wait,
+            );
+            $entered = new \Amp\DeferredFuture();
+            $shutdownBus = new class($replyService, $entered, $runId) implements \Symfony\Component\Messenger\MessageBusInterface {
+                public function __construct(private \Ineersa\CodingAgent\Tool\CodeMode\CodeModeStandaloneRepliesService $replies, private \Amp\DeferredFuture $entered, private string $runId)
                 {
-                    throw new \RuntimeException('toolbox should not be needed');
                 }
 
-                public function has(string $id): bool
+                public function dispatch(object $message, array $stamps = []): \Symfony\Component\Messenger\Envelope
                 {
-                    return false;
-                }
-            },
-            new RuntimeProcessConfig($locator, $this->tmpDir),
-            self::getContainer()->get(OutputCap::class),
-            self::getContainer()->get(DeferredToolCompletionRepository::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
-            self::getContainer()->get(ToolPayloadStoreInterface::class),
-            self::getContainer()->get('agent.command.bus'),
-        );
+                    $this->replies->register($this->runId, 'shutdown-wait');
+                    $this->entered->complete();
+                    try {
+                        $this->replies->await($this->runId, 'shutdown-wait');
+                    } finally {
+                        $this->replies->unregister($this->runId, 'shutdown-wait');
+                    }
 
-        $result = $this->runScript($bridge, 'return "path-php-ok";');
-        $this->assertSame('path-php-ok', $result);
+                    return \Symfony\Component\Messenger\Envelope::wrap($message, $stamps);
+                }
+            };
+            $events = new EventDispatcher();
+            $failure = new \Amp\DeferredFuture();
+            $events->addListener(\Symfony\Component\Messenger\Event\WorkerMessageFailedEvent::class, static fn ($event) => $failure->complete($event->getThrowable()));
+            $command = new \Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeCommand(
+                new RoutableMessageBus(new ServiceLocator([]), $shutdownBus),
+                new ServiceLocator(['tool' => static fn () => $toolReceiver, 'agent' => static fn () => $transport, 'code_mode_requests' => static fn () => $transport]),
+                $events, $container->get(\Ineersa\CodingAgent\Config\AppConfig::class), codeModeReplies: $replyService,
+            );
+            putenv('HATFIELD_CODE_MODE_REPLY_SLOT=tool-shutdown-test');
+            $guard = \Revolt\EventLoop::delay(3, static fn () => throw new \RuntimeException('Shutdown drain did not release the pending reply.'));
+            try {
+                $input = new \Symfony\Component\Console\Input\ArrayInput(['--transport' => 'tool', '--memory-limit' => (string) (memory_get_usage(true) + 64 * 1024 * 1024)]);
+                $input->bind($command->getDefinition());
+                $stopping = \Amp\async(static function () use ($entered, $command): void {
+                    $entered->getFuture()->await();
+                    $command->handleSignal(\SIGTERM);
+                });
+                $this->assertSame(0, $command->run($input, new \Symfony\Component\Console\Output\BufferedOutput()));
+                $stopping->await();
+                $error = $failure->getFuture()->await(new \Amp\TimeoutCancellation(1));
+                $this->assertInstanceOf(ToolCallException::class, $error);
+                $this->assertSame('Code-mode reply receiver stopped.', $error->getMessage());
+            } finally {
+                \Revolt\EventLoop::cancel($guard);
+                putenv(false === $previousSlot ? 'HATFIELD_CODE_MODE_REPLY_SLOT' : 'HATFIELD_CODE_MODE_REPLY_SLOT='.$previousSlot);
+            }
+
+            putenv('HATFIELD_CODE_MODE_REPLY_SLOT=extension_agent');
+            $input = new \Symfony\Component\Console\Input\ArrayInput([]);
+            $output = new \Symfony\Component\Console\Output\BufferedOutput();
+            $signal = new \Symfony\Component\Console\Event\ConsoleSignalEvent($command, $input, $output, \SIGTERM);
+            $signalDispatcher = $container->get('event_dispatcher');
+            $guard = \Revolt\EventLoop::delay(3, static fn () => throw new \RuntimeException('Scoped worker did not stop on the console signal.'));
+            try {
+                $replies->register($runId, 'scoped-shutdown');
+                \Revolt\EventLoop::queue(static fn () => $signalDispatcher->dispatch($signal, \Symfony\Component\Console\ConsoleEvents::SIGNAL));
+                try {
+                    $replies->await($runId, 'scoped-shutdown');
+                    $this->fail('Expected the scoped wait to fail on shutdown.');
+                } catch (ToolCallException $error) {
+                    $this->assertSame('Code-mode reply receiver stopped.', $error->getMessage());
+                }
+            } finally {
+                $replies->unregister($runId, 'scoped-shutdown');
+                \Revolt\EventLoop::cancel($guard);
+                putenv(false === $previousSlot ? 'HATFIELD_CODE_MODE_REPLY_SLOT' : 'HATFIELD_CODE_MODE_REPLY_SLOT='.$previousSlot);
+            }
+        } finally {
+            if (null === $previous) {
+                unset($_SERVER[$endpoint]);
+            } else {
+                $_SERVER[$endpoint] = $previous;
+            }
+            $container->get(\Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface::class)->disconnectAll($runId);
+            $client?->close();
+            $owner->cleanup($runId);
+            $supervisor->shutdownUntil(microtime(true) + 5.0);
+        }
     }
 
-    #[DataProvider('retainedOutputs')]
-    public function testLargeStreamsRemainRecoverableWithoutLosingReturnValue(string $script, string $expected): void
+    public function testRefusesMissingSessionInvocation(): void
     {
-        $run = $this->retainedRun();
+        $tool = self::getContainer()->get(CodeModeTool::class);
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('requires a valid session invocation');
+        $tool(new CodeModeArgumentsDTO('return 42;'));
+    }
+
+    public function testRefusesUnavailableBroker(): void
+    {
         $container = self::getContainer();
-        $context = $container->get(ActiveRunContextInterface::class);
-        $state = $context->createNew($run);
-        $events = (new EventFactory())->eventsFromSpecs($run, 1, 1, [
-            ['type' => 'run_started', 'payload' => ['messages' => []]],
-            ['type' => 'turn_advanced', 'payload' => ['turn_no' => 1, 'step_id' => 'code-mode-bridge-test-step']],
-            ['type' => 'llm_step_completed', 'payload' => ['step_id' => 'code-mode-bridge-test-step', 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'code-mode-bridge-test-1', 'name' => 'code_mode', 'arguments' => [], 'order_index' => 0]]]]],
-        ]);
-        $reducer = $container->get(RunStateReducer::class);
-        $commit = new RunCommit($context,
-            $container->get(PreparedTransitionEventStoreInterface::class), new NullLogger(),
-            $container->get(TransitionFinalizer::class),
-            new HookDispatcher([$container->get(ToolBatchSnapshotCleanupHookSubscriber::class)]));
-        $state = $commit->commit($state, $reducer->replay($state, $events), $events);
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/artifacts'), new LockFactory(new FlockStore($this->tmpDir)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor()));
-        $result = $this->runScript($this->bridgeWithToolbox(static fn () => null, $cap), $script, runId: $run);
-        $call = new DomainToolCall('code-mode-bridge-test-1', 'code_mode', [], 0, $run);
-        $raw = ['code_mode_value' => $result instanceof CodeModeExecutionResult ? $result->result : $result, 'code_mode_diagnostics' => $result instanceof CodeModeExecutionResult ? $result->diagnostics : []];
-        $domain = new ToolResult($call->toolCallId, 'code_mode', [['type' => 'text', 'text' => json_encode($raw, \JSON_THROW_ON_ERROR)]], ['raw_result' => $raw]);
-        $domain = (new CodeModeDiagnosticsToolResultProcessor())->process($domain, $call);
-        $repository = $container->get(DeferredToolCompletionRepository::class);
-        $payloads = $container->get(ToolPayloadStoreInterface::class);
-        $domain = (new OutputCapToolResultProcessor($cap, AttributeSerializerValidatorTestFactory::denormalizer(), $payloads, $repository))->process($domain, $call);
-        $paths = [];
-        $modelText = $domain->details['model_notifications'][0]['text'] ?? $domain->content[0]['text'];
-        preg_match_all('/Saved full output: (.+)/', $modelText, $matches);
-        foreach ($matches[1] as $path) {
-            $paths[$path] = hash_file('sha256', $path);
-            $this->assertStringContainsString($expected, file_get_contents($path));
-        }
-        $this->assertNotEmpty($paths);
-        $correlation = $repository->findByRunAndToolCall($run, $call->toolCallId);
-        $terminal = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, $domain->content, $domain->details);
-        $failing = new MessageBus([$container->get(ToolPayloadMiddleware::class), new HandleMessageMiddleware(new HandlersLocator([
-            ToolPayloadMessage::class => [static fn () => throw new \RuntimeException('lost send')],
-        ]))]);
+        $id = 'broker-unavailable';
+        $runId = 'broker-refusal-fixture';
+        $tool = $container->get(CodeModeTool::class);
+        $context = new ToolContext($runId, 1, $id, 'code_mode', new NullCancellationToken(), 5, 0, null, stepId: 'code-mode-bridge-test-step');
+        $endpoint = 'HATFIELD_SQLITE_QUEUE_ENDPOINT';
+        $previous = $_SERVER[$endpoint] ?? null;
+        $_SERVER[$endpoint] = $this->tmpDir.'/missing.sock';
         try {
-            $failing->dispatch($terminal);
-            $this->fail('The publication failure must escape.');
-        } catch (HandlerFailedException $exception) {
-            $this->assertStringContainsString('lost send', $exception->getMessage());
-        }
-        $container->get(CodeModeBackgroundCoordinationHandler::class)->controllerStarting(new ControllerSessionStartingEvent($run));
-        $cap->cleanupRun($run, 'controller_restart');
-        $repair = $container->get(SessionRepairService::class)->repair($run, true, Uuid::v7()->toRfc4122());
-        $this->assertNull($repair->refusalReason);
-        $this->assertSame(2, $repair->activeOperationsRedriven, 'Repair requests the retained result and its ordinary continuation.');
-        $reference = $repository->findMetadataByDeferredId($correlation->deferredId)->acceptedResultReference;
-        $this->assertEquals($terminal, $payloads->read($reference));
-        $state = $context->requireLoaded($run);
-        $admission = $container->get(ToolCallResultHandler::class)->handle($payloads->read($reference), $state);
-        $state = $commit->commit($state, $admission->nextState, $admission->events, postCommitActions: $admission->postCommitActions);
-        $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $repository->status($correlation->deferredId));
-        $events = (new EventFactory())->eventsFromSpecs($run, 1, $state->lastSeq + 1, [['type' => 'agent_end', 'payload' => ['reason' => 'completed']]]);
-        $commit->commit($state, $reducer->replay($state, $events), $events);
-        $cap->cleanupRun($run, 'controller_shutdown');
-        foreach ($paths as $path => $hash) {
-            $this->assertSame($hash, hash_file('sha256', $path), 'Committed AgentEnd must retain referenced output.');
-            $this->assertDirectoryDoesNotExist(\dirname($path, 3).'/tool-payloads', 'Terminal cleanup still deletes disposable payloads.');
-        }
-        $container->get(HatfieldSessionStore::class)->deleteSession($run);
-        $context->release($run);
-        foreach ($paths as $path => $hash) {
-            $this->assertFileDoesNotExist($path, 'Permanent deletion still owns retained attachments.');
-        }
-    }
-
-    public static function retainedOutputs(): iterable
-    {
-        yield 'large PHP value' => ['return str_repeat("V", 70000);', str_repeat('V', 70000)];
-        yield 'sub-MiB diagnostics' => ['fwrite(STDOUT, str_repeat("D", 70000)); return 42;', str_repeat('D', 70000)];
-        yield 'above-MiB streams' => ['for ($i=0; $i<160; ++$i) { fwrite(STDOUT, str_repeat("O",8192)); fwrite(STDERR, str_repeat("O",8192)); } return ["answer"=>42];', str_repeat('O', 1310720)];
-    }
-
-    /** @return iterable<string, array{string, string}> */
-    public static function diagnosticFailureModes(): iterable
-    {
-        yield 'early exit' => ['exit', 'exit code 7'];
-        yield 'script exception' => ['error', 'SCRIPT_FAILURE'];
-        yield 'wall deadline' => ['timeout', 'timed out'];
-        yield 'cancellation' => ['cancel', 'cancelled'];
-    }
-
-    #[DataProvider('diagnosticFailureModes')]
-    public function testLargeFailureDiagnosticsKeepAnExactArtifact(string $mode, string $message): void
-    {
-        $run = $this->retainedRun();
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/artifacts'), new LockFactory(new FlockStore($this->tmpDir)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor()));
-        $bridge = $this->bridgeWithToolbox(static fn () => null, $cap);
-        $marker = $this->tmpDir.'/ready-to-cancel';
-        $token = new class($marker) implements CancellationTokenInterface {
-            public function __construct(private readonly string $marker)
-            {
-            }
-
-            public function isCancellationRequested(): bool
-            {
-                clearstatcache(true, $this->marker);
-
-                return is_file($this->marker);
-            }
-        };
-        // The writer flushes all diagnostic bytes before publishing its cancel
-        // marker. The wait exposes the real subprocess stop/deadline contract.
-        $ending = match ($mode) {
-            'exit' => 'exit(7);',
-            'error' => 'throw new RuntimeException("SCRIPT_FAILURE");',
-            'timeout' => 'sleep(3); return 42;',
-            'cancel' => 'file_put_contents('.var_export($marker, true).', "ready"); sleep(3); return 42;',
-        };
-        try {
-            $this->runScript($bridge, 'for ($i=0; $i<160; ++$i) fwrite(STDERR, str_repeat("E",8192)); '.$ending, timeoutSeconds: 1, cancelToken: $token, runId: $run);
-            $this->fail('Expected failed execution');
-        } catch (ToolCallException $exception) {
-            $this->assertSame(ToolCallException::class, $exception::class);
-            $this->assertFalse($exception->retryable());
-            $this->assertNull($exception->hint());
-            $this->assertStringContainsString($message, $exception->getMessage());
-            $this->assertLessThan(2048, \strlen($exception->getMessage()));
-            $this->assertSame(1, preg_match('/Saved full output: (.+)/', $exception->getMessage(), $matches));
-            $cap->cleanupRun($run, 'controller_shutdown');
-            $this->assertSame(hash('sha256', str_repeat('E', 1310720)), hash_file('sha256', $matches[1]));
+            $container->get(StackToolExecutionContextAccessor::class)->with($context, static fn () => $tool(new CodeModeArgumentsDTO('return 42;')));
+            $this->fail('Expected broker refusal.');
+        } catch (ToolCallException $error) {
+            $this->assertStringContainsString('session broker unavailable', $error->getMessage());
+            $this->assertFalse($error->retryable());
         } finally {
-            $cap->cleanupRun('code-mode-bridge-test', 'test');
+            if (null === $previous) {
+                unset($_SERVER[$endpoint]);
+            } else {
+                $_SERVER[$endpoint] = $previous;
+            }
         }
     }
 
-    public function testLargeInvalidUtf8DiagnosticsAreRefused(): void
+    protected static function configureIsolatedProjectBeforeKernelBoot(string $projectDir): void
     {
-        $bridge = $this->bridge();
-        $this->expectException(MalformedToolResultException::class);
-        $this->runScript($bridge, 'for ($i=0; $i<160; ++$i) fwrite(STDOUT, str_repeat("O",8192)); echo "\\xff"; return 42;');
-    }
-
-    public function testBackgroundLaunchWithoutRegisteredOwnerIsRefusedBeforeStartingScript(): void
-    {
-        $marker = $this->tmpDir.'/must-not-run';
-        try {
-            $this->bridge()->execute('file_put_contents('.var_export($marker, true).', "ran");', backgrounded: true);
-            $this->fail('Background launch needs an owner-qualified invocation.');
-        } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('top-level code_mode', $exception->getMessage());
+        $directory = realpath($projectDir.'/.hatfield');
+        if ($directory !== $projectDir.'/.hatfield' || file_exists($directory.'/mcp.json') || is_link($directory.'/mcp.json')) {
+            throw new \LogicException('Expected a disposable, empty MCP fixture destination.');
         }
-        $this->assertFileDoesNotExist($marker);
-    }
-
-    public function testInvalidToolboxInvocationAllocatesNoDeferredExecution(): void
-    {
-        $run = $this->ensurePreparedRegistration('code-mode-bridge-test');
-        $repository = self::getContainer()->get(DeferredToolCompletionRepository::class);
-        $this->assertNull($repository->findMetadataByRunAndToolCall($run, 'code-mode-bridge-test-1'));
-        $registry = new ToolRegistry();
-        $registry->registerTool(name: 'code_mode', description: 'code mode', handler: new CodeModeTool($this->bridge()), promptLine: 'code_mode');
-        $dispatcher = new EventDispatcher();
-        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener(Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator()));
-        $toolbox = new FaultTolerantToolbox(new RegistryBackedToolbox(
-            registry: $registry,
-            argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
-            schemaFactory: NativeToolSchemaProbe::schemaFactory(),
-            eventDispatcher: $dispatcher,
-        ));
-        $marker = $this->tmpDir.'/invalid-must-not-run';
-        $context = new ToolContext($run, 1, 'code-mode-bridge-test-1', 'code_mode', new NullCancellationToken(), 10, stepId: 'code-mode-bridge-test-step');
-        $result = self::getContainer()->get(StackToolExecutionContextAccessor::class)->with($context, static fn () => $toolbox->execute(new ToolCall(
-            'code-mode-bridge-test-1',
-            'code_mode',
-            ['script' => 'file_put_contents('.var_export($marker, true).', "ran");', 'memory_limit_mb' => 0],
-        )));
-        $this->assertStringContainsString('memory_limit_mb', (string) $result->getResult());
-        $this->assertNull($repository->findMetadataByRunAndToolCall($run, 'code-mode-bridge-test-1'));
-        $this->assertFileDoesNotExist($marker);
-    }
-
-    public function testTopLevelHandlerPreparesAndMarksReadyWithoutOwnerPreparation(): void
-    {
-        $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('missing code_mode preparation');
-        $call = new ExecuteToolCall($run, 1, 'code-mode-bridge-test-step', 1, 'key', 'code-mode-bridge-test-1', 'code_mode', ['script' => 'return 1;'], 0);
-        $batches = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::register(
-            new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batches),
-            $batches,
-            $run,
-            1,
-            'code-mode-bridge-test-step',
-            [$call],
-        );
-        $this->assertNull(self::getContainer()->get(DeferredToolCompletionRepository::class)->findMetadataByRunAndToolCall($run, 'code-mode-bridge-test-1'));
-
-        $result = $this->runScript($this->bridge(), 'return 1;', runId: $run, prepareRegistration: false);
-        $this->assertSame(1, $result instanceof CodeModeExecutionResult ? $result->result : $result);
-        $metadata = self::getContainer()->get(DeferredToolCompletionRepository::class)->findMetadataByRunAndToolCall($run, 'code-mode-bridge-test-1');
-        $this->assertNotNull($metadata);
-        $this->assertNotNull($metadata->readyAt);
-    }
-
-    public function testTopLevelContextWithoutCanonicalBatchIsRefused(): void
-    {
-        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
-
-        try {
-            $accessor->with(
-                new ToolContext(
-                    runId: 'unbatched-code-mode',
-                    turnNo: 1,
-                    toolCallId: 'code-mode-bridge-test-1',
-                    toolName: 'code_mode',
-                    cancellationToken: new NullCancellationToken(),
-                    timeoutSeconds: 10,
-                    orderIndex: 0,
-                    humanInputAnswer: null,
-                    stepId: 'code-mode-bridge-test-step',
-                    parentModel: null,
-                ),
-                fn (): mixed => $this->bridge()->execute('return 1;'),
-            );
-            $this->fail('Top-level code_mode without a canonical batch must refuse.');
-        } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('canonical batch invocation', $exception->getMessage());
-            $this->assertFalse($exception->retryable());
-        }
-    }
-
-    public function testNestedEditInodeTimeoutFailsScriptBeforeSubsequentEdits(): void
-    {
-        $path = $this->tmpDir.'/nested-edit.txt';
-        file_put_contents($path, "old\n");
-        $logger = new TestLogger();
-        $clock = new MockClock();
-        $reads = 0;
-        $waitClock = $this->createStub(ClockInterface::class);
-        $waitClock->method('now')->willReturnCallback(static function () use ($clock, &$reads) {
-            // Start, first failed flock attempt, then expiry at the next retry.
-            if (3 === ++$reads) {
-                $clock->modify('+5 seconds');
-            }
-
-            return $clock->now();
-        });
-        $tool = new EditFileTool(self::getContainer()->get(ToolRuntime::class), new PatchApplier($waitClock, new EditLockDiagnosticsService($logger, self::getContainer()->get(StackToolExecutionContextAccessor::class)), new PatchFailureFormatter()));
-        $calls = 0;
-        $bridge = $this->bridgeWithToolbox(static function (string $name, array $args) use ($tool, &$calls): string {
-            self::assertSame('edit', $name);
-            ++$calls;
-
-            return $tool(new EditFileArgumentsDTO(...$args));
-        });
-        $args = var_export(['path' => $path, 'patch' => "@@\n-old\n+new"], true);
-        $holder = new InodeLockHolder($path);
-        try {
-            try {
-                $this->runScript($bridge, "tool('edit', $args); tool('edit', $args); return 'unexpected';");
-                $this->fail('A nested lock timeout must fail the script.');
-            } catch (ToolCallException $e) {
-                $this->assertStringContainsString('E_PATCH_LOCK_TIMEOUT', $e->getMessage());
-            }
-            $this->assertSame(1, $calls);
-            $this->assertSame("old\n", file_get_contents($path));
-            $this->assertCount(1, $logger->records);
-            $this->assertNotEmpty($logger->records[0]['context']['tool_call_id']);
-        } finally {
-            $holder->release();
-        }
-        $this->assertSame("old\n", file_get_contents($path));
-    }
-
-    private function bridge(): CodeModeHostBridge
-    {
-        $bridge = self::getContainer()->get('test.code_mode_host_bridge');
-        $this->assertInstanceOf(CodeModeHostBridge::class, $bridge);
-
-        return $bridge;
-    }
-
-    /**
-     * @param callable(string): mixed $executor
-     */
-    private function bridgeWithToolbox(callable $executor, ?OutputCap $outputCap = null, ?TestMessageBus $commandBus = null): CodeModeHostBridge
-    {
-        $locator = new class($executor) implements \Psr\Container\ContainerInterface {
-            public function __construct(private mixed $executor)
-            {
-            }
-
-            public function get(string $id): mixed
-            {
-                if ('toolbox' !== $id) {
-                    throw new \RuntimeException('Unexpected locator id: '.$id);
-                }
-
-                return new class($this->executor) implements \Symfony\AI\Agent\Toolbox\ToolboxInterface {
-                    public function __construct(private mixed $executor)
-                    {
-                    }
-
-                    public function getTools(): array
-                    {
-                        return [];
-                    }
-
-                    public function execute(ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
-                    {
-                        return new \Symfony\AI\Agent\Toolbox\ToolResult($toolCall, ($this->executor)($toolCall->getName(), $toolCall->getArguments()));
-                    }
-                };
-            }
-
-            public function has(string $id): bool
-            {
-                return 'toolbox' === $id;
-            }
-        };
-
-        return new CodeModeHostBridge(
-            self::getContainer()->get(StackToolExecutionContextAccessor::class),
-            self::getContainer()->get(ToolRuntime::class),
-            $locator,
-            self::getContainer()->get(RuntimeProcessConfig::class),
-            $outputCap ?? self::getContainer()->get(OutputCap::class),
-            self::getContainer()->get(DeferredToolCompletionRepository::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
-            self::getContainer()->get(ToolPayloadStoreInterface::class),
-            $commandBus ?? self::getContainer()->get('agent.command.bus'),
-        );
-    }
-
-    private function retainedRun(): string
-    {
-        $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('retained diagnostics');
-        $call = new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(Uuid::v7()->toRfc4122(), $run, 1, 'code-mode-bridge-test-step', 1, 'key', 'code-mode-bridge-test-1', 'code_mode', [], 0);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class), $call);
-        self::getContainer()->get(DeferredToolCompletionRepository::class)->registerPending($call);
-
-        return $run;
-    }
-
-    private function runScript(
-        CodeModeHostBridge $bridge,
-        string $script,
-        int $timeoutSeconds = 10,
-        int $memoryLimitMb = 256,
-        ?int $parentTimeoutSeconds = 10,
-        ?CancellationTokenInterface $cancelToken = null,
-        string $runId = 'code-mode-bridge-test',
-        bool $prepareRegistration = true,
-    ): mixed {
-        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
-        if ($prepareRegistration) {
-            $runId = $this->ensurePreparedRegistration($runId);
-        }
-
-        return $accessor->with(
-            new ToolContext(
-                runId: $runId,
-                turnNo: 1,
-                toolCallId: 'code-mode-bridge-test-1',
-                toolName: 'code_mode',
-                cancellationToken: $cancelToken ?? new NullCancellationToken(),
-                timeoutSeconds: $parentTimeoutSeconds,
-                orderIndex: 0,
-                humanInputAnswer: null,
-                stepId: 'code-mode-bridge-test-step',
-                parentModel: null,
-            ),
-            static fn (): mixed => $bridge->execute($script, $timeoutSeconds, $memoryLimitMb),
-        );
-    }
-
-    private function ensurePreparedRegistration(string $runId): string
-    {
-        $batches = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
-        $call = $batches->loadCall($runId, 1, 'code-mode-bridge-test-step', 'code-mode-bridge-test-1');
-        if (!$call instanceof ExecuteToolCall) {
-            if ('code-mode-bridge-test' === $runId) {
-                $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('code mode bridge fixture');
-            }
-            $call = new ExecuteToolCall($runId, 1, 'code-mode-bridge-test-step', 1, 'key', 'code-mode-bridge-test-1', 'code_mode', [], 0);
-            \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::register(
-                new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batches),
-                $batches,
-                $runId,
-                1,
-                'code-mode-bridge-test-step',
-                [$call],
-            );
-            $call = $batches->loadCall($runId, 1, 'code-mode-bridge-test-step', 'code-mode-bridge-test-1');
-            $this->assertInstanceOf(ExecuteToolCall::class, $call);
-        }
-
-        return $runId;
+        (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/mcp.json', json_encode(['mcpServers' => [
+            'fixture' => ['command' => \PHP_BINARY, 'args' => [__DIR__.'/../../Mcp/Fixtures/stdio-echo-server.php']],
+        ]], \JSON_THROW_ON_ERROR));
     }
 
     private function prepareTopLevelRegistration(string $toolCallId): string
     {
         $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('code mode bridge '.$toolCallId);
-        $call = new ExecuteToolCall($runId, 1, 'code-mode-bridge-test-step', 1, 'key-'.$toolCallId, $toolCallId, 'code_mode', [], 0);
+        self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
+            new \Ineersa\AgentCore\Domain\Run\RunState($runId, \Ineersa\AgentCore\Domain\Run\RunStatus::Running),
+        );
+        $call = new ExecuteToolCall($runId, 1, 'code-mode-bridge-test-step', 1, 'key-'.$toolCallId, $toolCallId, 'code_mode', ['timeout_seconds' => 90], 0);
         $batches = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
         \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::register(
             new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batches),
@@ -1334,16 +494,5 @@ PHP));
         $this->assertInstanceOf(ExecuteToolCall::class, $call);
 
         return $runId;
-    }
-
-    private function waitUntilProcessExits(Process $process, float $timeoutSeconds = 2.0): void
-    {
-        $deadline = hrtime(true) + (int) ($timeoutSeconds * 1_000_000_000);
-        while ($process->isRunning()) {
-            if (hrtime(true) >= $deadline) {
-                $this->fail('Timed out waiting for child process exit (safety cap, not a sync strategy).');
-            }
-            usleep(1_000);
-        }
     }
 }

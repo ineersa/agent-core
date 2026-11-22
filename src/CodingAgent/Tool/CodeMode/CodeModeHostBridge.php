@@ -4,19 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\CodeMode;
 
-use Amp\DeferredFuture;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Agent\Tool\AgentCancelTool;
 use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
 use Ineersa\CodingAgent\Agent\Tool\AgentSteerTool;
@@ -24,140 +20,103 @@ use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
 use Ineersa\CodingAgent\Agent\Tool\NotifyParentTool;
 use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
-use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\AskHumanTool;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
-use Ineersa\CodingAgent\Tool\OutputCap;
-use Ineersa\CodingAgent\Tool\ToolRuntime;
-use Psr\Container\ContainerInterface;
+use Ineersa\SqliteQueue\Client;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Revolt\EventLoop;
-use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
-use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
-use Symfony\AI\Agent\Toolbox\ToolboxInterface;
-use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Messenger\MessageBusInterface;
-use Symfony\Component\Process\Exception\ProcessStartFailedException;
-use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeException;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\UuidV7;
-use Symfony\Component\Validator\Constraints as Assert;
-use Symfony\Component\Validator\Validation;
 
-use function Amp\delay;
-
-/**
- * Owns one PHP script subprocess and bridges tool() calls to RegistryBackedToolbox.
- *
- * The script loads only the minimal bootstrap (no application autoloader). Nested
- * tool calls reuse the existing toolbox rewrite/validation/handler path under a
- * nested ToolContext. Host and nested work share an invocation-sticky token;
- * parent continuation cannot clear a captured stop, cancellation, or discard.
- */
+/** Launches session-owned PHP; a shared worker delivers its durable return. */
 final readonly class CodeModeHostBridge
 {
-    private const int DEFAULT_GRACE_SECONDS = 5;
-    private const int POLL_INTERVAL_MICROS = 20_000;
-    private const int MAX_UNIX_SOCKET_PATH_BYTES = 100;
-    private const int SCRIPT_WRAPPER_PREFIX_LINES = 3;
-    private const string TOOLBOX_LOCATOR_KEY = 'toolbox';
-
     public function __construct(
         private StackToolExecutionContextAccessor $contextAccessor,
-        private ToolRuntime $toolRuntime,
-        private ContainerInterface $toolboxLocator,
         private RuntimeProcessConfig $runtimeProcessConfig,
-        private OutputCap $outputCap,
         private DeferredToolCompletionRepository $deferred,
         private ToolBatchStoreInterface $batches,
-        private ToolPayloadStoreInterface $payloads,
         private MessageBusInterface $commandBus,
+        private CodeModeProcessOwner $processOwner,
+        private CodeModeRuntimeMaterializer $runtime,
+        private ToolBatchRunStoragePathsInterface $paths,
+        private CodeModeStandaloneRepliesService $standaloneReplies,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
-    public function execute(
-        string $script,
-        int $timeoutSeconds = CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS,
-        int $memoryLimitMb = CodeModeArgumentsDTO::DEFAULT_MEMORY_LIMIT_MB,
-        bool $backgrounded = false,
-    ): mixed {
-        return $this->toolRuntime->run(function () use ($script, $timeoutSeconds, $memoryLimitMb, $backgrounded): mixed {
-            $parentContext = $this->contextAccessor->current();
-            $cancelToken = $parentContext?->cancellationToken() ?? new NullCancellationToken();
-            $timeoutSeconds = $this->resolveScriptWallSeconds($timeoutSeconds, $parentContext?->timeoutSeconds());
-            $memoryLimit = $this->formatMemoryLimit($memoryLimitMb);
-            $deferredId = $this->prepareDeferred($parentContext);
-            if ($backgrounded && null === $deferredId) {
-                throw new ToolCallException('Background launch requires a top-level code_mode invocation.', retryable: false);
+    public function execute(string $script, ?int $timeoutSeconds = null, int $memoryLimitMb = CodeModeArgumentsDTO::DEFAULT_MEMORY_LIMIT_MB, bool $backgrounded = false): DeferredToolCompletionOutcome|ToolResult
+    {
+        $context = $this->contextAccessor->current();
+        if (null === $context || '' === $context->runId() || CodeModeTool::NAME !== $context->toolName()) {
+            throw new ToolCallException('Code-mode launch requires a valid session invocation.', retryable: false);
+        }
+        $endpoint = $_SERVER['HATFIELD_SQLITE_QUEUE_ENDPOINT'] ?? $_ENV['HATFIELD_SQLITE_QUEUE_ENDPOINT'] ?? getenv('HATFIELD_SQLITE_QUEUE_ENDPOINT');
+        if (!\is_string($endpoint) || '' === $endpoint) {
+            throw new ToolCallException('Code-mode session broker unavailable.', retryable: false);
+        }
+        try {
+            Client::connect($endpoint)->close();
+        } catch (\Exception $error) {
+            throw new ToolCallException('Code-mode session broker unavailable.', retryable: false, previous: $error);
+        }
+        $token = $context->cancellationToken();
+        $standalone = null === $context->stepId();
+        if ($standalone && ($backgrounded || '' === $context->toolCallId())) {
+            throw new ToolCallException('Standalone code-mode requires a foreground invocation.', retryable: false);
+        }
+        $id = $standalone ? $context->toolCallId() : $this->prepareDeferred($context);
+        if ($token->isCancellationRequested()) {
+            throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
+        }
+        $workspace = $this->createWorkspace();
+        $owned = false;
+        $reply = null;
+        try {
+            $reply = $standalone ? $this->standaloneReplies->register($context->runId(), $id) : null;
+            $this->writeScript($workspace['script'], $script);
+            $this->startProcess($workspace, $token, $this->formatMemoryLimit($memoryLimitMb), $context->runId(), $id, $endpoint, [
+                'explicitTimeout' => $timeoutSeconds,
+                'callerTimeout' => $context->timeoutSeconds(),
+                'retainOutput' => $context->retainOutput(),
+                'attachmentOwner' => $context->attachmentOwnerToolCallId(),
+            ], $standalone ? $context->turnNo() : null, $reply);
+            $owned = true;
+            if ($standalone) {
+                return $this->standaloneReplies->await($context->runId(), $id);
             }
-            if (null !== $deferredId) {
-                $cancelToken = new CodeModeCancellationToken($cancelToken, $this->deferred, $deferredId);
+            if ($backgrounded) {
+                $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($context->runId(), $id, $context->toolCallId()));
             }
 
-            $workspace = $this->createWorkspace();
-            $process = null;
-            $server = null;
-            $connection = null;
-            $capture = new CodeModeDiagnosticCapture($this->outputCap, $parentContext?->runId(), $workspace['dir'], null !== $parentContext && (null !== $deferredId || $parentContext->retainOutput()) ? fn (callable $write): string => $this->payloads->saveAttachment($parentContext->runId(), $parentContext->attachmentOwnerToolCallId(), $write) : null);
-
-            try {
-                $this->writeScript($workspace['script'], $script);
-                $server = $this->createSocketServer($workspace['socket']);
-                $process = $this->startProcess($workspace, $cancelToken, $memoryLimit, $capture);
-                $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
-                if (null !== $deferredId) {
-                    $this->deferred->markReady($deferredId);
-                    if ($backgrounded) {
-                        $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($parentContext->runId(), $deferredId, $parentContext->toolCallId()));
-                    }
-                }
-
-                $result = $this->serve($connection, $process, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
-                // Settle the owned writer before reading or persisting its files.
-                $this->stopProcess($process);
-
-                // Ordinary ToolExecutor processors own the terminal once. This
-                // host only registers readiness for later caller detachment.
-                return $this->packExecutionResult($result, $capture);
-            } catch (\Throwable $exception) {
-                if ($exception instanceof MalformedToolResultException || null === $process) {
-                    throw $exception;
-                }
-                $this->stopProcess($process);
-                throw new ToolCallException(CodeModeDiagnostics::appendToMessage($exception->getMessage(), $capture->prepare(self::SCRIPT_WRAPPER_PREFIX_LINES)), retryable: $exception instanceof ToolCallException && $exception->retryable(), hint: $exception instanceof ToolCallException ? $exception->hint() : null, previous: $exception);
-            } finally {
-                $this->stopProcess($process);
-                $this->closeResource($connection);
-                $this->closeResource($server);
+            return new DeferredToolCompletionOutcome($id);
+        } finally {
+            if (null !== $reply) {
+                $this->standaloneReplies->unregister($context->runId(), $id);
+            }
+            if (!$owned && null === $this->processOwner->invocation($context->runId(), $id)) {
                 $this->cleanupWorkspace($workspace);
             }
-        });
+        }
     }
 
-    /**
-     * Register only an actual top-level handler invocation, after budget validation.
-     *
-     * Nested and no-context invocations have no deferred caller. Existing
-     * registrations retain their identity when the same intent is delivered again.
-     */
-    private function prepareDeferred(?ToolContext $parentContext): ?string
+    // Only a canonical agent-turn invocation has a batch correlation. Repeated
+    // delivery retains its existing deferred identity.
+    private function prepareDeferred(ToolContext $parentContext): string
     {
-        if (null === $parentContext || '' === $parentContext->runId() || null === $parentContext->stepId() || CodeModeTool::NAME !== $parentContext->toolName()) {
-            return null;
-        }
         if ($this->contextAccessor->depth() > 1) {
-            return null;
+            throw new ToolCallException('Code-mode launch requires canonical invocation correlation.', retryable: false);
         }
         $call = $this->batches->loadCall($parentContext->runId(), $parentContext->turnNo(), $parentContext->stepId(), $parentContext->toolCallId());
-        if (!$call instanceof ExecuteToolCall) {
+        if (!$call instanceof ExecuteToolCall || 'code_mode' !== $call->toolName) {
             throw new ToolCallException('Code-mode registration requires a canonical batch invocation.', retryable: false);
         }
         $metadata = $this->deferred->findMetadataByRunAndToolCall($call->runId(), $call->toolCallId);
@@ -166,7 +125,7 @@ final readonly class CodeModeHostBridge
         }
         $stored = $metadata->reference;
         if (
-            CodeModeTool::NAME !== $stored->toolName
+            'code_mode' !== $stored->toolName
             || [$stored->runId, $stored->turnNo, $stored->stepId, $stored->attempt, $stored->idempotencyKey, $stored->toolCallId, $stored->orderIndex]
             !== [$call->runId(), $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->orderIndex]
         ) {
@@ -177,293 +136,7 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * @param resource $connection
-     */
-    private function serve(
-        mixed $connection,
-        Process $process,
-        ?ToolContext $parentContext,
-        CancellationTokenInterface $cancelToken,
-        ?int $timeoutSeconds,
-        int $startedAtNs,
-    ): mixed {
-        $readWaiter = function () use ($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs): void {
-            $this->waitWhileBlocked($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs, false);
-        };
-        $writeWaiter = function () use ($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs): void {
-            $this->waitWhileBlocked($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs, true);
-        };
-
-        while (true) {
-            $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-            $this->drainProcessOutput($process);
-
-            if (!$this->waitForReadable($connection, $cancelToken, $timeoutSeconds, $startedAtNs)) {
-                $this->drainProcessOutput($process);
-                // The child can queue its return frame and exit after the
-                // readiness wait. Recheck queued IPC before classifying the
-                // newly observed exit as a missing return value.
-                if (!$process->isRunning() && !$this->waitForReadable($connection, $cancelToken, $timeoutSeconds, $startedAtNs)) {
-                    throw $this->earlyExitException($process);
-                }
-
-                continue;
-            }
-
-            $frame = CodeModeIpc::read($connection, $readWaiter);
-            if (null === $frame) {
-                $this->drainProcessOutput($process);
-                if (!$process->isRunning()) {
-                    throw $this->earlyExitException($process);
-                }
-
-                // Socket EOF can race process death (for example OOM). Poll briefly
-                // so stderr can be drained into the early-exit path instead of a
-                // generic closed-connection message.
-                throw $this->connectionClosedException($process, $cancelToken, $timeoutSeconds, $startedAtNs);
-            }
-
-            $type = $frame['type'] ?? null;
-            if ('notify_owner' === $type) {
-                CodeModeIpc::write($connection, [
-                    'id' => $frame['id'] ?? null,
-                    'result' => $this->notifyOwner($frame['message'] ?? null, $parentContext),
-                ], $writeWaiter);
-                continue;
-            }
-            if ('tool' === $type) {
-                $this->handleToolRequest($connection, $frame, $parentContext, $cancelToken, $timeoutSeconds, $startedAtNs, $writeWaiter);
-                continue;
-            }
-
-            if ('return' === $type) {
-                $this->drainProcessOutput($process);
-                if (($frame['ok'] ?? false) === true) {
-                    try {
-                        $result = CodeModeValueCodec::assertEncodable($frame['result'] ?? null, 'Code-mode script return value');
-                    } catch (\RuntimeException $exception) {
-                        throw new ToolCallException(CodeModeDiagnostics::normalizePaths($exception->getMessage(), self::SCRIPT_WRAPPER_PREFIX_LINES), retryable: false, previous: $exception);
-                    }
-
-                    return $result;
-                }
-
-                $message = \is_string($frame['error'] ?? null) ? $frame['error'] : 'Code-mode script failed.';
-                throw new ToolCallException(CodeModeDiagnostics::normalizePaths($message, self::SCRIPT_WRAPPER_PREFIX_LINES), retryable: false);
-            }
-
-            throw new ToolCallException(\sprintf('Unsupported code-mode IPC frame type: %s.', get_debug_type($type)), retryable: false);
-        }
-    }
-
-    /** @return array<string, mixed> */
-    private function notifyOwner(mixed $message, ?ToolContext $context): array
-    {
-        $violations = Validation::createValidator()->validate($message, new Assert\Sequentially([
-            new Assert\Type('string'),
-            new Assert\NotBlank(normalizer: 'trim'),
-            new Assert\Charset('UTF-8'),
-            new Assert\Length(max: 8192, countUnit: Assert\Length::COUNT_BYTES),
-        ]));
-        if (0 !== $violations->count()) {
-            return ['status' => 'refused', 'reason' => 'invalid_message'];
-        }
-        if (null === $context || '' === $context->runId()) {
-            return ['status' => 'refused', 'reason' => 'owner_unavailable'];
-        }
-
-        $identity = 'code-mode-notice:'.new UuidV7();
-        $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
-            $context->runId(), $identity,
-            \sprintf("Intermediate code_mode notice (run_id: %s, tool_call_id: %s).\n\n%s", $context->runId(), $context->toolCallId(), $message),
-            origin: ['tool_call_id' => $context->toolCallId(), 'retire_on_owner_cancel' => true],
-        ));
-
-        return ['status' => 'submitted', 'notice_id' => $identity];
-    }
-
-    /**
-     * @param resource             $connection
-     * @param array<string, mixed> $frame
-     */
-    private function handleToolRequest(
-        mixed $connection,
-        array $frame,
-        ?ToolContext $parentContext,
-        CancellationTokenInterface $cancelToken,
-        int $timeoutSeconds,
-        int $startedAtNs,
-        ?callable $waiter,
-    ): void {
-        $id = $frame['id'] ?? null;
-        $name = $frame['name'] ?? null;
-        $arguments = $frame['arguments'] ?? [];
-
-        if (!\is_string($id) || '' === $id) {
-            throw new ToolCallException('Code-mode tool request requires a non-empty id.', retryable: false);
-        }
-        if (!\is_string($name) || '' === trim($name)) {
-            CodeModeIpc::write($connection, [
-                'id' => $id,
-                'ok' => false,
-                'error' => 'Tool name must be a non-empty string.',
-            ], $waiter);
-
-            return;
-        }
-        if (!\is_array($arguments)) {
-            CodeModeIpc::write($connection, [
-                'id' => $id,
-                'ok' => false,
-                'error' => 'Tool arguments must be a JSON object.',
-            ], $waiter);
-
-            return;
-        }
-
-        /* @var array<string, mixed> $arguments */
-        try {
-            CodeModeValueCodec::assertEncodable($name, 'Nested tool name');
-            $arguments = CodeModeValueCodec::assertEncodable($arguments, 'Nested tool arguments');
-            if ($cancelToken->isCancellationRequested()) {
-                throw new ToolCallException('Code-mode tool call cancelled before start.', retryable: false);
-            }
-
-            if (CodeModeUnsupportedTools::contains($name)) {
-                throw new ToolCallException(CodeModeUnsupportedTools::rejectionMessage($name), retryable: false);
-            }
-
-            $result = $this->invokeTool($name, $arguments, $parentContext, $cancelToken, $timeoutSeconds, $startedAtNs);
-            // Encoding/size failures are still tool errors that the script can catch.
-            $packet = CodeModeIpc::encode([
-                'id' => $id,
-                'ok' => true,
-                'result' => $this->normalizeResult($result, $name),
-            ]);
-        } catch (\Throwable $exception) {
-            try {
-                CodeModeIpc::write($connection, [
-                    'id' => $id,
-                    'ok' => false,
-                    'error' => $this->formatException($exception),
-                ], $waiter);
-            } catch (\Throwable $deliveryException) {
-                // Preserve the tool cause, but never retry an entire script after
-                // failed delivery: earlier statements may have had side effects.
-                $this->logger->warning('code_mode.error_reply_failed', [
-                    'run_id' => $parentContext?->runId(),
-                    'session_id' => $parentContext?->runId(),
-                    'component' => 'tool.code_mode',
-                    'event_type' => 'code_mode.error_reply_failed',
-                    'error_type' => $deliveryException::class,
-                ]);
-                throw new ToolCallException('Failed to deliver code-mode tool error: '.$this->formatException($exception), retryable: false, previous: $exception);
-            }
-
-            return;
-        }
-
-        // A failed reply write is a transport failure, not another tool result.
-        CodeModeIpc::writeAll($connection, $packet, $waiter);
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function invokeTool(
-        string $name,
-        array $arguments,
-        ?ToolContext $parentContext,
-        CancellationTokenInterface $cancelToken,
-        int $timeoutSeconds,
-        int $startedAtNs,
-    ): mixed {
-        $remainingSeconds = $this->remainingScriptBudgetSeconds($timeoutSeconds, $startedAtNs);
-        if (null === $remainingSeconds) {
-            throw new ToolCallException(\sprintf('Code-mode execution timed out after %d seconds.', $timeoutSeconds), retryable: false);
-        }
-
-        $toolCallId = 'code-mode-'.bin2hex(random_bytes(8));
-        $nestedContext = new ToolContext(
-            runId: $parentContext?->runId() ?? '',
-            turnNo: $parentContext?->turnNo() ?? 0,
-            toolCallId: $toolCallId,
-            toolName: $name,
-            cancellationToken: $cancelToken,
-            timeoutSeconds: $remainingSeconds,
-            orderIndex: 0,
-            humanInputAnswer: null,
-            stepId: $parentContext?->stepId(),
-            parentModel: $parentContext?->parentModel(),
-            allowsHumanInput: $parentContext?->allowsHumanInput() ?? true,
-            retainOutput: $parentContext?->retainOutput() ?? false,
-            attachmentOwnerToolCallId: $parentContext?->attachmentOwnerToolCallId(),
-        );
-
-        return $this->contextAccessor->with($nestedContext, function () use ($name, $arguments, $toolCallId): mixed {
-            try {
-                $toolboxResult = $this->toolbox()->execute(new ToolCall($toolCallId, $name, $arguments));
-            } catch (ToolNotFoundException $exception) {
-                throw new ToolCallException($exception->getMessage(), retryable: false, previous: $exception);
-            } catch (ToolExecutionExceptionInterface $exception) {
-                $previous = $exception->getPrevious();
-                if ($previous instanceof ToolCallException) {
-                    throw $previous;
-                }
-
-                throw new ToolCallException($previous?->getMessage() ?? $exception->getMessage(), retryable: false, previous: $previous ?? $exception);
-            }
-
-            return $toolboxResult->getResult();
-        });
-    }
-
-    private function normalizeResult(mixed $result, string $toolName): mixed
-    {
-        if ($result instanceof DeferredToolCompletionOutcome) {
-            throw new ToolCallException('Deferred tool completions are not supported inside code_mode.', retryable: false);
-        }
-
-        if ($result instanceof ToolExecutionHumanInputSuspension) {
-            throw new ToolCallException('Human-input suspensions are not supported inside code_mode.', retryable: false);
-        }
-
-        // CodeModeTool has already converted its host wrapper to plain data.
-        // Preserve only the nested script value for IPC; nested diagnostics
-        // stay in that child rather than accompanying its tool() return value.
-        if (CodeModeTool::NAME === $toolName && \is_array($result) && \array_key_exists('code_mode_value', $result)) {
-            $result = $result['code_mode_value'];
-        }
-
-        try {
-            return CodeModeValueCodec::assertEncodable($result, 'Nested tool result');
-        } catch (\RuntimeException $exception) {
-            throw new ToolCallException($exception->getMessage(), retryable: false, previous: $exception);
-        }
-    }
-
-    private function formatException(\Throwable $exception): string
-    {
-        $diagnostic = $exception->getMessage();
-        $hint = $exception instanceof ToolCallException ? $exception->hint() : null;
-        if (!mb_check_encoding($diagnostic, 'UTF-8') || (null !== $hint && !mb_check_encoding($hint, 'UTF-8'))) {
-            return CodeModeValueCodec::MALFORMED_MESSAGE;
-        }
-        if ($exception instanceof ToolCallException) {
-            $message = $exception->getMessage();
-            $hint = $exception->hint();
-            if (null !== $hint && '' !== $hint) {
-                return $message."\nHint: ".$hint;
-            }
-
-            return $message;
-        }
-
-        return $exception->getMessage();
-    }
-
-    /**
-     * @return array{dir: string, script: string, socket: string, startedAtNs: int}
+     * @return array{dir: string, script: string, startedAtNs: int}
      */
     private function createWorkspace(): array
     {
@@ -473,7 +146,7 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException('Failed to allocate a temporary code-mode workspace.', retryable: true);
         }
 
-        // tempnam creates a file; replace it with a short-lived directory for script + socket.
+        // tempnam creates a file; replace it with a short-lived directory for script and diagnostics.
         $this->filesystem->remove($marker);
         $dir = $marker;
         try {
@@ -482,16 +155,9 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException(\sprintf('Failed to create code-mode workspace "%s".', $dir), retryable: true, previous: $exception);
         }
 
-        $socket = $dir.'/s.sock';
-        if (\strlen($socket) > self::MAX_UNIX_SOCKET_PATH_BYTES) {
-            $this->filesystem->remove($dir);
-            throw new ToolCallException(\sprintf('Code-mode socket path exceeds %d bytes: %s', self::MAX_UNIX_SOCKET_PATH_BYTES, $socket), retryable: false);
-        }
-
         return [
             'dir' => $dir,
             'script' => $dir.'/script.php',
-            'socket' => $socket,
             'startedAtNs' => hrtime(true),
         ];
     }
@@ -532,107 +198,19 @@ final readonly class CodeModeHostBridge
         return $target;
     }
 
-    private function materializeValueCodec(string $workspaceDir): string
-    {
-        $source = __DIR__.'/CodeModeValueCodec.php';
-        $target = $workspaceDir.'/CodeModeValueCodec.php';
-
-        try {
-            $contents = file_get_contents($source);
-            if (false === $contents) {
-                throw new \RuntimeException(\sprintf('Unable to read code-mode value codec from "%s".', $source));
-            }
-            $this->filesystem->dumpFile($target, $contents);
-        } catch (\Throwable $exception) {
-            throw new ToolCallException('Failed to materialize code-mode value codec for subprocess execution.', retryable: true, previous: $exception);
-        }
-
-        return $target;
-    }
-
     /**
-     * Materialize the installed HelgeSverre TOON package for the child process.
-     *
-     * Resolves the package root from the host-loaded class file so PHAR and
-     * source trees both work without shipping a forked copy under Resources/.
+     * @param array{dir: string, script: string, startedAtNs: int}                                           $workspace
+     * @param array{queue: string, incarnation: string}|null                                                 $reply
+     * @param array{explicitTimeout: ?int, callerTimeout: ?int, retainOutput: bool, attachmentOwner: string} $policy
      */
-    private function materializeToonLibrary(string $workspaceDir): string
-    {
-        $targetRoot = $workspaceDir.'/toon';
-
-        try {
-            $sourceRoot = $this->installedToonSourceRoot();
-            $this->filesystem->mkdir($targetRoot);
-
-            $iterator = new \RecursiveIteratorIterator(
-                new \RecursiveDirectoryIterator($sourceRoot, \FilesystemIterator::SKIP_DOTS),
-            );
-            foreach ($iterator as $file) {
-                if (!$file->isFile()) {
-                    continue;
-                }
-                $relative = substr($file->getPathname(), \strlen($sourceRoot) + 1);
-                $this->filesystem->copy($file->getPathname(), $targetRoot.'/'.$relative, true);
-            }
-
-            // Preserve upstream MIT license beside the materialized sources.
-            $license = \dirname($sourceRoot).'/LICENSE';
-            if (is_file($license)) {
-                $this->filesystem->copy($license, $targetRoot.'/LICENSE', true);
-            }
-        } catch (\Throwable $exception) {
-            throw new ToolCallException('Failed to materialize code-mode TOON library for subprocess execution.', retryable: true, previous: $exception);
-        }
-
-        return $targetRoot;
-    }
-
-    private function installedToonSourceRoot(): string
-    {
-        $toonFile = (new \ReflectionClass(\HelgeSverre\Toon\Toon::class))->getFileName();
-        if (!\is_string($toonFile) || '' === $toonFile) {
-            throw new \RuntimeException('Unable to resolve HelgeSverre\\Toon\\Toon source path on the host.');
-        }
-
-        $sourceRoot = \dirname($toonFile);
-        if (!is_dir($sourceRoot)) {
-            throw new \RuntimeException(\sprintf('Installed TOON source root is missing at "%s".', $sourceRoot));
-        }
-
-        return $sourceRoot;
-    }
-
-    /**
-     * @return resource
-     */
-    private function createSocketServer(string $socketPath): mixed
-    {
-        if ($this->filesystem->exists($socketPath)) {
-            $this->filesystem->remove($socketPath);
-        }
-
-        $server = @stream_socket_server('unix://'.$socketPath, $errno, $errstr);
-        if (false === $server) {
-            throw new ToolCallException(\sprintf('Failed to create code-mode socket: [%d] %s', $errno, $errstr), retryable: true);
-        }
-
-        stream_set_blocking($server, false);
-
-        return $server;
-    }
-
-    /**
-     * @param array{dir: string, script: string, socket: string, startedAtNs: int} $workspace
-     */
-    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, CodeModeDiagnosticCapture $capture): Process
+    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, string $runId, string $invocationId, string $endpoint, array $policy, ?int $standaloneTurn, ?array $reply): void
     {
         if ($cancelToken->isCancellationRequested()) {
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
         }
 
         $bootstrap = $this->materializeBootstrap($workspace['dir']);
-        $toonRoot = $this->materializeToonLibrary($workspace['dir']);
-        $valueCodec = $this->materializeValueCodec($workspace['dir']);
+        $this->runtime->materialize($workspace['dir'].'/runtime');
         // Keep stderr for warnings/fatals, but suppress display_errors and Xdebug
         // stacks so each warning is not mirrored into stdout with a call stack.
         // Process's pipe reader can aggregate arbitrarily many bytes before
@@ -649,170 +227,28 @@ final readonly class CodeModeHostBridge
             '-d', 'error_log=',
             $bootstrap,
         ];
-        $process = Process::fromShellCommandline(
-            'exec '.implode(' ', array_map(escapeshellarg(...), $command))
-                .' > '.escapeshellarg($capture->stdoutPath)
-                .' 2> '.escapeshellarg($capture->stderrPath),
-            $this->runtimeProcessConfig->runtimeCwd(),
-            [
-                'HATFIELD_CODE_MODE_SOCKET' => $workspace['socket'],
-                'HATFIELD_CODE_MODE_SCRIPT' => $workspace['script'],
-                'HATFIELD_CODE_MODE_TOON_ROOT' => $toonRoot,
-                'HATFIELD_CODE_MODE_VALUE_CODEC' => $valueCodec,
-                'HATFIELD_CODE_MODE_MEMORY_LIMIT' => $memoryLimit,
-            ],
+        $shell = 'exec '.implode(' ', array_map(escapeshellarg(...), $command))
+            .' > '.escapeshellarg($workspace['dir'].'/stdout.log')
+            .' 2> '.escapeshellarg($workspace['dir'].'/stderr.log');
+        $cwd = $this->runtimeProcessConfig->runtimeCwd();
+        $environment = [
+            'HATFIELD_CODE_MODE_SCRIPT' => $workspace['script'],
+            'HATFIELD_CODE_MODE_RUN' => $runId,
+            'HATFIELD_CODE_MODE_BATCH_DIR' => $this->paths->resolveToolBatchesDirectory($runId),
+            'HATFIELD_CODE_MODE_MEMORY_LIMIT' => $memoryLimit,
+        ];
+        $environment['HATFIELD_SQLITE_QUEUE_ENDPOINT'] = $endpoint;
+        $environment['HATFIELD_CODE_MODE_INVOCATION'] = $invocationId;
+        $environment['HATFIELD_CODE_MODE_ROOT'] = $invocationId;
+        $assignments = '';
+        foreach ($environment as $name => $value) {
+            $assignments .= $name.'='.escapeshellarg($value).' ';
+        }
+        $this->processOwner->launch($runId, $invocationId, $workspace['dir'], 'cd '.escapeshellarg($cwd).' && '.$assignments.$shell, $workspace['startedAtNs'], policy: $policy, admit: null === $standaloneTurn ? fn () => $this->deferred->markReady($invocationId) : null, standaloneTurn: $standaloneTurn, reply: $reply,
+            afterExit: 'HATFIELD_SQLITE_QUEUE_ENDPOINT='.escapeshellarg($endpoint).' '.implode(' ', array_map(escapeshellarg(...), [
+                ...$this->runtimeProcessConfig->executableCommand(), CodeModeWakeup::FLAG, $runId, $invocationId,
+            ])),
         );
-        $process->setTimeout(null);
-        $process->setIdleTimeout(null);
-
-        try {
-            $process->start();
-        } catch (ProcessStartFailedException|ProcessRuntimeException $exception) {
-            throw new ToolCallException('Failed to start code-mode PHP subprocess: '.$exception->getMessage(), retryable: true, previous: $exception);
-        }
-
-        return $process;
-    }
-
-    /**
-     * @param resource $server
-     *
-     * @return resource
-     */
-    private function acceptConnection(
-        mixed $server,
-        Process $process,
-        CancellationTokenInterface $cancelToken,
-        ?int $timeoutSeconds,
-        int $startedAtNs,
-    ): mixed {
-        while (true) {
-            $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-            $this->drainProcessOutput($process);
-            $connection = @stream_socket_accept($server, 0.0);
-            if (false !== $connection) {
-                stream_set_blocking($connection, false);
-
-                return $connection;
-            }
-
-            // Accept before treating child exit as failure. A fast script can
-            // connect, write its return frame, and exit while the connection is
-            // still queued on the listening socket.
-            if (!$process->isRunning()) {
-                $this->drainProcessOutput($process);
-                $connection = @stream_socket_accept($server, 0.0);
-                if (false !== $connection) {
-                    stream_set_blocking($connection, false);
-
-                    return $connection;
-                }
-
-                throw $this->earlyExitException($process);
-            }
-
-            $this->waitForSocket($server, false);
-        }
-    }
-
-    /**
-     * @param resource $connection
-     */
-    private function waitForReadable(
-        mixed $connection,
-        CancellationTokenInterface $cancelToken,
-        ?int $timeoutSeconds,
-        int $startedAtNs,
-    ): bool {
-        $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-
-        return $this->waitForSocket($connection, false);
-    }
-
-    /**
-     * @param resource $connection
-     */
-    private function waitWhileBlocked(
-        mixed $connection,
-        Process $process,
-        CancellationTokenInterface $cancelToken,
-        ?int $timeoutSeconds,
-        int $startedAtNs,
-        bool $writing,
-    ): void {
-        $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-        $this->drainProcessOutput($process);
-
-        // The opposite direction can stay ready without advancing this frame.
-        $ready = $this->waitForSocket($connection, $writing);
-
-        $this->drainProcessOutput($process);
-        if (!$ready && !$process->isRunning()) {
-            // Progress wait during an in-flight frame; peer death mid-frame is fatal.
-            throw $this->earlyExitException($process);
-        }
-    }
-
-    /**
-     * @param resource $socket
-     */
-    private function waitForSocket(mixed $socket, bool $writing): bool
-    {
-        // Wake on readiness, but retain bounded cancellation, deadline and
-        // child-liveness checkpoints even when the peer stops sending frames.
-        $ready = new DeferredFuture();
-        $notify = static function () use ($ready): void {
-            if (!$ready->isComplete()) {
-                $ready->complete(true);
-            }
-        };
-        $watcher = $writing
-            ? EventLoop::onWritable($socket, $notify)
-            : EventLoop::onReadable($socket, $notify);
-        $timer = EventLoop::delay(self::POLL_INTERVAL_MICROS / 1_000_000, static function () use ($ready): void {
-            if (!$ready->isComplete()) {
-                $ready->complete(false);
-            }
-        });
-
-        try {
-            return $ready->getFuture()->await();
-        } finally {
-            EventLoop::cancel($watcher);
-            EventLoop::cancel($timer);
-        }
-    }
-
-    private function assertNotCancelledOrTimedOut(
-        CancellationTokenInterface $cancelToken,
-        ?int $timeoutSeconds,
-        int $startedAtNs,
-    ): void {
-        if ($cancelToken->isCancellationRequested()) {
-            throw new ToolCallException('Code-mode execution cancelled.', retryable: false);
-        }
-
-        if (null !== $timeoutSeconds && $timeoutSeconds > 0) {
-            $elapsedNs = hrtime(true) - $startedAtNs;
-            if ($elapsedNs >= $timeoutSeconds * 1_000_000_000) {
-                throw new ToolCallException(\sprintf('Code-mode execution timed out after %d seconds.', $timeoutSeconds), retryable: false);
-            }
-        }
-    }
-
-    /**
-     * Prefer the remaining parent tool budget when present and smaller than the
-     * requested script wall limit. Nested calls later receive the remaining
-     * script budget as cooperative ToolContext metadata.
-     */
-    private function resolveScriptWallSeconds(int $requestedTimeoutSeconds, ?int $parentTimeoutSeconds): int
-    {
-        $requestedTimeoutSeconds = max(1, $requestedTimeoutSeconds);
-        if (null !== $parentTimeoutSeconds && $parentTimeoutSeconds > 0) {
-            return min($parentTimeoutSeconds, $requestedTimeoutSeconds);
-        }
-
-        return $requestedTimeoutSeconds;
     }
 
     private function formatMemoryLimit(int $memoryLimitMb): string
@@ -821,121 +257,7 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * Remaining whole seconds of the script wall budget for nested ToolContext.
-     *
-     * Returns null when the budget is already exhausted. Nested handlers remain
-     * cooperative: a blocking handler can still overrun until it returns.
-     */
-    private function remainingScriptBudgetSeconds(int $timeoutSeconds, int $startedAtNs): ?int
-    {
-        if ($timeoutSeconds <= 0) {
-            return null;
-        }
-
-        $elapsedSeconds = intdiv(hrtime(true) - $startedAtNs, 1_000_000_000);
-        $remaining = $timeoutSeconds - $elapsedSeconds;
-        if ($remaining <= 0) {
-            return null;
-        }
-
-        return $remaining;
-    }
-
-    private function connectionClosedException(
-        Process $process,
-        CancellationTokenInterface $cancelToken,
-        int $timeoutSeconds,
-        int $startedAtNs,
-    ): ToolCallException {
-        $deadlineNs = hrtime(true) + 200_000_000;
-        while ($process->isRunning() && hrtime(true) < $deadlineNs) {
-            $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-            $this->drainProcessOutput($process);
-            delay(self::POLL_INTERVAL_MICROS / 1_000_000);
-        }
-
-        $this->drainProcessOutput($process);
-        if (!$process->isRunning()) {
-            return $this->earlyExitException($process);
-        }
-
-        return new ToolCallException('Code-mode script closed the host connection before returning a value.', retryable: false);
-    }
-
-    private function earlyExitException(Process $process): ToolCallException
-    {
-        $this->drainProcessOutput($process);
-
-        $exitCode = $process->getExitCode();
-        $message = \sprintf(
-            'Code-mode PHP subprocess exited without returning a value (exit code %s).',
-            null === $exitCode ? 'unknown' : (string) $exitCode,
-        );
-
-        return new ToolCallException($message, retryable: false);
-    }
-
-    private function drainProcessOutput(Process $process): void
-    {
-        // Refresh child liveness; stdout/stderr go directly to workspace files.
-        $process->isRunning();
-    }
-
-    private function packExecutionResult(mixed $result, CodeModeDiagnosticCapture $capture): mixed
-    {
-        $diagnostics = $capture->prepare(self::SCRIPT_WRAPPER_PREFIX_LINES);
-
-        if ([] === $diagnostics) {
-            return $result;
-        }
-
-        return new CodeModeExecutionResult($result, $diagnostics);
-    }
-
-    private function stopProcess(?Process $process): void
-    {
-        if (null === $process) {
-            return;
-        }
-
-        try {
-            if ($process->isRunning()) {
-                $process->signal(\SIGTERM);
-                $deadline = hrtime(true) + self::DEFAULT_GRACE_SECONDS * 1_000_000_000;
-                while ($process->isRunning() && hrtime(true) < $deadline) {
-                    delay(self::POLL_INTERVAL_MICROS / 1_000_000);
-                }
-                if ($process->isRunning()) {
-                    $process->signal(\SIGKILL);
-                    // isRunning() lets Symfony reap its own child once exit
-                    // is observable, without stop() blocking in proc_close().
-                    while ($process->isRunning()) {
-                        delay(self::POLL_INTERVAL_MICROS / 1_000_000);
-                    }
-                }
-            }
-        } catch (ProcessRuntimeException $exception) {
-            $this->logger->warning('code_mode.process_stop_failed', [
-                'component' => 'tool.code_mode',
-                'event_type' => 'code_mode.process_stop_failed',
-                'error_type' => $exception::class,
-                'message' => $exception->getMessage(),
-            ]);
-        }
-    }
-
-    private function closeResource(mixed $resource): void
-    {
-        if (\is_resource($resource) && !@fclose($resource)) {
-            $this->logger->warning('code_mode.resource_close_failed', [
-                'component' => 'tool.code_mode',
-                'event_type' => 'code_mode.resource_close_failed',
-            ]);
-        }
-    }
-
-    /**
-     * @param array{dir: string, script: string, socket: string, startedAtNs: int} $workspace
+     * @param array{dir: string, script: string, startedAtNs: int} $workspace
      */
     private function cleanupWorkspace(array $workspace): void
     {
@@ -949,20 +271,6 @@ final readonly class CodeModeHostBridge
                 'message' => $exception->getMessage(),
             ]);
         }
-    }
-
-    private function toolbox(): ToolboxInterface
-    {
-        if (!$this->toolboxLocator->has(self::TOOLBOX_LOCATOR_KEY)) {
-            throw new \LogicException('Code-mode toolbox locator is missing the toolbox entry.');
-        }
-
-        $toolbox = $this->toolboxLocator->get(self::TOOLBOX_LOCATOR_KEY);
-        if (!$toolbox instanceof ToolboxInterface) {
-            throw new \LogicException(\sprintf('Code-mode toolbox locator must return ToolboxInterface, got %s.', get_debug_type($toolbox)));
-        }
-
-        return $toolbox;
     }
 
     /**
