@@ -51,8 +51,14 @@ final class McpResultMapper
     {
         // Validate before PHP array normalization erases object/list distinctions.
         // The SDK's default null logger keeps validation diagnostics out of runtime logs.
-        if (null !== $outputSchema && [] !== (new SchemaValidator())->validateAgainstJsonSchema($value, (object) $outputSchema)) {
-            throw new ToolCallException('MCP structured content does not match the declared output schema.', retryable: false);
+        if (null !== $outputSchema) {
+            $errors = (new SchemaValidator())->validateAgainstJsonSchema($value, (object) $outputSchema);
+            if ([] !== $errors) {
+                $message = 'internal' === $errors[0]['keyword']
+                    ? 'MCP declared output schema could not be applied.'
+                    : 'MCP structured content does not match the declared output schema.';
+                throw new ToolCallException($message, retryable: false);
+            }
         }
 
         return (new Serializer([new ObjectNormalizer()]))->normalize($value);

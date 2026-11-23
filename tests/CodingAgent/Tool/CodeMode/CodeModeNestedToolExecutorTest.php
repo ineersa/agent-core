@@ -21,21 +21,11 @@ final class CodeModeNestedToolExecutorTest extends TestCase
 {
     private const array CONTENT = [['type' => 'text', 'text' => 'presentation']];
 
-    public function testExplicitNullDoesNotFallBackToPresentation(): void
-    {
-        $this->assertNull($this->execute(new ToolResult('nested-call', 'fixture', self::CONTENT, ['raw_result' => null])));
-    }
-
     public function testProgrammaticValuePreservesNullAndAttachmentShapedData(): void
     {
         foreach ([null, ['attachment_refs' => [['type' => 'image_ref', 'path' => 'opaque-data']]]] as $value) {
             $this->assertSame($value, $this->execute(new ToolResult('nested-call', 'fixture', self::CONTENT, programmaticResult: [$value])));
         }
-    }
-
-    public function testTypedResultWithoutRawValueReturnsContentBlocks(): void
-    {
-        $this->assertSame(self::CONTENT, $this->execute(new ToolResult('nested-call', 'fixture', self::CONTENT)));
     }
 
     public function testNativeArrayIsNotInterpretedAsTypedResult(): void
@@ -60,8 +50,10 @@ final class CodeModeNestedToolExecutorTest extends TestCase
         $identityError = 'Typed tool result identity does not match its invocation.';
         yield 'wrong call id' => [new ToolResult('different-call', 'fixture', self::CONTENT), $identityError];
         yield 'wrong tool name' => [new ToolResult('nested-call', 'different-tool', self::CONTENT), $identityError];
-        yield 'reported error despite raw value' => [new ToolResult('nested-call', 'fixture', self::CONTENT, ['raw_result' => 42], isError: true), 'Nested tool returned an error.'];
-        yield 'malformed content despite safe raw value' => [new ToolResult('nested-call', 'fixture', [['type' => 'text', 'text' => "\xFF"]], ['raw_result' => 42]), ToolResultText::FAILURE_MESSAGE];
+        yield 'missing programmatic value' => [new ToolResult('nested-call', 'fixture', self::CONTENT), 'Typed tool result has no programmatic value.'];
+        yield 'raw metadata is not a programmatic value' => [new ToolResult('nested-call', 'fixture', self::CONTENT, ['raw_result' => null]), 'Typed tool result has no programmatic value.'];
+        yield 'reported error despite programmatic value' => [new ToolResult('nested-call', 'fixture', self::CONTENT, isError: true, programmaticResult: [42]), 'Nested tool returned an error.'];
+        yield 'malformed content despite safe programmatic value' => [new ToolResult('nested-call', 'fixture', [['type' => 'text', 'text' => "\xFF"]], programmaticResult: [42]), ToolResultText::FAILURE_MESSAGE];
 
         $opaque = new class implements \JsonSerializable, \Stringable {
             public function jsonSerialize(): never
@@ -75,7 +67,7 @@ final class CodeModeNestedToolExecutorTest extends TestCase
             }
         };
         yield 'opaque programmatic data' => [new ToolResult('nested-call', 'fixture', self::CONTENT, programmaticResult: [$opaque]), ToolResultText::INSPECTION_FAILURE_MESSAGE];
-        yield 'opaque details' => [new ToolResult('nested-call', 'fixture', self::CONTENT, ['raw_result' => 42, 'opaque' => $opaque]), ToolResultText::INSPECTION_FAILURE_MESSAGE];
+        yield 'opaque details' => [new ToolResult('nested-call', 'fixture', self::CONTENT, ['opaque' => $opaque], programmaticResult: [42]), ToolResultText::INSPECTION_FAILURE_MESSAGE];
     }
 
     private function execute(mixed $value): mixed

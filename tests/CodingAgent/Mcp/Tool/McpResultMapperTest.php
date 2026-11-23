@@ -51,6 +51,14 @@ final class McpResultMapperTest extends TestCase
         $this->mapper->mapStructuredContent((object) ['secret' => [], 'value' => 'private payload'], ['properties' => ['secret' => ['const' => new \stdClass()]]]);
     }
 
+    public function testRejectsUnresolvableSchemaWithoutExposingPayloadOrSchema(): void
+    {
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessageMatches('/^MCP declared output schema could not be applied\.$/');
+
+        $this->mapper->mapStructuredContent((object) ['value' => 'private payload'], ['$ref' => '#/$defs/private-missing-definition']);
+    }
+
     // ── Test thesis 1: Text content → string ──
 
     public function testMapsSingleTextBlock(): void
