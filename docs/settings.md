@@ -319,16 +319,19 @@ While disabled, neither the main-only `schedule` tool nor the `/schedule` comman
 
 ### Hatfield 360 session reporting
 
-Add `Ineersa\CodingAgent\Extension\Builtin\Hatfield360\Hatfield360Extension`
+Add `Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension`
 to your existing `extensions.enabled` list. No Composer installation is needed.
 Start Hatfield through an explicit Hatfield 360 agent launch; the launcher
 supplies the Unix socket path and scoped credentials. Do not set them in YAML
 or copy them into a shell profile. Wrappers must preserve the launch-supplied
 environment and access to the socket.
 
-The extension reports the selected conversation ID on creation and resume,
-including when the first input turns a draft into a saved session. It does not
-report turn outcomes, waits, background work, or notifications. It does nothing
-without explicit launch credentials; manual shell launches and Windows
-transport are not supported. Delivery is best effort: an unreachable app does
-not block normal editing, and missed selections are not replayed.
+The extension reports conversation selection, foreground work and correlated
+approval or question waits observed by the TUI. Linux managed shells can also
+attempt registration using the running Hatfield process identity. Outside a
+managed launch it does nothing. Windows transport is not supported.
+
+The foreground observer does not establish whether child or script work has
+settled, so it does not trigger a successful-completion notification. Delivery
+is best effort: a disconnected app does not block editing, and missed events
+are not replayed.

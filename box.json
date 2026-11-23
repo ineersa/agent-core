@@ -5,6 +5,7 @@
         "config",
         "docs",
         ".hatfield/extensions/extension-api",
+        ".hatfield/extensions/hatfield-360/src",
         "migrations"
     ],
     "files": [

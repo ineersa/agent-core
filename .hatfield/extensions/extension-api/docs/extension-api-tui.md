@@ -44,6 +44,13 @@ This is a selection signal, not confirmation that restore or a turn succeeded.
 Repeat selections can have the same ID. The callback receives no prompt or
 transcript and must not block the UI. Headless workers do not call it.
 
+Implement `TuiRunObserverInterface` to receive typed, content-free foreground
+observations after live TUI application of canonical events. It exposes the
+session ID, canonical sequence, observation type and an optional request ID.
+Bootstrap history and transient deltas do not dispatch this hook. Turn start
+can reflect an internal model step; a foreground terminal event alone does not
+prove background work has settled. The callback must not block the UI.
+
 ## UX guidelines
 
 - Keep overlays dismissible (Esc) where practical.

@@ -12,10 +12,14 @@ use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Extension\Builtin\Hatfield360\Hatfield360Extension;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum as Event;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
 use Ineersa\Tui\Listener\TuiProjectExtensionRegistrar;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -81,8 +85,31 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertSame(1, $first['version']);
             $this->assertSame('session.started', $first['kind']);
             $this->assertSame('hatfield', $first['provider']);
-            $this->assertSame([], $first['capabilities']);
+            $this->assertSame(['waits'], $first['capabilities']);
             $this->assertSame($first['sequence'], $first['sessionEpoch']);
+
+            $client = $this->createStub(AgentSessionClient::class);
+            $draft->handle = new RunHandle($draft->sessionId);
+            $client->method('events')->willReturn([
+                new RuntimeEvent(Event::TurnStarted->value, $draft->sessionId, 1),
+                new RuntimeEvent(Event::HumanInputRequested->value, $draft->sessionId, 2, ['question_id' => 'wait-1', 'approval_context' => [], 'prompt' => 'private prompt']),
+                new RuntimeEvent(Event::HumanInputAnswered->value, $draft->sessionId, 3, ['question_id' => 'wait-1', 'answer' => 'private answer']),
+                new RuntimeEvent(Event::ToolExecutionFailed->value, $draft->sessionId, 4),
+                new RuntimeEvent(Event::RunCancelled->value, $draft->sessionId, 5),
+            ]);
+            $context->sessionServices->parentPoller->poll($draft, $client);
+            $frames = [];
+            for ($i = 0; $i < 5; ++$i) {
+                $frames[] = $this->acceptFrame($server);
+            }
+            $this->assertSame(['turn.started', 'activity.changed', 'wait.started', 'wait.resolved', 'turn.ended'], array_column($frames, 'kind'));
+            $this->assertSame('working', $frames[1]['activity']);
+            $this->assertSame('permission', $frames[2]['reason']);
+            $this->assertSame($frames[2]['sequence'], $frames[3]['waitStart']);
+            $this->assertSame($frames[0]['sequence'], $frames[4]['turnStart']);
+            $this->assertSame('cancelled', $frames[4]['outcome']);
+            $this->assertArrayNotHasKey('prompt', $frames[2]);
+            $this->assertArrayNotHasKey('answer', $frames[3]);
 
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
             $harness = new VirtualTuiHarness(sessionId: 'resumed-session');
@@ -101,7 +128,7 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $resumed->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionStarted);
             EventLoop::run();
             $this->assertCount(1, $logger->records);
-            $this->assertSame('hatfield_360.session_registration_failed', $logger->records[0]['message']);
+            $this->assertSame('hatfield_360.status_delivery_failed', $logger->records[0]['message']);
             $this->assertArrayNotHasKey('token', $logger->records[0]['context']);
         } finally {
             if (isset($server)) {

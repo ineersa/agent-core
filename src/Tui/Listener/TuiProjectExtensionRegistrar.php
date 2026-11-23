@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionObserverInterface;
 use Ineersa\Tui\Runtime\BridgeTuiExtensionContext;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -26,6 +27,9 @@ final class TuiProjectExtensionRegistrar implements TuiListenerRegistrar
         foreach ($this->extensionManager->getTuiExtensions() as $extension) {
             if ($extension instanceof TuiExtensionInterface) {
                 $extension->registerTui($bridge);
+            }
+            if ($extension instanceof TuiRunObserverInterface) {
+                $context->sessionServices->parentPoller->observeRun($extension);
             }
             if ($extension instanceof TuiSessionObserverInterface) {
                 $context->lifecycle->subscribe(function (TuiSessionLifecycleEventTypeEnum $event) use ($bridge, $extension): void {

@@ -18,6 +18,12 @@
       "source": "./.hatfield/extensions/observational-memory",
       "description": "Librarian observational memory: content-free turn observe signals plus memory_search and recall.",
       "category": "productivity"
+    },
+    {
+      "name": "hatfield-360",
+      "source": "./.hatfield/extensions/hatfield-360",
+      "description": "Report Claude Code session and activity status to the Hatfield 360 desktop app.",
+      "category": "productivity"
     }
   ]
 }

@@ -1,0 +1,8 @@
+{
+    "hooks": {
+        "SessionStart": [{"matcher": "startup|resume|clear", "hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}],
+        "SessionEnd": [{"hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}],
+        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}],
+        "StopFailure": [{"hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}]
+    }
+}

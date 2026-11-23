@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -43,6 +44,9 @@ final class RuntimeEventPoller
     /** A settled deferred submission remains retryable even after its event is consumed. */
     private bool $deferredInputReady = false;
 
+    /** @var list<TuiRunObserverInterface> */
+    private array $runObservers = [];
+
     /**
      * Scalar boundaries from events that finished apply in the latest poll.
      * Cleared at the start of each poll and by {@see consumeAppliedMemoryBoundaryObservation()}.
@@ -56,6 +60,11 @@ final class RuntimeEventPoller
         private readonly SessionTranscriptProviderInterface $sessionTranscriptProvider,
     ) {
         $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation();
+    }
+
+    public function observeRun(TuiRunObserverInterface $observer): void
+    {
+        $this->runObservers[] = $observer;
     }
 
     /**
@@ -232,6 +241,11 @@ final class RuntimeEventPoller
                     $this->eventApplier->apply($state, $runtimeEvent);
                     $activityAfterApply = $state->activity;
                     $compactingAfterApply = $state->isCompacting;
+
+                    // Catch-up suffix can contain historical events, not just live work.
+                    if ($state->sessionReady && $runtimeEvent->runId === $state->sessionId) {
+                        $this->notifyRunObservers($runtimeEvent);
+                    }
 
                     if (null === $boundaryActivityBefore) {
                         $boundaryActivityBefore = $activityBeforeApply->value;
@@ -506,6 +520,28 @@ final class RuntimeEventPoller
         $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation();
 
         return $observation;
+    }
+
+    private function notifyRunObservers(RuntimeEvent $event): void
+    {
+        if ([] === $this->runObservers || null === ($observation = TuiRunObservationMapper::map($event))) {
+            return;
+        }
+
+        foreach ($this->runObservers as $observer) {
+            try {
+                $observer->onTuiRunObserved($observation);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('extension.tui_run_observer_failed', [
+                    'component' => 'tui_extension',
+                    'event_type' => 'tui_run_observer_failed',
+                    'run_id' => $observation->sessionId,
+                    'session_id' => $observation->sessionId,
+                    'extension' => $observer::class,
+                    'exception_class' => $exception::class,
+                ]);
+            }
+        }
     }
 
     private function applyProjectedChanges(TuiSessionState $state): ?TranscriptChangeSet
