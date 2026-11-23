@@ -351,6 +351,46 @@ final class Hatfield360ReportCommandTest extends TestCase
         }
     }
 
+    public function testConcurrentClaudeHookWaitsForTheInFlightSnapshot(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $server = listen('unix://'.$directory.'/s');
+        $barrier = listen('unix://'.$directory.'/b');
+        $environment = [
+            'H360_STATUS_ENDPOINT' => $directory.'/s',
+            'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444',
+            'H360_STATUS_TOKEN' => str_repeat('a', 64),
+            'H360_TEST_BARRIER' => $directory.'/b',
+        ];
+        $session = ['session_id' => 'claude-1'];
+        $prompt = $session + ['prompt_id' => '44444444-4444-4444-8444-111111111111'];
+        try {
+            $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionStart', 'source' => 'startup']));
+            $first = $this->launch($environment, $prompt + ['hook_event_name' => 'UserPromptSubmit']);
+            $started = $this->exchange($server, $first, beforeReply: function () use ($barrier, $environment, $prompt, &$second): void {
+                // Signal only after the real flock has refused the competing process.
+                $second = $this->launch($environment, $prompt + ['hook_event_name' => 'SubagentStart', 'agent_id' => 'agent-1'], observeContention: true);
+                $signal = $barrier->accept(new TimeoutCancellation(2));
+                $this->assertNotNull($signal);
+                $signal->close();
+            });
+            $this->assertInstanceOf(Process::class, $second);
+            $agent = $this->exchange($server, $second);
+            $completed = $this->exchange($server, $this->launch($environment, $prompt + ['hook_event_name' => 'Stop', 'stop_hook_active' => false]));
+            $this->assertSame($started['sequence'] + 1, $agent['sequence']);
+            $this->assertSame(1, $agent['activeSubagents']);
+            $this->assertSame('completed', $completed['turn']['status']);
+            $this->assertSame(1, $completed['activeSubagents']);
+        } finally {
+            if (isset($second) && $second->isRunning()) {
+                $second->stop(0);
+            }
+            $barrier->close();
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     /** @param array<string, string> $environment @param array<string, mixed>|string $input */
     private function assertQuietHook(array $environment, array|string $input, ?string $diagnostic = null): void
     {
@@ -361,11 +401,27 @@ final class Hatfield360ReportCommandTest extends TestCase
     }
 
     /** @param array<string, string> $environment @param array<string, mixed>|string $input */
-    private function launch(array $environment, array|string $input, bool $hook = true, bool $notify = false): Process
+    private function launch(array $environment, array|string $input, bool $hook = true, bool $notify = false, bool $observeContention = false): Process
     {
         $root = ProjectDir::get();
         $command = [\PHP_BINARY, '-r', '$_composer_autoload_path = $argv[1]; array_splice($argv, 0, 2); $_SERVER["argv"] = $argv; require $argv[0];', '--',
             $root.'/vendor/autoload.php', $root.'/.hatfield/extensions/hatfield-360/bin/h360-report'];
+        if ($observeContention) {
+            $command[2] = <<<'PHP'
+                namespace Symfony\Component\Lock\Store;
+                function flock($handle, $operation): bool {
+                    static $signaled = false;
+                    $acquired = \flock($handle, $operation);
+                    if (!$acquired && !$signaled) {
+                        $signaled = true;
+                        $signal = stream_socket_client('unix://'.getenv('H360_TEST_BARRIER'));
+                        fclose($signal);
+                    }
+                    return $acquired;
+                }
+                PHP
+                .$command[2];
+        }
         if ($hook) {
             $command[] = '--claude-hook';
         } elseif ($notify) {
@@ -378,7 +434,7 @@ final class Hatfield360ReportCommandTest extends TestCase
     }
 
     /** @return array<array-key, mixed> */
-    private function exchange(\Amp\Socket\ServerSocket $server, Process $process, ?string $reply = '{"ok":true,"status":"accepted"}', bool $finish = true): array
+    private function exchange(\Amp\Socket\ServerSocket $server, Process $process, ?string $reply = '{"ok":true,"status":"accepted"}', bool $finish = true, ?\Closure $beforeReply = null): array
     {
         try {
             $deadline = new TimeoutCancellation(2);
@@ -393,6 +449,7 @@ final class Hatfield360ReportCommandTest extends TestCase
                 }
                 $frame = json_decode($line, true, flags: \JSON_THROW_ON_ERROR);
                 $this->assertIsArray($frame);
+                $beforeReply?->__invoke();
                 if (null !== $reply) {
                     $socket->write($reply."\n");
                 }

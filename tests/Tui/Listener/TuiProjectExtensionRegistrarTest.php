@@ -20,7 +20,9 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum as Event;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
 use Ineersa\Tui\Listener\TuiProjectExtensionRegistrar;
@@ -250,6 +252,24 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $cleared = $this->acceptFrame($server);
             $this->assertNull($cleared['attention']);
             $this->assertSame(0, $cleared['activeSubagents']);
+
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 12, TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: 'late-child'));
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 10, TuiRunObservationTypeEnum::ChildExecutionStarted, childRunId: 'late-child'));
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 1, TuiRunObservationTypeEnum::ChildExecutionStarted, childRunId: 'child'));
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 6, TuiRunObservationTypeEnum::ChildExecutionStarted, childRunId: 'child'));
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 5, TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: 'child'));
+            $this->assertSame(1, $this->acceptFrame($server)['activeSubagents']);
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 7, TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: 'child'));
+            $this->assertSame(0, $this->acceptFrame($server)['activeSubagents']);
+
+            $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('second', 'owner', 'bash:1', TuiBackgroundJobObservationTypeEnum::Ended));
+            $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('second', 'owner', 'bash:1', TuiBackgroundJobObservationTypeEnum::Started));
+            $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('second', 'owner', 'bash:1', TuiBackgroundJobObservationTypeEnum::Started));
+            $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('second', 'owner', 'bash:2', TuiBackgroundJobObservationTypeEnum::Started));
+            $this->assertSame(1, $this->acceptFrame($server)['backgroundScripts']);
+            $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('second', 'owner', 'bash:2', TuiBackgroundJobObservationTypeEnum::Ended));
+            $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('second', 'owner', 'bash:2', TuiBackgroundJobObservationTypeEnum::Started));
+            $this->assertSame(0, $this->acceptFrame($server)['backgroundScripts']);
         } finally {
             if (isset($server)) {
                 $server->close();

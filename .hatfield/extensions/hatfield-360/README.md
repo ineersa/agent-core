@@ -89,8 +89,13 @@ count is the last sample, not a live census. Repeated or superseded Stop hooks
 do not refresh it: the recorded capture does not establish a reliable causal
 marker for background-only refresh.
 
-A nonblocking launch lock protects bounded state in the private socket directory.
-A competing hook can be dropped rather than waiting behind socket I/O. The first
+A launch lock serializes hooks and associated socket delivery in the private
+socket directory. A competing hook waits up to 650 ms with explicit credentials
+or 350 ms for a managed launch. Each socket exchange has its own 250 ms deadline
+(managed reporting can need two). If a
+subagent start times out, subsequent snapshots conservatively report an unknown
+subagent count for that launch (all managed launches in that socket directory
+share one uncertainty marker). An already-sent snapshot cannot be recalled. The first
 startup, resume or clear can establish a selection without a previous boundary.
 Afterward, switching requires a matching outgoing `SessionEnd` from the current
 selection. Resume pairs by prompt ID; clear consumes one clear boundary because
@@ -118,7 +123,7 @@ Managed hooks use a stable per-owner instance and bounded private state in the
 app's socket directory. Credentials returned by registration live only in the
 calling process; they are not persisted or exported. Each outgoing observation
 re-registers idempotently, so busy hooks can hit the desktop's bootstrap budget
-or the nonblocking lock and miss delivery. A later eligible observation sends
+or exhaust the lock wait and miss delivery. A later eligible observation sends
 its full current snapshot; missed notices and historical frames are not replayed.
 For `--claude-notify` in a managed launch, the invocation must also be a descendant
 of the verified Claude owner, not a sibling command from the pane shell.

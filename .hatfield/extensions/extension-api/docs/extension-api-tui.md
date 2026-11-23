@@ -51,7 +51,7 @@ Match `InputResolved` to either `QuestionRequested` or `ApprovalRequested`
 by session and request ID; both kinds can be answered through the same route.
 Child execution also produces live `ChildExecutionStarted` and
 `ChildExecutionEnded` observations. `sessionId` is the root session,
-`parentRunId` is the immediate parent, and `childRunId` and `sequence` identify
+and `childRunId` and `sequence` identify
 the child and its canonical event, not the parent cursor. Bootstrap history
 and streaming deltas do not dispatch this hook. Turn start
 can reflect an internal model step; a foreground terminal event alone does not

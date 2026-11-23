@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\Hatfield360;
 
+use Amp\CancelledException;
+use Amp\TimeoutCancellation;
 use Symfony\Component\Filesystem\Exception\IOException;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\Exception\ExceptionInterface as LockExceptionInterface;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Uid\Uuid;
+
+use function Amp\delay;
 
 final class ClaudeHookReporter
 {
@@ -25,7 +29,7 @@ final class ClaudeHookReporter
             return false;
         }
 
-        return $this->withLaunchLock($client, fn (string $path, \Closure $authorize): bool => $this->reportLocked($authorize, $path, $session, $event, $hook));
+        return $this->withLaunchLock($client, fn (string $path, \Closure $authorize, string $marker): bool => $this->reportLocked($authorize, $path, $marker, $session, $event, $hook), 'SubagentStart' === $event);
     }
 
     /** @param array<array-key, mixed> $fields */
@@ -47,8 +51,8 @@ final class ClaudeHookReporter
         });
     }
 
-    /** @param \Closure(string, \Closure(): ?StatusClient): bool $callback */
-    private function withLaunchLock(?StatusClient $client, \Closure $callback): bool
+    /** @param \Closure(string, \Closure(): ?StatusClient, string): bool $callback */
+    private function withLaunchLock(?StatusClient $client, \Closure $callback, bool $agentStart = false): bool
     {
         $endpoint = getenv('H360_STATUS_ENDPOINT');
         if (!\is_string($endpoint) || !str_starts_with($endpoint, '/') || \strlen($endpoint) > 103) {
@@ -75,7 +79,7 @@ final class ClaudeHookReporter
             $name = 'claude-managed-'.$instance;
             $authorize = static fn (): ?StatusClient => ClaudeProcessIdentityProvider::find() === $owner
                 ? StatusClient::registerManual('claude', $instance, $owner['pid'], $owner['pidNamespace'], $owner['startTicks']) : null;
-            // One nonblocking lock bounds the total managed state admitted to
+            // One shared lock bounds the total managed state admitted to
             // this app-private directory without a persistent bearer cache.
             $lockName = 'claude-managed';
         } else {
@@ -86,12 +90,29 @@ final class ClaudeHookReporter
             $name = $lockName = 'claude-status-'.$launch;
             $authorize = static fn (): StatusClient => $client;
         }
+        $marker = $directory.'/'.($managed ? 'claude-managed' : $name).'.agents-unknown';
         $path = $directory.'/'.$name.'.json';
 
         try {
             $lock = (new LockFactory(new FlockStore($directory)))->createLock($lockName);
-            if (!$lock->acquire()) {
-                return false;
+            // Managed hooks may need two 250 ms exchanges. Leave room for
+            // both and local setup within Claude's one-second hook timeout.
+            $deadline = new TimeoutCancellation($managed ? 0.35 : 0.65);
+            while (!$lock->acquire()) {
+                try {
+                    delay(0.01, cancellation: $deadline);
+                } catch (CancelledException) {
+                    if ($agentStart && ($managed || is_file($path))) {
+                        // A missed start must not turn a later completed response
+                        // into a false known-zero observation. This marker is
+                        // sticky and contains no hook data. Managed launches share
+                        // one marker so lock failures cannot bypass the state cap.
+                        (new Filesystem())->touch($marker);
+                    }
+                    HookDiagnostic::write('hook_lock_timeout');
+
+                    return false;
+                }
             }
             try {
                 if ($managed && !file_exists($path)) {
@@ -101,7 +122,7 @@ final class ClaudeHookReporter
                     }
                 }
 
-                return $callback($path, $authorize);
+                return $callback($path, $authorize, $marker);
             } finally {
                 $lock->release();
             }
@@ -116,7 +137,7 @@ final class ClaudeHookReporter
      * @param \Closure(): ?StatusClient $authorize
      * @param array<array-key, mixed>   $hook
      */
-    private function reportLocked(\Closure $authorize, string $path, string $session, string $event, array $hook): bool
+    private function reportLocked(\Closure $authorize, string $path, string $marker, string $session, string $event, array $hook): bool
     {
         $previous = file_exists($path) ? $this->readState($path) : [];
         if (null === $previous) {
@@ -243,7 +264,7 @@ final class ClaudeHookReporter
         $fields = 'session.snapshot' === $kind ? [
             'provider' => 'claude', 'turn' => $state['turn'],
             'attention' => $attention,
-            'activeSubagents' => null === $state['agents'] ? null : \count($state['agents']),
+            'activeSubagents' => null === $state['agents'] || is_file($marker) ? null : \count($state['agents']),
             'backgroundScripts' => $state['scripts'], 'tool' => $state['tools'][array_key_last($state['tools']) ?? '']['name'] ?? null,
         ] : [];
         // Persist the observation and reserve its sequence before I/O. A missed

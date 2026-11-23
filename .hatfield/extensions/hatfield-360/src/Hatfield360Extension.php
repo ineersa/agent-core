@@ -30,6 +30,8 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
 {
     use LoggerAwareTrait;
 
+    private const int MAX_TERMINALS = 1024;
+
     // /reload replaces the extension instance, not the explicit launch.
     private static int $sequence = 0;
     private ?StatusClient $client = null;
@@ -49,6 +51,10 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     private ?array $scripts = [];
     /** @var array<string, int>|null */
     private ?array $actors = [];
+    /** @var array<string, int> */
+    private array $childTerminals = [];
+    /** @var array<string, true> */
+    private array $scriptTerminals = [];
     /** @var Future<void>|null */
     private ?Future $drain = null;
     /** @var list<array{string, string, int, int, array<string, mixed>}> */
@@ -106,6 +112,8 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         // Attach/resume cannot reconstruct starts that happened before subscription.
         $this->scripts = $resumed ? null : [];
         $this->actors = $resumed ? null : [];
+        $this->childTerminals = [];
+        $this->scriptTerminals = [];
         $this->snapshot($this->epoch);
     }
 
@@ -192,7 +200,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         }
         $id = hash('sha256', $observation->ownerRunId."\0".$observation->jobId);
         if (TuiBackgroundJobObservationTypeEnum::Started === $observation->type) {
-            if (isset($this->scripts[$id])) {
+            if (isset($this->scripts[$id]) || isset($this->scriptTerminals[$id])) {
                 return;
             }
             if (\count($this->scripts) >= 1024) {
@@ -200,10 +208,21 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
             } else {
                 $this->scripts[$id] = true;
             }
-        } elseif (isset($this->scripts[$id])) {
-            unset($this->scripts[$id]);
         } else {
-            return;
+            // Bash record and code-mode invocation IDs are one-shot per native
+            // owner, with no shared ordering cursor across reporting workers.
+            if (isset($this->scriptTerminals[$id])) {
+                return;
+            }
+            if (\count($this->scriptTerminals) >= self::MAX_TERMINALS) {
+                $this->scripts = null;
+            } else {
+                $this->scriptTerminals[$id] = true;
+                if (!isset($this->scripts[$id])) {
+                    return;
+                }
+                unset($this->scripts[$id]);
+            }
         }
         $this->snapshot(++self::$sequence);
     }
@@ -212,6 +231,9 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     {
         $type = $observation->type;
         $start = $this->actors[$id] ?? null;
+        if ($observation->sequence <= ($this->childTerminals[$id] ?? 0)) {
+            return false;
+        }
         if (TuiRunObservationTypeEnum::ChildExecutionStarted === $type && null !== $this->actors) {
             if (null !== $start) {
                 return false;
@@ -229,6 +251,13 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         }
         if (TuiRunObservationTypeEnum::ChildExecutionEnded === $type) {
             $observed = null !== $start || isset($this->childWaits[$id]);
+            if (isset($this->childTerminals[$id]) || \count($this->childTerminals) < self::MAX_TERMINALS) {
+                $this->childTerminals[$id] = $observation->sequence;
+            } elseif (null !== $this->actors) {
+                // Do not report known counts after losing ordering evidence.
+                $this->actors = null;
+                $observed = true;
+            }
             unset($this->actors[$id], $this->childWaits[$id]);
 
             return $observed;
