@@ -36,7 +36,8 @@ final class McpToolInvokerTest extends TestCase
         $this->assertSame('call', $result->toolCallId);
         $this->assertSame('fixture_tool', $result->toolName);
         $this->assertSame($content, $result->content);
-        $this->assertSame(['raw_result' => null], $result->details);
+        $this->assertNull($result->details);
+        $this->assertSame([null], $result->programmaticResult);
     }
 
     public function testInvokePropagatesTokenBudgetAndMapsInterruption(): void

@@ -26,6 +26,13 @@ final class CodeModeNestedToolExecutorTest extends TestCase
         $this->assertNull($this->execute(new ToolResult('nested-call', 'fixture', self::CONTENT, ['raw_result' => null])));
     }
 
+    public function testProgrammaticValuePreservesNullAndAttachmentShapedData(): void
+    {
+        foreach ([null, ['attachment_refs' => [['type' => 'image_ref', 'path' => 'opaque-data']]]] as $value) {
+            $this->assertSame($value, $this->execute(new ToolResult('nested-call', 'fixture', self::CONTENT, programmaticResult: [$value])));
+        }
+    }
+
     public function testTypedResultWithoutRawValueReturnsContentBlocks(): void
     {
         $this->assertSame(self::CONTENT, $this->execute(new ToolResult('nested-call', 'fixture', self::CONTENT)));
@@ -67,6 +74,7 @@ final class CodeModeNestedToolExecutorTest extends TestCase
                 throw new \LogicException('Opaque tool data must not be stringified.');
             }
         };
+        yield 'opaque programmatic data' => [new ToolResult('nested-call', 'fixture', self::CONTENT, programmaticResult: [$opaque]), ToolResultText::INSPECTION_FAILURE_MESSAGE];
         yield 'opaque details' => [new ToolResult('nested-call', 'fixture', self::CONTENT, ['raw_result' => 42, 'opaque' => $opaque]), ToolResultText::INSPECTION_FAILURE_MESSAGE];
     }
 

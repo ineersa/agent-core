@@ -78,6 +78,16 @@ final readonly class CodeModeNestedToolExecutor
                 throw new ToolCallException($failure ?? 'Nested tool returned an error.', retryable: false);
             }
 
+            if (null !== $result->programmaticResult) {
+                $value = $result->programmaticResult[0];
+                $failure = ToolResultText::failureMessage($value);
+                if (null !== $failure) {
+                    throw new ToolCallException($failure, retryable: false);
+                }
+
+                return $value;
+            }
+
             return \is_array($result->details) && \array_key_exists('raw_result', $result->details)
                 ? $result->details['raw_result']
                 : $result->content;

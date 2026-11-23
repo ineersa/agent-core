@@ -99,7 +99,7 @@ final readonly class McpToolInvoker
                 toolCallId: $context->toolCallId(),
                 toolName: $context->toolName(),
                 content: [['type' => 'text', 'text' => $text]],
-                details: ['raw_result' => $this->resultMapper->mapStructuredContent($rawResult['structuredContent'], $outputSchema)],
+                programmaticResult: [$this->resultMapper->mapStructuredContent($rawResult['structuredContent'], $outputSchema)],
             );
         } catch (ToolCallException $e) {
             // MCP isError or mapping failure — already a ToolCallException.
