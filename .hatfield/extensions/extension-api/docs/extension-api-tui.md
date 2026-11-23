@@ -34,6 +34,42 @@ That is part of the public API. Do **not** depend on in-repo `Ineersa\Tui\*` cla
 There is no footer-segment API and no API to retain/write transcript rows from this context.
 Extensions must not mutate core transcript widgets directly.
 
+## Session selection
+
+Implement `TuiSessionObserverInterface` alongside `HatfieldExtensionInterface`
+to receive `onTuiSessionSelected($sessionId)` from the interactive process.
+The callback runs for a fresh established session, a selected resume target,
+or when a draft obtains a real session ID. An empty draft does not notify.
+This is a selection signal, not confirmation that restore or a turn succeeded.
+Repeat selections can have the same ID. The callback receives no prompt or
+transcript and must not block the UI. Headless workers do not call it.
+
+Implement `TuiRunObserverInterface` to receive typed, content-free foreground
+observations after live TUI application of canonical events. It exposes the
+session ID, canonical sequence, observation type and an optional request ID.
+Match `InputResolved` to either `QuestionRequested` or `ApprovalRequested`
+by session and request ID; both kinds can be answered through the same route.
+Child execution also produces live `ChildExecutionStarted` and
+`ChildExecutionEnded` observations. `sessionId` is the root session,
+and `childRunId` and `sequence` identify
+the child and its canonical event, not the parent cursor. Bootstrap history
+and streaming deltas do not dispatch this hook. Turn start
+can reflect an internal model step; a foreground terminal event alone does not
+prove background work has settled. The callback must not block the UI.
+
+Implement `TuiSessionCloseObserverInterface` to receive
+`onTuiSessionClosing($sessionId)` before teardown on final graceful interactive
+quit. It does not fire for drafts, session switches, settings reloads, or abrupt
+process exits. Keep any best-effort shutdown work bounded.
+
+Implement `TuiBackgroundJobObserverInterface` for live, best-effort background
+job start and end observations, including while the selected session is idle.
+The DTO contains only the selected root session ID, the native owner run ID
+(which can be a child run), an opaque job ID, and the transition type. Native
+Bash and code-mode jobs are routed by their recorded ownership. Observations
+are not replayed on attach or selection, and other sessions are not attributed
+to the selection.
+
 ## UX guidelines
 
 - Keep overlays dismissible (Esc) where practical.

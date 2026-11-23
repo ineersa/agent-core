@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Runtime\Stream\NativeExecutionObservationPublisher;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\ForegroundBashProcessDTO;
 use Symfony\Component\Clock\Clock;
@@ -23,6 +24,7 @@ final class ProcessStore
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
+        private readonly ?NativeExecutionObservationPublisher $observations = null,
     ) {
     }
 
@@ -65,20 +67,51 @@ final class ProcessStore
         return (int) $connection->lastInsertId();
     }
 
+    /** Called under the invocation sidecar lock with native startup evidence. */
+    public function observeCodeModeBackgroundJob(string $runId, string $id, bool $exited): void
+    {
+        $connection = $this->entityManager->getConnection();
+        // started_at claims the start observation only once admission has committed.
+        // finished_at is the existing launch fence, not a native exit observation.
+        if (0 !== $connection->executeStatement(<<<'SQL'
+            UPDATE background_process SET started_at = CURRENT_TIMESTAMP
+            WHERE session_id = :run AND code_mode_id = :id AND started_at IS NULL AND finished_at IS NULL
+              AND EXISTS (SELECT 1 FROM tool_deferred_completion
+                WHERE run_id = :run AND deferred_id = :id AND tool_name = 'code_mode' AND backgrounded_at IS NOT NULL)
+            SQL, ['run' => $runId, 'id' => $id])) {
+            $this->observations?->publish($runId, 'code-mode:'.$id, true);
+        }
+        if ($exited && 0 !== $connection->executeStatement(<<<'SQL'
+            UPDATE background_process SET status = :finished
+            WHERE session_id = :run AND code_mode_id = :id AND started_at IS NOT NULL AND status = :running
+            SQL, ['run' => $runId, 'id' => $id, 'running' => BackgroundProcessStatusEnum::Running->value, 'finished' => BackgroundProcessStatusEnum::Finished->value])) {
+            $this->observations?->publish($runId, 'code-mode:'.$id, false);
+        }
+    }
+
     public function applyFinishedByRecord(int $recordId, string $runId, ?int $exitCode, BackgroundProcessStatusEnum $status, bool $stoppedByUser, \DateTimeImmutable $finishedAt): void
     {
-        $this->entityManager->getConnection()->executeStatement(
-            'UPDATE background_process SET finished_at = COALESCE(finished_at, ?), exit_code = COALESCE(exit_code, ?), status = ?, stopped_by_user = CASE WHEN ? = 1 THEN 1 ELSE stopped_by_user END, updated_at = ? WHERE id = ? AND session_id = ?',
-            [
-                $finishedAt->format('Y-m-d H:i:s'),
-                $exitCode,
-                $status->value,
-                $stoppedByUser ? 1 : 0,
-                Clock::get()->now()->format('Y-m-d H:i:s'),
-                $recordId,
-                $runId,
-            ],
-        );
+        $connection = $this->entityManager->getConnection();
+        $ended = $connection->transactional(static function () use ($connection, $recordId, $runId, $exitCode, $status, $stoppedByUser, $finishedAt): bool {
+            $accepted = false !== $connection->fetchOne('SELECT id FROM background_process WHERE id = ? AND session_id = ? AND backgrounded_at IS NOT NULL AND finished_at IS NULL', [$recordId, $runId]);
+            $connection->executeStatement(
+                'UPDATE background_process SET finished_at = COALESCE(finished_at, ?), exit_code = COALESCE(exit_code, ?), status = ?, stopped_by_user = CASE WHEN ? = 1 THEN 1 ELSE stopped_by_user END, updated_at = ? WHERE id = ? AND session_id = ?',
+                [
+                    $finishedAt->format('Y-m-d H:i:s'),
+                    $exitCode,
+                    $status->value,
+                    $stoppedByUser ? 1 : 0,
+                    Clock::get()->now()->format('Y-m-d H:i:s'),
+                    $recordId,
+                    $runId,
+                ],
+            );
+
+            return $accepted;
+        });
+        if ($ended) {
+            $this->observations?->publish($runId, 'bash:'.$recordId, false);
+        }
     }
 
     public function recordIdForStatusPath(string $statusPath, string $runId): ?int
@@ -172,19 +205,24 @@ final class ProcessStore
     /** Local acceptance runs only in the serialized in-process owner. */
     public function acceptLocal(int $recordId, ?string $runId): bool
     {
-        return $this->entityManager->getConnection()->transactional(function () use ($recordId, $runId): bool {
+        $accepted = $this->entityManager->getConnection()->transactional(function () use ($recordId, $runId): ?string {
             $connection = $this->entityManager->getConnection();
-            $row = $connection->fetchAssociative('SELECT session_id FROM background_process WHERE id = ?', [$recordId]);
+            $row = $connection->fetchAssociative('SELECT session_id, backgrounded_at, finished_at FROM background_process WHERE id = ?', [$recordId]);
             if (false === $row || (null !== $runId && $row['session_id'] !== $runId)) {
-                return false;
+                return null;
             }
             // Local callers can expose a process after observing its completion.
             // Preserve that contract without retaining an ORM identity-map alias.
             $now = Clock::get()->now()->format('Y-m-d H:i:s');
             $connection->executeStatement('UPDATE background_process SET backgrounded_at = COALESCE(backgrounded_at, ?), updated_at = ? WHERE id = ?', [$now, $now, $recordId]);
 
-            return true;
+            return null === $row['backgrounded_at'] && null === $row['finished_at'] ? (string) $row['session_id'] : '';
         });
+        if (null !== $accepted && '' !== $accepted) {
+            $this->observations?->publish($accepted, 'bash:'.$recordId, true);
+        }
+
+        return null !== $accepted;
     }
 
     /** @param list<string> $runIds
@@ -259,7 +297,8 @@ final class ProcessStore
 
     public function decide(int $recordId, string $runId, BashProcessActionEnum $action, ProcessLifecycle $lifecycle): ?BashProcessSnapshotDTO
     {
-        return $this->entityManager->getConnection()->transactional(function () use ($recordId, $runId, $action, $lifecycle): ?BashProcessSnapshotDTO {
+        $observedExit = false;
+        $decision = $this->entityManager->getConnection()->transactional(function () use ($recordId, $runId, $action, $lifecycle, &$observedExit): ?BashProcessSnapshotDTO {
             $connection = $this->entityManager->getConnection();
             $row = $connection->fetchAssociative('SELECT * FROM background_process WHERE id = ? AND session_id = ?', [$recordId, $runId]);
             if (false === $row) {
@@ -283,21 +322,22 @@ final class ProcessStore
             $pid = $this->resolveObservedPid($row, $lifecycle);
             if (!$finished) {
                 $exitCode = $lifecycle->readStatusFile((string) $row['status_path']);
-                // Missing native identity is unknown, not proof of death.
-                $gone = null === $exitCode && null !== $pid && !$lifecycle->isAlive($pid);
-                $settledStop = (BashProcessActionEnum::SettleStop === $action && (bool) $row['stopped_by_user'])
-                    || (BashProcessActionEnum::SettleTimeout === $action && BackgroundProcessStatusEnum::Stopped === $status);
-                if (null !== $exitCode || $gone || $settledStop) {
+                $nativeExit = $lifecycle->hasObservedExit($exitCode, $pid);
+                $accepted = null !== $row['backgrounded_at'];
+                $settledForegroundStop = !$accepted && ((BashProcessActionEnum::SettleStop === $action && (bool) $row['stopped_by_user'])
+                    || (BashProcessActionEnum::SettleTimeout === $action && BackgroundProcessStatusEnum::Stopped === $status));
+                if ($nativeExit || $settledForegroundStop) {
+                    $observedExit = $accepted && $nativeExit;
                     $finished = true;
                     if (BackgroundProcessStatusEnum::Stopped !== $status) {
                         $status = null !== $exitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean;
                     }
                     $connection->executeStatement('UPDATE background_process SET finished_at = ?, exit_code = ?, status = ?, updated_at = ? WHERE id = ?', [$now, $exitCode, $status->value, $now, $recordId]);
-                } elseif (BashProcessActionEnum::Timeout === $action && null !== $row['backgrounded_at'] && null !== $row['deadline_nanoseconds'] && hrtime(true) >= (int) $row['deadline_nanoseconds'] && !(bool) $row['stopped_by_user']) {
+                } elseif (-1 !== $exitCode && BashProcessActionEnum::Timeout === $action && null !== $row['backgrounded_at'] && null !== $row['deadline_nanoseconds'] && hrtime(true) >= (int) $row['deadline_nanoseconds'] && !(bool) $row['stopped_by_user']) {
                     $status = BackgroundProcessStatusEnum::Stopped;
                     $signalRequired = true;
                     $connection->executeStatement('UPDATE background_process SET status = ?, updated_at = ? WHERE id = ?', [$status->value, $now, $recordId]);
-                } elseif (BashProcessActionEnum::Stop === $action) {
+                } elseif (-1 !== $exitCode && BashProcessActionEnum::Stop === $action) {
                     // Metadata records the request, not proof that TERM occurred.
                     // ProcessLifecycle validates current native ownership before signalling.
                     $status = BackgroundProcessStatusEnum::Stopped;
@@ -316,6 +356,11 @@ final class ProcessStore
 
             return new BashProcessSnapshotDTO($recordId, $runId, $pid, null === $row['pgid'] ? null : (int) $row['pgid'], (string) $row['status_path'], $finished, $status, $signalRequired && null !== $pid);
         });
+        if ($observedExit) {
+            $this->observations?->publish($runId, 'bash:'.$recordId, false);
+        }
+
+        return $decision;
     }
 
     /** @param array<string, mixed> $row */

@@ -50,6 +50,7 @@ use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
 use Psr\Log\NullLogger;
@@ -84,7 +85,9 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
         parent::tearDown();
     }
 
-    public function testThrowingCheckpointAllowsMountTickAndQuit(): void
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testThrowingCheckpointAllowsMountTickAndQuit(bool $selected): void
     {
         $calls = 0;
         $snapshot = $this->throwingSnapshot($calls);
@@ -92,9 +95,9 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
         $ended = [];
         $initialPreviewState = [];
         $mode = $this->createInteractiveMode($snapshot, [
-            new class($ended, $initialPreviewState) implements TuiListenerRegistrar {
+            new class($ended, $initialPreviewState, $selected) implements TuiListenerRegistrar {
                 /** @param list<string> $ended */
-                public function __construct(private array &$ended, private array &$initialPreviewState)
+                public function __construct(private array &$ended, private array &$initialPreviewState, private bool $selected)
                 {
                 }
 
@@ -106,9 +109,14 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
                     $context->lifecycle->subscribe(static function (TuiSessionLifecycleEventTypeEnum $type) use (&$ended): void {
                         if (TuiSessionLifecycleEventTypeEnum::SessionEnded === $type) {
                             $ended[] = 'ended';
+                        } elseif (TuiSessionLifecycleEventTypeEnum::SessionGracefullyClosing === $type) {
+                            $ended[] = 'closing';
                         }
                     });
-                    $context->ticks->add(static function () use ($tui): ?bool {
+                    $context->ticks->add(function () use ($tui, $context): ?bool {
+                        if ($this->selected) {
+                            $context->state->sessionId = 'selected';
+                        }
                         $tui->stop();
 
                         return null;
@@ -129,7 +137,7 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
             );
 
             $this->assertSame(0, $exit);
-            $this->assertSame(['ended'], $ended);
+            $this->assertSame($selected ? ['closing', 'ended'] : ['ended'], $ended);
             $this->assertSame([false], $initialPreviewState);
             $this->assertGreaterThanOrEqual(2, $calls, 'Mount and shutdown checkpoints must still be attempted');
         } finally {
@@ -154,12 +162,16 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
                 {
                     $tui = $context->tui;
                     $switch = $context->sessionServices->switch;
+                    $context->lifecycle->subscribe(static function (TuiSessionLifecycleEventTypeEnum $type): void {
+                        TestCase::assertNotSame(TuiSessionLifecycleEventTypeEnum::SessionGracefullyClosing, $type);
+                    });
                     $displayState = $context->state->transcriptDisplayState;
                     $this->initialPreviewStates[] = $displayState->previewableBlocksExpanded;
                     $displayState->previewableBlocksExpanded = false;
-                    $context->ticks->add(function () use ($tui, $switch): ?bool {
+                    $context->ticks->add(function () use ($tui, $switch, $context): ?bool {
                         ++$this->iterations;
                         if (1 === $this->iterations) {
+                            $context->state->sessionId = 'switching';
                             $switch->requestNewDraft();
 
                             return null;
@@ -201,7 +213,10 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
                 {
                     $tui = $context->tui;
                     $switch = $context->sessionServices->switch;
-                    $sessionId = $context->state->sessionId;
+                    $context->lifecycle->subscribe(static function (TuiSessionLifecycleEventTypeEnum $type): void {
+                        TestCase::assertNotSame(TuiSessionLifecycleEventTypeEnum::SessionGracefullyClosing, $type);
+                    });
+                    $sessionId = $context->state->sessionId = 'reloading';
                     $context->ticks->add(static function () use ($tui, $switch, $sessionId): ?bool {
                         $switch->requestReload('' !== $sessionId ? $sessionId : 'draft-reload');
                         $tui->stop();

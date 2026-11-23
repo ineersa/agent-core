@@ -1,0 +1,133 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\CodingAgent\Runtime\Stream;
+
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
+use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+
+final readonly class NativeExecutionObservationPublisher
+{
+    public function __construct(
+        private RuntimeEventSinkInterface $local,
+        private StdoutRuntimeEventSink $worker,
+        private RuntimeEventEmitter $controller,
+        private LoggerInterface $logger,
+        private HatfieldSessionStore $sessions,
+        private RunOperationalProjectionRepository $relationships,
+        private AgentChildRunDirectory $children,
+    ) {
+    }
+
+    public function publish(string $sessionId, string $jobId, bool $started): void
+    {
+        try {
+            $root = $this->rootSession($sessionId);
+            if (null === $root) {
+                return;
+            }
+            $event = new RuntimeEvent(
+                type: ($started ? RuntimeEventTypeEnum::BackgroundJobStarted : RuntimeEventTypeEnum::BackgroundJobEnded)->value,
+                runId: $root,
+                seq: 0,
+                payload: ['job_id' => $jobId, 'owner_run_id' => $sessionId],
+            );
+            $this->emit($event);
+        } catch (\Throwable $exception) {
+            $this->logger->warning('background_job.observation_failed', [
+                'component' => 'background_job', 'event_type' => 'observation_failed',
+                'run_id' => $sessionId, 'session_id' => $sessionId, 'exception_class' => $exception::class,
+            ]);
+        }
+    }
+
+    #[AsEventListener]
+    public function onRunPublished(RunEventPublishedEvent $published): void
+    {
+        $event = $published->event;
+        $type = match ($event->type) {
+            RunEventTypeEnum::RunStarted->value => RuntimeEventTypeEnum::ChildExecutionStarted,
+            RunEventTypeEnum::TurnAdvanced->value => true === ($event->payload['resumes_execution'] ?? false) ? RuntimeEventTypeEnum::ChildExecutionStarted : null,
+            RunEventTypeEnum::WaitingHuman->value => RuntimeEventTypeEnum::ChildInputObserved,
+            RunEventTypeEnum::AgentCommandApplied->value => 'human_response' === ($event->payload['kind'] ?? null) ? RuntimeEventTypeEnum::ChildInputObserved : null,
+            RunEventTypeEnum::AgentEnd->value => RuntimeEventTypeEnum::ChildExecutionEnded,
+            default => null,
+        };
+        if (null === $type || $event->seq <= 0) {
+            return;
+        }
+        try {
+            if ((string) (int) $event->runId === $event->runId && $this->sessions->exists($event->runId)) {
+                return;
+            }
+            $parent = $this->parentRunId($event->runId);
+            $root = null !== $parent ? $this->rootSession($parent) : null;
+            if (null === $parent || null === $root || $root === $event->runId) {
+                return;
+            }
+            $fields = ['child_run_id' => $event->runId, 'child_sequence' => $event->seq];
+            if (RuntimeEventTypeEnum::ChildInputObserved === $type) {
+                $request = $event->payload['question_id'] ?? null;
+                if (!\is_string($request) || '' === $request) {
+                    return;
+                }
+                $fields['request_id'] = hash('sha256', $request);
+                $fields['phase'] = RunEventTypeEnum::AgentCommandApplied->value === $event->type ? 'resolved'
+                    : (isset($event->payload['approval_context']) ? 'permission' : 'question');
+            }
+            $this->emit(new RuntimeEvent($type->value, $root, 0, $fields));
+        } catch (\Throwable $exception) {
+            $this->logger->warning('child_execution.observation_failed', [
+                'component' => 'child_execution', 'event_type' => 'observation_failed',
+                'run_id' => $event->runId, 'session_id' => $event->runId, 'exception_class' => $exception::class,
+            ]);
+        }
+    }
+
+    private function emit(RuntimeEvent $event): void
+    {
+        if ($this->controller->isOpen()) {
+            $this->controller->emit($event);
+        } elseif ('1' === getenv('HATFIELD_CONSUMER_STDOUT_EVENTS')) {
+            $this->worker->emit($event);
+        } else {
+            $this->local->emit($event);
+        }
+    }
+
+    private function parentRunId(string $runId): ?string
+    {
+        // Consult artifact storage only when the disposable projection is absent.
+        $relationship = $this->relationships->findRelationship($runId);
+
+        return null !== $relationship ? $relationship['parent_run_id'] : $this->children->locate($runId)?->parentRunId;
+    }
+
+    private function rootSession(string $runId): ?string
+    {
+        $visited = [];
+        while ('' !== $runId && !isset($visited[$runId])) {
+            if ((string) (int) $runId === $runId && $this->sessions->exists($runId)) {
+                return $runId;
+            }
+            $visited[$runId] = true;
+            $parent = $this->parentRunId($runId);
+            if (null === $parent) {
+                return null;
+            }
+            $runId = $parent;
+        }
+
+        return null;
+    }
+}

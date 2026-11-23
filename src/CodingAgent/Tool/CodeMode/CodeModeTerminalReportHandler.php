@@ -58,9 +58,10 @@ final readonly class CodeModeTerminalReportHandler
         if (null !== $invocation['standaloneTurn'] && (new RunCancellationToken($this->status, $runId))->isCancellationRequested()) {
             $interruption = 'cancelled';
         }
-        $failure = $report->failure ?? ($this->processes->observeTerminal($runId, $report->invocationId,
+        $observed = $this->processes->observeTerminal($runId, $report->invocationId,
             $this->processes->deadline($runId, $report->invocationId, null !== $metadata?->backgroundedAt),
-            $interruption, static fn (): ?array => null)['error'] ?? null);
+            $interruption, static fn (): ?array => null);
+        $failure = $report->failure ?? $observed['error'] ?? null;
         if (null !== $failure) {
             $reply = ['ok' => false, 'error' => $failure];
         } elseif (!\is_array($reply) || !\is_bool($reply['ok'] ?? null)) {

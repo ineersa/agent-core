@@ -118,6 +118,15 @@ final class RuntimeEventTranslator
         );
     }
 
+    private static function agentEndType(mixed $reason): RuntimeEventTypeEnum
+    {
+        return match ($reason) {
+            'cancelled' => RuntimeEventTypeEnum::RunCancelled,
+            'failed' => RuntimeEventTypeEnum::RunFailed,
+            default => RuntimeEventTypeEnum::RunCompleted,
+        };
+    }
+
     // ── Lifecycle ──────────────────────────────────────────────────────────
 
     private function onRunStarted(RunEvent $runEvent): RuntimeEvent
@@ -155,14 +164,8 @@ final class RuntimeEventTranslator
         $p = $runEvent->payload;
         $reason = (string) ($p['reason'] ?? '');
 
-        $type = match ($reason) {
-            'cancelled' => RuntimeEventTypeEnum::RunCancelled->value,
-            'failed' => RuntimeEventTypeEnum::RunFailed->value,
-            default => RuntimeEventTypeEnum::RunCompleted->value,
-        };
-
         return new RuntimeEvent(
-            type: $type,
+            type: self::agentEndType($reason)->value,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
             payload: [

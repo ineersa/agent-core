@@ -244,6 +244,12 @@ final class ProcessLifecycle
         return 0 === $exitCode;
     }
 
+    /** A synthetic stop marker records a signal attempt, not native exit. */
+    public function hasObservedExit(?int $exitCode, ?int $pid): bool
+    {
+        return (null !== $exitCode && -1 !== $exitCode) || (null !== $pid && !$this->isAlive($pid));
+    }
+
     /**
      * Read the exit code from a .status file written by the shell wrapper.
      *
@@ -329,7 +335,7 @@ final class ProcessLifecycle
      * Only writes when the status file doesn't already exist (meaning
      * the wrapper hasn't written a real exit code yet). For the KILL
      * path no status file is written by the wrapper, so -1 provides
-     * forensic evidence that the process was forcibly stopped.
+     * a record of the forced-stop attempt, not proof of native exit.
      */
     public function writeStopMarker(string $statusPath): void
     {

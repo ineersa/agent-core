@@ -316,3 +316,22 @@ castor docs:validate
 The optional Scheduling extension is disabled by default. Open the Extensions tab in `hatfield setup`, select **Scheduling (built in)**, enable it for the parent, save, and start a new session. No Composer installation or scheduling settings are required. Disable it through the same form. Alternatively, add `Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension` to `extensions.enabled` before starting a new session.
 
 While disabled, neither the main-only `schedule` tool nor the `/schedule` command is available; no scheduling sources or dispatch callbacks are registered. Agents must use the current tool catalog to check availability. If `schedule` is absent, explain this prerequisite rather than assuming availability or changing settings without user approval. See [recurring work](background-processes.md#recurring-work-schedule) for usage. Definitions belong to the current live controller and are not restored when Hatfield reopens.
+
+### Hatfield 360 session reporting
+
+Add `Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension`
+to your existing `extensions.enabled` list. No Composer installation is needed.
+Start Hatfield through an explicit Hatfield 360 agent launch; the launcher
+supplies the Unix socket path and scoped credentials. Do not set them in YAML
+or copy them into a shell profile. Wrappers must preserve the launch-supplied
+environment and access to the socket.
+
+The extension reports conversation selection, foreground work and correlated
+approval or question waits observed by the TUI. Linux managed shells can also
+attempt registration using the running Hatfield process identity. Outside a
+managed launch it does nothing. Windows transport is not supported.
+
+The foreground observer does not establish whether child or script work has
+settled, so it does not trigger a successful-completion notification. Delivery
+is best effort: a disconnected app does not block editing, and missed events
+are not replayed.

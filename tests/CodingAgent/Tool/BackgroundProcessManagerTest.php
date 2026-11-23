@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessControllerSessionLifecycleListener;
+use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -63,6 +64,42 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->manager->cleanupSessionSidecars([$this->runId]);
         TestDirectoryIsolation::removeDirectory($this->directory);
         parent::tearDown();
+    }
+
+    #[TestWith([true])]
+    #[TestWith([false])]
+    public function testNativeBackgroundAcceptanceEmitsOnceAndNotAtLaunch(bool $initiallyBackgrounded): void
+    {
+        [$server, $command] = $this->blockedCommand();
+        $peer = null;
+        $old = getenv('HATFIELD_CONSUMER_STDOUT_EVENTS');
+        putenv('HATFIELD_CONSUMER_STDOUT_EVENTS=0');
+        try {
+            $sink = self::getContainer()->get(InMemoryRuntimeEventSink::class);
+            $launch = $this->manager->start($command, $this->runId, 'job', backgroundRequested: $initiallyBackgrounded, invocationKey: 'job');
+            $peer = stream_socket_accept($server, 2);
+            $this->assertIsResource($peer);
+            $this->assertSame([], iterator_to_array($sink->drain($this->runId)));
+            if (!$initiallyBackgrounded) {
+                $this->assertTrue($this->manager->requestBackground($this->runId, $this->store->sessionSnapshots($this->runId)[0]->id, 'job'));
+                $this->assertSame([], iterator_to_array($sink->drain($this->runId)));
+            }
+            $candidate = $this->manager->resolveBackgroundAcceptance($launch->statusPath, $this->runId);
+            $this->assertNotNull($candidate);
+            $this->assertTrue($this->manager->acceptResolvedBackground($candidate));
+            $this->assertTrue($this->manager->acceptResolvedBackground($candidate));
+            $events = iterator_to_array($sink->drain($this->runId));
+            $this->assertCount(1, $events);
+            $this->assertSame('background_job.started', $events[0]->type);
+            $this->assertSame(0, $events[0]->seq);
+            $this->assertSame(['job_id' => 'bash:'.$this->store->sessionSnapshots($this->runId)[0]->id, 'owner_run_id' => $this->runId], $events[0]->payload);
+        } finally {
+            putenv(false === $old ? 'HATFIELD_CONSUMER_STDOUT_EVENTS' : 'HATFIELD_CONSUMER_STDOUT_EVENTS='.$old);
+            if (\is_resource($peer)) {
+                fclose($peer);
+            }
+            fclose($server);
+        }
     }
 
     #[TestWith([true])]

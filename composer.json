@@ -161,6 +161,7 @@
         "fabpot/amphp-sqlite3": "dev-development#2cf3d23e6a4645133954052d7356c19c30a2a7d8",
         "amphp/http-tunnel": "^2.0",
         "amphp/process": "^2.1",
+        "amphp/socket": "^2.4",
         "symfony/ai-mistral-platform": "^1.0@beta"
     },
     "require-dev": {
@@ -182,7 +183,8 @@
             "DoctrineMigrations\\": "migrations/application/",
             "Ineersa\\Platform\\": "src/Platform/",
             "Ineersa\\HatfieldExt\\TaskWorkflow\\": ".hatfield/extensions/task-workflow/src/",
-            "Ineersa\\HatfieldExt\\ObservationalMemory\\": ".hatfield/extensions/observational-memory/src/"
+            "Ineersa\\HatfieldExt\\ObservationalMemory\\": ".hatfield/extensions/observational-memory/src/",
+            "Ineersa\\HatfieldExt\\Hatfield360\\": ".hatfield/extensions/hatfield-360/src/"
         },
         "classmap": [
             "src/CodingAgent/Logging/SessionResourceSamplerTask.php"

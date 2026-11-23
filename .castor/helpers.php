@@ -1022,6 +1022,7 @@ function phar_packaged_inputs(string $root): array
             $root.'/src',
             $root.'/config',
             $root.'/migrations',
+            $root.'/.hatfield/extensions/hatfield-360/src',
             $root.'/.castor',
             $root.'/tools/phar',
         ],
@@ -1780,6 +1781,10 @@ function phar_build(): string
         .' '.escapeshellarg($extensionApiSrc.'/')
         .' '.escapeshellarg($extensionApiStaging.'/'),
     );
+
+    // Include only the shared reporter and the native adapter, not the Claude plugin artifacts.
+    $statusSource = '/.hatfield/extensions/hatfield-360/src';
+    run_checked('rsync -a --mkpath '.escapeshellarg($root.$statusSource.'/').' '.escapeshellarg($stagingDir.$statusSource.'/'));
 
     // Stage only marked built-in docs at their canonical paths as regular files.
     // Unmarked repository docs and any legacy internal-docs projection are omitted.

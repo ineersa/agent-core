@@ -337,6 +337,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'payload' => [
                     'step_id' => $nextStepId,
                     'turn_no' => $nextTurnNo,
+                    ...($state->status->isTerminal() ? ['resumes_execution' => true] : []),
                     'operation_attempt' => 1,
                     'operation_idempotency_key' => $effect->idempotencyKey(),
                     'advance_idempotency_key' => $message->idempotencyKey(),

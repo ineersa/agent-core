@@ -178,6 +178,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertContains('turn_advanced', $eventTypes, 'Expected turn_advanced event');
         $this->assertContains('history_position_set', $eventTypes, 'Expected history_position_set event');
 
+        $this->assertTrue($result->events[array_search('turn_advanced', $eventTypes, true)]->payload['resumes_execution']);
+
         // Should produce an LLM step effect (the agent will process the follow-up)
         $this->assertCount(1, $result->effects);
         $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
