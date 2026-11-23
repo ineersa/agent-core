@@ -14,8 +14,10 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobDTO;
 use Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Message\RedispatchMessage;
 use Symfony\Component\Messenger\Stamp\BusNameStamp;
+use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 use Symfony\Component\Scheduler\Generator\MessageGenerator;
 use Symfony\Component\Scheduler\Schedule;
 
@@ -61,7 +63,7 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
         $clock->modify('+500 milliseconds');
         $this->assertSame([], $due(), 'The scheduler does not generate the initial occurrence.');
         $this->assertCount(1, $bus->messages, 'The refresh dispatches immediately even if the lifetime is shorter than the interval.');
-        $this->assertSame(['short' => true], $bus->messages[0]->envelope->getMessage()->payload);
+        $this->assertSame(['short' => true], $bus->messages[0]->getMessage()->payload);
         $clock->modify('+10 seconds');
         $this->assertSame([], $due(), 'Late observation must not require a synthetic trigger slot.');
         $this->assertCount(1, $bus->messages);
@@ -72,10 +74,9 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
         $this->assertSame([], $due());
         $this->assertCount(2, $bus->messages);
         $initial = $bus->messages[1];
-        $this->assertInstanceOf(RedispatchMessage::class, $initial);
-        $this->assertSame('tool', $initial->transportNames);
-        $this->assertSame('agent.execution.bus', $initial->envelope->last(BusNameStamp::class)?->getBusName());
-        $this->assertSame(['value' => 1], $initial->envelope->getMessage()->payload);
+        $this->assertInstanceOf(Envelope::class, $initial);
+        $this->assertSame('agent.execution.bus', $initial->last(BusNameStamp::class)?->getBusName());
+        $this->assertSame(['value' => 1], $initial->getMessage()->payload);
         $installed = $schedule->getRecurringMessages();
         $registry->refresh(new RefreshExtensionRecurringJobs());
         $this->assertSame($installed, $schedule->getRecurringMessages(), 'An unchanged refresh must preserve installed instances.');
@@ -102,8 +103,8 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
             $this->assertNotSame($previous, $job->getId());
             $this->assertFalse(array_any($messages, static fn ($message): bool => $message->getId() === $previous));
             $dispatch = end($bus->messages);
-            $this->assertInstanceOf(RedispatchMessage::class, $dispatch);
-            $callback = $dispatch->envelope->getMessage();
+            $this->assertInstanceOf(Envelope::class, $dispatch);
+            $callback = $dispatch->getMessage();
             $this->assertSame($replacement->handlerId, $callback->handlerId);
             $this->assertSame($replacement->payload, $callback->payload);
             $this->assertEquals($replacement->from->modify('+5 minutes'), $job->getTrigger()->getNextRunDate($clock->now()));
@@ -135,7 +136,7 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
         $clock->modify('+11 seconds');
         $this->assertSame([], $due());
         $this->assertCount(6, $bus->messages, 'First observation after start dispatches only the still-eligible descriptor.');
-        $this->assertSame(['future' => true], $bus->messages[5]->envelope->getMessage()->payload);
+        $this->assertSame(['future' => true], $bus->messages[5]->getMessage()->payload);
         $clock->modify('+58 seconds');
         $this->assertSame([], $due());
         $this->assertCount(6, $bus->messages, 'The replacement expires before its first eligible refresh.');
@@ -166,5 +167,7 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
         $this->assertCount(1, $sent);
         $this->assertInstanceOf(ExtensionAgentJobMessage::class, $sent[0]->getMessage());
         $this->assertSame(['initial' => true], $sent[0]->getMessage()->payload);
+        $this->assertSame('agent.execution.bus', $sent[0]->last(BusNameStamp::class)?->getBusName());
+        $this->assertSame(['tool'], $sent[0]->last(TransportNamesStamp::class)?->getTransportNames());
     }
 }

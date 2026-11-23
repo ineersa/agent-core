@@ -12,12 +12,13 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\DependencyInjection\Attribute\AutowireServiceClosure;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 use Symfony\Component\Scheduler\Generator\MessageContext;
 use Symfony\Component\Scheduler\RecurringMessage;
 use Symfony\Component\Scheduler\Schedule;
 use Symfony\Component\Scheduler\ScheduleProviderInterface;
 
-/** Extension definitions remain extension-owned; Symfony owns occurrence calculation. */
+/** Extension definitions remain extension-owned; first activation is explicit and Symfony owns repeat cadence. */
 final class ExtensionRecurringJobRegistry
 {
     /** @var array<string, array{source: RecurringJobSourceInterface, owner: ?string}> */
@@ -78,7 +79,7 @@ final class ExtensionRecurringJobRegistry
                 // Send the first eligible execution now and leave the original cadence intact.
                 $context = new MessageContext('default', $messageId, $recurring->getTrigger(), $now);
                 foreach ($provider->getMessages($context) as $initial) {
-                    $this->bus->dispatch($initial);
+                    $this->bus->dispatch($initial->envelope, [new TransportNamesStamp((array) $initial->transportNames)]);
                 }
                 $this->schedule()->add($recurring);
                 $this->registered[$key] = $messageId;
