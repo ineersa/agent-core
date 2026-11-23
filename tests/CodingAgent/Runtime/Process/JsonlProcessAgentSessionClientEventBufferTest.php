@@ -114,6 +114,25 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
         $this->assertSame(2, $childDrain[0]->seq);
     }
 
+    public function testRootDrainsChildOwnedBackgroundJobFromControllerJsonl(): void
+    {
+        $client = $this->createIdleClient();
+        $client->beginObservingChildRun('child-run');
+        $this->injectStdoutJsonlLines($client, [json_encode([
+            'v' => 1,
+            'type' => RuntimeEventTypeEnum::BackgroundJobStarted->value,
+            'runId' => 'parent-run',
+            'seq' => 0,
+            'payload' => ['job_id' => 'bash:1', 'owner_run_id' => 'child-run'],
+        ], \JSON_THROW_ON_ERROR)]);
+
+        $this->assertSame([], iterator_to_array($client->events('child-run')));
+        $events = iterator_to_array($client->events('parent-run'));
+        $this->assertCount(1, $events);
+        $this->assertSame('parent-run', $events[0]->runId);
+        $this->assertSame('child-run', $events[0]->payload['owner_run_id']);
+    }
+
     public function testMultipleChildRunIdsStayIsolatedWhenParentPollsSharedStreamFirst(): void
     {
         $parentRunId = 'parent-run';

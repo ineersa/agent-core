@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -131,7 +132,7 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
             $lifecycle = self::getContainer()->get(ProcessLifecycle::class);
             $sink = self::getContainer()->get(InMemoryRuntimeEventSink::class);
             $record = new BackgroundProcess();
-            $record->sessionId = 'forced-stop-owner';
+            $record->sessionId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('forced-stop-owner');
             $record->pid = $child->getPid();
             $record->statusPath = $directory.'/status';
             $record->backgroundedAt = new \DateTimeImmutable();
@@ -152,7 +153,7 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
             $events = iterator_to_array($sink->drain($record->sessionId));
             $this->assertCount(1, $events);
             $this->assertSame('background_job.ended', $events[0]->type);
-            $this->assertSame(['job_id' => 'bash:'.$record->id], $events[0]->payload);
+            $this->assertSame(['job_id' => 'bash:'.$record->id, 'owner_run_id' => $record->sessionId], $events[0]->payload);
             $this->assertSame([], $store->unfinishedSnapshots([$record->sessionId]));
             $this->assertNull($store->snapshot($record->id)->completionNotifiedAt);
         } finally {

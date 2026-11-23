@@ -8,7 +8,7 @@ use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
 
 final readonly class TuiBackgroundJobObservationDTO
 {
-    public function __construct(public string $sessionId, public string $jobId, public TuiBackgroundJobObservationTypeEnum $type)
+    public function __construct(public string $sessionId, public string $ownerRunId, public string $jobId, public TuiBackgroundJobObservationTypeEnum $type)
     {
     }
 }

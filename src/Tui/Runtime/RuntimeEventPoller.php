@@ -542,10 +542,11 @@ final class RuntimeEventPoller
     private function notifyBackgroundJobObservers(RuntimeEvent $event): void
     {
         $jobId = $event->payload['job_id'] ?? null;
-        if (!\is_string($jobId) || 1 !== preg_match('/\A[a-zA-Z0-9_.:-]{1,128}\z/', $jobId)) {
+        $ownerRunId = $event->payload['owner_run_id'] ?? null;
+        if (!\is_string($ownerRunId) || '' === $ownerRunId || !\is_string($jobId) || 1 !== preg_match('/\A[a-zA-Z0-9_.:-]{1,128}\z/', $jobId)) {
             return;
         }
-        $observation = new TuiBackgroundJobObservationDTO($event->runId, $jobId, RuntimeEventTypeEnum::BackgroundJobStarted->value === $event->type
+        $observation = new TuiBackgroundJobObservationDTO($event->runId, $ownerRunId, $jobId, RuntimeEventTypeEnum::BackgroundJobStarted->value === $event->type
             ? TuiBackgroundJobObservationTypeEnum::Started : TuiBackgroundJobObservationTypeEnum::Ended);
         foreach ($this->backgroundJobObservers as $observer) {
             try {

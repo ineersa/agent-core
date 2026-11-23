@@ -92,7 +92,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             $this->assertCount(1, $events);
             $this->assertSame('background_job.started', $events[0]->type);
             $this->assertSame(0, $events[0]->seq);
-            $this->assertSame(['job_id' => 'bash:'.$this->store->sessionSnapshots($this->runId)[0]->id], $events[0]->payload);
+            $this->assertSame(['job_id' => 'bash:'.$this->store->sessionSnapshots($this->runId)[0]->id, 'owner_run_id' => $this->runId], $events[0]->payload);
         } finally {
             putenv(false === $old ? 'HATFIELD_CONSUMER_STDOUT_EVENTS' : 'HATFIELD_CONSUMER_STDOUT_EVENTS='.$old);
             if (\is_resource($peer)) {

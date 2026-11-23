@@ -151,16 +151,16 @@ final class RuntimeEventPollerTest extends TestCase
     {
         $observer = $this->createMock(TuiBackgroundJobObserverInterface::class);
         $observer->expects($this->once())->method('onTuiBackgroundJobObserved')->with(
-            new TuiBackgroundJobObservationDTO('test-run', 'bash:3', TuiBackgroundJobObservationTypeEnum::Ended),
+            new TuiBackgroundJobObservationDTO('test-run', 'child-run', 'bash:3', TuiBackgroundJobObservationTypeEnum::Ended),
         );
         $this->poller->observeBackgroundJob($observer);
         $this->state->sessionId = 'test-run';
         $this->state->activity = RunActivityStateEnum::Idle;
         $this->state->lastSeq = 9;
         $this->client->method('events')->willReturn([
-            new RuntimeEvent(RuntimeEventTypeEnum::BackgroundJobStarted->value, 'other', 0, ['job_id' => 'bash:1']),
-            new RuntimeEvent(RuntimeEventTypeEnum::BackgroundJobStarted->value, 'test-run', 10, ['job_id' => 'bash:2']),
-            new RuntimeEvent(RuntimeEventTypeEnum::BackgroundJobEnded->value, 'test-run', 0, ['job_id' => 'bash:3']),
+            new RuntimeEvent(RuntimeEventTypeEnum::BackgroundJobStarted->value, 'other', 0, ['job_id' => 'bash:1', 'owner_run_id' => 'other']),
+            new RuntimeEvent(RuntimeEventTypeEnum::BackgroundJobStarted->value, 'test-run', 10, ['job_id' => 'bash:2', 'owner_run_id' => 'test-run']),
+            new RuntimeEvent(RuntimeEventTypeEnum::BackgroundJobEnded->value, 'test-run', 0, ['job_id' => 'bash:3', 'owner_run_id' => 'child-run']),
         ]);
         $this->projector->expects($this->never())->method('accept');
 

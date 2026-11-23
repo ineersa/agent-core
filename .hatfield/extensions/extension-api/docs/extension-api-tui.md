@@ -60,10 +60,11 @@ process exits. Keep any best-effort shutdown work bounded.
 
 Implement `TuiBackgroundJobObserverInterface` for live, best-effort background
 job start and end observations, including while the selected session is idle.
-The DTO contains only the selected owning session ID, opaque job ID and
-transition type. This is not a list of jobs: observations are not replayed
-on attach or selection, and other sessions are not attributed to the selection.
-The initial producer is native Bash.
+The DTO contains only the selected root session ID, the native owner run ID
+(which can be a child run), an opaque job ID, and the transition type. Native
+Bash and code-mode jobs are routed by their recorded ownership. Observations
+are not replayed on attach or selection, and other sessions are not attributed
+to the selection.
 
 ## UX guidelines
 

@@ -88,7 +88,7 @@ final class CodeModeTerminalReportHandlerTest extends IsolatedKernelTestCase
             $handler($report);
             $events = iterator_to_array($container->get(InMemoryRuntimeEventSink::class)->drain($runId));
             $this->assertSame(['background_job.started', 'background_job.ended'], array_column($events, 'type'));
-            $this->assertSame([['job_id' => 'code-mode:invocation'], ['job_id' => 'code-mode:invocation']], array_column($events, 'payload'));
+            $this->assertSame([['job_id' => 'code-mode:invocation', 'owner_run_id' => $runId], ['job_id' => 'code-mode:invocation', 'owner_run_id' => $runId]], array_column($events, 'payload'));
 
             $this->assertCount(1, $bus->messages);
             $message = $bus->messages[0];
