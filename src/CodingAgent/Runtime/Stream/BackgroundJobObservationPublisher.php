@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
 final readonly class BackgroundJobObservationPublisher
 {
@@ -39,19 +42,63 @@ final readonly class BackgroundJobObservationPublisher
                 seq: 0,
                 payload: ['job_id' => $jobId, 'owner_run_id' => $sessionId],
             );
-            if ($this->controller->isOpen()) {
-                $this->controller->emit($event);
-            } elseif ('1' === getenv('HATFIELD_CONSUMER_STDOUT_EVENTS')) {
-                $this->worker->emit($event);
-            } else {
-                $this->local->emit($event);
-            }
+            $this->emit($event);
         } catch (\Throwable $exception) {
             $this->logger->warning('background_job.observation_failed', [
                 'component' => 'background_job', 'event_type' => 'observation_failed',
                 'run_id' => $sessionId, 'session_id' => $sessionId, 'exception_class' => $exception::class,
             ]);
         }
+    }
+
+    #[AsEventListener]
+    public function onRunPublished(RunEventPublishedEvent $published): void
+    {
+        $event = $published->event;
+        $type = match ($event->type) {
+            RunEventTypeEnum::RunStarted->value => RuntimeEventTypeEnum::ChildExecutionStarted,
+            RunEventTypeEnum::AgentEnd->value => RuntimeEventTypeEnum::ChildExecutionEnded,
+            default => null,
+        };
+        if (null === $type || $event->seq <= 0) {
+            return;
+        }
+        try {
+            // Direct child actors only. A durable session identity is not an
+            // actor even if its session metadata names an originating session.
+            if ((string) (int) $event->runId === $event->runId && $this->sessions->exists($event->runId)) {
+                return;
+            }
+            $parent = $this->parentRunId($event->runId);
+            if (null === $parent || $parent === $event->runId || (string) (int) $parent !== $parent || !$this->sessions->exists($parent)) {
+                return;
+            }
+            $this->emit(new RuntimeEvent($type->value, $parent, 0, ['child_run_id' => $event->runId, 'child_sequence' => $event->seq]));
+        } catch (\Throwable $exception) {
+            $this->logger->warning('child_execution.observation_failed', [
+                'component' => 'child_execution', 'event_type' => 'observation_failed',
+                'run_id' => $event->runId, 'session_id' => $event->runId, 'exception_class' => $exception::class,
+            ]);
+        }
+    }
+
+    private function emit(RuntimeEvent $event): void
+    {
+        if ($this->controller->isOpen()) {
+            $this->controller->emit($event);
+        } elseif ('1' === getenv('HATFIELD_CONSUMER_STDOUT_EVENTS')) {
+            $this->worker->emit($event);
+        } else {
+            $this->local->emit($event);
+        }
+    }
+
+    private function parentRunId(string $runId): ?string
+    {
+        // Consult artifact storage only when the disposable projection is absent.
+        $relationship = $this->relationships->findRelationship($runId);
+
+        return null !== $relationship ? $relationship['parent_run_id'] : $this->children->locate($runId)?->parentRunId;
     }
 
     private function rootSession(string $runId): ?string
@@ -62,10 +109,7 @@ final readonly class BackgroundJobObservationPublisher
                 return $runId;
             }
             $visited[$runId] = true;
-            // Active runs have an indexed parent edge. Consult artifact storage
-            // only when that disposable projection is absent (e.g. after exit).
-            $relationship = $this->relationships->findRelationship($runId);
-            $parent = null !== $relationship ? $relationship['parent_run_id'] : $this->children->locate($runId)?->parentRunId;
+            $parent = $this->parentRunId($runId);
             if (null === $parent) {
                 return null;
             }

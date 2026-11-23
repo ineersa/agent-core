@@ -171,6 +171,8 @@ final class RuntimeEventPerRunCompactBuffer
     private static function isProtectedControlEventStatic(RuntimeEvent $event): bool
     {
         return \in_array($event->type, [
+            RuntimeEventTypeEnum::ChildExecutionStarted->value,
+            RuntimeEventTypeEnum::ChildExecutionEnded->value,
             RuntimeEventTypeEnum::BackgroundJobStarted->value,
             RuntimeEventTypeEnum::BackgroundJobEnded->value,
             RuntimeEventTypeEnum::HumanInputRequested->value,

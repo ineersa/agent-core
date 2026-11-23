@@ -40,6 +40,8 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     private array $waits = [];
     /** @var array<string, array{start: int, ending: bool}> */
     private array $scripts = [];
+    /** @var array<string, array{native: int, start: int, ending: bool}> */
+    private array $actors = [];
     private bool $closing = false;
     /** @var Future<void>|null */
     private ?Future $drain = null;
@@ -67,9 +69,10 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         $this->turn = null;
         $this->waits = [];
         $this->scripts = [];
+        $this->actors = [];
         // Previous unsent work no longer describes the selected session.
         $this->pending = [];
-        $this->checkpoint = new SessionCheckpointDTO($sessionId, $this->epoch, (string) Uuid::v7(), 'hatfield', ['waits', 'session-end', 'scripts']);
+        $this->checkpoint = new SessionCheckpointDTO($sessionId, $this->epoch, (string) Uuid::v7(), 'hatfield', ['waits', 'session-end', 'scripts', 'actors']);
         $this->scheduleDrain();
     }
 
@@ -80,6 +83,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         }
         $this->closing = true;
         $this->scripts = [];
+        $this->actors = [];
         // Drop historical work rather than spending one socket deadline per queued
         // event. An in-flight frame keeps its original order before the final frame.
         $this->pending = [];
@@ -102,6 +106,12 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     public function onTuiRunObserved(TuiRunObservationDTO $observation): void
     {
         if ($this->closing || '' === $this->sessionId || $observation->sessionId !== $this->sessionId) {
+            return;
+        }
+
+        if (TuiRunObservationTypeEnum::ChildExecutionStarted === $observation->type || TuiRunObservationTypeEnum::ChildExecutionEnded === $observation->type) {
+            $this->observeChild($observation);
+
             return;
         }
 
@@ -193,6 +203,40 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         }
     }
 
+    private function observeChild(TuiRunObservationDTO $observation): void
+    {
+        if (null === $observation->childRunId || $observation->childRunId === $this->sessionId || $observation->sequence <= 0) {
+            return;
+        }
+        $id = hash('sha256', $observation->childRunId);
+        if (TuiRunObservationTypeEnum::ChildExecutionStarted === $observation->type) {
+            if (isset($this->actors[$id])) {
+                return;
+            }
+            // The session registration already occupies the main actor slot.
+            if (\count($this->actors) >= 31) {
+                $this->logDrop($this->sessionId);
+
+                return;
+            }
+            $start = ++self::$sequence;
+            if ($this->enqueue('actor.started', $start, ['actorId' => $id, 'parentId' => 'main', 'parentStart' => $this->epoch])) {
+                $this->actors[$id] = ['native' => $observation->sequence, 'start' => $start, 'ending' => false];
+            }
+
+            return;
+        }
+        $actor = $this->actors[$id] ?? null;
+        if (null === $actor || $actor['ending'] || $observation->sequence <= $actor['native']) {
+            return;
+        }
+        if ($this->enqueue('actor.ended', ++self::$sequence, ['actorId' => $id, 'actorStart' => $actor['start']])) {
+            $this->actors[$id]['ending'] = true;
+        } else {
+            unset($this->actors[$id]);
+        }
+    }
+
     /** @return array{actorId: string, actorStart: int, turnId: string} */
     private function turnFields(int $turn): array
     {
@@ -225,6 +269,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                     $this->logDrop($this->sessionId);
                     $this->pending = [];
                     $this->scripts = [];
+                    $this->actors = [];
 
                     return;
                 }
@@ -240,6 +285,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                             $this->logDrop($checkpoint->sessionId);
                             $this->pending = [];
                             $this->scripts = [];
+                            $this->actors = [];
 
                             return;
                         }
@@ -256,7 +302,13 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                     if ($scriptEnd && ($this->scripts[$id]['start'] ?? null) !== $fields['scriptStart']) {
                         continue;
                     }
-                    $sent = $client->send($kind, $sessionId, $sequence, $epoch, $fields, requireApplied: $scriptStart);
+                    $actorStart = 'actor.started' === $kind;
+                    $actorEnd = 'actor.ended' === $kind;
+                    $actorId = ($actorStart || $actorEnd) ? (string) $fields['actorId'] : '';
+                    if ($actorEnd && ($this->actors[$actorId]['start'] ?? null) !== $fields['actorStart']) {
+                        continue;
+                    }
+                    $sent = $client->send($kind, $sessionId, $sequence, $epoch, $fields, requireApplied: $scriptStart || $actorStart);
                     if (!$sent) {
                         $this->logDrop($sessionId);
                     }
@@ -265,11 +317,15 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                     if ($this->epoch === $epoch && ($scriptEnd || ($scriptStart && !$sent))) {
                         unset($this->scripts[$id]);
                     }
+                    if ($this->epoch === $epoch && ($actorEnd || ($actorStart && !$sent))) {
+                        unset($this->actors[$actorId]);
+                    }
                 }
             } catch (\Throwable) {
                 $this->logDrop($this->sessionId);
                 $this->pending = [];
                 $this->scripts = [];
+                $this->actors = [];
             } finally {
                 $this->drain = null;
             }

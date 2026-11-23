@@ -6,6 +6,8 @@ namespace Ineersa\Hatfield\ExtensionApi\Tui;
 
 enum TuiRunObservationTypeEnum
 {
+    case ChildExecutionStarted;
+    case ChildExecutionEnded;
     case TurnStarted;
     case TurnCompleted;
     case TurnFailed;

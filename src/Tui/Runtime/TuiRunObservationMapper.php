@@ -13,6 +13,16 @@ final class TuiRunObservationMapper
 {
     public static function map(RuntimeEvent $event): ?TuiRunObservationDTO
     {
+        if (0 === $event->seq && \in_array($event->type, [RuntimeEventTypeEnum::ChildExecutionStarted->value, RuntimeEventTypeEnum::ChildExecutionEnded->value], true)) {
+            $child = $event->payload['child_run_id'] ?? null;
+            $sequence = $event->payload['child_sequence'] ?? null;
+            if (!\is_string($child) || '' === $child || $child === $event->runId || !\is_int($sequence) || $sequence <= 0) {
+                return null;
+            }
+
+            return new TuiRunObservationDTO($event->runId, $sequence, RuntimeEventTypeEnum::ChildExecutionStarted->value === $event->type
+                ? TuiRunObservationTypeEnum::ChildExecutionStarted : TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: $child);
+        }
         if ($event->seq <= 0) {
             return null;
         }

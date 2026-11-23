@@ -88,13 +88,18 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertSame(1, $first['version']);
             $this->assertSame('session.started', $first['kind']);
             $this->assertSame('hatfield', $first['provider']);
-            $this->assertSame(['waits', 'session-end', 'scripts'], $first['capabilities']);
+            $this->assertSame(['waits', 'session-end', 'scripts', 'actors'], $first['capabilities']);
             $this->assertSame($first['sequence'], $first['sessionEpoch']);
 
             $client = $this->createStub(AgentSessionClient::class);
             $draft->handle = new RunHandle($draft->sessionId);
             $job = ['owner_run_id' => 'private-child', 'job_id' => 'bash:7'];
+            $child = ['child_run_id' => 'private-child', 'child_sequence' => 2];
             $client->method('events')->willReturn([
+                new RuntimeEvent(Event::ChildExecutionStarted->value, 'unrelated', 0, $child),
+                new RuntimeEvent(Event::ChildExecutionStarted->value, $draft->sessionId, 0, $child),
+                new RuntimeEvent(Event::ChildExecutionStarted->value, $draft->sessionId, 0, $child),
+                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, $child),
                 new RuntimeEvent(Event::BackgroundJobStarted->value, 'unrelated', 0, $job),
                 new RuntimeEvent(Event::BackgroundJobEnded->value, $draft->sessionId, 0, $job),
                 new RuntimeEvent(Event::BackgroundJobStarted->value, $draft->sessionId, 0, $job),
@@ -106,8 +111,14 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
                 new RuntimeEvent(Event::RunCancelled->value, $draft->sessionId, 5),
                 new RuntimeEvent(Event::BackgroundJobEnded->value, $draft->sessionId, 0, $job),
                 new RuntimeEvent(Event::BackgroundJobEnded->value, $draft->sessionId, 0, $job),
+                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, ['child_run_id' => 'private-child', 'child_sequence' => 12]),
             ]);
             $context->sessionServices->parentPoller->poll($draft, $client);
+            $actorStart = $this->acceptFrame($server);
+            $this->assertSame('actor.started', $actorStart['kind']);
+            $this->assertSame('main', $actorStart['parentId']);
+            $this->assertSame($first['sessionEpoch'], $actorStart['parentStart']);
+            $this->assertSame(hash('sha256', 'private-child'), $actorStart['actorId']);
             $scriptStart = $this->acceptFrame($server);
             $this->assertSame('script.started', $scriptStart['kind']);
             $this->assertSame(hash('sha256', "private-child\0bash:7"), $scriptStart['scriptId']);
@@ -132,6 +143,11 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertSame($scriptStart['sessionEpoch'], $scriptEnd['sessionEpoch']);
             $this->assertSame($frames[4]['sequence'] + 1, $scriptEnd['sequence']);
             $this->assertArrayNotHasKey('outcome', $scriptEnd);
+            $actorEnd = $this->acceptFrame($server);
+            $this->assertSame('actor.ended', $actorEnd['kind']);
+            $this->assertSame($actorStart['actorId'], $actorEnd['actorId']);
+            $this->assertSame($actorStart['sequence'], $actorEnd['actorStart']);
+            $this->assertSame($first['sessionEpoch'], $actorEnd['sessionEpoch']);
 
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
             $harness = new VirtualTuiHarness(sessionId: 'resumed-session');

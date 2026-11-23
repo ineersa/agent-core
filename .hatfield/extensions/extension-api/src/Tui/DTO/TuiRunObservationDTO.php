@@ -13,6 +13,7 @@ final readonly class TuiRunObservationDTO
         public int $sequence,
         public TuiRunObservationTypeEnum $type,
         public ?string $requestId = null,
+        public ?string $childRunId = null,
     ) {
     }
 }

@@ -243,6 +243,13 @@ final class RuntimeEventPoller
                     continue;
                 }
 
+                if (\in_array($runtimeEvent->type, [RuntimeEventTypeEnum::ChildExecutionStarted->value, RuntimeEventTypeEnum::ChildExecutionEnded->value], true)) {
+                    if (0 === $seq && $state->sessionReady && $runtimeEvent->runId === $state->sessionId) {
+                        $this->notifyRunObservers($runtimeEvent);
+                    }
+                    continue;
+                }
+
                 // Seq 0 marks transient streaming events that do not
                 // participate in persistent deduplication. Only stored
                 // canonical events (seq > 0) advance the dedup cursor.

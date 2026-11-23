@@ -35,6 +35,15 @@ events are not replayed, even if the session registration subsequently recovers.
 A lost end can leave a script visible until the desktop session is replaced or
 closed. Live desktop and managed-shell script smoke tests have not been run.
 
+## Hatfield child actors
+
+Hatfield advertises `actors` for live initial execution of direct children.
+A committed child run start opens an actor under the selected main actor;
+only a committed child terminal event can close it. Main turn boundaries do
+not close child actors. Reservations, nested children, and resumed executions
+without a new canonical run start are not reported. Attach and reload do not
+reconstruct active actors, and missed events are not replayed.
+
 ## Claude hook coverage
 
 The plugin reports explicitly launched Claude session selections (`startup`, `resume`, `clear`) and terminal session-end reasons. It excludes compaction and forks, which do not reliably indicate a new foreground conversation. A foreground `UserPromptSubmit` carrying a UUID `prompt_id` starts a turn. Subsequent hooks must match that prompt and the selected session; child hooks are ignored. `Stop` with `stop_hook_active: false` ends the foreground turn as `unknown`, never as `completed`; `StopFailure` reports a correlated failure. `PreToolUse` reports working activity for that turn without tool names, inputs, or results.
