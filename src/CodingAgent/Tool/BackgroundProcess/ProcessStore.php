@@ -67,6 +67,28 @@ final class ProcessStore
         return (int) $connection->lastInsertId();
     }
 
+    /** Called under the invocation sidecar lock with native startup evidence. */
+    public function observeCodeModeBackgroundJob(string $runId, string $id, bool $exited): void
+    {
+        $connection = $this->entityManager->getConnection();
+        // started_at claims the start observation only once admission has committed.
+        // finished_at is the existing launch fence, not a native exit observation.
+        if (0 !== $connection->executeStatement(<<<'SQL'
+            UPDATE background_process SET started_at = CURRENT_TIMESTAMP
+            WHERE session_id = :run AND code_mode_id = :id AND started_at IS NULL AND finished_at IS NULL
+              AND EXISTS (SELECT 1 FROM tool_deferred_completion
+                WHERE run_id = :run AND deferred_id = :id AND tool_name = 'code_mode' AND backgrounded_at IS NOT NULL)
+            SQL, ['run' => $runId, 'id' => $id])) {
+            $this->observations?->publish($runId, 'code-mode:'.$id, true);
+        }
+        if ($exited && 0 !== $connection->executeStatement(<<<'SQL'
+            UPDATE background_process SET status = :finished
+            WHERE session_id = :run AND code_mode_id = :id AND started_at IS NOT NULL AND status = :running
+            SQL, ['run' => $runId, 'id' => $id, 'running' => BackgroundProcessStatusEnum::Running->value, 'finished' => BackgroundProcessStatusEnum::Finished->value])) {
+            $this->observations?->publish($runId, 'code-mode:'.$id, false);
+        }
+    }
+
     public function applyFinishedByRecord(int $recordId, string $runId, ?int $exitCode, BackgroundProcessStatusEnum $status, bool $stoppedByUser, \DateTimeImmutable $finishedAt): void
     {
         $connection = $this->entityManager->getConnection();

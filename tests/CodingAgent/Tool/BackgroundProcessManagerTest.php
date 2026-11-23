@@ -81,8 +81,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             $this->assertIsResource($peer);
             $this->assertSame([], iterator_to_array($sink->drain($this->runId)));
             if (!$initiallyBackgrounded) {
-                self::assertTrue($this->manager->requestBackground($this->runId, $this->store->sessionSnapshots($this->runId)[0]->id, 'job'));
-                self::assertSame([], iterator_to_array($sink->drain($this->runId)));
+                $this->assertTrue($this->manager->requestBackground($this->runId, $this->store->sessionSnapshots($this->runId)[0]->id, 'job'));
+                $this->assertSame([], iterator_to_array($sink->drain($this->runId)));
             }
             $candidate = $this->manager->resolveBackgroundAcceptance($launch->statusPath, $this->runId);
             $this->assertNotNull($candidate);

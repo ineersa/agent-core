@@ -38,7 +38,9 @@ final readonly class CodeModeProcessOwner
             ]);
             $this->filesystem->mkdir($workspace.'/replies', 0700);
             $admit?->__invoke();
-            $this->lifecycle->launchProcess($command, $prefix.'.pid', $prefix.'.log', $prefix.'.status', $afterExit);
+            $launch = $this->lifecycle->launchProcess($command, $prefix.'.pid', $prefix.'.log', $prefix.'.status', $afterExit);
+            $exit = $this->lifecycle->readStatusFile($prefix.'.status');
+            $this->store->observeCodeModeBackgroundJob($runId, $invocationId, $this->lifecycle->hasObservedExit($exit, $launch['pid']));
         });
     }
 
@@ -126,7 +128,11 @@ final readonly class CodeModeProcessOwner
             $interruption = $invocation['interruption'] ?? $interruption;
             $pid = $this->lifecycle->readPidFile($status);
             $exit = $this->lifecycle->readStatusFile($status);
-            $running = null !== $pid && (null === $exit || -1 === $exit) && $this->lifecycle->isAlive($pid);
+            $exited = $this->lifecycle->hasObservedExit($exit, $pid);
+            if (null !== $pid || $exited) {
+                $this->store->observeCodeModeBackgroundJob($runId, $id, $exited);
+            }
+            $running = null !== $pid && !$exited;
             $expired = null !== $deadline && hrtime(true) >= $deadline;
             if ($running) {
                 if (null === $exit && (null !== $interruption || $expired)) {
