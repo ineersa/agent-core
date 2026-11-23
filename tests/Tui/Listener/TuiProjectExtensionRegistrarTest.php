@@ -115,11 +115,13 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
                 new RuntimeEvent(Event::ChildExecutionStarted->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 20]),
                 new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 12]),
                 new RuntimeEvent(Event::ChildExecutionStarted->value, $draft->sessionId, 0, ['child_run_id' => 'nested', 'parent_run_id' => 'private-child', 'child_sequence' => 1]),
-                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, ['child_run_id' => 'nested', 'parent_run_id' => 'private-child', 'child_sequence' => 2]),
+                new RuntimeEvent(Event::ChildTurnObservation->value, $draft->sessionId, 0, ['child_run_id' => 'nested', 'parent_run_id' => 'private-child', 'child_sequence' => 2, 'phase' => 'turn']),
+                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, ['child_run_id' => 'nested', 'parent_run_id' => 'private-child', 'child_sequence' => 3, 'outcome' => 'cancelled']),
                 new RuntimeEvent(Event::ChildTurnObservation->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 20, 'phase' => 'turn']),
                 new RuntimeEvent(Event::ChildTurnObservation->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 21, 'phase' => 'permission', 'request_id' => hash('sha256', 'private request')]),
                 new RuntimeEvent(Event::ChildTurnObservation->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 22, 'phase' => 'resolved', 'request_id' => hash('sha256', 'private request')]),
-                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 23]),
+                new RuntimeEvent(Event::ToolExecutionFailed->value, 'private-child', 23),
+                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 24, 'outcome' => 'failed']),
             ]);
             $context->sessionServices->parentPoller->poll($draft, $client);
             $actorStart = $this->acceptFrame($server);
@@ -158,6 +160,12 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertSame($first['sessionEpoch'], $actorEnd['sessionEpoch']);
             $reopened = $this->acceptFrame($server);
             $nested = $this->acceptFrame($server);
+            $nestedTurn = $this->acceptFrame($server);
+            $nestedActivity = $this->acceptFrame($server);
+            $nestedTerminal = $this->acceptFrame($server);
+            $this->assertSame(['turn.started', 'activity.changed', 'turn.ended'], array_column([$nestedTurn, $nestedActivity, $nestedTerminal], 'kind'));
+            $this->assertSame($nested['sequence'], $nestedTerminal['actorStart']);
+            $this->assertSame('cancelled', $nestedTerminal['outcome']);
             $nestedEnd = $this->acceptFrame($server);
             $childFrames = [];
             for ($i = 0; $i < 5; ++$i) {
@@ -168,7 +176,8 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertSame($childFrames[0]['sequence'], $childFrames[3]['turnStart']);
             $this->assertSame($childFrames[2]['sequence'], $childFrames[3]['waitStart']);
             $this->assertSame('permission', $childFrames[2]['reason']);
-            $this->assertSame('unknown', $childFrames[4]['outcome']);
+            $this->assertSame('failed', $childFrames[4]['outcome']);
+            $this->assertArrayNotHasKey('reason', $childFrames[4]);
             $resumedEnd = $this->acceptFrame($server);
             $this->assertSame(['actor.started', 'actor.started', 'actor.ended', 'actor.ended'], array_column([$reopened, $nested, $nestedEnd, $resumedEnd], 'kind'));
             $this->assertSame($actorStart['actorId'], $reopened['actorId']);

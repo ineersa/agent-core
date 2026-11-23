@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Runtime;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiChildExecutionOutcomeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 
 final class TuiRunObservationMapper
@@ -33,9 +34,11 @@ final class TuiRunObservationMapper
                 },
             };
             $request = $event->payload['request_id'] ?? null;
+            $outcome = $event->payload['outcome'] ?? null;
 
             return null === $type ? null : new TuiRunObservationDTO($event->runId, $sequence, $type,
-                \is_string($request) && '' !== $request ? $request : null, $child, $parent);
+                \is_string($request) && '' !== $request ? $request : null, $child, $parent,
+                TuiRunObservationTypeEnum::ChildExecutionEnded === $type && \is_string($outcome) ? TuiChildExecutionOutcomeEnum::tryFrom($outcome) : null);
         }
         if ($event->seq <= 0) {
             return null;

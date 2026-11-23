@@ -48,8 +48,8 @@ reload do not reconstruct active actors, and missed events are not replayed.
 A committed child turn advance reports working activity. Internal model steps
 stay in the same reported turn. Committed child input requests and applied
 responses are paired by an opaque request ID within that turn; prompts and
-answers are never sent. Child terminal events end the reported turn as
-`unknown` before closing the actor. Parent intervention, a tool error, and
+answers are never sent. A committed child terminal event ends the reported turn as `failed`,
+`cancelled`, or `unknown` before closing the actor. It never reports success. Parent intervention, a tool error, and
 an unobserved or unpaired input response are not terminal evidence.
 
 ## Claude hook coverage

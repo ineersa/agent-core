@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -89,6 +90,13 @@ final readonly class NativeExecutionObservationPublisher
                     }
                     $fields['request_id'] = hash('sha256', $requestId);
                 }
+            }
+            if (RuntimeEventTypeEnum::ChildExecutionEnded === $type) {
+                $fields['outcome'] = match (RuntimeEventTranslator::agentEndType($event->payload['reason'] ?? null)) {
+                    RuntimeEventTypeEnum::RunCancelled => 'cancelled',
+                    RuntimeEventTypeEnum::RunFailed => 'failed',
+                    default => 'unknown',
+                };
             }
             $identity = ['child_run_id' => $event->runId, 'parent_run_id' => $parent, 'child_sequence' => $event->seq];
             $this->emit(new RuntimeEvent($type->value, $root, 0, $identity + $fields));

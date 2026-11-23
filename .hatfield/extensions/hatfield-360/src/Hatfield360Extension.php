@@ -249,7 +249,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
             return;
         }
         if (null !== $actor['turn']) {
-            $this->enqueue('turn.ended', ++self::$sequence, $this->childTurnFields($id, $actor['start'], $actor['turn']) + ['outcome' => 'unknown']);
+            $this->enqueue('turn.ended', ++self::$sequence, $this->childTurnFields($id, $actor['start'], $actor['turn']) + ['outcome' => $observation->childOutcome->value ?? 'unknown']);
         }
         if ($this->enqueue('actor.ended', ++self::$sequence, ['actorId' => $id, 'actorStart' => $actor['start']])) {
             $this->actors[$id]['end'] = $observation->sequence;
