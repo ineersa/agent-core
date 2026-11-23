@@ -35,9 +35,10 @@ final class McpToolCatalogBuilderTest extends TestCase
             'broken' => new McpServerDefinitionDTO(name: 'broken'),
         ]);
 
+        $outputSchema = ['type' => 'object', 'properties' => ['value' => ['type' => 'string']]];
         $catalog = $this->builder->build($config, 'run-1', 'cfg-hash', [
             'first' => self::connected('stdio', [
-                ['name' => 'get$data', 'description' => 'A', 'inputSchema' => ['type' => 'object']],
+                ['name' => 'get$data', 'description' => 'A', 'inputSchema' => ['type' => 'object'], 'outputSchema' => $outputSchema],
                 ['name' => '___'],
                 ['name' => ''],
             ]),
@@ -67,7 +68,7 @@ final class McpToolCatalogBuilderTest extends TestCase
 
         // Sanitized mapping, field fallbacks, empty-name skip.
         $this->assertSame([
-            ['hatfieldName' => 'first_get_data', 'serverName' => 'first', 'mcpName' => 'get$data', 'description' => 'A', 'inputSchema' => ['type' => 'object']],
+            ['hatfieldName' => 'first_get_data', 'serverName' => 'first', 'mcpName' => 'get$data', 'description' => 'A', 'inputSchema' => ['type' => 'object'], 'outputSchema' => $outputSchema],
             ['hatfieldName' => 'first_unknown', 'serverName' => 'first', 'mcpName' => '___', 'description' => '', 'inputSchema' => []],
         ], $array['servers']['first']['tools']);
         $this->assertSame('my_server_read', $array['servers']['my server!']['tools'][0]['hatfieldName']);

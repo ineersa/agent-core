@@ -77,6 +77,7 @@ final class ToolRegistry implements ToolRegistryInterface
                 executionMode: $definition->executionMode,
                 timeoutSeconds: $definition->timeoutSeconds,
                 mainOnly: $definition->mainOnly,
+                outputJsonSchema: $definition->outputJsonSchema,
             );
         }
     }
@@ -92,6 +93,7 @@ final class ToolRegistry implements ToolRegistryInterface
         ?int $timeoutSeconds = null,
         ?string $extensionOwnerClass = null,
         bool $mainOnly = false,
+        ?array $outputJsonSchema = null,
     ): void {
         if ('' === $name || '' === $description) {
             throw new \InvalidArgumentException(\sprintf('Tool name and description must be non-empty strings, got name="%s" description="%s".', $name, $description));
@@ -107,6 +109,7 @@ final class ToolRegistry implements ToolRegistryInterface
             description: $description,
             handler: $handler,
             parametersJsonSchema: $parametersJsonSchema,
+            outputJsonSchema: $outputJsonSchema,
             promptLine: $promptLine,
             promptGuidelines: $promptGuidelines,
             executionMode: $executionMode,
@@ -123,6 +126,7 @@ final class ToolRegistry implements ToolRegistryInterface
         object $handler,
         array $parametersJsonSchema,
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
+        ?array $outputJsonSchema = null,
     ): void {
         if ('' === $name || '' === $description) {
             throw new \InvalidArgumentException(\sprintf('Dynamic tool name and description must be non-empty strings, got name="%s" description="%s".', $name, $description));
@@ -140,6 +144,8 @@ final class ToolRegistry implements ToolRegistryInterface
             && $existing->handler === $handler
             && $existing->description === $description
             && $existing->parametersJsonSchema === $parametersJsonSchema
+            // Compare schema data, not the identity of nested SDK schema objects.
+            && json_encode($existing->outputJsonSchema, \JSON_THROW_ON_ERROR) === json_encode($outputJsonSchema, \JSON_THROW_ON_ERROR)
             && $existing->executionMode === $executionMode
         ) {
             return;
@@ -155,6 +161,7 @@ final class ToolRegistry implements ToolRegistryInterface
             description: $description,
             handler: $handler,
             parametersJsonSchema: $parametersJsonSchema,
+            outputJsonSchema: $outputJsonSchema,
             promptLine: '',  // dynamic tools have no prompt metadata
             promptGuidelines: [],
             executionMode: $executionMode,

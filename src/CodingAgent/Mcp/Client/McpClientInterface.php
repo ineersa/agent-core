@@ -45,7 +45,7 @@ interface McpClientInterface
      * Returns an array of tool definitions as associative arrays,
      * each containing at minimum 'name', 'description', and 'inputSchema' keys.
      *
-     * @return list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>
+     * @return list<array{name: string, description?: string|null, inputSchema: array<string, mixed>, outputSchema?: array<string, mixed>}>
      */
     public function listTools(): array;
 

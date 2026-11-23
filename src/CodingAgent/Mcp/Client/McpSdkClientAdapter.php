@@ -62,7 +62,7 @@ final class McpSdkClientAdapter implements McpClientInterface
     }
 
     /**
-     * @return list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>
+     * @return list<array{name: string, description?: string|null, inputSchema: array<string, mixed>, outputSchema?: array<string, mixed>}>
      */
     public function listTools(): array
     {
@@ -74,11 +74,15 @@ final class McpSdkClientAdapter implements McpClientInterface
             $result = $this->client->listTools($cursor);
 
             foreach ($result->tools as $tool) {
-                $tools[] = [
+                $definition = [
                     'name' => $tool->name,
                     'description' => $tool->description,
                     'inputSchema' => $tool->inputSchema,
                 ];
+                if (null !== $tool->outputSchema) {
+                    $definition['outputSchema'] = $tool->outputSchema;
+                }
+                $tools[] = $definition;
             }
 
             $cursor = $result->nextCursor;
@@ -92,8 +96,6 @@ final class McpSdkClientAdapter implements McpClientInterface
             }
         } while (null !== $cursor);
 
-        // Return type matches McpClientInterface::listTools(): list<array{name, description, inputSchema}>
-        // The array shapes are derived from SDK Tool properties — inputSchema is a JSON Schema shape.
         return $tools;
     }
 

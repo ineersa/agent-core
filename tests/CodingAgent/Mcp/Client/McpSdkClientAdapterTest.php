@@ -30,8 +30,9 @@ class McpSdkClientAdapterTest extends TestCase
     public function testListToolsCollectsEveryPage(): void
     {
         $schema = ['type' => 'object', 'properties' => ['value' => ['type' => 'string']], 'required' => []];
+        $outputSchema = ['type' => 'object', 'properties' => ['value' => ['type' => 'string']]];
         $pages = [
-            new ListToolsResult([Tool::fromArray(['name' => 'first', 'description' => 'First tool', 'inputSchema' => $schema])], 'page-2'),
+            new ListToolsResult([Tool::fromArray(['name' => 'first', 'description' => 'First tool', 'inputSchema' => $schema, 'outputSchema' => $outputSchema])], 'page-2'),
             new ListToolsResult([], 'page-3'),
             new ListToolsResult([Tool::fromArray(['name' => 'last', 'inputSchema' => $schema])]),
         ];
@@ -48,7 +49,7 @@ class McpSdkClientAdapterTest extends TestCase
         $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
 
         $this->assertSame([
-            ['name' => 'first', 'description' => 'First tool', 'inputSchema' => $schema],
+            ['name' => 'first', 'description' => 'First tool', 'inputSchema' => $schema, 'outputSchema' => $outputSchema],
             ['name' => 'last', 'description' => null, 'inputSchema' => $schema],
         ], $adapter->listTools());
     }
