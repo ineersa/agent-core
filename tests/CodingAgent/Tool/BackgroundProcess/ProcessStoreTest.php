@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\BackgroundProcess;
 
+use Amp\Process\Process;
+use Amp\TimeoutCancellation;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -112,6 +115,49 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
             $this->assertSame($before, $manager->getUnitOfWork()->size());
             $this->assertNull($store->decide($process->id, 'foreign', BashProcessActionEnum::Stop, $lifecycle));
         } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public function testAcceptedForcedStopRemainsObservableUntilNativeExit(): void
+    {
+        $directory = TestDirectoryIsolation::createProjectTempDir('bash-stop-observation');
+        $previous = getenv('HATFIELD_CONSUMER_STDOUT_EVENTS');
+        putenv('HATFIELD_CONSUMER_STDOUT_EVENTS=0');
+        $child = Process::start([\PHP_BINARY, '-r', 'stream_get_contents(STDIN);']);
+        try {
+            $manager = self::getContainer()->get(EntityManagerInterface::class);
+            $store = self::getContainer()->get(ProcessStore::class);
+            $lifecycle = self::getContainer()->get(ProcessLifecycle::class);
+            $sink = self::getContainer()->get(InMemoryRuntimeEventSink::class);
+            $record = new BackgroundProcess();
+            $record->sessionId = 'forced-stop-owner';
+            $record->pid = $child->getPid();
+            $record->statusPath = $directory.'/status';
+            $record->backgroundedAt = new \DateTimeImmutable();
+            $record->startedAt = $record->backgroundedAt;
+            $manager->persist($record);
+            $manager->flush();
+            $this->assertTrue($store->decide($record->id, $record->sessionId, BashProcessActionEnum::Stop, $lifecycle)->signalRequired);
+            $lifecycle->writeStopMarker($record->statusPath);
+            foreach ([BashProcessActionEnum::SettleStop, BashProcessActionEnum::SettleTimeout, BashProcessActionEnum::Observe] as $action) {
+                $this->assertFalse($store->decide($record->id, $record->sessionId, $action, $lifecycle)->finished);
+            }
+            $this->assertCount(1, $store->unfinishedSnapshots([$record->sessionId]));
+            $this->assertSame([], iterator_to_array($sink->drain($record->sessionId)));
+            $child->getStdin()->close();
+            $this->assertSame(0, $child->join(new TimeoutCancellation(2)));
+            $this->assertTrue($store->decide($record->id, $record->sessionId, BashProcessActionEnum::Observe, $lifecycle)->finished);
+            $store->decide($record->id, $record->sessionId, BashProcessActionEnum::Observe, $lifecycle);
+            $events = iterator_to_array($sink->drain($record->sessionId));
+            $this->assertCount(1, $events);
+            $this->assertSame('background_job.ended', $events[0]->type);
+            $this->assertSame(['job_id' => 'bash:'.$record->id], $events[0]->payload);
+            $this->assertSame([], $store->unfinishedSnapshots([$record->sessionId]));
+            $this->assertNull($store->snapshot($record->id)->completionNotifiedAt);
+        } finally {
+            $child->getStdin()->close();
+            putenv(false === $previous ? 'HATFIELD_CONSUMER_STDOUT_EVENTS' : 'HATFIELD_CONSUMER_STDOUT_EVENTS='.$previous);
             TestDirectoryIsolation::removeDirectory($directory);
         }
     }

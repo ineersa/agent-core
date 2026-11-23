@@ -160,8 +160,14 @@ final class RuntimeEventEmitter
     }
 
     /**
-     * Whether the emitter has been asked to shut down.
+     * Whether this process has opened the controller output.
      */
+    public function isOpen(): bool
+    {
+        return null !== $this->stdout;
+    }
+
+    /** Whether the emitter has been asked to shut down. */
     public function isShuttingDown(): bool
     {
         return $this->shuttingDown;

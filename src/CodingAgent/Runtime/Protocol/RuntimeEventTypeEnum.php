@@ -27,6 +27,9 @@ enum RuntimeEventTypeEnum: string
     case RunCancelled = 'run.cancelled';
 
     /** Process-client-only notification; controller stdout cannot authorize a replacement attach. */
+    case BackgroundJobStarted = 'background_job.started';
+    case BackgroundJobEnded = 'background_job.ended';
+
     case SessionRestoring = 'session.restoring';
 
     // ── User input ──────────────────────────────────────────────────────

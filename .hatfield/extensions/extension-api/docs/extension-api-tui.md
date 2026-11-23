@@ -58,6 +58,13 @@ Implement `TuiSessionCloseObserverInterface` to receive
 quit. It does not fire for drafts, session switches, settings reloads, or abrupt
 process exits. Keep any best-effort shutdown work bounded.
 
+Implement `TuiBackgroundJobObserverInterface` for live, best-effort background
+job start and end observations, including while the selected session is idle.
+The DTO contains only the selected owning session ID, opaque job ID and
+transition type. This is not a list of jobs: observations are not replayed
+on attach or selection, and other sessions are not attributed to the selection.
+The initial producer is native Bash.
+
 ## UX guidelines
 
 - Keep overlays dismissible (Esc) where practical.

@@ -15,6 +15,9 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Psr\Log\LoggerInterface;
 
@@ -46,6 +49,8 @@ final class RuntimeEventPoller
 
     /** @var list<TuiRunObserverInterface> */
     private array $runObservers = [];
+    /** @var list<TuiBackgroundJobObserverInterface> */
+    private array $backgroundJobObservers = [];
 
     /**
      * Scalar boundaries from events that finished apply in the latest poll.
@@ -60,6 +65,11 @@ final class RuntimeEventPoller
         private readonly SessionTranscriptProviderInterface $sessionTranscriptProvider,
     ) {
         $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation();
+    }
+
+    public function observeBackgroundJob(TuiBackgroundJobObserverInterface $observer): void
+    {
+        $this->backgroundJobObservers[] = $observer;
     }
 
     public function observeRun(TuiRunObserverInterface $observer): void
@@ -223,6 +233,13 @@ final class RuntimeEventPoller
                 // view before the sealed snapshot is mounted. After mount, only
                 // durable catch-up is accepted until session.ready.
                 if (!$state->sessionReady && (!$state->bootstrapMounted || 0 === $seq)) {
+                    continue;
+                }
+
+                if (\in_array($runtimeEvent->type, [RuntimeEventTypeEnum::BackgroundJobStarted->value, RuntimeEventTypeEnum::BackgroundJobEnded->value], true)) {
+                    if (0 === $seq && $state->sessionReady && $runtimeEvent->runId === $state->sessionId) {
+                        $this->notifyBackgroundJobObservers($runtimeEvent);
+                    }
                     continue;
                 }
 
@@ -520,6 +537,26 @@ final class RuntimeEventPoller
         $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation();
 
         return $observation;
+    }
+
+    private function notifyBackgroundJobObservers(RuntimeEvent $event): void
+    {
+        $jobId = $event->payload['job_id'] ?? null;
+        if (!\is_string($jobId) || 1 !== preg_match('/\A[a-zA-Z0-9_.:-]{1,128}\z/', $jobId)) {
+            return;
+        }
+        $observation = new TuiBackgroundJobObservationDTO($event->runId, $jobId, RuntimeEventTypeEnum::BackgroundJobStarted->value === $event->type
+            ? TuiBackgroundJobObservationTypeEnum::Started : TuiBackgroundJobObservationTypeEnum::Ended);
+        foreach ($this->backgroundJobObservers as $observer) {
+            try {
+                $observer->onTuiBackgroundJobObserved($observation);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('extension.tui_background_job_observer_failed', [
+                    'component' => 'tui_extension', 'event_type' => 'tui_background_job_observer_failed',
+                    'run_id' => $event->runId, 'session_id' => $event->runId, 'exception_class' => $exception::class,
+                ]);
+            }
+        }
     }
 
     private function notifyRunObservers(RuntimeEvent $event): void

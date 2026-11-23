@@ -19,6 +19,9 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -142,6 +145,27 @@ final class RuntimeEventPollerTest extends TestCase
         // Empty projected changes returns null (nothing to paint)
         $this->assertNull($result);
         $this->assertSame(5, $this->state->lastSeq);
+    }
+
+    public function testIdleSelectedSessionObservesOnlyLiveOwnedBackgroundJobs(): void
+    {
+        $observer = $this->createMock(TuiBackgroundJobObserverInterface::class);
+        $observer->expects($this->once())->method('onTuiBackgroundJobObserved')->with(
+            new TuiBackgroundJobObservationDTO('test-run', 'bash:3', TuiBackgroundJobObservationTypeEnum::Ended),
+        );
+        $this->poller->observeBackgroundJob($observer);
+        $this->state->sessionId = 'test-run';
+        $this->state->activity = RunActivityStateEnum::Idle;
+        $this->state->lastSeq = 9;
+        $this->client->method('events')->willReturn([
+            new RuntimeEvent(RuntimeEventTypeEnum::BackgroundJobStarted->value, 'other', 0, ['job_id' => 'bash:1']),
+            new RuntimeEvent(RuntimeEventTypeEnum::BackgroundJobStarted->value, 'test-run', 10, ['job_id' => 'bash:2']),
+            new RuntimeEvent(RuntimeEventTypeEnum::BackgroundJobEnded->value, 'test-run', 0, ['job_id' => 'bash:3']),
+        ]);
+        $this->projector->expects($this->never())->method('accept');
+
+        $this->assertNull($this->poller->poll($this->state, $this->client));
+        $this->assertSame(9, $this->state->lastSeq);
     }
 
     public function testPollDeduplicatesBySeq(): void

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Extension\ExtensionManager;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
@@ -28,6 +29,9 @@ final class TuiProjectExtensionRegistrar implements TuiListenerRegistrar
         foreach ($this->extensionManager->getTuiExtensions() as $extension) {
             if ($extension instanceof TuiExtensionInterface) {
                 $extension->registerTui($bridge);
+            }
+            if ($extension instanceof TuiBackgroundJobObserverInterface) {
+                $context->sessionServices->parentPoller->observeBackgroundJob($extension);
             }
             if ($extension instanceof TuiRunObserverInterface) {
                 $context->sessionServices->parentPoller->observeRun($extension);

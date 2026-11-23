@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedExtensionItemDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
@@ -48,7 +49,7 @@ final class ExtensionManager
     /** @var list<LoadedExtensionItemDTO> */
     private array $loadOutcomes = [];
 
-    /** @var list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface|TuiSessionCloseObserverInterface> */
+    /** @var list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface|TuiSessionCloseObserverInterface|TuiBackgroundJobObserverInterface> */
     private array $tuiExtensions = [];
 
     private bool $loaded = false;
@@ -63,7 +64,7 @@ final class ExtensionManager
     }
 
     /**
-     * @return list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface|TuiSessionCloseObserverInterface>
+     * @return list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface|TuiSessionCloseObserverInterface|TuiBackgroundJobObserverInterface>
      */
     public function getTuiExtensions(): array
     {
@@ -303,7 +304,7 @@ final class ExtensionManager
         }
 
         $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, true);
-        if ($instance instanceof TuiExtensionInterface || $instance instanceof TuiSessionObserverInterface || $instance instanceof TuiRunObserverInterface || $instance instanceof TuiSessionCloseObserverInterface) {
+        if ($instance instanceof TuiExtensionInterface || $instance instanceof TuiSessionObserverInterface || $instance instanceof TuiRunObserverInterface || $instance instanceof TuiSessionCloseObserverInterface || $instance instanceof TuiBackgroundJobObserverInterface) {
             $this->tuiExtensions[] = $instance;
         }
 
