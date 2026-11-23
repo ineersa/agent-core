@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Mcp\Client;
 
 use Ineersa\CodingAgent\Mcp\Config\McpServerDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
-use Mcp\Client as SdkClient;
+use Mcp\Client\Client as SdkClient;
 use Mcp\Client\Transport\HttpTransport;
 use Mcp\Client\Transport\StdioTransport;
 use Mcp\Client\Transport\TransportInterface;
