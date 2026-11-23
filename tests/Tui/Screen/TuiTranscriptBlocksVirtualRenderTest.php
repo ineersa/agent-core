@@ -610,7 +610,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
             $ansi = $harness->ansiOutput();
             $this->assertStringContainsString(
                 $fails
-                    ? 'Selected extension "MissingExt" is not in extensions.enabled (bearer <redacted>'
+                    ? 'RuntimeException: Selected extension "MissingExt" is not in extensions.enabled (bearer <redacted>'
                     : 'Selected extension "MissingExt" is not in extensions.enabled (Bearer sk-secret-token)',
                 $plain,
             );
@@ -619,7 +619,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
             }
             $this->assertMatchesRegularExpression(
                 $fails
-                    ? '/\x1b\[38;2;255;51;102m\s*Selected extension "MissingExt" is not in extensions.enabled \(bearer <redacted>\)?/'
+                    ? '/\x1b\[38;2;255;51;102m\s*RuntimeException: Selected extension "MissingExt" is not in extensions.enabled \(bearer <redacted>\)?/'
                     : '/\x1b\[38;2;57;255;20m\s*Selected extension "MissingExt" is not in extensions.enabled \(Bearer sk-secret-token\)/',
                 $ansi,
                 $phase.' result must use the outcome color, not classify the text',
