@@ -10,8 +10,7 @@ use function Symfony\Component\String\u;
  * Bounds and redacts diagnostic text for model-visible tool failures and logs.
  *
  * Keeps actionable exception text while removing common secret-bearing
- * substrings. Does not include stack traces, argument dumps, or exception
- * chains — callers choose which single message string to sanitize.
+ * substrings. Exception context omits stack traces and argument dumps.
  */
 final class DiagnosticMessageSanitizer
 {
@@ -37,6 +36,22 @@ final class DiagnosticMessageSanitizer
     public static function sanitize(string $message, int $maxLength = self::MAX_LENGTH): string
     {
         return u(self::redact($message))->truncate($maxLength, '...')->toString();
+    }
+
+    /** @return list<array{class: class-string, message: string, file: string, line: int}> */
+    public static function exceptionChain(\Throwable $exception): array
+    {
+        $chain = [];
+        do {
+            $chain[] = [
+                'class' => $exception::class,
+                'message' => self::sanitize($exception->getMessage()),
+                'file' => $exception->getFile(),
+                'line' => $exception->getLine(),
+            ];
+        } while (null !== ($exception = $exception->getPrevious()));
+
+        return $chain;
     }
 
     /** Explicit tool output already has the central output-cap contract. */

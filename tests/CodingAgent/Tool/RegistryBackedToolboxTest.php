@@ -688,7 +688,7 @@ final class RegistryBackedToolboxTest extends TestCase
             $toolbox->execute(new ToolCall('call-failed', 'failing', ['path' => 'x']));
             $this->fail('Expected ToolCallException with actionable handler cause');
         } catch (ToolCallException $caught) {
-            $this->assertSame('boom', $caught->getMessage());
+            $this->assertSame('RuntimeException: boom', $caught->getMessage());
             $this->assertFalse($caught->retryable());
             $this->assertSame($exception, $caught->getPrevious());
         }

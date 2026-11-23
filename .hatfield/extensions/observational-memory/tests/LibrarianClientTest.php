@@ -49,21 +49,28 @@ final class LibrarianClientTest extends TestCase
         $this->assertSame(['ensure_project'], $calls);
     }
 
-    public function testTransportFailureResetsAndNextInvocationInitializesOnce(): void
+    public function testTypeErrorPropagatesAndNextInvocationInitializesOnce(): void
     {
         $calls = [];
         $fail = true;
-        $client = $this->client($calls, static function (string $tool) use (&$fail): array {
+        $source = new \TypeError('Librarian HTTP fixture type mismatch');
+        $client = $this->client($calls, static function (string $tool) use (&$fail, $source): array {
             if ('memory_search' === $tool && $fail) {
                 $fail = false;
-                throw new \RuntimeException('private provider detail');
+                throw $source;
             }
 
             return ['ok' => true];
         });
-        $result = $client->call('memory_search', ['query' => 'private query']);
-        $this->assertSame('librarian_unavailable', $result['error']);
-        $this->assertStringNotContainsString('private', json_encode($result));
+        try {
+            $client->call('memory_search', ['query' => 'private query']);
+            $this->fail('Expected the transport failure to propagate.');
+        } catch (\Throwable $error) {
+            while (null !== $error->getPrevious()) {
+                $error = $error->getPrevious();
+            }
+            $this->assertSame($source, $error);
+        }
         $this->assertTrue($client->call('memory_search', ['query' => 'identifier'])['ok']);
         $this->assertSame(['ensure_project', 'memory_search', 'ensure_project', 'memory_search'], $calls);
     }
@@ -125,7 +132,12 @@ final class LibrarianClientTest extends TestCase
         foreach (['{"ok":true}', null] as $payload) {
             $calls = [];
             $client = $this->client($calls, static fn (string $tool): mixed => 'ensure_project' === $tool ? ['ok' => true] : $payload);
-            $this->assertSame('librarian_unavailable', $client->call('recall', ['id' => str_repeat('a', 12)])['error']);
+            try {
+                $client->call('recall', ['id' => str_repeat('a', 12)]);
+                $this->fail('Expected invalid structured content to throw.');
+            } catch (\UnexpectedValueException $error) {
+                $this->assertSame('Librarian did not return structured content.', $error->getMessage());
+            }
             $this->assertSame(['ensure_project', 'recall'], $calls);
         }
     }
@@ -135,7 +147,9 @@ final class LibrarianClientTest extends TestCase
         $calls = [];
         $client = $this->client($calls, static fn (string $tool): array => 'ensure_project' === $tool
             ? ['ok' => true] : ['ok' => true, 'content' => str_repeat('x', 1_048_576)]);
-        $this->assertSame('librarian_unavailable', $client->call('recall', ['id' => str_repeat('a', 12)])['error']);
+        $this->expectException(\LengthException::class);
+        $this->expectExceptionMessage('Librarian response exceeded the payload limit.');
+        $client->call('recall', ['id' => str_repeat('a', 12)]);
     }
 
     public function testUnicodeAndSlashPayloadBudgetsMatchLibrarianEncoding(): void

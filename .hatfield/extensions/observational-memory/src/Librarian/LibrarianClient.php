@@ -150,7 +150,7 @@ final class LibrarianClient
                 return ['timed_out' => true, 'timeout_seconds' => $this->settings->timeoutSeconds, 'message' => 'Librarian request timed out.'];
             }
 
-            return ['ok' => false, 'isError' => true, 'error' => 'librarian_unavailable', 'message' => 'Librarian request failed; no local fallback was used.'];
+            throw $error;
         } finally {
             $this->cancellation = null;
             $this->deadlineNs = null;

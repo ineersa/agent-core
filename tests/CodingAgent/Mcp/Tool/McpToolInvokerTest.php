@@ -103,6 +103,23 @@ final class McpToolInvokerTest extends TestCase
         $this->assertSame(7, $manager->timeoutSeconds);
     }
 
+    public function testInvocationPreservesProgrammingErrorWrappedByConnectionLayer(): void
+    {
+        $source = new \TypeError('Invalid reply type');
+        $wrapped = new McpClientInvocationException('Connection wrapper', previous: $source);
+        $manager = $this->createStub(McpConnectionManagerInterface::class);
+        $manager->method('callTool')->willThrowException($wrapped);
+        $this->assertActionableFailure($manager, 'tool.invoke_failed', 'TypeError: Invalid reply type', $wrapped);
+    }
+
+    public function testMappingPreservesActualError(): void
+    {
+        $manager = $this->createStub(McpConnectionManagerInterface::class);
+        // Deliberately break the adapter contract at runtime to exercise the mapping catch.
+        $manager->method('callTool')->willReturn(['content' => null, 'isError' => false]);
+        $this->assertActionableFailure($manager, 'tool.map_failed', 'TypeError: '.McpResultMapper::class.'::mergeTextContent()');
+    }
+
     public function testInvokeKeepsInvocationFailuresRetryable(): void
     {
         $manager = new class implements McpConnectionManagerInterface {
@@ -137,9 +154,39 @@ final class McpToolInvokerTest extends TestCase
             );
             $this->fail('Generic MCP invocation failures must become retryable ToolCallException.');
         } catch (ToolCallException $e) {
-            $this->assertSame('MCP server dropped the connection.', $e->getMessage());
+            $this->assertSame(McpClientInvocationException::class.': MCP server dropped the connection.', $e->getMessage());
             $this->assertTrue($e->retryable());
             $this->assertInstanceOf(McpClientInvocationException::class, $e->getPrevious());
+        }
+    }
+
+    private function assertActionableFailure(McpConnectionManagerInterface $manager, string $event, string $message, ?\Throwable $original = null): void
+    {
+        $accessor = new StackToolExecutionContextAccessor();
+        $logger = new TestLogger();
+        $invoker = new McpToolInvoker($manager, $accessor, new McpResultMapper(), $logger);
+        try {
+            $accessor->with(
+                new ToolContext('run-fail', 1, 'call-fail', 'fixture_tool', new NullCancellationToken(), null),
+                static fn () => $invoker->invoke('fixture', 'tool', []),
+            );
+            $this->fail('Expected a failed tool invocation.');
+        } catch (ToolCallException $e) {
+            $this->assertStringStartsWith($message, $e->getMessage());
+            $this->assertFalse($e->retryable());
+            $this->assertNull($e->hint());
+            $cause = $e->getPrevious();
+            if (null !== $original) {
+                $this->assertSame($original, $cause);
+            } else {
+                $this->assertInstanceOf(\TypeError::class, $cause);
+            }
+            $log = $logger->records[0]['context'];
+            $this->assertSame($event, $log['event_type']);
+            $this->assertSame('run-fail', $log['session_id']);
+            $this->assertSame('call-fail', $log['tool_call_id']);
+            $this->assertSame($cause->getFile(), $log['exception_chain'][0]['file']);
+            $this->assertSame($cause->getLine(), $log['exception_chain'][0]['line']);
         }
     }
 }

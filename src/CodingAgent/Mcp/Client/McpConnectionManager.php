@@ -236,25 +236,9 @@ final class McpConnectionManager implements McpConnectionManagerInterface
 
             throw $e;
         } catch (\Throwable $e) {
-            // Log with structured context and sanitized message.
-            $this->logger->error('MCP tool call failed', [
-                'component' => 'mcp',
-                'event_type' => 'tool.call_failed',
-                'mcp_event' => 'tool.call_failed',
-                'run_id' => $runId,
-                'session_id' => $runId,
-                'server_name' => $serverName,
-                'mcp_tool_name' => $toolName,
-                'error_class' => $e::class,
-                'error_message' => self::sanitizeLogMessage($e->getMessage()),
-            ]);
-
-            // Remove the failed client so future attempts trigger reconnect
             $this->disconnectServer($runId, $serverName);
 
-            // Use sanitized error text so secrets/credentials never
-            // appear in LLM-visible exception messages.
-            throw new McpClientInvocationException(self::sanitizeLogMessage($e->getMessage()), (int) $e->getCode(), $e);
+            throw $e;
         }
     }
 
@@ -310,30 +294,15 @@ final class McpConnectionManager implements McpConnectionManagerInterface
      * and connects it.  Used as a one-shot recovery when a live
      * client is missing at tool-call time.
      *
-     * On failure the old client is cleaned up and the error is
-     * logged; callers must check getClient() after calling this.
+     * Connection failures propagate to the invoking tool; a missing
+     * server configuration leaves the client absent.
      */
     private function reconnectServer(string $runId, string $serverName): void
     {
         // Clean up any existing client first
         $this->disconnectServer($runId, $serverName);
 
-        try {
-            $config = $this->configLoader->load();
-        } catch (\Throwable $e) {
-            $this->logger->warning('MCP config load failed during reconnect', [
-                'component' => 'mcp',
-                'event_type' => 'client.reconnect_config_failed',
-                'mcp_event' => 'client.reconnect_config_failed',
-                'run_id' => $runId,
-                'session_id' => $runId,
-                'server_name' => $serverName,
-                'error_class' => $e::class,
-                'error_message' => self::sanitizeLogMessage($e->getMessage()),
-            ]);
-
-            return;
-        }
+        $config = $this->configLoader->load();
 
         $server = $config->servers[$serverName] ?? null;
         if (null === $server) {
@@ -349,30 +318,17 @@ final class McpConnectionManager implements McpConnectionManagerInterface
             return;
         }
 
-        try {
-            $client = $this->clientFactory->create($server);
-            $client->connect();
-            $this->clients[$this->clientKey($runId, $serverName)] = $client;
+        $client = $this->clientFactory->create($server);
+        $client->connect();
+        $this->clients[$this->clientKey($runId, $serverName)] = $client;
 
-            $this->logger->info('MCP server reconnected for tool call', [
-                'component' => 'mcp',
-                'event_type' => 'client.reconnected',
-                'mcp_event' => 'client.reconnected',
-                'run_id' => $runId,
-                'session_id' => $runId,
-                'server_name' => $serverName,
-            ]);
-        } catch (\Throwable $e) {
-            $this->logger->warning('MCP server reconnect failed', [
-                'component' => 'mcp',
-                'event_type' => 'client.reconnect_failed',
-                'mcp_event' => 'client.reconnect_failed',
-                'run_id' => $runId,
-                'session_id' => $runId,
-                'server_name' => $serverName,
-                'error_class' => $e::class,
-                'error_message' => self::sanitizeLogMessage($e->getMessage()),
-            ]);
-        }
+        $this->logger->info('MCP server reconnected for tool call', [
+            'component' => 'mcp',
+            'event_type' => 'client.reconnected',
+            'mcp_event' => 'client.reconnected',
+            'run_id' => $runId,
+            'session_id' => $runId,
+            'server_name' => $serverName,
+        ]);
     }
 }
