@@ -124,6 +124,19 @@ YAML);
         $this->assertTrue($glmFlash->compatibility?->supportsReasoningEffort);
         $this->assertTrue($glmFlash->compatibility?->zaiToolStream);
 
+        $glm54 = $ai->providers['zai']->models['glm-5.4'];
+        $this->assertSame('GLM 5.4', $glm54->name);
+        $this->assertSame(['text', 'image', 'video', 'pdf'], $glm54->input);
+        $this->assertSame(1000000, $glm54->contextWindow);
+        $this->assertSame(131072, $glm54->maxTokens);
+        $this->assertSame($glm->thinkingLevelMap, $glm54->thinkingLevelMap);
+        $this->assertTrue($glm54->compatibility?->supportsReasoningEffort);
+        $this->assertTrue($glm54->compatibility?->zaiToolStream);
+        $this->assertTrue($glm54->toolCalling);
+        $this->assertTrue($glm54->reasoning);
+        // GLM-5.4 is Coding Plan only and has no published pay-as-you-go rates.
+        $this->assertNull($glm54->cost);
+
         $astra = $ai->providers['openai-codex']->models['gpt-6-astra'];
         $this->assertSame(272000, $astra->contextWindow);
         $this->assertSame(128000, $astra->maxTokens);

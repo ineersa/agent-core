@@ -103,6 +103,28 @@ unlimited. Regular API keys may incur ordinary API charges. Hatfield's token cos
 display uses API-equivalent prices, not your subscription balance or bill.
 Hatfield does not currently query Mistral subscription quota.
 
+### Z.ai (GLM)
+
+The `zai` provider ships `glm-5.3`, `glm-5.3-flash`, and `glm-5.4` against the
+GLM Coding Plan endpoint (`https://api.z.ai/api/coding/paas/v4`). Sparse settings
+stay sufficient:
+
+```yaml
+ai:
+  providers:
+    zai:
+      enabled: true
+      api_key: env:ZAI_API_KEY
+```
+
+**GLM 5.4** (released 2026-11-23, multimodal: text/image/video/pdf → text, 1M
+context, 128K output, thinking levels `low`/`high`/`max`) is available through the
+GLM Coding Plan only; its Model API access is still pending security assessment and
+no pay-as-you-go rates are published, so the catalog entry intentionally omits
+`cost` (unknown, not free). Requests to GLM-5.2/GLM-5.1 route to GLM-5.3 as usual.
+The bundled `thinking_level_map` and `zai_tool_stream`/`supports_reasoning_effort`
+compatibility mirror GLM 5.3/Flash.
+
 Common fields:
 
 | Field | Meaning |
