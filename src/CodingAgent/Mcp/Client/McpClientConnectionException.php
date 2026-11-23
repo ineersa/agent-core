@@ -7,9 +7,9 @@ namespace Ineersa\CodingAgent\Mcp\Client;
 /**
  * Hatfield-owned exception for MCP client connection failures.
  *
- * This wraps vendor SDK connection exceptions so that the Hatfield
- * client boundary never leaks {@see \Mcp\Client\Exception\ConnectionException}
- * or any other vendor type to callers outside {@see McpSdkClientAdapter}.
+ * The adapter raises this while connecting and keeps the SDK exception as
+ * the cause. Connection failures during an established tool call are mapped
+ * to {@see McpClientInvocationException} instead.
  */
 final class McpClientConnectionException extends \RuntimeException
 {

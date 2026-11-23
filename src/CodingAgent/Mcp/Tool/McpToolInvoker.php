@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Mcp\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\CodingAgent\Mcp\Client\McpClientConnectionException;
 use Ineersa\CodingAgent\Mcp\Client\McpClientInterruptedException;
 use Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
+use Mcp\Client\Exception\ConnectionException;
+use Mcp\Client\Exception\RequestException;
 use Psr\Log\LoggerInterface;
+use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 
 /**
  * Shared runtime invoker for MCP-backed dynamic tools.
@@ -64,29 +69,8 @@ final readonly class McpToolInvoker
             );
         } catch (McpClientInterruptedException $e) {
             throw new ToolCallException(error: $e->getMessage(), retryable: false, hint: 'The MCP tool call was cancelled or timed out.', previous: $e);
-        } catch (McpClientInvocationException $e) {
-            // Client-layer failure (missing client after reconnect,
-            // SDK error, connection drop).  Translate to ToolCallException
-            // so the existing ToolExecutor pipeline handles it.
-            //
-            // Mark retryable: connection/client errors are often transient
-            // and the next attempt may succeed after a fresh reconnect.
-            throw new ToolCallException(error: $e->getMessage(), retryable: true, hint: 'The MCP server could not complete the tool call. The request may succeed if retried.', previous: $e);
         } catch (\Throwable $e) {
-            $this->logger->error('Unexpected MCP tool invocation failure', [
-                'component' => 'mcp',
-                'event_type' => 'tool.invoke_failed',
-                'mcp_event' => 'tool.invoke_failed',
-                'run_id' => $context->runId(),
-                'session_id' => $context->runId(),
-                'server_name' => $serverName,
-                'mcp_tool_name' => $mcpName,
-                'tool_call_id' => $context->toolCallId(),
-                'error_class' => $e::class,
-                'error_message' => $e->getMessage(),
-            ]);
-
-            throw new ToolCallException(error: 'MCP invocation failed unexpectedly.', retryable: false, hint: 'An unexpected error occurred in the MCP tool invocation layer.', previous: $e);
+            throw $this->failure($e, 'tool.invoke_failed', $serverName, $mcpName);
         }
 
         try {
@@ -106,7 +90,39 @@ final readonly class McpToolInvoker
             // Do not re-wrap; let the handler add server/tool context.
             throw $e;
         } catch (\Throwable $e) {
-            throw new ToolCallException(error: 'MCP result mapping failed.', retryable: false, hint: 'The MCP server response could not be mapped to tool output.', previous: $e);
+            throw $this->failure($e, 'tool.map_failed', $serverName, $mcpName);
         }
+    }
+
+    private function failure(\Throwable $exception, string $event, string $serverName, string $mcpName): ToolCallException
+    {
+        $context = $this->contextAccessor->requireCurrent();
+        $this->logger->error('mcp.'.$event, [
+            'component' => 'mcp', 'event_type' => $event, 'mcp_event' => $event,
+            'run_id' => $context->runId(), 'session_id' => $context->runId(),
+            'server_name' => $serverName, 'mcp_tool_name' => $mcpName,
+            'tool_call_id' => $context->toolCallId(),
+            'error_class' => $exception::class,
+            'error_message' => DiagnosticMessageSanitizer::sanitize($exception->getMessage()),
+            'exception_chain' => DiagnosticMessageSanitizer::exceptionChain($exception),
+        ]);
+
+        // The SDK can wrap local errors in connection exceptions. Classify the
+        // originating error rather than recommending a retry for the wrapper.
+        $origin = $exception;
+        while (null !== $origin->getPrevious()) {
+            $origin = $origin->getPrevious();
+        }
+        $retryable = 'tool.invoke_failed' === $event && ($origin instanceof TransportExceptionInterface
+            || $origin instanceof ConnectionException
+            || $origin instanceof RequestException
+            || $origin instanceof McpClientConnectionException
+            || $origin instanceof McpClientInvocationException);
+
+        return new ToolCallException(
+            error: DiagnosticMessageSanitizer::sanitize($origin::class.': '.$origin->getMessage()),
+            retryable: $retryable,
+            previous: $exception,
+        );
     }
 }

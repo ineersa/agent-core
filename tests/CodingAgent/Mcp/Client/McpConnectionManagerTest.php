@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Mcp\Client\McpClientConnectionException;
 use Ineersa\CodingAgent\Mcp\Client\McpClientInterruptedException;
 use Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManager;
@@ -154,6 +155,24 @@ class McpConnectionManagerTest extends TestCase
 
         // Cleanup
         $this->manager->disconnectAll('test-run');
+    }
+
+    public function testConnectionFailureDuringToolCallPreservesSdkCause(): void
+    {
+        $port = $this->findAvailablePort();
+        $this->assertNotNull($port, 'No available port found for failed-HTTP test');
+
+        file_put_contents($this->projectDir.'/.hatfield/mcp.json', json_encode([
+            'mcpServers' => ['fixture' => ['url' => \sprintf('http://127.0.0.1:%d/mcp', $port)]],
+        ], \JSON_THROW_ON_ERROR));
+
+        try {
+            $this->manager->callTool('test-run', 'fixture', 'echo');
+            $this->fail('Expected the connection exception to propagate.');
+        } catch (McpClientConnectionException $error) {
+            $this->assertInstanceOf(\Mcp\Client\Exception\ConnectionException::class, $error->getPrevious());
+            $this->assertSame($error->getPrevious()->getMessage(), $error->getMessage());
+        }
     }
 
     public function testCancelledStdioCallLeavesConnectionUsable(): void

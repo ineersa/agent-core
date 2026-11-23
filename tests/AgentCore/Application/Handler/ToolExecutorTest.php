@@ -674,6 +674,43 @@ final class ToolExecutorTest extends TestCase
         $this->assertSame('./x.txt', $seen);
     }
 
+    public function testHandlerTypeErrorReachesFailedToolResultAndCorrelatedLog(): void
+    {
+        $error = new \TypeError('Decoder type mismatch; token=fixture-secret');
+        $logger = new TestLogger();
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'fixture',
+            description: 'Fixture',
+            parametersJsonSchema: [],
+            handler: static fn (array $arguments): never => throw new \RuntimeException('Decoder wrapper', previous: $error),
+            promptLine: 'fixture',
+        );
+        $toolbox = new RegistryBackedToolbox(
+            registry: $registry,
+            argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            schemaFactory: new Factory(new MapToolArgumentsDescriber()),
+            logger: $logger,
+        );
+        $executor = new ToolExecutor(defaultMode: 'parallel', maxParallelism: 4, toolbox: $toolbox, resultStore: new ToolExecutionResultStore());
+        $result = $executor->execute(ToolCallBuilder::create('call-diagnostic')->withToolName('fixture')->withArguments([])->build());
+
+        $this->assertTrue($result->isError);
+        $this->assertFalse($result->details['retryable']);
+        $this->assertStringContainsString('TypeError: Decoder type mismatch; token=<redacted>', $result->content[0]['text']);
+        $records = array_values(array_filter($logger->records, static fn (array $record): bool => 'tool.handler_failed' === $record['message']));
+        $this->assertCount(1, $records);
+        $log = $records[0]['context'];
+        $this->assertSame('call-diagnostic', $log['tool_call_id']);
+        $this->assertSame(\RuntimeException::class, $log['exception_chain'][0]['class']);
+        $this->assertSame([
+            'class' => \TypeError::class,
+            'message' => 'Decoder type mismatch; token=<redacted>',
+            'file' => $error->getFile(),
+            'line' => $error->getLine(),
+        ], $log['exception_chain'][1]);
+    }
+
     /** @param array<string, mixed> $arguments */
     #[DataProvider('invalidDtoArguments')]
     public function testArgumentResolutionFailureBecomesActionableNonRetryableErrorResult(array $arguments, string $message): void

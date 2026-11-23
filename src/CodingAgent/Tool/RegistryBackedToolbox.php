@@ -154,8 +154,19 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             // Preserve failed semantics while exposing a bounded actionable
             // cause instead of Symfony's generic getToolCallResult() text.
             // Do not dump stacks/args; sanitize only the previous message.
-            $cause = null !== $previous ? $previous->getMessage() : $e->getMessage();
-            throw new ToolCallException(DiagnosticMessageSanitizer::sanitize($cause, 8000), retryable: false, hint: 'Tool call: '.$rewrittenCall->getId().'. Inspect the recorded result and tool-specific diagnostic references before retrying.', previous: $previous ?? $e);
+            $cause = $previous ?? $e;
+            $context = $this->contextAccessor?->current();
+            $this->logger?->error('tool.handler_failed', [
+                'component' => 'tool', 'event_type' => 'tool.handler_failed',
+                'run_id' => $context?->runId(), 'session_id' => $context?->runId(),
+                'tool_name' => $rewrittenCall->getName(), 'tool_call_id' => $rewrittenCall->getId(),
+                'exception_chain' => DiagnosticMessageSanitizer::exceptionChain($cause),
+            ]);
+            $origin = $cause;
+            while (null !== $origin->getPrevious()) {
+                $origin = $origin->getPrevious();
+            }
+            throw new ToolCallException(DiagnosticMessageSanitizer::sanitize($origin::class.': '.$origin->getMessage(), 8000), retryable: false, hint: 'Tool call: '.$rewrittenCall->getId().'. Inspect the recorded result and tool-specific diagnostic references before retrying.', previous: $cause);
         }
     }
 

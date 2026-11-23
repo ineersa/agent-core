@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Mcp\Client\McpClientInterruptedException;
 use Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Ineersa\CodingAgent\Mcp\Tool\McpResultMapper;
@@ -56,18 +57,24 @@ final class McpToolHandlerTest extends TestCase
 
     public function testHandlerReWrapsInvokerToolCallException(): void
     {
-        $invoker = $this->makeInvokerThatThrows(
-            new ToolCallException('MCP server disconnected', retryable: false, hint: 'Check connectivity'),
-        );
-        $handler = new McpToolHandler('broken', 'fetch', $invoker);
+        $origin = new \TypeError('Invalid MCP reply type');
+        $connectionError = new McpClientInvocationException('Connection wrapper', previous: $origin);
+        $handler = new McpToolHandler('broken', 'fetch', $this->makeInvokerThatThrows($connectionError));
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('MCP tool "fetch" (server "broken"): MCP server disconnected');
-
-        $this->contextAccessor->with(
-            new ToolContext('run-1', 1, 'tc1', 'broken_fetch', new NullCancellationToken(), 30),
-            static fn () => $handler([]),
-        );
+        try {
+            $this->contextAccessor->with(
+                new ToolContext('run-1', 1, 'tc1', 'broken_fetch', new NullCancellationToken(), 30),
+                static fn () => $handler([]),
+            );
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertSame('MCP tool "fetch" (server "broken"): TypeError: Invalid MCP reply type', $e->getMessage());
+            $this->assertFalse($e->retryable());
+            $this->assertNull($e->hint());
+            $this->assertInstanceOf(ToolCallException::class, $e->getPrevious());
+            $this->assertSame($connectionError, $e->getPrevious()->getPrevious());
+            $this->assertSame($origin, $connectionError->getPrevious());
+        }
     }
 
     // ── Test thesis 3: Factory creates correct handlers ──
@@ -86,9 +93,8 @@ final class McpToolHandlerTest extends TestCase
 
     public function testHandlerPreservesHintFromInvokerException(): void
     {
-        $invoker = $this->makeInvokerThatThrows(
-            new ToolCallException('Server timeout', retryable: false, hint: 'Retry with smaller payload'),
-        );
+        $interruption = new McpClientInterruptedException('Server timeout');
+        $invoker = $this->makeInvokerThatThrows($interruption);
         $handler = new McpToolHandler('api', 'query', $invoker);
 
         try {
@@ -98,14 +104,11 @@ final class McpToolHandlerTest extends TestCase
             );
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('MCP tool "query" (server "api")', $e->getMessage());
-            $this->assertStringContainsString('Server timeout', $e->getMessage());
-            // The invoker translates McpClientInvocationException with its own hint;
-            // the handler preserves whatever hint the invoker sets.
-            $this->assertStringContainsString('could not complete', $e->hint());
-            // Client-layer exceptions are translated to retryable=true
-            // because connection/transport errors are often transient.
-            $this->assertTrue($e->retryable());
+            $this->assertSame('MCP tool "query" (server "api"): Server timeout', $e->getMessage());
+            $this->assertSame('The MCP tool call was cancelled or timed out.', $e->hint());
+            $this->assertFalse($e->retryable());
+            $this->assertInstanceOf(ToolCallException::class, $e->getPrevious());
+            $this->assertSame($interruption, $e->getPrevious()->getPrevious());
         }
     }
 
@@ -162,7 +165,7 @@ final class McpToolHandlerTest extends TestCase
 
             public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?\Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
             {
-                throw new McpClientInvocationException($this->exception->getMessage(), 0, $this->exception);
+                throw $this->exception;
             }
         };
 

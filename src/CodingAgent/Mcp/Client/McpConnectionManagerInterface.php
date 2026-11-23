@@ -63,8 +63,10 @@ interface McpConnectionManagerInterface
      *
      * @return array{content: list<array<string, mixed>>, isError: bool, structuredContent?: mixed}
      *
-     * @throws McpClientInvocationException on missing client after reconnect
-     * @throws McpClientInvocationException on SDK call failures
+     * @throws McpClientInvocationException  on missing client after reconnect or SDK connection failure during invocation
+     * @throws McpClientConnectionException  on SDK failure while connecting
+     * @throws McpClientInterruptedException on call interruption
+     * @throws \Throwable                    on other connect or call failures
      */
     public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array;
 }

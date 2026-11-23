@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use HelgeSverre\Toon\Toon;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\HatfieldExt\ObservationalMemory\Claude\ClaudeOmSettingsProvider;
 use Ineersa\HatfieldExt\ObservationalMemory\Claude\ObservationalMemoryMcpServerFactory;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
 use Ineersa\HatfieldExt\ObservationalMemory\Tool\OmToolRegistrationFactory;
+use Mcp\Client\Exception\ConnectionException;
 use Mcp\Server\Transport\StdioTransport;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -47,12 +50,11 @@ final class ObservationalMemoryMcpServerFactoryTest extends OmTestCase
     {
         yield 'results' => [['ok' => true, 'results' => []], false, ''];
         yield 'upstream tool error' => [['ok' => false, 'error' => 'project_unknown', 'message' => 'Unknown project.'], true, 'project_unknown'];
-        yield 'librarian unavailable' => [null, true, 'librarian_unavailable'];
     }
 
-    /** @param array<string, mixed>|null $searchResult null: every Librarian request fails */
+    /** @param array<string, mixed> $searchResult */
     #[DataProvider('librarianOutcomes')]
-    public function testToolErrorStatusFollowsTheSharedResult(?array $searchResult, bool $isError, string $error): void
+    public function testToolErrorStatusFollowsTheSharedResult(array $searchResult, bool $isError, string $error): void
     {
         $this->project("observational_memory:\n            librarian: {url: 'http://librarian.test/_mcp'}");
         $exec = $this->createStub(ExecInterface::class);
@@ -61,12 +63,77 @@ final class ObservationalMemoryMcpServerFactoryTest extends OmTestCase
         $responses = $this->exchange(
             [['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'memory_search', 'arguments' => ['query' => 'deploy']]]],
             exec: $exec,
-            http: null === $searchResult ? new MockHttpClient(new MockResponse('', ['http_code' => 503])) : $this->librarian($searchResult),
+            http: $this->librarian(static fn (): array => $searchResult),
         );
 
         $this->assertSame($isError, $responses[2]['result']['isError'] ?? false);
         $text = Toon::decode($responses[2]['result']['content'][0]['text']);
         $this->assertSame($isError ? $error : null, $text['error'] ?? null);
+    }
+
+    public function testLibrarianHttp503ReturnsAndLogsConnectionFailure(): void
+    {
+        $this->project("observational_memory:\n            librarian: {url: 'http://librarian.test/_mcp'}");
+        $exec = $this->createStub(ExecInterface::class);
+        $exec->method('exec')->willReturn(new ExecResultDTO($this->directory.'/project/.git'."\n".$this->directory.'/project/.git', '', 0));
+        $logger = new TestLogger();
+        $responses = $this->exchange([
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'memory_search', 'arguments' => ['query' => 'deploy']]],
+        ], exec: $exec, http: new MockHttpClient(static fn (): MockResponse => new MockResponse('', ['http_code' => 503])), logger: $logger);
+
+        $this->assertTrue($responses[2]['result']['isError']);
+        $message = 'Initialization failed: Server answered with HTTP 503 Service Unavailable.';
+        $this->assertSame(ConnectionException::class.': '.$message, $responses[2]['result']['content'][0]['text']);
+        $logs = array_values(array_filter($logger->records, static fn (array $record): bool => 'om.claude.tool_failed' === $record['message']));
+        $this->assertCount(1, $logs);
+        $chain = $logs[0]['context']['exception_chain'];
+        $origin = $chain[array_key_last($chain)];
+        $this->assertSame(ConnectionException::class, $origin['class']);
+        $this->assertSame($message, $origin['message']);
+        $this->assertStringEndsWith('/HttpTransport.php', $origin['file']);
+        $this->assertGreaterThan(0, $origin['line']);
+    }
+
+    public function testLibrarianTypeErrorIsReturnedAndLoggedWithoutStoppingServer(): void
+    {
+        $this->project("observational_memory:\n            librarian: {url: 'http://librarian.test/_mcp'}");
+        $exec = $this->createStub(ExecInterface::class);
+        $exec->method('exec')->willReturn(new ExecResultDTO($this->directory.'/project/.git'."\n".$this->directory.'/project/.git', '', 0));
+        $logger = new TestLogger();
+        $error = new \TypeError('Librarian fixture type mismatch');
+        $first = true;
+        $http = $this->librarian(static function () use (&$first, $error): array {
+            if ($first) {
+                $first = false;
+
+                throw $error;
+            }
+
+            return ['ok' => true, 'results' => []];
+        });
+        $params = ['name' => 'memory_search', 'arguments' => ['query' => 'deploy']];
+        $responses = $this->exchange([
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => $params],
+            ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call', 'params' => $params],
+        ], exec: $exec, http: $http, logger: $logger);
+
+        $this->assertTrue($responses[2]['result']['isError']);
+        $this->assertSame('TypeError: Librarian fixture type mismatch', $responses[2]['result']['content'][0]['text']);
+        $this->assertFalse($responses[3]['result']['isError'] ?? false);
+        $this->assertTrue(Toon::decode($responses[3]['result']['content'][0]['text'])['ok']);
+        $logs = array_values(array_filter($logger->records, static fn (array $record): bool => 'om.claude.tool_failed' === $record['message']));
+        $this->assertCount(1, $logs);
+        $context = $logs[0]['context'];
+        $this->assertSame('memory_search', $context['tool']);
+        $this->assertSame($context['run_id'], $context['session_id']);
+        $chain = $context['exception_chain'];
+        $this->assertGreaterThan(1, \count($chain), 'The SDK wraps the fixture error.');
+        $this->assertSame([
+            'class' => \TypeError::class,
+            'message' => $error->getMessage(),
+            'file' => $error->getFile(),
+            'line' => $error->getLine(),
+        ], $chain[array_key_last($chain)]);
     }
 
     #[DataProvider('unavailableProjects')]
@@ -105,7 +172,7 @@ final class ObservationalMemoryMcpServerFactoryTest extends OmTestCase
      *
      * @return array<int, array<string, mixed>> Responses keyed by request id
      */
-    private function exchange(array $requests, ?string $projectDir = null, ?ExecInterface $exec = null, ?MockHttpClient $http = null): array
+    private function exchange(array $requests, ?string $projectDir = null, ?ExecInterface $exec = null, ?MockHttpClient $http = null, ?LoggerInterface $logger = null): array
     {
         $messages = [
             ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'test', 'version' => '1']]],
@@ -125,7 +192,7 @@ final class ObservationalMemoryMcpServerFactoryTest extends OmTestCase
             self::fail('No Librarian request expected.');
         });
         // No HOME layer: only the fixture project's settings are read.
-        $factory = new ObservationalMemoryMcpServerFactory(new ClaudeOmSettingsProvider(null), $exec ?? $this->createStub(ExecInterface::class), new NullLogger(), $http);
+        $factory = new ObservationalMemoryMcpServerFactory(new ClaudeOmSettingsProvider(null), $exec ?? $this->createStub(ExecInterface::class), $logger ?? new NullLogger(), $http);
         $factory->create($projectDir ?? $this->directory.'/project', 'test')->run(new StdioTransport($input, $output));
 
         // The transport closes both streams when input ends.
@@ -140,10 +207,13 @@ final class ObservationalMemoryMcpServerFactoryTest extends OmTestCase
         return $responses;
     }
 
-    /** A Librarian MCP endpoint whose memory_search returns $searchResult. */
-    private function librarian(array $searchResult): MockHttpClient
+    /** A Librarian MCP endpoint whose memory_search invokes $search. */
+    private function librarian(callable $search): MockHttpClient
     {
-        return new MockHttpClient(static function (string $method, string $url, array $options) use ($searchResult): MockResponse {
+        return new MockHttpClient(static function (string $method, string $url, array $options) use ($search): MockResponse {
+            if ('DELETE' === $method) {
+                return new MockResponse('', ['http_code' => 204]);
+            }
             $body = $options['body'];
             $request = json_decode(\is_resource($body) ? stream_get_contents($body) : $body, true, flags: \JSON_THROW_ON_ERROR);
             if (!isset($request['id'])) {
@@ -155,7 +225,7 @@ final class ObservationalMemoryMcpServerFactoryTest extends OmTestCase
             if ('initialize' === $request['method']) {
                 $result = ['protocolVersion' => $request['params']['protocolVersion'], 'serverInfo' => ['name' => 'test-librarian', 'version' => '1.0'], 'capabilities' => ['tools' => new \stdClass()]];
             } else {
-                $value = 'ensure_project' === $request['params']['name'] ? ['ok' => true] : $searchResult;
+                $value = 'ensure_project' === $request['params']['name'] ? ['ok' => true] : $search();
                 $result = ['content' => [['type' => 'text', 'text' => json_encode($value, \JSON_THROW_ON_ERROR)]], 'structuredContent' => $value, 'isError' => false === $value['ok']];
             }
 

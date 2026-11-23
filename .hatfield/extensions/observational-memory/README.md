@@ -123,8 +123,10 @@ Code has removed are deleted at the next install.
   go to Claude Code's debug log.
 - **Retrieval:** the `observational-memory` MCP server exposes exactly
   `memory_search` and `recall`, with the Hatfield schemas and results.
-  Results with `ok: false` (invalid arguments, Librarian unavailable, upstream
-  tool errors) are MCP tool errors.
+  Expected failures, including invalid arguments, upstream tool errors,
+  cancellation, and timeouts, retain their existing result fields and are
+  returned as MCP tool errors. Unexpected failures are MCP tool errors with
+  the originating exception class and message (`Class: message`).
 - **Compaction:** Claude Code's own compaction is unchanged; there is no
   projection or `/om-view`.
 

@@ -20,7 +20,6 @@ final class QaSessionEnvSanitizationTest extends TestCase
         'HATFIELD_LLM_TRANSPORT_DSN',
         'HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN',
         'HATFIELD_TOOL_TRANSPORT_DSN',
-        'HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN',
         'HATFIELD_AGENT_TRANSPORT_DSN',
         'HATFIELD_MCP_TRANSPORT_DSN',
         'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN',
@@ -102,6 +101,7 @@ final class QaSessionEnvSanitizationTest extends TestCase
         self::requireCastorFiles();
 
         $dsn = 'sqlite-queue://session_poison_x?endpoint=%2Ftmp%2Fhq-poison.sock';
+        $original = array_map(getenv(...), self::DSN_VARS);
         $poisoned = [];
         try {
             foreach (self::DSN_VARS as $var) {
@@ -129,6 +129,8 @@ final class QaSessionEnvSanitizationTest extends TestCase
                 putenv(false === $previous ? $var : $var.'='.$previous);
             }
         }
+
+        $this->assertSame($original, array_map(getenv(...), self::DSN_VARS));
     }
 
     private static function requireCastorFiles(): void

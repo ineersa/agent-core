@@ -125,6 +125,8 @@ final class McpSdkClientAdapter implements McpClientInterface
             $result = $this->client->callTool($name, $arguments, cancellation: $sdkToken, timeoutSeconds: $effectiveTimeout);
         } catch (SdkRequestCancelledException|SdkTimeoutException $e) {
             throw new McpClientInterruptedException($e->getMessage(), (int) $e->getCode(), $e);
+        } catch (SdkConnectionException $e) {
+            throw new McpClientInvocationException($e->getMessage(), (int) $e->getCode(), $e);
         }
 
         $content = [];

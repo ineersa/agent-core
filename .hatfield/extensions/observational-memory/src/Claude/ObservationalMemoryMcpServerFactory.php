@@ -87,16 +87,32 @@ final readonly class ObservationalMemoryMcpServerFactory
             $result = $handler->result($arguments, new ToolInvocationContextDTO(self::RUN_ID, timeoutSeconds: $tool->timeoutSeconds));
         } catch (\Throwable $exception) {
             // Report the failure to the model as a tool error; the server keeps serving.
+            $chain = [];
+            $origin = $exception;
+            while (true) {
+                $chain[] = [
+                    'class' => $origin::class,
+                    'message' => $origin->getMessage(),
+                    'file' => $origin->getFile(),
+                    'line' => $origin->getLine(),
+                ];
+                $previous = $origin->getPrevious();
+                if (null === $previous) {
+                    break;
+                }
+                $origin = $previous;
+            }
             $this->logger->error('om.claude.tool_failed', [
                 'component' => 'observational_memory', 'event_type' => 'om.claude.tool_failed',
                 'run_id' => self::RUN_ID, 'session_id' => self::RUN_ID,
                 'tool' => $tool->name, 'exception_class' => $exception::class,
+                'exception_chain' => $chain,
             ]);
 
-            return CallToolResult::error([new TextContent($tool->name.' failed.')]);
+            return CallToolResult::error([new TextContent($origin::class.': '.$origin->getMessage())]);
         }
-        // The same TOON text Hatfield receives. Invalid arguments, Librarian
-        // failures and upstream tool errors (`ok: false` or `isError: true`),
+        // The same TOON text Hatfield receives. Invalid arguments,
+        // upstream tool errors (`ok: false` or `isError: true`),
         // cancellation and timeouts are MCP tool errors.
         $content = [new TextContent(Toon::encode($result))];
         $failed = false === ($result['ok'] ?? null) || true === ($result['isError'] ?? false)

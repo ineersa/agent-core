@@ -7,8 +7,10 @@ namespace Ineersa\CodingAgent\Mcp\Client;
 /**
  * Client-layer exception for MCP tool invocation failures.
  *
- * Thrown by {@see McpConnectionManager::callTool()} when the SDK
- * call fails or no live client is available.  Callers in the tool
+ * Raised by {@see McpSdkClientAdapter} for SDK connection loss during a
+ * tool call, or by {@see McpConnectionManager::callTool()} when no live
+ * client is available after reconnect. Other call failures propagate
+ * unchanged. Callers in the tool
  * layer ({@see \Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker})
  * translate this to an AgentCore {@see \Ineersa\AgentCore\Contract\Tool\ToolCallException}
  * so the existing ToolExecutor pipeline can produce a failed
