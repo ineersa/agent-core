@@ -11,12 +11,14 @@ use Symfony\Component\Clock\Clock;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\DependencyInjection\Attribute\AutowireServiceClosure;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
+use Symfony\Component\Scheduler\Generator\MessageContext;
 use Symfony\Component\Scheduler\RecurringMessage;
 use Symfony\Component\Scheduler\Schedule;
 use Symfony\Component\Scheduler\ScheduleProviderInterface;
-use Symfony\Component\Scheduler\Trigger\CallbackTrigger;
 
-/** Extension definitions remain extension-owned; Symfony owns occurrence calculation. */
+/** Extension definitions remain extension-owned; first activation is explicit and Symfony owns repeat cadence. */
 final class ExtensionRecurringJobRegistry
 {
     /** @var array<string, array{source: RecurringJobSourceInterface, owner: ?string}> */
@@ -28,6 +30,7 @@ final class ExtensionRecurringJobRegistry
         #[AutowireServiceClosure('scheduler.provider.default')] private readonly \Closure $provider,
         private readonly ExtensionAgentJobRegistry $handlers,
         #[Autowire('%env(HATFIELD_SESSION_ID)%')] private readonly string $runId,
+        private readonly MessageBusInterface $bus,
         private readonly ClockInterface $clock = new Clock(),
     ) {
     }
@@ -46,32 +49,40 @@ final class ExtensionRecurringJobRegistry
     #[AsMessageHandler]
     public function refresh(RefreshExtensionRecurringJobs $message): void
     {
+        $now = $this->clock->now();
         $current = [];
         foreach ($this->sources as $id => $registration) {
             foreach ($registration['source']->jobs($this->runId) as $job) {
                 if (null === $this->handlers->get($job->handlerId) || $this->handlers->ownerClass($job->handlerId) !== $registration['owner']) {
                     throw new \RuntimeException('Recurring job handler must belong to its registered source extension.');
                 }
-                $recurring = RecurringMessage::every($job->every, new ExtensionRecurringJobMessageProvider($id, $job, $this->runId), $job->from, $job->until ?? new \DateTimeImmutable('3000-01-01'));
-                $periodic = $recurring->getTrigger();
-                // The generator checkpoints the refresh after this handler returns.
-                // Keep initial eligibility strictly beyond it, without shifting the original cadence.
-                $initial = max($job->from, $this->clock->now()->modify('+1 microsecond'));
-                $trigger = new CallbackTrigger(
-                    static fn (\DateTimeImmutable $after): ?\DateTimeImmutable => $after < $initial && (null === $job->until || $initial < $job->until)
-                            ? $initial : $periodic->getNextRunDate($after),
-                    (string) $periodic,
-                );
-                $recurring = RecurringMessage::trigger($trigger, $recurring->getProvider());
-                $key = $id.':'.$job->id;
-                $current[$key] = $recurring->getId();
-                $installed = $this->registered[$key] ?? null;
-                if ($installed !== $recurring->getId()) {
-                    if (null !== $installed) {
-                        $this->schedule()->removeById($installed);
-                    }
-                    $this->schedule()->add($recurring);
+                // Revisit future jobs on the existing refresh. Never queue an initial
+                // execution before eligibility, so pending jobs can be replaced or removed.
+                if ($now < $job->from || (null !== $job->until && $now >= $job->until)) {
+                    continue;
                 }
+                $provider = new ExtensionRecurringJobMessageProvider($id, $job, $this->runId);
+                $recurring = RecurringMessage::every($job->every, $provider, $job->from, $job->until ?? new \DateTimeImmutable('3000-01-01'));
+                $key = $id.':'.$job->id;
+                $messageId = $recurring->getId();
+                $current[$key] = $messageId;
+                $installed = $this->registered[$key] ?? null;
+                if ($installed === $messageId) {
+                    continue;
+                }
+                if (null !== $installed) {
+                    $this->schedule()->removeById($installed);
+                    unset($this->registered[$key]);
+                }
+
+                // Symfony starts new recurring triggers strictly after first observation.
+                // Send the first eligible execution now and leave the original cadence intact.
+                $context = new MessageContext('default', $messageId, $recurring->getTrigger(), $now);
+                foreach ($provider->getMessages($context) as $initial) {
+                    $this->bus->dispatch($initial->envelope, [new TransportNamesStamp((array) $initial->transportNames)]);
+                }
+                $this->schedule()->add($recurring);
+                $this->registered[$key] = $messageId;
             }
         }
         foreach (array_diff_key($this->registered, $current) as $messageId) {

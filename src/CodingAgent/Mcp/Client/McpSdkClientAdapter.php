@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Mcp\Client;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Mcp\Client as SdkClient;
 use Mcp\Client\CancellationTokenInterface as SdkCancellationTokenInterface;
+use Mcp\Client\Client as SdkClient;
+use Mcp\Client\Exception\ConnectionException as SdkConnectionException;
+use Mcp\Client\Exception\RequestCancelledException as SdkRequestCancelledException;
+use Mcp\Client\Exception\TimeoutException as SdkTimeoutException;
 use Mcp\Client\Transport\TransportInterface;
-use Mcp\Exception\ConnectionException as SdkConnectionException;
-use Mcp\Exception\RequestCancelledException as SdkRequestCancelledException;
-use Mcp\Exception\TimeoutException as SdkTimeoutException;
 use Mcp\Schema\Content\AudioContent;
 use Mcp\Schema\Content\BlobResourceContents;
 use Mcp\Schema\Content\Content;
