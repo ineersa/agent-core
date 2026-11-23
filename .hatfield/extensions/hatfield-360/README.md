@@ -73,8 +73,21 @@ parent links or execution IDs. Reused IDs and overlapping hooks can make the
 count approximate; resume cannot reconstruct existing work and reports `null`.
 A matching elicitation request/result pair with a server and elicitation ID
 reports external-input attention. Selected built-in tool hooks report only
-names, correlated by tool-use ID, never inputs or results. The plugin does not
-infer permission waits, Esc cancellation, scripts, or manual owner identity.
+names, correlated by tool-use ID, never inputs or results. `AskUserQuestion`
+indicates question attention at its correlated pre-tool hook. `PermissionRequest`
+does not carry a tool-use ID, so it reports attention only when the current
+prompt has exactly one pending supported tool with the same name and exact
+bounded input fingerprint. The fingerprint is keyed and stays in private state.
+Matching post-tool success/failure, a final response, or a new prompt clears the
+wait. The plugin never approves or denies a request. Esc and denials without
+matching terminal hooks cannot be recognized immediately.
+
+A matching foreground `Stop` samples running shell tasks from `background_tasks`.
+An explicit empty array reports zero; missing or malformed observations report
+`null`. Only the count is sent, never task IDs, commands, or descriptions. The
+count is the last sample, not a live census. Repeated or superseded Stop hooks
+do not refresh it: the recorded capture does not establish a reliable causal
+marker for background-only refresh. Manual Claude owner registration is not wired.
 
 A nonblocking launch lock protects bounded state in the private socket directory.
 A competing hook can be dropped rather than waiting behind socket I/O. Once a

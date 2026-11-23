@@ -182,6 +182,60 @@ final class Hatfield360ReportCommandTest extends TestCase
         }
     }
 
+    public function testClaudeCorrelatesToolWaitsAndCountsOnlyObservedShells(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $endpoint = $directory.'/s';
+        $server = listen('unix://'.$endpoint);
+        $environment = ['H360_STATUS_ENDPOINT' => $endpoint, 'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444', 'H360_STATUS_TOKEN' => str_repeat('a', 64)];
+        $session = ['session_id' => 'claude-1'];
+        $prompt = $session + ['prompt_id' => '44444444-4444-4444-8444-555555555555'];
+        $tool = $prompt + ['tool_name' => 'Bash', 'tool_input' => ['command' => 'private command']];
+        $pre = $tool + ['hook_event_name' => 'PreToolUse'];
+        $permission = $tool + ['hook_event_name' => 'PermissionRequest'];
+        $post = $tool + ['hook_event_name' => 'PostToolUseFailure'];
+        try {
+            $send = fn (array $hook): array => $this->exchange($server, $this->launch($environment, $hook));
+            $send($session + ['hook_event_name' => 'SessionStart', 'source' => 'startup']);
+            $send($prompt + ['hook_event_name' => 'UserPromptSubmit']);
+            $this->assertQuietHook($environment, $permission);
+            $this->assertNull($send($pre + ['tool_use_id' => 'one'])['attention']);
+            $send($pre + ['tool_use_id' => 'two']);
+            $this->assertQuietHook($environment, $permission);
+            $send($post + ['tool_use_id' => 'two']);
+            $this->assertQuietHook($environment, array_replace($permission, ['prompt_id' => '44444444-4444-4444-8444-666666666666']));
+            $this->assertQuietHook($environment, array_replace($permission, ['tool_input' => ['command' => 'different']]));
+            $waiting = $send($permission);
+            $this->assertSame('permission', $waiting['attention']['reason']);
+            $this->assertArrayNotHasKey('tool_input', $waiting);
+            $this->assertQuietHook($environment, $permission);
+            $question = $prompt + ['tool_name' => 'AskUserQuestion', 'tool_use_id' => 'question'];
+            $this->assertSame($waiting['attention'], $send($question + ['hook_event_name' => 'PreToolUse'])['attention']);
+            $this->assertSame('question', $send($post + ['tool_use_id' => 'one'])['attention']['reason']);
+            $this->assertNull($send($question + ['hook_event_name' => 'PostToolUse'])['attention']);
+            $send($question + ['hook_event_name' => 'PreToolUse']);
+            $stop = $prompt + ['hook_event_name' => 'Stop', 'stop_hook_active' => false];
+            $done = $send($stop + ['background_tasks' => [
+                ['type' => 'shell', 'status' => 'running', 'id' => 'shell-id', 'command' => 'private command'],
+                ['type' => 'subagent', 'status' => 'running', 'id' => 'agent-id'],
+            ]]);
+            $this->assertSame(1, $done['backgroundScripts']);
+            $this->assertNull($done['attention']);
+            $this->assertArrayNotHasKey('background_tasks', $done);
+            $this->assertQuietHook($environment, $stop + ['background_tasks' => []]);
+            $next = array_replace($prompt, ['prompt_id' => '44444444-4444-4444-8444-666666666666']);
+            $send($next + ['hook_event_name' => 'UserPromptSubmit']);
+            $this->assertQuietHook($environment, $stop + ['background_tasks' => []]);
+            $this->assertSame(0, $send($next + ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'background_tasks' => []])['backgroundScripts']);
+            $last = array_replace($prompt, ['prompt_id' => '44444444-4444-4444-8444-777777777777']);
+            $send($last + ['hook_event_name' => 'UserPromptSubmit']);
+            $this->assertNull($send($last + ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'background_tasks' => [['type' => 'shell']]])['backgroundScripts']);
+        } finally {
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     public function testClaudeNotificationUsesTheLiveHookSelectionAndSequence(): void
     {
         $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
