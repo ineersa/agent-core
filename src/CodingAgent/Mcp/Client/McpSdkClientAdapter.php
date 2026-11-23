@@ -100,7 +100,7 @@ final class McpSdkClientAdapter implements McpClientInterface
     }
 
     /**
-     * @return array{content: list<array<string, mixed>>, isError: bool}
+     * @return array{content: list<array<string, mixed>>, isError: bool, structuredContent?: mixed}
      */
     public function callTool(string $name, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
     {
@@ -135,10 +135,7 @@ final class McpSdkClientAdapter implements McpClientInterface
         return [
             'content' => $content,
             'isError' => $result->isError,
-            // TODO Phase 3: surface CallToolResult::structuredContent and meta
-            // in McpClientInterface::callTool() return shape before runtime tool
-            // invocation is wired. These fields are intentionally omitted in Phase 0
-            // to keep the boundary minimal.
+            ...($result->hasStructuredContent() ? ['structuredContent' => $result->structuredContent] : []),
         ];
     }
 

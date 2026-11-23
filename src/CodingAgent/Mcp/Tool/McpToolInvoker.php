@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Mcp\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Mcp\Client\McpClientInterruptedException;
 use Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
@@ -41,13 +42,14 @@ final readonly class McpToolInvoker
      * Must be called from within a {@see StackToolExecutionContextAccessor::with()}
      * scope so the tool context (runId, timeout, cancellation token) is available.
      *
-     * @param string               $serverName Originating MCP server name
-     * @param string               $mcpName    Original MCP tool name
-     * @param array<string, mixed> $arguments  Tool arguments from the LLM
+     * @param string                    $serverName   Originating MCP server name
+     * @param string                    $mcpName      Original MCP tool name
+     * @param array<string, mixed>      $arguments    Tool arguments from the LLM
+     * @param array<string, mixed>|null $outputSchema
      *
      * @throws ToolCallException on MCP errors, timeouts, or missing live client
      */
-    public function invoke(string $serverName, string $mcpName, array $arguments): string
+    public function invoke(string $serverName, string $mcpName, array $arguments, ?array $outputSchema = null): string|ToolResult
     {
         $context = $this->contextAccessor->requireCurrent();
 
@@ -88,7 +90,17 @@ final readonly class McpToolInvoker
         }
 
         try {
-            return $this->resultMapper->map($rawResult);
+            $text = $this->resultMapper->map($rawResult);
+            if (!\array_key_exists('structuredContent', $rawResult)) {
+                return $text;
+            }
+
+            return new ToolResult(
+                toolCallId: $context->toolCallId(),
+                toolName: $context->toolName(),
+                content: [['type' => 'text', 'text' => $text]],
+                details: ['raw_result' => $this->resultMapper->mapStructuredContent($rawResult['structuredContent'], $outputSchema)],
+            );
         } catch (ToolCallException $e) {
             // MCP isError or mapping failure — already a ToolCallException.
             // Do not re-wrap; let the handler add server/tool context.

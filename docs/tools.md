@@ -67,6 +67,14 @@ without a configured maximum there is no background deadline.
 
 Broker delivery can repeat a nested tool request. Individual tools own idempotency if they need it.
 
+For MCP tools, `tool()` returns explicitly supplied structured content (including
+`null`); when it is absent, `tool()` returns the MCP text as before. Hatfield
+validates structured content against the tool's declared output schema, if any,
+before converting JSON objects to PHP arrays. An empty object `{}` and an empty
+list `[]` therefore both become `[]` after validation. A schema mismatch throws
+a catchable `RuntimeException` instead of falling back to text. Model-facing MCP
+text remains separate from the value returned to the script.
+
 Enable `tools.code_mode.enabled: true` in settings and restart Hatfield. The tool
 accepts a PHP **function body** in `script`, not a file path. It is useful for
 multi-step tool work whose intermediate results do not need model interpretation.

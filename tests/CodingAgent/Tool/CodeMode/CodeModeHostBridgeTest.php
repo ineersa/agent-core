@@ -74,7 +74,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
                 'fixture' => new \Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO('fixture', 'stdio', \Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum::CONNECTED, tools: [
                     new \Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO('fixture_echo', 'fixture', 'echo', 'Echo fixture text', [
                         'type' => 'object', 'properties' => ['text' => ['type' => 'string']], 'required' => ['text'],
-                    ]),
+                    ], outputSchema: ['type' => 'object']),
                 ]),
             ]));
             $registry = $container->get(\Ineersa\CodingAgent\Tool\ToolRegistry::class);
@@ -94,6 +94,8 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $shutdownRelease = $this->tmpDir.'/shutdown-release';
             $this->assertTrue(posix_mkfifo($shutdownRelease, 0600));
             $script = 'try { $mcp = tool("fixture_echo", ["text" => "cold worker fixture"]); } catch (RuntimeException $error) { $mcp = $error->getMessage(); } try { tool("read", ["invalid list"]); } catch (RuntimeException $error) { $refusal = $error->getMessage(); }'
+                .' $structured = tool("fixture_echo", ["text" => "structured-object"]);'
+                .' try { tool("fixture_echo", ["text" => "structured-list"]); } catch (RuntimeException $error) { $schemaError = $error->getMessage(); }'
                 .' try { tool("agent_cancel", ["artifact_id" => "unused"]); throw new LogicException("Nested agent_cancel was accepted"); } catch (RuntimeException $error) { if (!str_contains($error->getMessage(), "not supported inside code_mode")) { throw $error; } }'
                 .' try { tool("code_mode", ["script" => "return 42;"]); } catch (RuntimeException $error) { $recursion = $error->getMessage(); }'
                 .' $first = \Amp\async(static fn () => tool("read", ["path" => '.var_export($fixture, true).']));'
@@ -102,7 +104,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
                 .' return tool("read", ["path" => '.var_export($otherFixture, true).']); });'
                 .' register_shutdown_function(static function () { register_shutdown_function(static function () {'
                 .' touch('.var_export($shutdownReady, true).'); file_get_contents('.var_export($shutdownRelease, true).'); echo "late-shutdown-diagnostics"; }); });'
-                .' return [$refusal ?? null, $first->await(), $recursion ?? null, $second->await(), str_repeat("x", 1100000), $mcp];';
+                .' return [$refusal ?? null, $first->await(), $recursion ?? null, $second->await(), str_repeat("x", 1100000), $mcp, strlen($structured["data"]), $schemaError ?? null];';
             $container->get(\Ineersa\CodingAgent\Extension\ExtensionHookRegistry::class)->addToolCallRewriteHook('code_mode', new class implements \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface {
                 public function rewriteArguments(\Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO $context): ?array
                 {
@@ -146,7 +148,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
 
                 return $handled;
             };
-            [, $mcpRequest, $invalidRequest, $outerRequest] = $consume(4);
+            [, $mcpRequest, , , $invalidRequest, $outerRequest] = $consume(6);
             $this->assertSame('fixture_echo', $mcpRequest->name);
             // Do not handle either read until both Fibers entered tool(). The
             // queued marker runs only once the second Fiber has yielded.
@@ -257,6 +259,8 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $this->assertTrue(array_any($attachments, static fn (string $path): bool => $path !== $nestedPath && str_contains((string) file_get_contents($path), str_repeat('x', 1100000)) && str_contains((string) file_get_contents($path), 'late-shutdown-diagnostics')));
             $this->assertSame(str_repeat('x', 1100000), $terminal['result'][4]);
             $this->assertStringContainsString('echo: cold worker fixture', json_encode($terminal['result'][5], \JSON_THROW_ON_ERROR));
+            $this->assertSame(1_100_000, $terminal['result'][6]);
+            $this->assertStringContainsString('does not match the declared output schema', $terminal['result'][7]);
             $this->assertSame([$outcome->deferredId], $owner->controllerInvocationIds($runId));
 
             $invoker = new \Ineersa\CodingAgent\Extension\ExtensionToolInvoker(

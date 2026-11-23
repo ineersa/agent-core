@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Psr\Container\ContainerInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
@@ -64,7 +66,21 @@ final readonly class CodeModeNestedToolExecutor
                 throw new ToolCallException($previous?->getMessage() ?? $exception->getMessage(), retryable: false, previous: $previous ?? $exception);
             }
 
-            return $toolboxResult->getResult();
+            $result = $toolboxResult->getResult();
+            if (!$result instanceof ToolResult) {
+                return $result;
+            }
+            if ($result->toolCallId !== $toolCallId || $result->toolName !== $name) {
+                throw new ToolCallException('Typed tool result identity does not match its invocation.', retryable: false);
+            }
+            $failure = ToolResultText::failureMessage($result->content) ?? ToolResultText::failureMessage($result->details);
+            if (null !== $failure || $result->isError) {
+                throw new ToolCallException($failure ?? 'Nested tool returned an error.', retryable: false);
+            }
+
+            return \is_array($result->details) && \array_key_exists('raw_result', $result->details)
+                ? $result->details['raw_result']
+                : $result->content;
         });
     }
 

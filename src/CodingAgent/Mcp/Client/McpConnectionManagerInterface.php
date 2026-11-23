@@ -61,7 +61,7 @@ interface McpConnectionManagerInterface
      * @param string               $toolName   Raw MCP tool name
      * @param array<string, mixed> $arguments  Tool arguments
      *
-     * @return array{content: list<array<string, mixed>>, isError: bool}
+     * @return array{content: list<array<string, mixed>>, isError: bool, structuredContent?: mixed}
      *
      * @throws McpClientInvocationException on missing client after reconnect
      * @throws McpClientInvocationException on SDK call failures

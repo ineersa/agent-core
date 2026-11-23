@@ -167,6 +167,22 @@ class McpSdkClientAdapterTest extends TestCase
         $this->assertSame('success', $result['content'][0]['text']);
     }
 
+    public function testCallToolDistinguishesAbsentStructuredContentFromNull(): void
+    {
+        $sdkClient = $this->createMock(SdkClient::class);
+        $sdkClient->expects($this->exactly(2))->method('callTool')->willReturnOnConsecutiveCalls(
+            new CallToolResult([new TextContent('fallback')]),
+            new CallToolResult([new TextContent('presentation')], structuredContent: null),
+        );
+        $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
+
+        $this->assertArrayNotHasKey('structuredContent', $adapter->callTool('fixture'));
+        $result = $adapter->callTool('fixture');
+        $this->assertArrayHasKey('structuredContent', $result);
+        $this->assertNull($result['structuredContent']);
+        $this->assertSame('presentation', $result['content'][0]['text']);
+    }
+
     public function testCallToolMapsTextContent(): void
     {
         $sdkClient = $this->createStub(SdkClient::class);

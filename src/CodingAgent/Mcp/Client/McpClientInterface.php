@@ -55,7 +55,7 @@ interface McpClientInterface
      * @param string               $name      Tool name
      * @param array<string, mixed> $arguments Tool arguments
      *
-     * @return array{content: list<array<string, mixed>>, isError: bool}
+     * @return array{content: list<array<string, mixed>>, isError: bool, structuredContent?: mixed}
      */
     public function callTool(string $name, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array;
 }

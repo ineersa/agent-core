@@ -247,6 +247,7 @@ final class McpToolRegistrar
         $handler = $this->handlerFactory->create(
             serverName: $serverName,
             mcpName: $toolDef->mcpName,
+            outputSchema: $toolDef->outputSchema,
         );
 
         try {
