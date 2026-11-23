@@ -52,7 +52,7 @@ function taskWorkflowDependencies(string $pluginRoot, string $dataDir): string
             // monorepo commit as this plugin, not its latest (possibly older) tag.
             'ineersa/hatfield-extension-api' => 'dev-main',
             // Claude bridge only; Hatfield hosts never load src/Claude.
-            'mcp/sdk' => '^0.9',
+            'mcp/sdk' => '^0.10',
             'symfony/process' => '^7.3|^8.0',
         ],
         'repositories' => [['type' => 'path', 'url' => $pluginRoot, 'options' => ['symlink' => true]]],

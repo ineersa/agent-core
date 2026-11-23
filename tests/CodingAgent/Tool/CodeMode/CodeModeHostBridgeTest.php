@@ -52,7 +52,6 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
         parent::tearDown();
     }
 
-    #[\DAMA\DoctrineTestBundle\PHPUnit\SkipDatabaseRollback]
     public function testBrokerLaunchReturnsBeforeItsNestedRequestIsHandled(): void
     {
         $container = self::getContainer();
@@ -114,17 +113,17 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $outcome = $accessor->with($context, static fn () => $toolbox->execute(new \Symfony\AI\Platform\Result\ToolCall('broker-launch', 'code_mode', ['script' => $script, 'timeout_seconds' => 90]))->getResult());
             $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
             $this->assertTrue($client->wait('code_mode_requests', 3000));
-            $transport = (new TransportFactory())->createTransport(
+            $newTransport = static fn () => (new TransportFactory())->createTransport(
                 $paths->transportDsns()['HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN'],
                 [],
                 $container->get('messenger.transport.symfony_serializer'),
             );
             $execution = $container->get('agent.execution.bus');
             $bus = new RoutableMessageBus(new ServiceLocator(['agent.execution.bus' => static fn () => $execution]), $execution);
-            $consume = function (int $count, array $receivers = []) use ($transport, $bus): array {
+            $consume = function (int $count, array $receivers = []) use ($newTransport, $bus): array {
                 $events = new EventDispatcher();
                 $handled = [];
-                $worker = new Worker($receivers + ['code_mode_requests' => $transport], $bus, $events, messageExecutionStrategy: new FiberMessageExecutionStrategy($bus, 1));
+                $worker = new Worker($receivers + ['code_mode_requests' => $newTransport()], $bus, $events, messageExecutionStrategy: new FiberMessageExecutionStrategy($bus, 1));
                 $events->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use (&$handled, $worker, $count): void {
                     $handled[] = $event->getEnvelope()->getMessage();
                     if (\count($handled) === $count) {
@@ -178,10 +177,15 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             file_put_contents($shutdownRelease, 'release');
             $this->assertTrue($client->wait('code_mode_requests', 3000), implode('', array_map(file_get_contents(...), glob($this->isolatedCwd().'/.hatfield/tmp/bg/*.log'))));
             $report = null;
-            foreach ($transport->get() as $delivery) {
-                $report = $delivery->getMessage();
-                $transport->ack($delivery);
-                break;
+            $transport = $newTransport();
+            try {
+                foreach ($transport->get() as $delivery) {
+                    $report = $delivery->getMessage();
+                    $transport->ack($delivery);
+                    break;
+                }
+            } finally {
+                $transport->close();
             }
             $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\DTO\CodeModeTerminalReportDTO::class, $report);
             $payloads = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class);
@@ -375,7 +379,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $events->addListener(\Symfony\Component\Messenger\Event\WorkerMessageFailedEvent::class, static fn ($event) => $failure->complete($event->getThrowable()));
             $command = new \Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeCommand(
                 new RoutableMessageBus(new ServiceLocator([]), $shutdownBus),
-                new ServiceLocator(['tool' => static fn () => $toolReceiver, 'agent' => static fn () => $transport, 'code_mode_requests' => static fn () => $transport]),
+                new ServiceLocator(['tool' => static fn () => $toolReceiver, 'agent' => $newTransport, 'code_mode_requests' => $newTransport]),
                 $events, $container->get(\Ineersa\CodingAgent\Config\AppConfig::class), codeModeReplies: $replyService,
             );
             putenv('HATFIELD_CODE_MODE_REPLY_SLOT=tool-shutdown-test');
