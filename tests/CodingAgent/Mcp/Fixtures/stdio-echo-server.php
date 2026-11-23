@@ -14,7 +14,7 @@
 
 declare(strict_types=1);
 
-use Mcp\Server;
+use Mcp\Server\Server;
 use Mcp\Server\Transport\StdioTransport;
 
 // Load Composer autoload relative to this script's location within the worktree.

@@ -147,7 +147,7 @@
         "symfony/process": "8.2.*@dev",
         "league/oauth2-client": "^2.8",
         "symfony/scheduler": "8.2.*@dev",
-        "mcp/sdk": "dev-main#9556eabb7addb72dbf8843ae217272f8f9a7f84c as 0.9.x-dev",
+        "mcp/sdk": "^0.10",
         "amphp/http-client": "^5.3",
         "league/commonmark": "^2.8",
         "tempest/highlight": "^2.27",

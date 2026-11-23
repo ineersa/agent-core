@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Extension;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -641,7 +642,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             ),
             toolInvoker: $this->unusedToolInvoker(),
             children: $this->createStub(\Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface::class),
-            recurringJobs: new \Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), ''),
+            recurringJobs: new \Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), '', new TestMessageBus()),
             commandBus: $this->createStub(\Symfony\Component\Messenger\MessageBusInterface::class),
             runRelationships: $runRelationships ?? $this->createStub(RunRelationshipReaderInterface::class),
             sessions: $this->emptySessionRepository(),
