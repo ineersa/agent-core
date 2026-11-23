@@ -18,6 +18,7 @@ final class QaSessionEnvSanitizationTest extends TestCase
     private const DSN_VARS = [
         'HATFIELD_RUN_CONTROL_TRANSPORT_DSN',
         'HATFIELD_LLM_TRANSPORT_DSN',
+        'HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN',
         'HATFIELD_TOOL_TRANSPORT_DSN',
         'HATFIELD_AGENT_TRANSPORT_DSN',
         'HATFIELD_MCP_TRANSPORT_DSN',
