@@ -13,6 +13,8 @@ use Symfony\Component\Uid\Uuid;
 
 final class ClaudeHookReporter
 {
+    private const int MAX_SWITCHES = 128;
+
     /** @param array<array-key, mixed> $hook */
     public function report(?StatusClient $client, array $hook): bool
     {
@@ -128,11 +130,13 @@ final class ClaudeHookReporter
         $state = $previous;
         if ('SessionStart' === $event) {
             $source = $hook['source'] ?? null;
-            // Compaction doesn't select a session; a fork may be a background copy.
-            if (isset($hook['agent_id']) || !\in_array($source, ['startup', 'resume', 'clear'], true) || ('startup' === $source && [] !== $previous)) {
+            if (isset($hook['agent_id']) || !self::acceptsSelection($previous, $source, $hook['prompt_id'] ?? null)) {
                 return false;
             }
-            $state = ['epoch' => $sequence, 'session' => $session, 'ended' => false, 'turn' => null, 'waits' => [], 'tools' => [], 'scripts' => null, 'agents' => 'resume' === $source ? null : []];
+            $state = [
+                'epoch' => $sequence, 'session' => $session, 'ended' => false, 'switch' => null, 'boundaries' => $previous['boundaries'] ?? [],
+                'turn' => null, 'waits' => [], 'tools' => [], 'scripts' => null, 'agents' => 'resume' === $source ? null : [],
+            ];
         } elseif (($state['session'] ?? null) !== $session || ($state['ended'] ?? true)) {
             return false;
         } elseif ('SubagentStart' === $event || 'SubagentStop' === $event) {
@@ -158,8 +162,18 @@ final class ClaudeHookReporter
         } elseif (isset($hook['agent_id'])) {
             return false;
         } elseif ('SessionEnd' === $event) {
-            // Switch-end hooks can arrive after selection and carry no epoch.
-            if (!\in_array($hook['reason'] ?? null, ['logout', 'prompt_input_exit', 'other'], true)) {
+            $reason = $hook['reason'] ?? null;
+            if ('resume' === $reason || 'clear' === $reason) {
+                $prompt = $hook['prompt_id'] ?? null;
+                // A repeated outgoing boundary must not arm a switch after
+                // returning to the same conversation in a later epoch.
+                if (!\is_string($prompt) || !Uuid::isValid($prompt) || isset($state['boundaries'][strtolower($prompt)])
+                    || \count($state['boundaries']) >= self::MAX_SWITCHES) {
+                    return false;
+                }
+                $state['switch'] = $reason;
+                $state['boundaries'][strtolower($prompt)] = true;
+            } elseif (!\in_array($reason, ['logout', 'prompt_input_exit', 'other'], true)) {
                 return false;
             }
             $state['ended'] = true;
@@ -317,7 +331,23 @@ final class ClaudeHookReporter
         return \count($shells);
     }
 
-    /** @return array{sequence: int, epoch: int, session: string, ended: bool, turn: array{id: string, status: string}|null, waits: array<string, int>, tools: array<string, array{name: string, fingerprint: ?string, wait: ?int}>, scripts: ?int, agents: array<string, true>|null}|null */
+    /** @param array<string, mixed> $previous */
+    private static function acceptsSelection(array $previous, mixed $source, mixed $prompt): bool
+    {
+        // Compaction and background forks do not select a conversation.
+        if ([] === $previous) {
+            return \in_array($source, ['startup', 'resume', 'clear'], true);
+        }
+        if (!\in_array($source, ['resume', 'clear'], true) || $source !== $previous['switch']) {
+            return false;
+        }
+
+        // Claude 2.1.330 omits prompt_id on the incoming clear hook.
+        return ('clear' === $source && null === $prompt)
+            || (\is_string($prompt) && strtolower($prompt) === array_key_last($previous['boundaries']));
+    }
+
+    /** @return array{sequence: int, epoch: int, session: string, ended: bool, switch: 'resume'|'clear'|null, boundaries: array<string, true>, turn: array{id: string, status: string}|null, waits: array<string, int>, tools: array<string, array{name: string, fingerprint: ?string, wait: ?int}>, scripts: ?int, agents: array<string, true>|null}|null */
     private function readState(string $path): ?array
     {
         if (is_link($path) || !is_file($path)) {
@@ -328,6 +358,11 @@ final class ClaudeHookReporter
         if (!\is_array($state) || !EventSchema::sequence($state['sequence'] ?? null) || !EventSchema::sequence($state['epoch'] ?? null)
             || $state['epoch'] > $state['sequence'] || !EventSchema::id($state['session'] ?? null) || !\is_bool($state['ended'] ?? null)
             || !\array_key_exists('turn', $state) || !\array_key_exists('agents', $state) || !\array_key_exists('scripts', $state) || !\is_array($state['waits'] ?? null) || !\is_array($state['tools'] ?? null)) {
+            return null;
+        }
+        if (!\array_key_exists('switch', $state) || !\is_array($state['boundaries'] ?? null) || \count($state['boundaries']) > self::MAX_SWITCHES
+            || !array_all($state['boundaries'], static fn (mixed $value, mixed $key): bool => true === $value && \is_string($key) && Uuid::isValid($key))
+            || (null !== $state['switch'] && (!$state['ended'] || [] === $state['boundaries'] || !\in_array($state['switch'], ['clear', 'resume'], true)))) {
             return null;
         }
         $agents = $state['agents'];

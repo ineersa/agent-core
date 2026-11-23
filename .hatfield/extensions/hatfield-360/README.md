@@ -90,12 +90,16 @@ do not refresh it: the recorded capture does not establish a reliable causal
 marker for background-only refresh.
 
 A nonblocking launch lock protects bounded state in the private socket directory.
-A competing hook can be dropped rather than waiting behind socket I/O. Once a
-selection is observed, a delayed startup cannot replace it; hooks carrying an
-old session ID cannot update it, and foreground hooks must match the current
-prompt. Claude supplies no causal sequence for competing clear/resume selections,
-so a late selection hook can still replace the current selection; the same
-session ID also cannot distinguish a prior selection of that conversation.
+A competing hook can be dropped rather than waiting behind socket I/O. The first
+startup, resume or clear can establish a selection without a previous boundary.
+Afterward, switching requires a matching outgoing `SessionEnd` from the current
+selection. Resume pairs by prompt ID; clear consumes one clear boundary because
+Claude 2.1.330 omits the incoming prompt ID. A delayed incoming clear can still
+be mistaken for a different clear if it arrives while that boundary is armed.
+The reporter rejects reuse of recorded boundary prompt IDs, and fails closed on
+further switches after 128 boundaries in one launch. A missing or out-of-order
+boundary does not authorize a switch. Foreground hooks still require the current
+session and prompt; Esc is not inferred.
 State stores no credentials, prompts or results. Hook failures do not interrupt
 Claude; caught input/state exceptions log only a fixed diagnostic code to stderr.
 

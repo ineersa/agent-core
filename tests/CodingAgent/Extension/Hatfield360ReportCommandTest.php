@@ -31,8 +31,18 @@ final class Hatfield360ReportCommandTest extends TestCase
             // event, with the same autoload path a Composer-installed binary gets.
             $startup = $this->launch($environment, ['session_id' => 'claude-1', 'hook_event_name' => 'SessionStart', 'source' => 'startup']);
             $first = $this->exchange($server, $startup);
-            $resume = $this->launch($environment, ['session_id' => 'claude-2', 'hook_event_name' => 'SessionStart', 'source' => 'resume']);
-            $second = $this->exchange($server, $resume);
+            $switch = '44444444-4444-4444-8444-111111111111';
+            $nextSwitch = '44444444-4444-4444-8444-222222222222';
+            $outgoing = ['session_id' => 'claude-1', 'hook_event_name' => 'SessionEnd', 'reason' => 'resume', 'prompt_id' => $switch];
+            $incoming = ['session_id' => 'claude-2', 'hook_event_name' => 'SessionStart', 'source' => 'resume', 'prompt_id' => $switch];
+            $this->assertQuietHook($environment, $incoming);
+            $this->assertQuietHook($environment, array_replace($outgoing, ['session_id' => 'other']));
+            $ended = $this->exchange($server, $this->launch($environment, $outgoing));
+            $this->assertSame('session.ended', $ended['kind']);
+            $this->assertSame($first['sessionEpoch'], $ended['sessionEpoch']);
+            $this->assertQuietHook($environment, array_replace($incoming, ['prompt_id' => $nextSwitch]));
+            $this->assertQuietHook($environment, array_replace($incoming, ['source' => 'clear']));
+            $second = $this->exchange($server, $this->launch($environment, $incoming));
             $this->assertSame('session.snapshot', $first['kind']);
             $this->assertSame('claude', $first['provider']);
             $this->assertSame('claude-2', $second['sessionId']);
@@ -48,6 +58,18 @@ final class Hatfield360ReportCommandTest extends TestCase
             $failure = $this->launch($environment, ['session_id' => 'claude-2', 'hook_event_name' => 'StopFailure', 'prompt_id' => $prompt, 'error' => 'server_error']);
             $end = $this->exchange($server, $failure);
             $this->assertSame(['id' => $prompt, 'status' => 'failed'], $end['turn']);
+
+            $this->exchange($server, $this->launch($environment, array_replace($outgoing, ['session_id' => 'claude-2', 'prompt_id' => $nextSwitch])));
+            $returned = $this->exchange($server, $this->launch($environment, array_replace($incoming, ['session_id' => 'claude-1', 'prompt_id' => $nextSwitch])));
+            $this->assertSame('claude-1', $returned['sessionId']);
+            $this->assertGreaterThan($second['sessionEpoch'], $returned['sessionEpoch']);
+            $this->assertQuietHook($environment, $outgoing);
+            $this->assertQuietHook($environment, $incoming);
+            $clear = array_replace($outgoing, ['reason' => 'clear', 'prompt_id' => '44444444-4444-4444-8444-333333333333']);
+            $this->exchange($server, $this->launch($environment, $clear));
+            $cleared = $this->exchange($server, $this->launch($environment, ['session_id' => 'claude-3', 'hook_event_name' => 'SessionStart', 'source' => 'clear']));
+            $this->assertGreaterThan($returned['sessionEpoch'], $cleared['sessionEpoch']);
+            $this->assertQuietHook($environment, ['session_id' => 'late', 'hook_event_name' => 'SessionStart', 'source' => 'clear']);
 
             // Explicit mode is a separate producer with its own launch and epoch.
             $explicitEnvironment = array_replace($environment, [
