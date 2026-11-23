@@ -43,7 +43,8 @@ final class ExtensionsSetupScreenTest extends PerMethodIsolatedKernelTestCase
         $before = file_get_contents($cwd.'/.hatfield/settings.yaml');
         $terminal = new VirtualTerminal(columns: 150, rows: 40);
         $tui = new Tui(terminal: $terminal);
-        $screen = new ExtensionsSetupScreen(self::getContainer()->get(ExtensionsSetupFlow::class), new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette()), new NullLogger());
+        $flow = self::getContainer()->get(ExtensionsSetupFlow::class);
+        $screen = new ExtensionsSetupScreen($flow, new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette()), new NullLogger());
         $panel = new ContainerWidget();
         $notice = new TextWidget('');
         foreach (['tui' => $tui, 'panel' => $panel, 'notice' => $notice] as $property => $value) {
@@ -53,7 +54,9 @@ final class ExtensionsSetupScreenTest extends PerMethodIsolatedKernelTestCase
         (new \ReflectionMethod($screen, 'menu'))->invoke($screen);
         $tui->start();
         try {
-            $terminal->simulateInput(str_repeat("\x1b[B", 3));
+            $index = array_search($package, array_keys($flow->packages()), true);
+            $this->assertIsInt($index);
+            $terminal->simulateInput(str_repeat("\x1b[B", $index));
             $terminal->simulateInput("\r");
             $terminal->simulateInput("\r");
             $this->assertStringContainsString('Configure failed in project scope. Package metadata does not declare an extension class.', $notice->getText());
