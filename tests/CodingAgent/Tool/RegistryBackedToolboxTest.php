@@ -42,6 +42,7 @@ use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Agent\Toolbox\ToolResult;
+use Symfony\AI\Platform\Contract\Normalizer\ToolNormalizer;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -141,11 +142,53 @@ final class RegistryBackedToolboxTest extends TestCase
 
         $this->assertCount(1, $tools);
         $this->assertSame('read', $tools[0]->getName());
-        $this->assertSame('Read file contents', $tools[0]->getDescription());
+        $this->assertSame('Read file contents', (new ToolNormalizer())->normalize($tools[0])['function']['description']);
         $this->assertSame($schema, $tools[0]->getParameters());
         $this->assertSame($handler::class, $tools[0]->getReference()->getClass());
         $this->assertSame('__invoke', $tools[0]->getReference()->getMethod());
         $this->assertTrue($tools[0]->getMetadataValue('raw_arguments', false));
+    }
+
+    public function testProviderDescriptionTracksOnlyVisibleOutputSchemaDefinitions(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->dummyHandler('result');
+        $registry->addDynamicTool('mcp_fixture', 'Fixture', $handler, [], outputJsonSchema: []);
+        $toolbox = $this->createToolbox($registry);
+        $normalizer = new ToolNormalizer();
+        $original = $toolbox->getTools()[0];
+        $description = $normalizer->normalize($original)['function']['description'];
+        $this->assertStringStartsWith("Fixture\n\n", $description);
+        $this->assertStringContainsString("Output schema (applies only when structured content is supplied): {}\n", $description);
+        $this->assertStringContainsString('the original JSON is validated before objects become associative PHP arrays', $description);
+        $this->assertStringContainsString('If structured content is absent, tool() returns text.', $description);
+
+        $schema = ['properties' => ['object' => ['const' => new \stdClass()], 'list' => ['const' => []]]];
+        $registry->addDynamicTool('mcp_fixture', 'Fixture', $handler, [], outputJsonSchema: $schema);
+        $updated = $toolbox->getTools()[0];
+        $this->assertNotSame($original, $updated);
+        $this->assertStringContainsString('{"properties":{"object":{"const":{}},"list":{"const":[]}}}', $normalizer->normalize($updated)['function']['description']);
+
+        $registry->addDynamicTool('mcp_fixture', 'Fixture', $handler, [], outputJsonSchema: $schema);
+        $this->assertSame($updated, $toolbox->getTools()[0]);
+
+        $registry->setExcludedToolNames(['mcp_fixture']);
+        $this->assertSame([], $toolbox->getTools());
+    }
+
+    public function testProviderDescriptionIncludesOutputSchemaWithReflectedInput(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->registerTool('fixture', 'Fixture', new class {
+            public function __invoke(): string
+            {
+                return 'result';
+            }
+        }, 'fixture', outputJsonSchema: ['type' => 'string']);
+
+        $tool = $this->createToolbox($registry)->getTools()[0];
+        $this->assertNull($tool->getParameters());
+        $this->assertStringContainsString('Output schema (applies only when structured content is supplied): {"type":"string"}', (new ToolNormalizer())->normalize($tool)['function']['description']);
     }
 
     public function testGetToolsPreservesEmptyJsonSchemaObjectShapes(): void

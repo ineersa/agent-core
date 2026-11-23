@@ -67,13 +67,22 @@ without a configured maximum there is no background deadline.
 
 Broker delivery can repeat a nested tool request. Individual tools own idempotency if they need it.
 
+`tool()` preserves native tool values: strings stay strings (even if they look
+like JSON), and scalars and arrays keep their types. A status field inside a
+successful value is data, not an exception.
+
 For MCP tools, `tool()` returns explicitly supplied structured content (including
-`null`); when it is absent, `tool()` returns the MCP text as before. Hatfield
-validates structured content against the tool's declared output schema, if any,
-before converting JSON objects to PHP arrays. An empty object `{}` and an empty
-list `[]` therefore both become `[]` after validation. A schema mismatch throws
-a catchable `RuntimeException` instead of falling back to text. Model-facing MCP
-text remains separate from the value returned to the script.
+`null`); if it is absent, `tool()` returns MCP text. The output schema shown in a
+tool's description applies only to structured content, not to fallback text.
+Hatfield validates the original JSON against the declared schema, if any, before
+converting objects to associative PHP arrays. For example, read a returned object
+field as `$result['name']`. After conversion, `{}` and `[]` both become `[]`, and
+numeric object keys may become integer array keys, making an object look like a list.
+Model-facing MCP text remains separate from the value returned to the script.
+
+Tool invocation failures, including MCP-reported errors, transport failures,
+cancellation, and schema mismatches, are catchable as `RuntimeException` inside
+the script. An invalid structured result never falls back to text.
 
 Enable `tools.code_mode.enabled: true` in settings and restart Hatfield. The tool
 accepts a PHP **function body** in `script`, not a file path. It is useful for
