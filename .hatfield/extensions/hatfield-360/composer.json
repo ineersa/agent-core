@@ -13,6 +13,7 @@
         "symfony/console": "^8.0",
         "symfony/filesystem": "^8.0",
         "symfony/lock": "^8.0",
+        "symfony/process": "^8.0",
         "symfony/uid": "^8.0"
     },
     "suggest": {

@@ -14,7 +14,7 @@ use Symfony\Component\Uid\Uuid;
 final class ClaudeHookReporter
 {
     /** @param array<array-key, mixed> $hook */
-    public function report(StatusClient $client, array $hook): bool
+    public function report(?StatusClient $client, array $hook): bool
     {
         $session = $hook['session_id'] ?? null;
         $event = $hook['hook_event_name'] ?? null;
@@ -23,17 +23,17 @@ final class ClaudeHookReporter
             return false;
         }
 
-        return $this->withLaunchLock(fn (string $path): bool => $this->reportLocked($client, $path, $session, $event, $hook));
+        return $this->withLaunchLock($client, fn (string $path, \Closure $authorize): bool => $this->reportLocked($authorize, $path, $session, $event, $hook));
     }
 
     /** @param array<array-key, mixed> $fields */
-    public function notify(StatusClient $client, array $fields): bool
+    public function notify(?StatusClient $client, array $fields): bool
     {
         if (!EventSchema::acceptsNotification($fields)) {
             return false;
         }
 
-        return $this->withLaunchLock(function (string $path) use ($client, $fields): bool {
+        return $this->withLaunchLock($client, function (string $path, \Closure $authorize) use ($fields): bool {
             $state = $this->readState($path);
             if (null === $state || $state['ended'] || !EventSchema::sequence($state['sequence'] + 1)) {
                 return false;
@@ -41,16 +41,15 @@ final class ClaudeHookReporter
             ++$state['sequence'];
             (new Filesystem())->dumpFile($path, json_encode($state, \JSON_THROW_ON_ERROR));
 
-            return $client->send('notification', $state['session'], $state['sequence'], $state['epoch'], $fields);
+            return $authorize()?->send('notification', $state['session'], $state['sequence'], $state['epoch'], $fields) ?? false;
         });
     }
 
-    /** @param \Closure(string): bool $callback */
-    private function withLaunchLock(\Closure $callback): bool
+    /** @param \Closure(string, \Closure(): ?StatusClient): bool $callback */
+    private function withLaunchLock(?StatusClient $client, \Closure $callback): bool
     {
         $endpoint = getenv('H360_STATUS_ENDPOINT');
-        $launch = getenv('H360_STATUS_LAUNCH_ID');
-        if (!\is_string($endpoint) || !\is_string($launch) || !Uuid::isValid($launch)) {
+        if (!\is_string($endpoint) || !str_starts_with($endpoint, '/') || \strlen($endpoint) > 103) {
             return false;
         }
         $directory = \dirname($endpoint);
@@ -60,13 +59,47 @@ final class ClaudeHookReporter
             return false;
         }
 
+        $managed = null === $client;
+        if ($managed) {
+            $bootstrap = getenv('H360_STATUS_BOOTSTRAP_TOKEN');
+            if (false !== getenv('H360_STATUS_TOKEN') || false !== getenv('H360_STATUS_LAUNCH_ID')
+                || !\is_string($bootstrap) || 1 !== preg_match('/\A[0-9a-f]{64}\z/', $bootstrap)
+                || null === ($owner = ClaudeProcessIdentityProvider::find())) {
+                return false;
+            }
+            // A stable per-owner instance survives a lost registration reply,
+            // while a different pane bootstrap cannot share the local state.
+            $instance = Uuid::v5(Uuid::fromString('f7ddf8d2-76b9-4e45-9ab0-c13ce270fb4f'), hash_hmac('sha256', implode(':', $owner), $bootstrap))->toRfc4122();
+            $name = 'claude-managed-'.$instance;
+            $authorize = static fn (): ?StatusClient => ClaudeProcessIdentityProvider::find() === $owner
+                ? StatusClient::registerManual('claude', $instance, $owner['pid'], $owner['pidNamespace'], $owner['startTicks']) : null;
+            // One nonblocking lock bounds the total managed state admitted to
+            // this app-private directory without a persistent bearer cache.
+            $lockName = 'claude-managed';
+        } else {
+            $launch = getenv('H360_STATUS_LAUNCH_ID');
+            if (!\is_string($launch) || !Uuid::isValid($launch)) {
+                return false;
+            }
+            $name = $lockName = 'claude-status-'.$launch;
+            $authorize = static fn (): StatusClient => $client;
+        }
+        $path = $directory.'/'.$name.'.json';
+
         try {
-            $lock = (new LockFactory(new FlockStore($directory)))->createLock('claude-status-'.$launch);
+            $lock = (new LockFactory(new FlockStore($directory)))->createLock($lockName);
             if (!$lock->acquire()) {
                 return false;
             }
             try {
-                return $callback($directory.'/claude-status-'.$launch.'.json');
+                if ($managed && !file_exists($path)) {
+                    $files = glob($directory.'/claude-managed-*.json', \GLOB_NOSORT);
+                    if (false === $files || \count($files) >= 64) {
+                        return false;
+                    }
+                }
+
+                return $callback($path, $authorize);
             } finally {
                 $lock->release();
             }
@@ -77,8 +110,11 @@ final class ClaudeHookReporter
         }
     }
 
-    /** @param array<array-key, mixed> $hook */
-    private function reportLocked(StatusClient $client, string $path, string $session, string $event, array $hook): bool
+    /**
+     * @param \Closure(): ?StatusClient $authorize
+     * @param array<array-key, mixed>   $hook
+     */
+    private function reportLocked(\Closure $authorize, string $path, string $session, string $event, array $hook): bool
     {
         $previous = file_exists($path) ? $this->readState($path) : [];
         if (null === $previous) {
@@ -200,7 +236,7 @@ final class ClaudeHookReporter
         // reply does not discard local state or cause historical replay.
         (new Filesystem())->dumpFile($path, json_encode($state, \JSON_THROW_ON_ERROR));
 
-        return $client->send($kind, $session, $sequence, $state['epoch'], $fields);
+        return $authorize()?->send($kind, $session, $sequence, $state['epoch'], $fields) ?? false;
     }
 
     /**
@@ -249,6 +285,9 @@ final class ClaudeHookReporter
     private static function fingerprint(mixed $input): ?string
     {
         $token = getenv('H360_STATUS_TOKEN');
+        if (false === $token) {
+            $token = getenv('H360_STATUS_BOOTSTRAP_TOKEN');
+        }
         if (!$input instanceof \stdClass || false === $token) {
             return null;
         }

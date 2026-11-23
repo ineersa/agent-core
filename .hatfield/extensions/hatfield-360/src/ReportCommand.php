@@ -23,8 +23,8 @@ final class ReportCommand
             return Command::INVALID;
         }
         $client = StatusClient::fromEnvironment();
-        if (null === $client) {
-            return $claudeHook ? Command::SUCCESS : Command::FAILURE;
+        if (null === $client && !$claudeHook && !$claudeNotify) {
+            return Command::FAILURE;
         }
 
         try {
@@ -66,6 +66,6 @@ final class ReportCommand
             return Command::INVALID;
         }
 
-        return $client->send($kind, $session, $sequence, $epoch, $fields) ? Command::SUCCESS : Command::FAILURE;
+        return $client?->send($kind, $session, $sequence, $epoch, $fields) ? Command::SUCCESS : Command::FAILURE;
     }
 }

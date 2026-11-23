@@ -9,6 +9,7 @@ use Amp\TimeoutCancellation;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 use function Amp\Socket\listen;
@@ -231,6 +232,71 @@ final class Hatfield360ReportCommandTest extends TestCase
             $send($last + ['hook_event_name' => 'UserPromptSubmit']);
             $this->assertNull($send($last + ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'background_tasks' => [['type' => 'shell']]])['backgroundScripts']);
         } finally {
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public function testManagedClaudeRequiresRealOwnerAndReusesRegistrationIdentity(): void
+    {
+        $finder = new ExecutableFinder();
+        $script = $finder->find('script');
+        $nativeShell = $finder->find('dash');
+        if ('Linux' !== \PHP_OS_FAMILY || null === $script || null === $nativeShell || !is_executable('/bin/bash') || !is_dir('/dev/pts')) {
+            $this->markTestSkipped('Requires a native Linux shell and a PTY.');
+        }
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $this->assertSame($directory, realpath($directory));
+        $this->assertTrue(copy($nativeShell, $directory.'/claude'));
+        $this->assertTrue(chmod($directory.'/claude', 0o700));
+        $server = listen('unix://'.$directory.'/s');
+        $env = [
+            'H360_STATUS_ENDPOINT' => $directory.'/s', 'H360_STATUS_BOOTSTRAP_TOKEN' => str_repeat('b', 64),
+            'H360_STATUS_TOKEN' => false, 'H360_STATUS_LAUNCH_ID' => false, 'HATFIELD_SESSION_ID' => false,
+            'PATH' => $directory.':'.getenv('PATH'), 'SHELL' => '/bin/bash',
+        ];
+        $hook = ['session_id' => 'native-session', 'hook_event_name' => 'SessionStart', 'source' => 'startup'];
+        $turn = ['session_id' => 'native-session', 'hook_event_name' => 'UserPromptSubmit', 'prompt_id' => '44444444-4444-4444-8444-555555555555'];
+        $root = ProjectDir::get();
+        $reporter = [\PHP_BINARY, '-r', '$_composer_autoload_path = $argv[1]; array_splice($argv, 0, 2); $_SERVER["argv"] = $argv; require $argv[0];', '--',
+            $root.'/vendor/autoload.php', $root.'/.hatfield/extensions/hatfield-360/bin/h360-report', '--claude-hook'];
+        $commands = implode(' ', array_map(escapeshellarg(...), $reporter));
+        $call = static fn (array $payload): string => 'printf %s '.escapeshellarg(json_encode($payload, \JSON_THROW_ON_ERROR)).' | '.$commands;
+        $owner = escapeshellarg($directory.'/claude');
+        $shell = static fn (string $body): array => [$script, '-qec', $owner.' -c '.escapeshellarg($body.'; :'), '/dev/null'];
+        try {
+            // The same real native ancestor survives both hook subprocesses.
+            $process = new Process($shell($call($hook).'; '.$call($turn)), env: $env, timeout: 5);
+            $process->start();
+            $first = $this->exchange($server, $process, reply: '{"ok":false,"error":"unauthorized"}', finish: false);
+            $this->assertSame('launch.register', $first['kind']);
+            $this->assertSame('claude', $first['provider']);
+            $this->assertGreaterThan(0, $first['owner']['pid']);
+            $reply = json_encode(['ok' => true, 'launchId' => '44444444-4444-4444-8444-444444444444', 'token' => str_repeat('a', 64)], \JSON_THROW_ON_ERROR);
+            $this->assertSame($first, $this->exchange($server, $process, reply: $reply, finish: false));
+            $snapshot = $this->exchange($server, $process);
+            $this->assertSame('session.snapshot', $snapshot['kind']);
+            $this->assertSame('working', $snapshot['turn']['status']);
+            $this->assertSame(2, $snapshot['sequence']);
+            $this->assertSame(1, $snapshot['sessionEpoch']);
+
+            foreach ([$env, array_replace($env, ['H360_STATUS_TOKEN' => 'malformed'])] as $environment) {
+                // In the second case the owner is valid, but explicit auth forbids
+                // bootstrap. The first case has no native owner in its ancestry.
+                $command = $environment === $env ? $reporter : $shell($call($hook));
+                $denied = new Process($command, env: $environment, input: $environment === $env ? json_encode($hook, \JSON_THROW_ON_ERROR) : null, timeout: 5);
+                $this->assertSame(0, $denied->run());
+            }
+            // A queued connection would be visible even though the CLI fails open.
+            try {
+                $this->assertNull($server->accept(new TimeoutCancellation(0.05)));
+            } catch (CancelledException) {
+                $this->addToAssertionCount(1);
+            }
+        } finally {
+            if (isset($process) && $process->isRunning()) {
+                $process->wait();
+            }
             $server->close();
             TestDirectoryIsolation::removeDirectory($directory);
         }

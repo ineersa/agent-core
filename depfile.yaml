@@ -81,7 +81,7 @@ parameters:
     OtherBuiltinExtension: [ExtensionApi]
     TaskWorkflow: [ExtensionApi, McpSdk, Process]
     ObservationalMemory: [ExtensionApi, McpSdk, Process, AiPlatform]
-    Hatfield360: [ExtensionApi, Console]
+    Hatfield360: [ExtensionApi, Console, Process]
 
   # Setup lists the two shipped extension entry points. This is not permission
   # for other host services to depend on either extension's implementation.

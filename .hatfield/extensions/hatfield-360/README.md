@@ -6,7 +6,7 @@ This package implements Hatfield 360's v1 Unix socket protocol. The Hatfield hos
 
 On Unix, install the package's Composer dependencies (`composer install --no-dev` from this directory). The PHP CLI must be on `PATH`, with the mbstring and POSIX extensions enabled. Run `bin/h360-report` directly or use the Composer-installed binary. To try the Claude plugin locally, pass this installed directory to `claude --plugin-dir`. A deployed plugin must have its dependencies installed before launching Claude; hooks never run Composer or install packages.
 
-The desktop launcher supplies `H360_STATUS_ENDPOINT`, `H360_STATUS_LAUNCH_ID`, and `H360_STATUS_TOKEN`. Do not put credentials in the payload or command arguments. Outside a desktop launch, Claude hooks do nothing. The CLI's explicit mode reads exactly one JSON event object from stdin, using the v1 event fields at the top level. It supplies `version`, `eventId`, `launchId` and `token` itself; any such fields in the payload are rejected.
+The desktop launcher supplies `H360_STATUS_ENDPOINT`, `H360_STATUS_LAUNCH_ID`, and `H360_STATUS_TOKEN`. Do not put credentials in the payload or command arguments. Without an explicit or Linux managed launch context, Claude hooks do nothing. The CLI's explicit mode reads exactly one JSON event object from stdin, using the v1 event fields at the top level. It supplies `version`, `eventId`, `launchId` and `token` itself; any such fields in the payload are rejected.
 
 ```sh
 printf '%s\n' '{"kind":"session.snapshot","sessionId":"a-conversation","sequence":1,"sessionEpoch":1,"provider":"hatfield","turn":null,"attention":null,"activeSubagents":null,"backgroundScripts":null,"tool":null}' | bin/h360-report
@@ -29,7 +29,7 @@ selected conversation. The first `|` separates the title and body. The command
 reports whether the desktop confirmed acceptance, not whether it showed a toast.
 
 For Claude, run the following from an environment that already has **that same
-desktop launch's** credentials, after the plugin has selected a conversation:
+desktop launch's** context, after the plugin has selected a conversation:
 
 ```sh
 /path/to/hatfield-360/bin/h360-report --claude-notify <<'JSON'
@@ -65,7 +65,7 @@ never initiates manual Linux bootstrap.
 
 ## Claude Code coverage
 
-Explicit launches report startup, clear and resume selections and terminal exit
+Explicit and verified Linux managed launches report startup, clear and resume selections and terminal exit
 hooks. A foreground `UserPromptSubmit` starts a response; a matching final
 `Stop` ends it as completed, and a matching `StopFailure` marks it failed.
 Subagent start/stop hooks track an approximate active count by agent ID, without
@@ -87,7 +87,7 @@ An explicit empty array reports zero; missing or malformed observations report
 `null`. Only the count is sent, never task IDs, commands, or descriptions. The
 count is the last sample, not a live census. Repeated or superseded Stop hooks
 do not refresh it: the recorded capture does not establish a reliable causal
-marker for background-only refresh. Manual Claude owner registration is not wired.
+marker for background-only refresh.
 
 A nonblocking launch lock protects bounded state in the private socket directory.
 A competing hook can be dropped rather than waiting behind socket I/O. Once a
@@ -98,6 +98,26 @@ so a late selection hook can still replace the current selection; the same
 session ID also cannot distinguish a prior selection of that conversation.
 State stores no credentials, prompts or results. Hook failures do not interrupt
 Claude; caught input/state exceptions log only a fixed diagnostic code to stderr.
+
+### Linux managed Claude launches
+
+The desktop-managed shell supplies the status endpoint and bootstrap token. If
+an explicit credential variable is set, even empty or malformed, bootstrap is
+never attempted. Keep the native `claude` executable on `PATH`: its resolved
+device and inode must identify exactly one ancestor with a controlling terminal
+in the hook's PID namespace. Wrappers that do not resolve to the running native
+executable, unreadable or inconsistent relevant `/proc` observations, and
+ambiguous ancestry fail open. The hook itself is never the owner. Desktop
+independently verifies the reported process beneath its pinned terminal.
+
+Managed hooks use a stable per-owner instance and bounded private state in the
+app's socket directory. Credentials returned by registration live only in the
+calling process; they are not persisted or exported. Each outgoing observation
+re-registers idempotently, so busy hooks can hit the desktop's bootstrap budget
+or the nonblocking lock and miss delivery. A later eligible observation sends
+its full current snapshot; missed notices and historical frames are not replayed.
+For `--claude-notify` in a managed launch, the invocation must also be a descendant
+of the verified Claude owner, not a sibling command from the pane shell.
 
 See [Claude Code hooks](https://code.claude.com/docs/en/hooks#hook-events) and the
 [Hatfield 360 snapshot protocol](https://github.com/ineersa/hatfield-360/blob/main/docs/agents/agent-status-protocol.md).
