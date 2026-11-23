@@ -23,6 +23,31 @@ final class ClaudeHookReporter
             return false;
         }
 
+        return $this->withLaunchLock(fn (string $path): bool => $this->reportLocked($client, $path, $session, $event, $hook));
+    }
+
+    /** @param array<array-key, mixed> $fields */
+    public function notify(StatusClient $client, array $fields): bool
+    {
+        if (!EventSchema::acceptsNotification($fields)) {
+            return false;
+        }
+
+        return $this->withLaunchLock(function (string $path) use ($client, $fields): bool {
+            $state = $this->readState($path);
+            if (null === $state || $state['ended'] || !EventSchema::sequence($state['sequence'] + 1)) {
+                return false;
+            }
+            ++$state['sequence'];
+            (new Filesystem())->dumpFile($path, json_encode($state, \JSON_THROW_ON_ERROR));
+
+            return $client->send('notification', $state['session'], $state['sequence'], $state['epoch'], $fields);
+        });
+    }
+
+    /** @param \Closure(string): bool $callback */
+    private function withLaunchLock(\Closure $callback): bool
+    {
         $endpoint = getenv('H360_STATUS_ENDPOINT');
         $launch = getenv('H360_STATUS_LAUNCH_ID');
         if (!\is_string($endpoint) || !\is_string($launch) || !Uuid::isValid($launch)) {
@@ -41,7 +66,7 @@ final class ClaudeHookReporter
                 return false;
             }
             try {
-                return $this->reportLocked($client, $directory.'/claude-status-'.$launch.'.json', $session, $event, $hook);
+                return $callback($directory.'/claude-status-'.$launch.'.json');
             } finally {
                 $lock->release();
             }

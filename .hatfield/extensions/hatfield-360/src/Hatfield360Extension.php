@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\Hatfield360;
 
 use Amp\CancelledException;
+use Amp\DeferredFuture;
 use Amp\Future;
 use Amp\TimeoutCancellation;
+use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
@@ -22,7 +26,7 @@ use Psr\Log\LoggerAwareTrait;
 
 use function Amp\async;
 
-final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, TuiBackgroundJobObserverInterface, LoggerAwareInterface
+final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, TuiBackgroundJobObserverInterface, ExtensionCommandHandlerInterface, LoggerAwareInterface
 {
     use LoggerAwareTrait;
 
@@ -47,16 +51,44 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     private ?array $actors = [];
     /** @var Future<void>|null */
     private ?Future $drain = null;
-    /** @var array{string, string, int, int, array<string, mixed>}|null */
-    private ?array $pending = null;
+    /** @var list<array{string, string, int, int, array<string, mixed>}> */
+    private array $pending = [];
+    /** @var DeferredFuture<bool>|null */
+    private ?DeferredFuture $notice = null;
 
     public function register(ExtensionApiInterface $api): void
     {
+        $api->registerCommand(new CommandDefinitionDTO('h360-notify', description: 'Send an additional Hatfield 360 notification', usage: '/h360-notify <title> | <body>', acceptsArguments: true), $this);
         $this->client = StatusClient::fromEnvironment();
         $bootstrap = getenv('H360_STATUS_BOOTSTRAP_TOKEN');
         $this->canBootstrap = 'Linux' === \PHP_OS_FAMILY && false !== getenv('H360_STATUS_ENDPOINT')
             && false === getenv('H360_STATUS_TOKEN') && false === getenv('H360_STATUS_LAUNCH_ID')
             && \is_string($bootstrap) && 1 === preg_match('/\A[0-9a-f]{64}\z/', $bootstrap);
+    }
+
+    public function handle(string $args, CommandContextInterface $context): void
+    {
+        $parts = explode('|', $args, 2);
+        $fields = ['title' => trim($parts[0]), 'body' => trim($parts[1] ?? '')];
+        if (!EventSchema::acceptsNotification($fields)) {
+            $context->notify('Usage: /h360-notify <title> | <body> (200 and 2,000 characters maximum).', 'warning');
+
+            return;
+        }
+        if (!$this->observes($this->sessionId) || null !== $this->notice) {
+            $context->notify('Hatfield 360 notification not sent: no selected session or another notice is pending.', 'warning');
+
+            return;
+        }
+        $notice = $this->notice = new DeferredFuture();
+        $this->enqueue('notification', ++self::$sequence, $fields);
+        try {
+            $accepted = $notice->getFuture()->await(new TimeoutCancellation(1));
+        } catch (CancelledException) {
+            // The desktop may have received an in-flight frame before the timeout.
+            $accepted = false;
+        }
+        $context->notify($accepted ? 'Hatfield 360 accepted the notification.' : 'Hatfield 360 did not confirm the notification.', $accepted ? 'success' : 'warning');
     }
 
     public function onTuiSessionSelected(string $sessionId, bool $resumed = false): void
@@ -83,7 +115,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
             return;
         }
         $this->closing = true;
-        $this->pending = null;
+        $this->discardPending();
         // Quit must not initiate manual authorization.
         if (null === $this->client) {
             return;
@@ -92,7 +124,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         try {
             $this->drain?->await(new TimeoutCancellation(0.65));
         } catch (CancelledException) {
-            $this->pending = null;
+            $this->discardPending();
             $this->logDrop($sessionId);
         }
     }
@@ -252,28 +284,51 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     /** @param array<string, mixed> $fields */
     private function enqueue(string $kind, int $sequence, array $fields): void
     {
-        // A newer complete observation supersedes any unsent snapshot.
-        $this->pending = [$kind, $this->sessionId, $sequence, $this->epoch, $fields];
+        // A notice is an ordering barrier: retain its preceding snapshot and
+        // coalesce only adjacent unsent snapshots on either side of it.
+        $last = array_key_last($this->pending);
+        if ('session.snapshot' === $kind && null !== $last && 'session.snapshot' === $this->pending[$last][0]) {
+            array_pop($this->pending);
+        }
+        $this->pending[] = [$kind, $this->sessionId, $sequence, $this->epoch, $fields];
         $this->drain ??= async(function (): void {
             try {
-                while (null !== $this->pending) {
-                    [$kind, $sessionId, $sequence, $epoch, $fields] = $this->pending;
-                    $this->pending = null;
+                while (null !== ($event = array_shift($this->pending))) {
+                    [$kind, $sessionId, $sequence, $epoch, $fields] = $event;
                     $client = $this->client ??= ($this->closing ? null : HatfieldProcessIdentityProvider::register());
-                    if ($this->epoch !== $epoch || ($this->closing && 'session.snapshot' === $kind)) {
-                        continue;
-                    }
-                    if (null === $client || !$client->send($kind, $sessionId, $sequence, $epoch, $fields)) {
+                    $eligible = $this->epoch === $epoch && (!$this->closing || 'session.ended' === $kind);
+                    $sent = $eligible && null !== $client && $client->send($kind, $sessionId, $sequence, $epoch, $fields);
+                    if ($eligible && !$sent) {
                         $this->logDrop($sessionId);
+                    }
+                    if ('notification' === $kind) {
+                        $this->settleNotice($sent);
                     }
                 }
             } catch (\Throwable) {
                 $this->logDrop($this->sessionId);
-                $this->pending = null;
+                $this->discardPending();
+                $this->settleNotice(false);
             } finally {
                 $this->drain = null;
             }
         });
+    }
+
+    private function discardPending(): void
+    {
+        foreach ($this->pending as [$kind]) {
+            if ('notification' === $kind) {
+                $this->settleNotice(false);
+            }
+        }
+        $this->pending = [];
+    }
+
+    private function settleNotice(bool $sent): void
+    {
+        $this->notice?->complete($sent);
+        $this->notice = null;
     }
 
     private function logDrop(string $sessionId): void

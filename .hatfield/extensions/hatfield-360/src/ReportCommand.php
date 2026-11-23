@@ -17,8 +17,11 @@ use function Amp\ByteStream\getStdin;
 #[AsCommand(name: 'report', description: 'Report one Hatfield 360 event from JSON on stdin')]
 final class ReportCommand
 {
-    public function __invoke(#[Option(description: 'Read a Claude Code hook payload and fail open')] bool $claudeHook = false): int
+    public function __invoke(#[Option(description: 'Read a Claude Code hook payload and fail open')] bool $claudeHook = false, #[Option(description: 'Send title/body JSON to the current Claude selection')] bool $claudeNotify = false): int
     {
+        if ($claudeHook && $claudeNotify) {
+            return Command::INVALID;
+        }
         $client = StatusClient::fromEnvironment();
         if (null === $client) {
             return $claudeHook ? Command::SUCCESS : Command::FAILURE;
@@ -46,6 +49,13 @@ final class ReportCommand
             return Command::INVALID;
         }
         $fields = get_object_vars($decoded);
+        if ($claudeNotify) {
+            if (!EventSchema::acceptsNotification($fields)) {
+                return Command::INVALID;
+            }
+
+            return (new ClaudeHookReporter())->notify($client, $fields) ? Command::SUCCESS : Command::FAILURE;
+        }
         $kind = $fields['kind'] ?? null;
         $session = $fields['sessionId'] ?? null;
         $sequence = $fields['sequence'] ?? null;

@@ -20,11 +20,34 @@ Each snapshot replaces the entire selected conversation status. A later snapshot
 can establish an epoch even when the first was lost. Hatfield coalesces unsent
 snapshots. Neither adapter replays historical observations, retries in the
 background, or guarantees eventual delivery. `session.ended` requires an already
-live epoch and does not imply process exit. The explicit CLI supports additional
-notifications; no automatic provider source is wired. Hatfield's owner notices
-are messages to the owning agent, not opt-in desktop alerts. Claude's generic
-notification hook mixes lifecycle notices with other messages and is not
-forwarded. The desktop derives lifecycle notices from snapshots.
+live epoch and does not imply process exit.
+
+## Send an additional notification
+
+In Hatfield, enter `/h360-notify Review available | The report is ready.` in the
+selected conversation. The first `|` separates the title and body. The command
+reports whether the desktop confirmed acceptance, not whether it showed a toast.
+
+For Claude, run the following from an environment that already has **that same
+desktop launch's** credentials, after the plugin has selected a conversation:
+
+```sh
+/path/to/hatfield-360/bin/h360-report --claude-notify <<'JSON'
+{"title":"Review available","body":"The report is ready."}
+JSON
+```
+
+For dynamic text, generate the JSON with an encoder and pipe it on stdin; do not
+interpolate text into a shell command. There is no bundled Claude slash command:
+the CLI does not depend on a prompt or shell expansion to pass user arguments.
+This mode shares the hooks' lock and sequence. Exit 0 means accepted or duplicate;
+1 means unconfirmed (including missing or ended selection or a busy lock); 2
+means invalid input. Both commands require nonempty plain text and limit the
+title to 200 Unicode scalar values and the body to 2,000.
+
+These are opt-in notices only. Neither adapter forwards provider lifecycle or
+owner messages. The desktop still derives lifecycle notices from snapshots and
+applies its normal toast suppression to additional notifications.
 
 ## Hatfield coverage
 

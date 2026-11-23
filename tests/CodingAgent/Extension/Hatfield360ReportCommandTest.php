@@ -182,6 +182,33 @@ final class Hatfield360ReportCommandTest extends TestCase
         }
     }
 
+    public function testClaudeNotificationUsesTheLiveHookSelectionAndSequence(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $endpoint = $directory.'/s';
+        $server = listen('unix://'.$endpoint);
+        $environment = ['H360_STATUS_ENDPOINT' => $endpoint, 'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444', 'H360_STATUS_TOKEN' => str_repeat('a', 64)];
+        $session = ['session_id' => 'claude-1'];
+        $input = ['title' => 'Review', 'body' => 'Available'];
+        try {
+            $this->assertSame(1, $this->launch($environment, $input, hook: false, notify: true)->wait());
+            $first = $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionStart', 'source' => 'startup']));
+            $this->assertSame(2, $this->launch($environment, ['title' => str_repeat('é', 201), 'body' => 'Available'], hook: false, notify: true)->wait());
+            $notice = $this->exchange($server, $this->launch($environment, $input, hook: false, notify: true));
+            $this->assertSame('notification', $notice['kind']);
+            $this->assertSame($first['sessionId'], $notice['sessionId']);
+            $this->assertSame($first['sessionEpoch'], $notice['sessionEpoch']);
+            $this->assertSame($first['sequence'] + 1, $notice['sequence']);
+            $this->assertSame($input, array_intersect_key($notice, $input));
+            $end = $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionEnd', 'reason' => 'logout']));
+            $this->assertSame($notice['sequence'] + 1, $end['sequence']);
+            $this->assertSame(1, $this->launch($environment, $input, hook: false, notify: true)->wait());
+        } finally {
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     /** @param array<string, string> $environment @param array<string, mixed>|string $input */
     private function assertQuietHook(array $environment, array|string $input, ?string $diagnostic = null): void
     {
@@ -192,13 +219,15 @@ final class Hatfield360ReportCommandTest extends TestCase
     }
 
     /** @param array<string, string> $environment @param array<string, mixed>|string $input */
-    private function launch(array $environment, array|string $input, bool $hook = true): Process
+    private function launch(array $environment, array|string $input, bool $hook = true, bool $notify = false): Process
     {
         $root = ProjectDir::get();
         $command = [\PHP_BINARY, '-r', '$_composer_autoload_path = $argv[1]; array_splice($argv, 0, 2); $_SERVER["argv"] = $argv; require $argv[0];', '--',
             $root.'/vendor/autoload.php', $root.'/.hatfield/extensions/hatfield-360/bin/h360-report'];
         if ($hook) {
             $command[] = '--claude-hook';
+        } elseif ($notify) {
+            $command[] = '--claude-notify';
         }
         $process = new Process($command, env: $environment + ['HATFIELD_SESSION_ID' => false], input: \is_string($input) ? $input : json_encode($input, \JSON_THROW_ON_ERROR), timeout: 2);
         $process->start();

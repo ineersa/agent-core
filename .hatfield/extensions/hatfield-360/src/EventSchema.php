@@ -34,6 +34,14 @@ final class EventSchema
         return true;
     }
 
+    /** @param array<array-key, mixed> $fields */
+    public static function acceptsNotification(array $fields): bool
+    {
+        return 2 === \count($fields) && self::matches($fields['title'] ?? null, self::EVENTS['notification']['title'])
+            && self::matches($fields['body'] ?? null, self::EVENTS['notification']['body'])
+            && '' !== $fields['title'] && '' !== $fields['body'];
+    }
+
     public static function id(mixed $value): bool
     {
         return \is_string($value) && 1 === preg_match('/\A[a-zA-Z0-9_.:-]{1,128}\z/', $value);

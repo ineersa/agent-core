@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum as Event;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
@@ -212,6 +213,28 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertGreaterThan($registration['sequence'], $latest['sequence']);
             $this->assertGreaterThan($latest['sessionEpoch'], $latest['sequence']);
             $this->assertSame('working', $latest['turn']['status']);
+
+            $context = $this->createMock(CommandContextInterface::class);
+            $context->expects($this->once())->method('notify')->with('Hatfield 360 accepted the notification.', 'success');
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 3, TuiRunObservationTypeEnum::QuestionRequested, 'before-notice'));
+            $invocation = null;
+            $before = $this->acceptFrame($server, beforeReply: static function () use ($extension, $context, &$invocation): void {
+                $invocation = async(static fn () => $extension->handle('Review | Available', $context));
+                async(static fn () => $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 3, TuiRunObservationTypeEnum::ApprovalRequested, 'after-notice')));
+            });
+            $notice = $this->acceptFrame($server);
+            $after = $this->acceptFrame($server);
+            $this->assertNotNull($invocation);
+            $invocation->await(new TimeoutCancellation(2));
+            $this->assertSame('notification', $notice['kind']);
+            $this->assertSame('Review', $notice['title']);
+            $this->assertSame('Available', $notice['body']);
+            $this->assertSame($latest['sessionEpoch'], $notice['sessionEpoch']);
+            $this->assertGreaterThan($before['sequence'], $notice['sequence']);
+            $this->assertGreaterThan($notice['sequence'], $after['sequence']);
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 4, TuiRunObservationTypeEnum::InputResolved, 'before-notice'));
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 5, TuiRunObservationTypeEnum::InputResolved, 'after-notice'));
+            $this->assertNull($this->acceptFrame($server)['attention']);
 
             $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 1, TuiRunObservationTypeEnum::ChildExecutionStarted, childRunId: 'child'));
             $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 2, TuiRunObservationTypeEnum::QuestionRequested, 'same-request', 'child'));
