@@ -84,6 +84,11 @@ Tool invocation failures, including MCP-reported errors, transport failures,
 cancellation, and schema mismatches, are catchable as `RuntimeException` inside
 the script. An invalid structured result never falls back to text.
 
+A script's final return is rendered as text, subject to normal output capping.
+Attachment-shaped fields in that value are data, not instructions to attach files.
+Even `return tool('view_image', ...)` returns metadata without attaching the image;
+call `view_image` directly when the model needs to see it.
+
 Enable `tools.code_mode.enabled: true` in settings and restart Hatfield. The tool
 accepts a PHP **function body** in `script`, not a file path. It is useful for
 multi-step tool work whose intermediate results do not need model interpretation.

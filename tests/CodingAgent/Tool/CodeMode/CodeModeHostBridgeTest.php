@@ -148,8 +148,12 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
 
                 return $handled;
             };
-            [, $mcpRequest, , , $invalidRequest, $outerRequest] = $consume(6);
+            [, $mcpRequest, $invalidRequest, , , $outerRequest] = $consume(6);
             $this->assertSame('fixture_echo', $mcpRequest->name);
+            $this->assertSame(['text' => 'cold worker fixture'], $mcpRequest->arguments);
+            $this->assertSame('read', $invalidRequest->name);
+            $this->assertSame(['invalid list'], $invalidRequest->arguments);
+            $this->assertSame('code_mode', $outerRequest->name);
             // Do not handle either read until both Fibers entered tool(). The
             // queued marker runs only once the second Fiber has yielded.
             $deadline = hrtime(true) + 3_000_000_000;
