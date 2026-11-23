@@ -10,7 +10,7 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
-use Ineersa\CodingAgent\Runtime\Stream\BackgroundJobObservationPublisher;
+use Ineersa\CodingAgent\Runtime\Stream\NativeExecutionObservationPublisher;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\ForegroundBashProcessDTO;
 use Symfony\Component\Clock\Clock;
@@ -24,7 +24,7 @@ final class ProcessStore
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
-        private readonly ?BackgroundJobObservationPublisher $observations = null,
+        private readonly ?NativeExecutionObservationPublisher $observations = null,
     ) {
     }
 

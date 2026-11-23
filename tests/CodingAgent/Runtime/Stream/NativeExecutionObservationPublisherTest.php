@@ -11,13 +11,13 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
-use Ineersa\CodingAgent\Runtime\Stream\BackgroundJobObservationPublisher;
+use Ineersa\CodingAgent\Runtime\Stream\NativeExecutionObservationPublisher;
 use Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
-final class BackgroundJobObservationPublisherTest extends IsolatedKernelTestCase
+final class NativeExecutionObservationPublisherTest extends IsolatedKernelTestCase
 {
     public function testRoutesToRecordedRootWithoutLosingNativeOwner(): void
     {
@@ -29,7 +29,7 @@ final class BackgroundJobObservationPublisherTest extends IsolatedKernelTestCase
         $relationships = $container->get(RunOperationalProjectionRepository::class);
         $relationships->replace(RunState::queued('nested')->with(['parentRunId' => 'child']));
         $relationships->replace(RunState::queued('cycle')->with(['parentRunId' => 'cycle']));
-        $publisher = $container->get(BackgroundJobObservationPublisher::class);
+        $publisher = $container->get(NativeExecutionObservationPublisher::class);
         $sink = $container->get(InMemoryRuntimeEventSink::class);
         $previous = getenv('HATFIELD_CONSUMER_STDOUT_EVENTS');
         putenv('HATFIELD_CONSUMER_STDOUT_EVENTS=0');
@@ -51,24 +51,38 @@ final class BackgroundJobObservationPublisherTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testPublishedCanonicalChildLifecycleRoutesOnlyDirectChildExecution(): void
+    public function testPublishedCanonicalChildLifecycleRoutesNestedAndResumedExecution(): void
     {
         $container = self::getContainer();
         $root = $container->get(HatfieldSessionStore::class)->createSession('root');
         $container->get(AgentArtifactRegistry::class)->create($root, 'agent-fork', 'fork-run', 'worker', AgentArtifactKindEnum::Fork);
+        $container->get(RunOperationalProjectionRepository::class)->replace(RunState::queued('nested')->with(['parentRunId' => 'fork-run']));
         $dispatcher = $container->get(EventDispatcherInterface::class);
         $previous = getenv('HATFIELD_CONSUMER_STDOUT_EVENTS');
         putenv('HATFIELD_CONSUMER_STDOUT_EVENTS=0');
         try {
-            foreach ([[$root, RunEventTypeEnum::RunStarted], ['fork-run', RunEventTypeEnum::RunStarted], [$root, RunEventTypeEnum::AgentEnd], ['fork-run', RunEventTypeEnum::AgentEnd], ['unknown', RunEventTypeEnum::AgentEnd]] as $i => [$run, $type]) {
-                $dispatcher->dispatch(new RunEventPublishedEvent(new RunEvent($run, $i + 1, 1, $type->value, ['reason' => 'private'])));
+            foreach ([
+                [$root, RunEventTypeEnum::RunStarted, []],
+                ['fork-run', RunEventTypeEnum::RunStarted, []],
+                ['nested', RunEventTypeEnum::RunStarted, []],
+                ['fork-run', RunEventTypeEnum::TurnAdvanced, []],
+                ['fork-run', RunEventTypeEnum::AgentEnd, []],
+                ['fork-run', RunEventTypeEnum::TurnAdvanced, ['resumes_execution' => true]],
+                ['unknown', RunEventTypeEnum::AgentEnd, []],
+            ] as $i => [$run, $type, $payload]) {
+                $dispatcher->dispatch(new RunEventPublishedEvent(new RunEvent($run, $i + 1, 1, $type->value, $payload)));
             }
         } finally {
             putenv(false === $previous ? 'HATFIELD_CONSUMER_STDOUT_EVENTS' : 'HATFIELD_CONSUMER_STDOUT_EVENTS='.$previous);
         }
         $events = iterator_to_array($container->get(InMemoryRuntimeEventSink::class)->drain($root));
-        $this->assertSame(['child_execution.started', 'child_execution.ended'], array_column($events, 'type'));
-        $this->assertSame([0, 0], array_column($events, 'seq'));
-        $this->assertSame([['child_run_id' => 'fork-run', 'child_sequence' => 2], ['child_run_id' => 'fork-run', 'child_sequence' => 4]], array_column($events, 'payload'));
+        $this->assertSame(['child_execution.started', 'child_execution.started', 'child_execution.ended', 'child_execution.started'], array_column($events, 'type'));
+        $this->assertSame([0, 0, 0, 0], array_column($events, 'seq'));
+        $this->assertSame([
+            ['child_run_id' => 'fork-run', 'parent_run_id' => $root, 'child_sequence' => 2],
+            ['child_run_id' => 'nested', 'parent_run_id' => 'fork-run', 'child_sequence' => 3],
+            ['child_run_id' => 'fork-run', 'parent_run_id' => $root, 'child_sequence' => 5],
+            ['child_run_id' => 'fork-run', 'parent_run_id' => $root, 'child_sequence' => 6],
+        ], array_column($events, 'payload'));
     }
 }

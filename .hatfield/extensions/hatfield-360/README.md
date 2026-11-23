@@ -37,12 +37,13 @@ closed. Live desktop and managed-shell script smoke tests have not been run.
 
 ## Hatfield child actors
 
-Hatfield advertises `actors` for live initial execution of direct children.
-A committed child run start opens an actor under the selected main actor;
-only a committed child terminal event can close it. Main turn boundaries do
-not close child actors. Reservations, nested children, and resumed executions
-without a new canonical run start are not reported. Attach and reload do not
-reconstruct active actors, and missed events are not replayed.
+Hatfield advertises `actors` for live child execution. A committed run start
+or a committed turn advance that reopens a terminal run starts an actor under
+its recorded immediate parent. A nested actor is only reported when its parent
+actor is known. Main turn boundaries do not close child actors; a committed
+child `AgentEnd` closes the matching execution. Reservations and parent-side
+artifact settlement alone do not establish native start or exit. Attach and
+reload do not reconstruct active actors, and missed events are not replayed.
 
 ## Claude hook coverage
 

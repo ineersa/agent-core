@@ -94,7 +94,7 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $client = $this->createStub(AgentSessionClient::class);
             $draft->handle = new RunHandle($draft->sessionId);
             $job = ['owner_run_id' => 'private-child', 'job_id' => 'bash:7'];
-            $child = ['child_run_id' => 'private-child', 'child_sequence' => 2];
+            $child = ['child_run_id' => 'private-child', 'parent_run_id' => $draft->sessionId, 'child_sequence' => 2];
             $client->method('events')->willReturn([
                 new RuntimeEvent(Event::ChildExecutionStarted->value, 'unrelated', 0, $child),
                 new RuntimeEvent(Event::ChildExecutionStarted->value, $draft->sessionId, 0, $child),
@@ -111,7 +111,12 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
                 new RuntimeEvent(Event::RunCancelled->value, $draft->sessionId, 5),
                 new RuntimeEvent(Event::BackgroundJobEnded->value, $draft->sessionId, 0, $job),
                 new RuntimeEvent(Event::BackgroundJobEnded->value, $draft->sessionId, 0, $job),
-                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, ['child_run_id' => 'private-child', 'child_sequence' => 12]),
+                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, ['child_run_id' => 'private-child', 'parent_run_id' => $draft->sessionId, 'child_sequence' => 12]),
+                new RuntimeEvent(Event::ChildExecutionStarted->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 20]),
+                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 12]),
+                new RuntimeEvent(Event::ChildExecutionStarted->value, $draft->sessionId, 0, ['child_run_id' => 'nested', 'parent_run_id' => 'private-child', 'child_sequence' => 1]),
+                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, ['child_run_id' => 'nested', 'parent_run_id' => 'private-child', 'child_sequence' => 2]),
+                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 22]),
             ]);
             $context->sessionServices->parentPoller->poll($draft, $client);
             $actorStart = $this->acceptFrame($server);
@@ -148,6 +153,16 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertSame($actorStart['actorId'], $actorEnd['actorId']);
             $this->assertSame($actorStart['sequence'], $actorEnd['actorStart']);
             $this->assertSame($first['sessionEpoch'], $actorEnd['sessionEpoch']);
+            $reopened = $this->acceptFrame($server);
+            $nested = $this->acceptFrame($server);
+            $nestedEnd = $this->acceptFrame($server);
+            $resumedEnd = $this->acceptFrame($server);
+            $this->assertSame(['actor.started', 'actor.started', 'actor.ended', 'actor.ended'], array_column([$reopened, $nested, $nestedEnd, $resumedEnd], 'kind'));
+            $this->assertSame($actorStart['actorId'], $reopened['actorId']);
+            $this->assertSame($reopened['actorId'], $nested['parentId']);
+            $this->assertSame($reopened['sequence'], $nested['parentStart']);
+            $this->assertSame($nested['sequence'], $nestedEnd['actorStart']);
+            $this->assertSame($reopened['sequence'], $resumedEnd['actorStart']);
 
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
             $harness = new VirtualTuiHarness(sessionId: 'resumed-session');

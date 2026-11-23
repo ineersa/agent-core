@@ -16,7 +16,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
-final readonly class BackgroundJobObservationPublisher
+final readonly class NativeExecutionObservationPublisher
 {
     public function __construct(
         private RuntimeEventSinkInterface $local,
@@ -57,6 +57,7 @@ final readonly class BackgroundJobObservationPublisher
         $event = $published->event;
         $type = match ($event->type) {
             RunEventTypeEnum::RunStarted->value => RuntimeEventTypeEnum::ChildExecutionStarted,
+            RunEventTypeEnum::TurnAdvanced->value => true === ($event->payload['resumes_execution'] ?? false) ? RuntimeEventTypeEnum::ChildExecutionStarted : null,
             RunEventTypeEnum::AgentEnd->value => RuntimeEventTypeEnum::ChildExecutionEnded,
             default => null,
         };
@@ -64,16 +65,17 @@ final readonly class BackgroundJobObservationPublisher
             return;
         }
         try {
-            // Direct child actors only. A durable session identity is not an
-            // actor even if its session metadata names an originating session.
             if ((string) (int) $event->runId === $event->runId && $this->sessions->exists($event->runId)) {
                 return;
             }
             $parent = $this->parentRunId($event->runId);
-            if (null === $parent || $parent === $event->runId || (string) (int) $parent !== $parent || !$this->sessions->exists($parent)) {
+            $root = null !== $parent ? $this->rootSession($parent) : null;
+            if (null === $parent || null === $root || $root === $event->runId) {
                 return;
             }
-            $this->emit(new RuntimeEvent($type->value, $parent, 0, ['child_run_id' => $event->runId, 'child_sequence' => $event->seq]));
+            $this->emit(new RuntimeEvent($type->value, $root, 0, [
+                'child_run_id' => $event->runId, 'parent_run_id' => $parent, 'child_sequence' => $event->seq,
+            ]));
         } catch (\Throwable $exception) {
             $this->logger->warning('child_execution.observation_failed', [
                 'component' => 'child_execution', 'event_type' => 'observation_failed',

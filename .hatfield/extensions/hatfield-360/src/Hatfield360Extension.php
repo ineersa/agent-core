@@ -40,8 +40,10 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     private array $waits = [];
     /** @var array<string, array{start: int, ending: bool}> */
     private array $scripts = [];
-    /** @var array<string, array{native: int, start: int, ending: bool}> */
+    /** @var array<string, array{native: int, start: int, parent: string, end: ?int}> */
     private array $actors = [];
+    /** @var array<string, int> */
+    private array $confirmedActors = [];
     private bool $closing = false;
     /** @var Future<void>|null */
     private ?Future $drain = null;
@@ -70,6 +72,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         $this->waits = [];
         $this->scripts = [];
         $this->actors = [];
+        $this->confirmedActors = [];
         // Previous unsent work no longer describes the selected session.
         $this->pending = [];
         $this->checkpoint = new SessionCheckpointDTO($sessionId, $this->epoch, (string) Uuid::v7(), 'hatfield', ['waits', 'session-end', 'scripts', 'actors']);
@@ -84,6 +87,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         $this->closing = true;
         $this->scripts = [];
         $this->actors = [];
+        $this->confirmedActors = [];
         // Drop historical work rather than spending one socket deadline per queued
         // event. An in-flight frame keeps its original order before the final frame.
         $this->pending = [];
@@ -205,33 +209,39 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
 
     private function observeChild(TuiRunObservationDTO $observation): void
     {
-        if (null === $observation->childRunId || $observation->childRunId === $this->sessionId || $observation->sequence <= 0) {
+        if (null === $observation->childRunId || null === $observation->parentRunId || $observation->childRunId === $this->sessionId || $observation->sequence <= 0) {
             return;
         }
         $id = hash('sha256', $observation->childRunId);
+        $parentId = $observation->parentRunId === $this->sessionId ? 'main' : hash('sha256', $observation->parentRunId);
+        $actor = $this->actors[$id] ?? null;
         if (TuiRunObservationTypeEnum::ChildExecutionStarted === $observation->type) {
-            if (isset($this->actors[$id])) {
+            if (null !== $actor && (null === $actor['end'] || $observation->sequence <= $actor['end'])) {
+                return;
+            }
+            $parent = $this->actors[$parentId] ?? null;
+            $parentStart = 'main' === $parentId ? $this->epoch : (null === ($parent['end'] ?? null) ? ($parent['start'] ?? null) : null);
+            if (null === $parentStart || $id === $parentId) {
                 return;
             }
             // The session registration already occupies the main actor slot.
-            if (\count($this->actors) >= 31) {
+            if (null === $actor && \count($this->actors) >= 31) {
                 $this->logDrop($this->sessionId);
 
                 return;
             }
             $start = ++self::$sequence;
-            if ($this->enqueue('actor.started', $start, ['actorId' => $id, 'parentId' => 'main', 'parentStart' => $this->epoch])) {
-                $this->actors[$id] = ['native' => $observation->sequence, 'start' => $start, 'ending' => false];
+            if ($this->enqueue('actor.started', $start, ['actorId' => $id, 'parentId' => $parentId, 'parentStart' => $parentStart])) {
+                $this->actors[$id] = ['native' => $observation->sequence, 'start' => $start, 'parent' => $parentId, 'end' => null];
             }
 
             return;
         }
-        $actor = $this->actors[$id] ?? null;
-        if (null === $actor || $actor['ending'] || $observation->sequence <= $actor['native']) {
+        if (null === $actor || $actor['parent'] !== $parentId || null !== $actor['end'] || $observation->sequence <= $actor['native']) {
             return;
         }
         if ($this->enqueue('actor.ended', ++self::$sequence, ['actorId' => $id, 'actorStart' => $actor['start']])) {
-            $this->actors[$id]['ending'] = true;
+            $this->actors[$id]['end'] = $observation->sequence;
         } else {
             unset($this->actors[$id]);
         }
@@ -270,6 +280,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                     $this->pending = [];
                     $this->scripts = [];
                     $this->actors = [];
+                    $this->confirmedActors = [];
 
                     return;
                 }
@@ -286,6 +297,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                             $this->pending = [];
                             $this->scripts = [];
                             $this->actors = [];
+                            $this->confirmedActors = [];
 
                             return;
                         }
@@ -305,10 +317,15 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                     $actorStart = 'actor.started' === $kind;
                     $actorEnd = 'actor.ended' === $kind;
                     $actorId = ($actorStart || $actorEnd) ? (string) $fields['actorId'] : '';
-                    if ($actorEnd && ($this->actors[$actorId]['start'] ?? null) !== $fields['actorStart']) {
+                    if ($actorEnd && ($this->confirmedActors[$actorId] ?? null) !== $fields['actorStart']) {
                         continue;
                     }
-                    $sent = $client->send($kind, $sessionId, $sequence, $epoch, $fields, requireApplied: $scriptStart || $actorStart);
+                    if ($actorStart && (isset($this->confirmedActors[$actorId]) || \count($this->confirmedActors) >= 31
+                        || ('main' !== $fields['parentId'] && ($this->confirmedActors[(string) $fields['parentId']] ?? null) !== $fields['parentStart']))) {
+                        $sent = false;
+                    } else {
+                        $sent = $client->send($kind, $sessionId, $sequence, $epoch, $fields, requireApplied: $scriptStart || $actorStart || $actorEnd);
+                    }
                     if (!$sent) {
                         $this->logDrop($sessionId);
                     }
@@ -317,8 +334,15 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                     if ($this->epoch === $epoch && ($scriptEnd || ($scriptStart && !$sent))) {
                         unset($this->scripts[$id]);
                     }
-                    if ($this->epoch === $epoch && ($actorEnd || ($actorStart && !$sent))) {
-                        unset($this->actors[$actorId]);
+                    if ($this->epoch === $epoch && ($actorStart || $actorEnd)) {
+                        if ($actorStart && $sent) {
+                            $this->confirmedActors[$actorId] = $sequence;
+                        } elseif ($actorEnd && $sent) {
+                            unset($this->confirmedActors[$actorId]);
+                        }
+                        if (($actorEnd || !$sent) && ($this->actors[$actorId]['start'] ?? null) === ($actorStart ? $sequence : $fields['actorStart'])) {
+                            unset($this->actors[$actorId]);
+                        }
                     }
                 }
             } catch (\Throwable) {
@@ -326,6 +350,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                 $this->pending = [];
                 $this->scripts = [];
                 $this->actors = [];
+                $this->confirmedActors = [];
             } finally {
                 $this->drain = null;
             }

@@ -14,6 +14,7 @@ final readonly class TuiRunObservationDTO
         public TuiRunObservationTypeEnum $type,
         public ?string $requestId = null,
         public ?string $childRunId = null,
+        public ?string $parentRunId = null,
     ) {
     }
 }
