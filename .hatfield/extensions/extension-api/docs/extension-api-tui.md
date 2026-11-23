@@ -53,6 +53,11 @@ Bootstrap history and transient deltas do not dispatch this hook. Turn start
 can reflect an internal model step; a foreground terminal event alone does not
 prove background work has settled. The callback must not block the UI.
 
+Implement `TuiSessionCloseObserverInterface` to receive
+`onTuiSessionClosing($sessionId)` before teardown on final graceful interactive
+quit. It does not fire for drafts, session switches, settings reloads, or abrupt
+process exits. Keep any best-effort shutdown work bounded.
+
 ## UX guidelines
 
 - Keep overlays dismissible (Esc) where practical.

@@ -12,6 +12,7 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionObserverInterface;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
@@ -47,7 +48,7 @@ final class ExtensionManager
     /** @var list<LoadedExtensionItemDTO> */
     private array $loadOutcomes = [];
 
-    /** @var list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface> */
+    /** @var list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface|TuiSessionCloseObserverInterface> */
     private array $tuiExtensions = [];
 
     private bool $loaded = false;
@@ -62,7 +63,7 @@ final class ExtensionManager
     }
 
     /**
-     * @return list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface>
+     * @return list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface|TuiSessionCloseObserverInterface>
      */
     public function getTuiExtensions(): array
     {
@@ -302,7 +303,7 @@ final class ExtensionManager
         }
 
         $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, true);
-        if ($instance instanceof TuiExtensionInterface || $instance instanceof TuiSessionObserverInterface || $instance instanceof TuiRunObserverInterface) {
+        if ($instance instanceof TuiExtensionInterface || $instance instanceof TuiSessionObserverInterface || $instance instanceof TuiRunObserverInterface || $instance instanceof TuiSessionCloseObserverInterface) {
             $this->tuiExtensions[] = $instance;
         }
 

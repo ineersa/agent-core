@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\Hatfield360;
 
+use Amp\CancelledException;
+use Amp\Future;
+use Amp\TimeoutCancellation;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionObserverInterface;
 use Ineersa\HatfieldExt\Hatfield360\DTO\SessionCheckpointDTO;
 use Psr\Log\LoggerAwareInterface;
@@ -17,7 +21,7 @@ use Symfony\Component\Uid\Uuid;
 
 use function Amp\async;
 
-final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, LoggerAwareInterface
+final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, LoggerAwareInterface
 {
     use LoggerAwareTrait;
 
@@ -31,7 +35,9 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     private ?int $turn = null;
     /** @var array<string, int> */
     private array $waits = [];
-    private bool $sending = false;
+    private bool $closing = false;
+    /** @var Future<void>|null */
+    private ?Future $drain = null;
     private ?SessionCheckpointDTO $checkpoint = null;
     /** @var list<array{string, string, int, int, array<string, mixed>}> */
     private array $pending = [];
@@ -47,7 +53,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
 
     public function onTuiSessionSelected(string $sessionId): void
     {
-        if (null === $this->client && !$this->canBootstrap) {
+        if ($this->closing || (null === $this->client && !$this->canBootstrap)) {
             return;
         }
 
@@ -57,13 +63,38 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         $this->waits = [];
         // Previous unsent work no longer describes the selected session.
         $this->pending = [];
-        $this->checkpoint = new SessionCheckpointDTO($sessionId, $this->epoch, (string) Uuid::v7(), 'hatfield', ['waits']);
+        $this->checkpoint = new SessionCheckpointDTO($sessionId, $this->epoch, (string) Uuid::v7(), 'hatfield', ['waits', 'session-end']);
         $this->scheduleDrain();
+    }
+
+    public function onTuiSessionClosing(string $sessionId): void
+    {
+        if ($this->closing || '' === $sessionId || $this->sessionId !== $sessionId) {
+            return;
+        }
+        $this->closing = true;
+        // Drop historical work rather than spending one socket deadline per queued
+        // event. An in-flight frame keeps its original order before the final frame.
+        $this->pending = [];
+        if (null === $this->client) {
+            // Quit must not start or wait for a manual authorization exchange.
+            $this->checkpoint = null;
+
+            return;
+        }
+        $this->enqueue('session.ended', ++self::$sequence, []);
+        try {
+            $this->drain?->await(new TimeoutCancellation(0.65));
+        } catch (CancelledException) {
+            $this->pending = [];
+            $this->checkpoint = null;
+            $this->logDrop($sessionId);
+        }
     }
 
     public function onTuiRunObserved(TuiRunObservationDTO $observation): void
     {
-        if ('' === $this->sessionId || $observation->sessionId !== $this->sessionId) {
+        if ($this->closing || '' === $this->sessionId || $observation->sessionId !== $this->sessionId) {
             return;
         }
 
@@ -140,13 +171,12 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
 
     private function scheduleDrain(): void
     {
-        if ($this->sending) {
+        if (null !== $this->drain) {
             return;
         }
-        $this->sending = true;
-        async(function (): void {
+        $this->drain = async(function (): void {
             try {
-                $client = $this->client ??= HatfieldProcessIdentityProvider::register();
+                $client = $this->client ??= ($this->closing ? null : HatfieldProcessIdentityProvider::register());
                 if (null === $client) {
                     $this->logDrop($this->sessionId);
                     $this->pending = [];
@@ -182,9 +212,9 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                 $this->logDrop($this->sessionId);
                 $this->pending = [];
             } finally {
-                $this->sending = false;
+                $this->drain = null;
             }
-        })->ignore();
+        });
     }
 
     private function logDrop(string $sessionId): void

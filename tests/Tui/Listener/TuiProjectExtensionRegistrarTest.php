@@ -32,6 +32,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
+use function Amp\async;
 use function Amp\Socket\listen;
 
 final class TuiProjectExtensionRegistrarTest extends TestCase
@@ -56,13 +57,8 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
                 putenv($key.'='.$value);
             }
             $server = listen('unix://'.$endpoint);
-            $deliveryFailure = new DeferredFuture();
             $logger = $this->createMock(LoggerInterface::class);
-            $logger->expects($this->once())->method('warning')->willReturnCallback(
-                static function (string|\Stringable $message, array $context) use ($deliveryFailure): void {
-                    $deliveryFailure->complete([(string) $message, $context]);
-                },
-            );
+            $logger->expects($this->never())->method('warning');
             $manager = new ExtensionManager(
                 config: new AppConfig(
                     tui: new TuiConfig(theme: 'default', themePaths: []),
@@ -92,7 +88,7 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertSame(1, $first['version']);
             $this->assertSame('session.started', $first['kind']);
             $this->assertSame('hatfield', $first['provider']);
-            $this->assertSame(['waits'], $first['capabilities']);
+            $this->assertSame(['waits', 'session-end'], $first['capabilities']);
             $this->assertSame($first['sequence'], $first['sessionEpoch']);
 
             $client = $this->createStub(AgentSessionClient::class);
@@ -129,12 +125,13 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertGreaterThan($first['sequence'], $second['sequence']);
             $this->assertSame($second['sequence'], $second['sessionEpoch']);
 
-            $resumed->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionStarted);
-            $this->acceptFrame($server, '{"ok":false,"error":"unauthorized"}');
-            [$message, $logContext] = $deliveryFailure->getFuture()->await(new TimeoutCancellation(2));
-            $this->assertSame('hatfield_360.status_delivery_failed', $message);
-            $this->assertSame('resumed-session', $logContext['session_id']);
-            $this->assertArrayNotHasKey('token', $logContext);
+            $closing = async(static fn () => $resumed->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionGracefullyClosing));
+            $end = $this->acceptFrame($server);
+            $closing->await(new TimeoutCancellation(2));
+            $this->assertSame('session.ended', $end['kind']);
+            $this->assertSame($second['sessionId'], $end['sessionId']);
+            $this->assertSame($second['sessionEpoch'], $end['sessionEpoch']);
+            $this->assertSame($second['sequence'] + 1, $end['sequence']);
         } finally {
             if (isset($server)) {
                 $server->close();

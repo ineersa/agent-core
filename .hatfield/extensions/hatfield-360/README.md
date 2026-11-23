@@ -14,6 +14,14 @@ printf '%s\n' '{"kind":"session.started","sessionId":"a-conversation","sequence"
 
 In explicit mode the caller owns sequencing and correlation. Exit 0 means a successful protocol reply (including stale or duplicate no-ops); 1 means delivery failed or credentials were absent; 2 means the event was invalid. Do not mix explicit reporting with Claude hook reporting under the same launch credentials. For manual Hatfield registration, the host supplies a verified owner identity to `StatusClient::registerManual()`; the library does not discover or infer process ownership.
 
+## Hatfield graceful quit
+
+Hatfield advertises `session-end` and makes a bounded, best-effort attempt to
+report `session.ended` for the selected conversation on final interactive quit.
+It discards unsent activity and does not initiate manual registration during quit.
+Switches, drafts, reloads and abrupt termination do not send this event.
+Hatfield 360 still observes process exit independently.
+
 ## Claude hook coverage
 
 The plugin reports explicitly launched Claude session selections (`startup`, `resume`, `clear`) and terminal session-end reasons. It excludes compaction and forks, which do not reliably indicate a new foreground conversation. A foreground `UserPromptSubmit` carrying a UUID `prompt_id` starts a turn. Subsequent hooks must match that prompt and the selected session; child hooks are ignored. `Stop` with `stop_hook_active: false` ends the foreground turn as `unknown`, never as `completed`; `StopFailure` reports a correlated failure. `PreToolUse` reports working activity for that turn without tool names, inputs, or results.

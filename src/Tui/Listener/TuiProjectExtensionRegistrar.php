@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionObserverInterface;
 use Ineersa\Tui\Runtime\BridgeTuiExtensionContext;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -30,6 +31,22 @@ final class TuiProjectExtensionRegistrar implements TuiListenerRegistrar
             }
             if ($extension instanceof TuiRunObserverInterface) {
                 $context->sessionServices->parentPoller->observeRun($extension);
+            }
+            if ($extension instanceof TuiSessionCloseObserverInterface) {
+                $context->lifecycle->subscribe(function (TuiSessionLifecycleEventTypeEnum $event) use ($bridge, $extension): void {
+                    if (TuiSessionLifecycleEventTypeEnum::SessionGracefullyClosing !== $event || '' === ($sessionId = $bridge->getSessionId())) {
+                        return;
+                    }
+                    try {
+                        $extension->onTuiSessionClosing($sessionId);
+                    } catch (\Throwable $exception) {
+                        $this->logger->warning('extension.tui_session_close_observer_failed', [
+                            'component' => 'tui_extension', 'event_type' => 'tui_session_close_observer_failed',
+                            'run_id' => $sessionId, 'session_id' => $sessionId,
+                            'extension' => $extension::class, 'exception_class' => $exception::class,
+                        ]);
+                    }
+                });
             }
             if ($extension instanceof TuiSessionObserverInterface) {
                 $context->lifecycle->subscribe(function (TuiSessionLifecycleEventTypeEnum $event) use ($bridge, $extension): void {
