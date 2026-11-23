@@ -22,9 +22,9 @@ use Mcp\Schema\Content\TextResourceContents;
 /**
  * Hatfield adapter wrapping the official PHP MCP SDK client.
  *
- * This is the ONLY class outside the Mcp\Client namespace that may
- * import `Mcp\*` vendor types. It translates between the vendor API
- * and the Hatfield {@see McpClientInterface} contract.
+ * Translates the vendor client API to the Hatfield {@see McpClientInterface}
+ * contract. Output-schema validation separately reuses the SDK validator
+ * in Hatfield's MCP result mapper.
  *
  * All return types are Hatfield-owned or PHP-native arrays,
  * ensuring no vendor types leak to callers.
