@@ -61,6 +61,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  */
 final readonly class RegistryBackedToolbox implements ToolboxInterface
 {
+    private const int MAX_OUTPUT_SCHEMA_DESCRIPTION_BYTES = 4096;
+
     /**
      * Provider-visible Tool metadata per canonical definition.
      *
@@ -243,8 +245,12 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         $description = $definition->description;
         if (null !== $definition->outputJsonSchema) {
             $schema = (new JsonEncode())->encode((object) $definition->outputJsonSchema, JsonEncoder::FORMAT);
-            $description .= "\n\nOutput schema (applies only when structured content is supplied): ".$schema
-                ."\nIn code mode, the original JSON is validated before objects become associative PHP arrays. If structured content is absent, tool() returns text.";
+            // Omit oversized schemas rather than publishing misleading partial JSON.
+            // The definition and handler retain the full schema for validation.
+            $description .= \strlen($schema) <= self::MAX_OUTPUT_SCHEMA_DESCRIPTION_BYTES
+                ? "\n\nOutput schema (applies only when structured content is supplied): ".$schema
+                : \sprintf("\n\nOutput schema omitted from this description (exceeds %d bytes); the full schema is still used for validation.", self::MAX_OUTPUT_SCHEMA_DESCRIPTION_BYTES);
+            $description .= "\nIn code mode, the original JSON is validated before objects become associative PHP arrays. If structured content is absent, tool() returns text.";
         }
 
         if (null !== $definition->parametersJsonSchema) {

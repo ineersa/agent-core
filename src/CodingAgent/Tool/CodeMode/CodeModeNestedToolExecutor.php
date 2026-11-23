@@ -81,6 +81,9 @@ final readonly class CodeModeNestedToolExecutor
             if (null === $result->programmaticResult) {
                 throw new ToolCallException('Typed tool result has no programmatic value.', retryable: false);
             }
+            if ([0] !== array_keys($result->programmaticResult)) {
+                throw new ToolCallException('Typed tool result has an invalid programmatic value slot.', retryable: false);
+            }
             $value = $result->programmaticResult[0];
             $failure = ToolResultText::failureMessage($value);
             if (null !== $failure) {

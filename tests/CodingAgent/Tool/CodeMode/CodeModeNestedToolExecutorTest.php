@@ -52,6 +52,9 @@ final class CodeModeNestedToolExecutorTest extends TestCase
         yield 'wrong tool name' => [new ToolResult('nested-call', 'different-tool', self::CONTENT), $identityError];
         yield 'missing programmatic value' => [new ToolResult('nested-call', 'fixture', self::CONTENT), 'Typed tool result has no programmatic value.'];
         yield 'raw metadata is not a programmatic value' => [new ToolResult('nested-call', 'fixture', self::CONTENT, ['raw_result' => null]), 'Typed tool result has no programmatic value.'];
+        yield 'empty programmatic slot' => [new ToolResult('nested-call', 'fixture', self::CONTENT, programmaticResult: []), 'Typed tool result has an invalid programmatic value slot.'];
+        yield 'wrong programmatic slot key' => [new ToolResult('nested-call', 'fixture', self::CONTENT, programmaticResult: [1 => null]), 'Typed tool result has an invalid programmatic value slot.'];
+        yield 'extra programmatic slot value' => [new ToolResult('nested-call', 'fixture', self::CONTENT, programmaticResult: [null, 42]), 'Typed tool result has an invalid programmatic value slot.'];
         yield 'reported error despite programmatic value' => [new ToolResult('nested-call', 'fixture', self::CONTENT, isError: true, programmaticResult: [42]), 'Nested tool returned an error.'];
         yield 'malformed content despite safe programmatic value' => [new ToolResult('nested-call', 'fixture', [['type' => 'text', 'text' => "\xFF"]], programmaticResult: [42]), ToolResultText::FAILURE_MESSAGE];
 

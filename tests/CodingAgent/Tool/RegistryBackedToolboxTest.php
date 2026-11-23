@@ -176,6 +176,31 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame([], $toolbox->getTools());
     }
 
+    #[TestWith([4096, true])]
+    #[TestWith([4097, false])]
+    #[TestWith([1048576, false])]
+    public function testProviderDescriptionBoundsSchemaWithoutChangingValidationMetadata(int $encodedBytes, bool $included): void
+    {
+        $schema = ['type' => 'string', 'const' => str_repeat('x', $encodedBytes - \strlen('{"type":"string","const":""}'))];
+        $json = json_encode($schema, \JSON_THROW_ON_ERROR);
+        $this->assertSame($encodedBytes, \strlen($json));
+        $registry = new ToolRegistry();
+        $registry->addDynamicTool('mcp_fixture', 'Fixture', $this->dummyHandler('result'), [], outputJsonSchema: $schema);
+        $toolbox = $this->createToolbox($registry);
+        $tool = $toolbox->getTools()[0];
+        $description = (new ToolNormalizer())->normalize($tool)['function']['description'];
+
+        if ($included) {
+            $this->assertStringContainsString($json, $description);
+        } else {
+            $this->assertStringContainsString('Output schema omitted from this description (exceeds 4096 bytes); the full schema is still used for validation.', $description);
+            $this->assertStringNotContainsString($json, $description);
+            $this->assertLessThan(512, \strlen($description));
+        }
+        $this->assertSame($schema, $registry->toolDefinition('mcp_fixture')->outputJsonSchema);
+        $this->assertSame($tool, $toolbox->getTools()[0]);
+    }
+
     public function testProviderDescriptionIncludesOutputSchemaWithReflectedInput(): void
     {
         $registry = new ToolRegistry();

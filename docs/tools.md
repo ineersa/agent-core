@@ -74,6 +74,10 @@ successful value is data, not an exception.
 For MCP tools, `tool()` returns explicitly supplied structured content (including
 `null`); if it is absent, `tool()` returns MCP text. The output schema shown in a
 tool's description applies only to structured content, not to fallback text.
+Schemas whose serialized JSON exceeds 4 KiB per tool are omitted from the
+model-facing description with a notice, not truncated into partial JSON. The
+full schema remains available for runtime validation; this is not a total
+request-size limit across all tools.
 Hatfield validates the original JSON against the declared schema, if any, before
 converting objects to associative PHP arrays. For example, read a returned object
 field as `$result['name']`. After conversion, `{}` and `[]` both become `[]`, and
