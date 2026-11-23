@@ -41,6 +41,7 @@ final class BackgroundProcessControllerSessionLifecycleListener
 
     private function cleanup(string $controllerSessionId, string $phase, bool $permanentDeletion = false): void
     {
+        $startedAt = hrtime(true);
         $cleaned = 0;
         $failed = 0;
         $scopeCount = 0;
@@ -93,7 +94,6 @@ final class BackgroundProcessControllerSessionLifecycleListener
                         ]);
                     }
                 }
-                $this->manager->cleanupSessionSidecars($sessionId, $permanentDeletion);
             } catch (\Throwable $exception) {
                 ++$failed;
                 $this->logger->warning('background_process.session_cleanup_scope_failed', [
@@ -106,9 +106,26 @@ final class BackgroundProcessControllerSessionLifecycleListener
             }
         }
 
+        try {
+            $failed += $this->manager->cleanupSessionSidecars($sessionIds, $permanentDeletion);
+        } catch (\Throwable $exception) {
+            ++$failed;
+            $this->logger->warning('background_process.session_cleanup_scan_failed', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.session_cleanup_scan_failed',
+                'session_id' => $controllerSessionId,
+                'run_id' => $controllerSessionId,
+                'lifecycle_phase' => $phase,
+                'exception_class' => $exception::class,
+            ]);
+        }
+
         $this->logger->info('background_process.session_cleanup_completed', [
             'component' => 'tool.background_process',
             'event_type' => 'background_process.session_cleanup_completed',
+            'session_id' => $controllerSessionId,
+            'run_id' => $controllerSessionId,
+            'duration_ms' => (hrtime(true) - $startedAt) / 1_000_000,
             'lifecycle_phase' => $phase,
             'scope_count' => $scopeCount,
             'cleaned_count' => $cleaned,
