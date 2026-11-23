@@ -14,7 +14,7 @@ use Symfony\Component\Uid\Uuid;
 
 final class ClaudeHookReporter
 {
-    private const array CAPABILITIES = ['session-end'];
+    private const array CAPABILITIES = ['session-end', 'waits'];
 
     /** @param array<array-key, mixed> $hook */
     public function report(StatusClient $client, array $hook): bool
@@ -22,7 +22,7 @@ final class ClaudeHookReporter
         $session = $hook['session_id'] ?? null;
         $event = $hook['hook_event_name'] ?? null;
         if (!\is_string($session) || !EventSchema::id($session) || isset($hook['agent_id'])
-            || !\in_array($event, ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'StopFailure'], true)) {
+            || !\in_array($event, ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'Stop', 'StopFailure', 'PreToolUse', 'Elicitation', 'ElicitationResult'], true)) {
             return false;
         }
 
@@ -49,7 +49,8 @@ final class ClaudeHookReporter
                 $lock->release();
             }
         } catch (IOException|LockExceptionInterface|\JsonException) {
-            // Hook telemetry is optional; malformed state or unavailable storage drops the observation.
+            HookDiagnostic::write('hook_state_failed');
+
             return false;
         }
     }
@@ -69,6 +70,7 @@ final class ClaudeHookReporter
         $prompt = null;
         $turn = null;
         $fields = [];
+        $waits = $previous['waits'] ?? null;
         if ('SessionStart' === $event) {
             $source = $hook['source'] ?? null;
             // Compaction doesn't select a session. A fork may be a background copy.
@@ -78,7 +80,7 @@ final class ClaudeHookReporter
             }
             $state = [
                 'sequence' => $sequence, 'epoch' => $sequence, 'session' => $session,
-                'ended' => false, 'prompt' => null, 'turn' => null,
+                'ended' => false, 'prompt' => null, 'turn' => null, 'waits' => [],
                 'checkpoint' => ['eventId' => (string) Uuid::v7(), 'capabilities' => self::CAPABILITIES],
             ];
             $this->writeState($path, $state);
@@ -100,6 +102,7 @@ final class ClaudeHookReporter
             if (!\in_array($hook['reason'] ?? null, ['logout', 'prompt_input_exit', 'other'], true)) {
                 return false;
             }
+            $waits = null === $waits ? null : [];
             $kind = 'session.ended';
         } else {
             $promptId = $hook['prompt_id'] ?? null;
@@ -113,13 +116,57 @@ final class ClaudeHookReporter
                 }
                 $prompt = $promptId;
                 $turn = $sequence;
+                $waits = null === $waits ? null : [];
                 $kind = 'turn.started';
             } else {
-                if ($promptId !== ($previous['prompt'] ?? null) || !isset($previous['turn']) || !\is_string($hook['error'] ?? null)) {
+                if ($promptId !== ($previous['prompt'] ?? null) || !isset($previous['turn'])) {
                     return false;
                 }
-                $fields += ['turnStart' => $previous['turn'], 'outcome' => 'failed'];
-                $kind = 'turn.ended';
+                $prompt = $promptId;
+                $turn = $previous['turn'];
+                $fields['turnStart'] = $turn;
+                if ('PreToolUse' === $event) {
+                    if (!EventSchema::id($hook['tool_name'] ?? null) || !EventSchema::id($hook['tool_use_id'] ?? null)) {
+                        return false;
+                    }
+                    // MCP and plugin tool names are caller-defined; do not forward them.
+                    $kind = 'activity.changed';
+                    $fields['activity'] = 'working';
+                } elseif ('Stop' === $event || 'StopFailure' === $event) {
+                    if ('Stop' === $event ? false !== ($hook['stop_hook_active'] ?? null) : !\is_string($hook['error'] ?? null)) {
+                        return false;
+                    }
+                    $fields['outcome'] = 'Stop' === $event ? 'unknown' : 'failed';
+                    $kind = 'turn.ended';
+                    $turn = null;
+                    $waits = null === $waits ? null : [];
+                } else {
+                    $server = $hook['mcp_server_name'] ?? null;
+                    $id = $hook['elicitation_id'] ?? null;
+                    if (null === $waits || !EventSchema::id($server) || !EventSchema::id($id)) {
+                        return false;
+                    }
+                    $key = hash('sha256', $server."\0".$id);
+                    $fields['waitId'] = $key;
+                    if ('Elicitation' === $event) {
+                        if (isset($waits[$key]) || \count($waits) >= 16) {
+                            return false;
+                        }
+                        $waits[$key] = $sequence;
+                        $fields['reason'] = 'external-input';
+                        $kind = 'wait.started';
+                    } else {
+                        $start = $waits[$key] ?? 0;
+                        if ($start <= 0 || !\in_array($hook['action'] ?? null, ['accept', 'decline', 'cancel'], true)) {
+                            return false;
+                        }
+                        // Keep a bounded tombstone through this prompt so a replayed
+                        // request cannot pair with a delayed result for the same ID.
+                        $waits[$key] = -$start;
+                        $fields['waitStart'] = $start;
+                        $kind = 'wait.resolved';
+                    }
+                }
             }
         }
 
@@ -131,7 +178,7 @@ final class ClaudeHookReporter
         // lock also holds through the checkpoint acknowledgement and dependent write.
         $this->writeState($path, [
             'sequence' => $sequence, 'epoch' => $epoch, 'session' => $session,
-            'ended' => 'session.ended' === $kind, 'prompt' => $prompt, 'turn' => $turn, 'checkpoint' => null,
+            'ended' => 'session.ended' === $kind, 'prompt' => $prompt, 'turn' => $turn, 'waits' => $waits, 'checkpoint' => null,
         ]);
 
         return $client->send($kind, $session, $sequence, $epoch, $fields);
@@ -143,19 +190,19 @@ final class ClaudeHookReporter
         return $client->ensureSession(new SessionCheckpointDTO($session, $epoch, $checkpoint['eventId'], 'claude', $checkpoint['capabilities']));
     }
 
-    /** @param array{sequence: int, epoch: int, session: string, ended: bool, prompt: ?string, turn: ?int, checkpoint: ?array{eventId: string, capabilities: list<string>}} $state */
+    /** @param array{sequence: int, epoch: int, session: string, ended: bool, prompt: ?string, turn: ?int, waits: ?array<string, int>, checkpoint: ?array{eventId: string, capabilities: list<string>}} $state */
     private function writeState(string $path, array $state): void
     {
         (new Filesystem())->dumpFile($path, json_encode($state, \JSON_THROW_ON_ERROR));
     }
 
-    /** @return array{sequence: int, epoch: int, session: string, ended: bool, prompt: ?string, turn: ?int, checkpoint: ?array{eventId: string, capabilities: list<string>}}|null */
+    /** @return array{sequence: int, epoch: int, session: string, ended: bool, prompt: ?string, turn: ?int, waits: ?array<string, int>, checkpoint: ?array{eventId: string, capabilities: list<string>}}|null */
     private function readState(string $path): ?array
     {
         if (is_link($path) || !is_file($path)) {
             return null;
         }
-        $json = @file_get_contents($path, length: 1024);
+        $json = @file_get_contents($path, length: 4096);
         $state = false === $json ? null : json_decode($json, true, flags: \JSON_THROW_ON_ERROR);
         if (!\is_array($state) || !\is_int($state['sequence'] ?? null) || !EventSchema::sequence($state['sequence'])
             || !\is_int($state['epoch'] ?? null) || !EventSchema::sequence($state['epoch']) || $state['epoch'] > $state['sequence']
@@ -164,9 +211,21 @@ final class ClaudeHookReporter
         }
         $prompt = $state['prompt'] ?? null;
         $turn = $state['turn'] ?? null;
-        if ((null !== $prompt || null !== $turn) && (!\is_string($prompt) || !Uuid::isValid($prompt)
-            || !\is_int($turn) || $turn <= $state['epoch'] || $turn > $state['sequence'])) {
+        if ((null !== $prompt && (!\is_string($prompt) || !Uuid::isValid($prompt)))
+            || (null !== $turn && (null === $prompt || !\is_int($turn) || $turn <= $state['epoch'] || $turn > $state['sequence']))) {
             return null;
+        }
+        $waits = $state['waits'] ?? null;
+        if (null !== $waits) {
+            if (!\is_array($waits) || \count($waits) > 16) {
+                return null;
+            }
+            foreach ($waits as $key => $start) {
+                if (!\is_string($key) || 1 !== preg_match('/\A[a-f0-9]{64}\z/', $key) || null === $turn
+                    || !\is_int($start) || abs($start) <= $turn || abs($start) > $state['sequence']) {
+                    return null;
+                }
+            }
         }
 
         $checkpoint = $state['checkpoint'] ?? null;
@@ -182,6 +241,6 @@ final class ClaudeHookReporter
         }
 
         return ['sequence' => $state['sequence'], 'epoch' => $state['epoch'], 'session' => $state['session'],
-            'ended' => $state['ended'], 'prompt' => $prompt, 'turn' => $turn, 'checkpoint' => $checkpoint];
+            'ended' => $state['ended'], 'prompt' => $prompt, 'turn' => $turn, 'waits' => $waits, 'checkpoint' => $checkpoint];
     }
 }

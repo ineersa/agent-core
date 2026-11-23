@@ -123,8 +123,75 @@ final class Hatfield360ReportCommandTest extends TestCase
         }
     }
 
-    /** @param array<string, string> $environment @param array<string, mixed> $input */
-    private function launch(array $environment, array $input, bool $hook = true): Process
+    public function testCorrelatesForegroundActivityWaitAndStopWithoutLeakingContent(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $endpoint = $directory.'/s';
+        $server = listen('unix://'.$endpoint);
+        $environment = [
+            'H360_STATUS_ENDPOINT' => $endpoint,
+            'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444',
+            'H360_STATUS_TOKEN' => str_repeat('a', 64),
+        ];
+        $session = ['session_id' => 'claude-1'];
+        $prompt = $session + ['prompt_id' => '44444444-4444-4444-8444-555555555555'];
+        $tool = ['hook_event_name' => 'PreToolUse', 'tool_name' => 'mcp__private__tool', 'tool_use_id' => 'tool-1', 'tool_input' => ['private' => true]];
+        $wait = ['mcp_server_name' => 'mcp-private', 'elicitation_id' => 'request-1'];
+        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'last_assistant_message' => 'private'];
+        try {
+            $start = $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionStart', 'source' => 'startup']));
+            $this->assertContains('waits', $start['capabilities']);
+            $turn = $this->exchange($server, $this->launch($environment, $prompt + ['hook_event_name' => 'UserPromptSubmit']));
+            $this->assertQuietHook($environment, $prompt + $tool + ['agent_id' => 'child']);
+            $this->assertQuietHook($environment, $session + $tool + ['prompt_id' => '44444444-4444-4444-8444-666666666666']);
+            $activity = $this->exchange($server, $this->launch($environment, $prompt + $tool));
+            $this->assertSame($turn['sequence'] + 1, $activity['sequence']);
+            $this->assertSame('working', $activity['activity']);
+            $this->assertSame($turn['sequence'], $activity['turnStart']);
+            $this->assertArrayNotHasKey('tool', $activity);
+            $this->assertArrayNotHasKey('tool_input', $activity);
+            $this->assertQuietHook($environment, $prompt + ['hook_event_name' => 'Elicitation', 'mcp_server_name' => 'mcp-private']);
+            $this->assertQuietHook($environment, $prompt + $wait + ['hook_event_name' => 'ElicitationResult', 'action' => 'accept']);
+            $request = $this->exchange($server, $this->launch($environment, $prompt + $wait + ['hook_event_name' => 'Elicitation', 'message' => 'private']));
+            $this->assertSame('external-input', $request['reason']);
+            $this->assertSame($activity['sequence'] + 1, $request['sequence']);
+            $this->assertArrayNotHasKey('message', $request);
+            $this->assertQuietHook($environment, $prompt + ['mcp_server_name' => 'other'] + $wait + ['hook_event_name' => 'ElicitationResult', 'action' => 'accept']);
+            $answer = $this->exchange($server, $this->launch($environment, $prompt + $wait + ['hook_event_name' => 'ElicitationResult', 'action' => 'accept', 'content' => ['secret' => true]]));
+            $this->assertSame($request['sequence'], $answer['waitStart']);
+            $this->assertSame($request['waitId'], $answer['waitId']);
+            $this->assertArrayNotHasKey('content', $answer);
+            $this->assertQuietHook($environment, $prompt + $wait + ['hook_event_name' => 'Elicitation', 'message' => 'private']);
+            $end = $this->exchange($server, $this->launch($environment, $prompt + $stop));
+            $this->assertSame('unknown', $end['outcome']);
+            $this->assertSame($answer['sequence'] + 1, $end['sequence']);
+            $this->assertArrayNotHasKey('last_assistant_message', $end);
+            $this->assertQuietHook($environment, $prompt + $stop);
+            $this->assertQuietHook($environment, $prompt + $tool);
+
+            $this->assertQuietHook($environment, '{broken-private', 'hook_input_failed');
+            $state = $directory.'/claude-status-'.$environment['H360_STATUS_LAUNCH_ID'].'.json';
+            $this->assertSame($directory, realpath(\dirname($state)));
+            $this->assertFalse(is_link($state));
+            file_put_contents($state, '{broken-private');
+            $this->assertQuietHook($environment, $prompt + $tool, 'hook_state_failed');
+        } finally {
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    /** @param array<string, string> $environment @param array<string, mixed>|string $input */
+    private function assertQuietHook(array $environment, array|string $input, ?string $diagnostic = null): void
+    {
+        $process = $this->launch($environment, $input);
+        $this->assertSame(0, $process->wait(), $process->getErrorOutput());
+        $this->assertSame('', $process->getOutput());
+        $this->assertSame(null === $diagnostic ? '' : json_encode(['component' => 'hatfield_360', 'event_type' => $diagnostic], \JSON_THROW_ON_ERROR)."\n", $process->getErrorOutput());
+    }
+
+    /** @param array<string, string> $environment @param array<string, mixed>|string $input */
+    private function launch(array $environment, array|string $input, bool $hook = true): Process
     {
         $root = ProjectDir::get();
         $command = [\PHP_BINARY, '-r', '$_composer_autoload_path = $argv[1]; array_splice($argv, 0, 2); $_SERVER["argv"] = $argv; require $argv[0];', '--',
@@ -132,7 +199,7 @@ final class Hatfield360ReportCommandTest extends TestCase
         if ($hook) {
             $command[] = '--claude-hook';
         }
-        $process = new Process($command, env: $environment, input: json_encode($input, \JSON_THROW_ON_ERROR), timeout: 2);
+        $process = new Process($command, env: $environment + ['HATFIELD_SESSION_ID' => false], input: \is_string($input) ? $input : json_encode($input, \JSON_THROW_ON_ERROR), timeout: 2);
         $process->start();
 
         return $process;

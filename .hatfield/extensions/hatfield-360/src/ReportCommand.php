@@ -29,7 +29,10 @@ final class ReportCommand
             $json = buffer(getStdin(), new TimeoutCancellation(0.25), $claudeHook ? 1_048_576 : StatusClient::MAX_FRAME_BYTES);
             $decoded = json_decode($json, depth: 16, flags: \JSON_THROW_ON_ERROR);
         } catch (StreamException|CancelledException|\JsonException) {
-            // Deliberately do not echo raw hook or event payloads.
+            if ($claudeHook) {
+                HookDiagnostic::write('hook_input_failed');
+            }
+
             return $claudeHook ? Command::SUCCESS : Command::INVALID;
         }
         if ($claudeHook) {
