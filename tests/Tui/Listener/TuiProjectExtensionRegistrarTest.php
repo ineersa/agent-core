@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Amp\DeferredFuture;
 use Amp\Socket\ServerSocket;
 use Amp\TimeoutCancellation;
-use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -26,7 +26,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\TestCase;
-use Revolt\EventLoop;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 use function Amp\Socket\listen;
@@ -53,7 +53,13 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
                 putenv($key.'='.$value);
             }
             $server = listen('unix://'.$endpoint);
-            $logger = new TestLogger();
+            $deliveryFailure = new DeferredFuture();
+            $logger = $this->createMock(LoggerInterface::class);
+            $logger->expects($this->once())->method('warning')->willReturnCallback(
+                static function (string|\Stringable $message, array $context) use ($deliveryFailure): void {
+                    $deliveryFailure->complete([(string) $message, $context]);
+                },
+            );
             $manager = new ExtensionManager(
                 config: new AppConfig(
                     tui: new TuiConfig(theme: 'default', themePaths: []),
@@ -73,8 +79,6 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($draft)->build();
             $registrar->register($context);
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionDraftStarted);
-            EventLoop::run();
-            $this->assertSame([], $logger->records);
 
             $draft->sessionId = 'promoted-session';
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionStarted);
@@ -121,15 +125,13 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertNotSame($first['eventId'], $second['eventId']);
             $this->assertGreaterThan($first['sequence'], $second['sequence']);
             $this->assertSame($second['sequence'], $second['sessionEpoch']);
-            EventLoop::run();
-            $this->assertSame([], $logger->records);
 
-            $server->close();
             $resumed->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionStarted);
-            EventLoop::run();
-            $this->assertCount(1, $logger->records);
-            $this->assertSame('hatfield_360.status_delivery_failed', $logger->records[0]['message']);
-            $this->assertArrayNotHasKey('token', $logger->records[0]['context']);
+            $this->acceptFrame($server, '{"ok":false,"error":"unauthorized"}');
+            [$message, $logContext] = $deliveryFailure->getFuture()->await(new TimeoutCancellation(2));
+            $this->assertSame('hatfield_360.status_delivery_failed', $message);
+            $this->assertSame('resumed-session', $logContext['session_id']);
+            $this->assertArrayNotHasKey('token', $logContext);
         } finally {
             if (isset($server)) {
                 $server->close();
@@ -142,7 +144,7 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
     }
 
     /** @return array<string, mixed> */
-    private function acceptFrame(ServerSocket $server): array
+    private function acceptFrame(ServerSocket $server, string $reply = '{"ok":true,"status":"accepted"}'): array
     {
         $deadline = new TimeoutCancellation(2);
         $connection = $server->accept($deadline);
@@ -156,7 +158,7 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             }
             $frame = json_decode($line, true, flags: \JSON_THROW_ON_ERROR);
             $this->assertIsArray($frame);
-            $connection->write("{\"ok\":true,\"status\":\"accepted\"}\n");
+            $connection->write($reply."\n");
 
             return $frame;
         } finally {

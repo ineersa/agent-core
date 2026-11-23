@@ -23,17 +23,16 @@ final class TuiRunObservationMapper
             RuntimeEventTypeEnum::RunCancelled->value, RuntimeEventTypeEnum::TurnCancelled->value => TuiRunObservationTypeEnum::TurnCancelled,
             RuntimeEventTypeEnum::HumanInputRequested->value => isset($event->payload['approval_context'])
                 ? TuiRunObservationTypeEnum::ApprovalRequested : TuiRunObservationTypeEnum::QuestionRequested,
-            RuntimeEventTypeEnum::HumanInputAnswered->value => TuiRunObservationTypeEnum::QuestionResolved,
             RuntimeEventTypeEnum::ApprovalRequested->value => TuiRunObservationTypeEnum::ApprovalRequested,
-            RuntimeEventTypeEnum::ApprovalApproved->value, RuntimeEventTypeEnum::ApprovalRejected->value => TuiRunObservationTypeEnum::ApprovalResolved,
+            RuntimeEventTypeEnum::HumanInputAnswered->value, RuntimeEventTypeEnum::ApprovalApproved->value, RuntimeEventTypeEnum::ApprovalRejected->value => TuiRunObservationTypeEnum::InputResolved,
             default => null,
         };
         if (null === $type) {
             return null;
         }
         $request = match ($type) {
-            TuiRunObservationTypeEnum::QuestionRequested, TuiRunObservationTypeEnum::QuestionResolved => $event->payload['question_id'] ?? null,
-            TuiRunObservationTypeEnum::ApprovalRequested, TuiRunObservationTypeEnum::ApprovalResolved => $event->payload['request_id'] ?? $event->payload['question_id'] ?? null,
+            TuiRunObservationTypeEnum::QuestionRequested => $event->payload['question_id'] ?? null,
+            TuiRunObservationTypeEnum::ApprovalRequested, TuiRunObservationTypeEnum::InputResolved => $event->payload['request_id'] ?? $event->payload['question_id'] ?? null,
             default => null,
         };
 

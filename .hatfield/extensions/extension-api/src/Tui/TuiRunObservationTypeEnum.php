@@ -11,7 +11,6 @@ enum TuiRunObservationTypeEnum
     case TurnFailed;
     case TurnCancelled;
     case QuestionRequested;
-    case QuestionResolved;
     case ApprovalRequested;
-    case ApprovalResolved;
+    case InputResolved;
 }

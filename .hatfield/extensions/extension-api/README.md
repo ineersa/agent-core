@@ -16,6 +16,7 @@ This package is the stable surface extensions depend on. Host Hatfield provides 
 - `HatfieldExtensionInterface` — startup `register(ExtensionApiInterface $api)` entry for enabled extensions.
 - `ExtensionApiInterface` — tools, tool call/result/rewrite hooks, slash commands, settings/cwd access, after-turn-commit hooks, session-start hooks, before-compaction hooks, exec, session event reading, extension-agent jobs, and related DTOs under `Agent\`, `Approval\`, `Command\`, `Compaction\`, `Exec\`, `Lifecycle\`, `Prompt\`, `Session\`, `Tool\`.
 - `Tui\TuiExtensionInterface` / `Tui\TuiProjectExtensionInterface` and `Tui\TuiExtensionContextInterface` — generic TUI extension registration and overlay/slot APIs.
+- `Tui\TuiSessionObserverInterface` and `Tui\TuiRunObserverInterface` — session selection and live foreground updates (`Tui\DTO\TuiRunObservationDTO`, `Tui\TuiRunObservationTypeEnum`).
 
 **Approved Symfony TUI dependency:** generic TUI contracts intentionally depend on **Symfony TUI public widget types** (`Symfony\Component\Tui\Widget\AbstractWidget`, events, input) so extensions can mount their own overlays without Hatfield adding feature-shaped runtime ports. That is part of the public UI extension API — not a leak of Hatfield internals.
 
