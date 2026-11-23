@@ -176,10 +176,10 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame([], $toolbox->getTools());
     }
 
-    #[TestWith([4096, true])]
-    #[TestWith([4097, false])]
-    #[TestWith([1048576, false])]
-    public function testProviderDescriptionBoundsSchemaWithoutChangingValidationMetadata(int $encodedBytes, bool $included): void
+    #[TestWith([4096])]
+    #[TestWith([4097])]
+    #[TestWith([1048576])]
+    public function testProviderDescriptionPreservesFullOutputSchema(int $encodedBytes): void
     {
         $schema = ['type' => 'string', 'const' => str_repeat('x', $encodedBytes - \strlen('{"type":"string","const":""}'))];
         $json = json_encode($schema, \JSON_THROW_ON_ERROR);
@@ -190,13 +190,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $tool = $toolbox->getTools()[0];
         $description = (new ToolNormalizer())->normalize($tool)['function']['description'];
 
-        if ($included) {
-            $this->assertStringContainsString($json, $description);
-        } else {
-            $this->assertStringContainsString('Output schema omitted from this description (exceeds 4096 bytes); the full schema is still used for validation.', $description);
-            $this->assertStringNotContainsString($json, $description);
-            $this->assertLessThan(512, \strlen($description));
-        }
+        $this->assertStringContainsString('Output schema (applies only when structured content is supplied): '.$json."\n", $description);
         $this->assertSame($schema, $registry->toolDefinition('mcp_fixture')->outputJsonSchema);
         $this->assertSame($tool, $toolbox->getTools()[0]);
     }
