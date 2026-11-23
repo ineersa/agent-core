@@ -10,8 +10,10 @@ use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionObserverInterface;
+use Ineersa\HatfieldExt\Hatfield360\DTO\SessionCheckpointDTO;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
+use Symfony\Component\Uid\Uuid;
 
 use function Amp\async;
 
@@ -30,6 +32,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     /** @var array<string, int> */
     private array $waits = [];
     private bool $sending = false;
+    private ?SessionCheckpointDTO $checkpoint = null;
     /** @var list<array{string, string, int, int, array<string, mixed>}> */
     private array $pending = [];
 
@@ -54,7 +57,8 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         $this->waits = [];
         // Previous unsent work no longer describes the selected session.
         $this->pending = [];
-        $this->enqueue('session.started', $this->epoch, ['provider' => 'hatfield', 'capabilities' => ['waits']]);
+        $this->checkpoint = new SessionCheckpointDTO($sessionId, $this->epoch, (string) Uuid::v7(), 'hatfield', ['waits']);
+        $this->scheduleDrain();
     }
 
     public function onTuiRunObserved(TuiRunObservationDTO $observation): void
@@ -131,6 +135,11 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
             return;
         }
         $this->pending[] = [$kind, $this->sessionId, $sequence, $this->epoch, $fields];
+        $this->scheduleDrain();
+    }
+
+    private function scheduleDrain(): void
+    {
         if ($this->sending) {
             return;
         }
@@ -144,7 +153,26 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
 
                     return;
                 }
-                while (null !== ($event = array_shift($this->pending))) {
+                while (true) {
+                    if (null !== ($checkpoint = $this->checkpoint)) {
+                        $confirmed = $client->ensureSession($checkpoint);
+                        if ($this->checkpoint !== $checkpoint) {
+                            // A newer selection arrived while the socket yielded. Its
+                            // higher sequence and fresh queue supersede this attempt.
+                            continue;
+                        }
+                        if (!$confirmed) {
+                            $this->logDrop($checkpoint->sessionId);
+                            $this->pending = [];
+
+                            return;
+                        }
+                        $this->checkpoint = null;
+                    }
+                    $event = array_shift($this->pending);
+                    if (null === $event) {
+                        return;
+                    }
                     [$kind, $sessionId, $sequence, $epoch, $fields] = $event;
                     if (!$client->send($kind, $sessionId, $sequence, $epoch, $fields)) {
                         $this->logDrop($sessionId);

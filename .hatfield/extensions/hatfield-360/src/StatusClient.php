@@ -6,10 +6,10 @@ namespace Ineersa\HatfieldExt\Hatfield360;
 
 use Amp\ByteStream\StreamException;
 use Amp\CancelledException;
+use Amp\Socket\DnsSocketConnector;
 use Amp\TimeoutCancellation;
+use Ineersa\HatfieldExt\Hatfield360\DTO\SessionCheckpointDTO;
 use Symfony\Component\Uid\Uuid;
-
-use function Amp\Socket\connect;
 
 final readonly class StatusClient
 {
@@ -67,8 +67,27 @@ final readonly class StatusClient
     /** @param array<array-key, mixed> $fields */
     public function send(string $kind, string $sessionId, int $sequence, int $sessionEpoch, array $fields = []): bool
     {
-        if (!EventSchema::accepts($kind, $sessionId, $sequence, $sessionEpoch, $fields)) {
-            return false;
+        $reply = $this->sendEvent($kind, $sessionId, $sequence, $sessionEpoch, (string) Uuid::v7(), $fields);
+
+        return \in_array($reply, ['accepted', 'duplicate', 'stale'], true);
+    }
+
+    public function ensureSession(SessionCheckpointDTO $checkpoint): bool
+    {
+        $reply = $this->sendEvent('session.started', $checkpoint->sessionId, $checkpoint->epoch, $checkpoint->epoch, $checkpoint->eventId, [
+            'provider' => $checkpoint->provider, 'capabilities' => $checkpoint->capabilities,
+        ]);
+
+        // Stale says only that the launch high-water mark has advanced, not
+        // that this registration (or even this session) was ever accepted.
+        return \in_array($reply, ['accepted', 'duplicate'], true);
+    }
+
+    /** @param array<array-key, mixed> $fields */
+    private function sendEvent(string $kind, string $sessionId, int $sequence, int $sessionEpoch, string $eventId, array $fields): ?string
+    {
+        if (!EventSchema::id($eventId) || !EventSchema::accepts($kind, $sessionId, $sequence, $sessionEpoch, $fields)) {
+            return null;
         }
 
         $reply = self::request($this->endpoint, [
@@ -76,13 +95,13 @@ final readonly class StatusClient
             'kind' => $kind,
             'launchId' => $this->launchId,
             'token' => $this->token,
-            'eventId' => (string) Uuid::v7(),
+            'eventId' => $eventId,
             'sessionId' => $sessionId,
             'sequence' => $sequence,
             'sessionEpoch' => $sessionEpoch,
         ] + $fields);
 
-        return true === ($reply['ok'] ?? null) && \in_array($reply['status'] ?? null, ['accepted', 'duplicate', 'stale'], true);
+        return true === ($reply['ok'] ?? null) && \is_string($reply['status'] ?? null) ? $reply['status'] : null;
     }
 
     private static function endpoint(): ?string
@@ -119,7 +138,9 @@ final readonly class StatusClient
             }
 
             $deadline = new TimeoutCancellation(0.25);
-            $socket = connect('unix://'.$endpoint, cancellation: $deadline);
+            // The default Amp connector backs off without observing cancellation.
+            // One connection attempt keeps the launch reporter's deadline bounded.
+            $socket = (new DnsSocketConnector())->connect('unix://'.$endpoint, cancellation: $deadline);
             // Close on the same absolute deadline to bound uncancellable socket writes.
             $subscription = $deadline->subscribe(static fn () => $socket->close());
             try {

@@ -19,12 +19,15 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum as Event;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
 use Ineersa\Tui\Listener\TuiProjectExtensionRegistrar;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -143,8 +146,77 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
         }
     }
 
+    /** @return iterable<string, array{bool}> */
+    public static function credentials(): iterable
+    {
+        yield 'explicit' => [false];
+        yield 'manual' => [true];
+    }
+
+    #[DataProvider('credentials')]
+    public function testRecoversLatestCheckpointAfterUnavailableSocket(bool $manual): void
+    {
+        if ($manual && 'Linux' !== \PHP_OS_FAMILY) {
+            $this->markTestSkipped('Manual launch identity requires Linux.');
+        }
+        $directory = TestDirectoryIsolation::createOsTempDir('h360');
+        $socket = $directory.'/s';
+        $launch = '44444444-4444-4444-8444-444444444444';
+        $token = str_repeat('a', 64);
+        $environment = ['H360_STATUS_ENDPOINT' => $socket, 'H360_STATUS_LAUNCH_ID' => $manual ? false : $launch,
+            'H360_STATUS_TOKEN' => $manual ? false : $token, 'H360_STATUS_BOOTSTRAP_TOKEN' => str_repeat('b', 64)];
+        $previous = [];
+        try {
+            foreach ($environment as $key => $value) {
+                $previous[$key] = getenv($key);
+                putenv(false === $value ? $key : $key.'='.$value);
+            }
+            $failed = new DeferredFuture();
+            $extension = new Hatfield360Extension();
+            $logger = $this->createMock(LoggerInterface::class);
+            $logger->expects($this->once())->method('warning')->willReturnCallback(static fn () => $failed->complete());
+            $extension->setLogger($logger);
+            $extension->register($this->createStub(ExtensionApiInterface::class));
+            $extension->onTuiSessionSelected('first');
+            $failed->getFuture()->await(new TimeoutCancellation(2));
+
+            $server = listen('unix://'.$socket);
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('first', 1, TuiRunObservationTypeEnum::TurnStarted));
+            if ($manual) {
+                $first = $this->acceptFrame($server, '{"ok":false,"error":"unavailable"}');
+                $bootstrap = $this->acceptFrame($server, json_encode(['ok' => true, 'launchId' => $launch, 'token' => $token], \JSON_THROW_ON_ERROR));
+                $this->assertSame('launch.register', $bootstrap['kind']);
+                $this->assertSame($first, $bootstrap);
+            }
+            $registration = $this->acceptFrame($server, beforeReply: static function () use ($extension): void {
+                $extension->onTuiSessionSelected('second');
+                $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 2, TuiRunObservationTypeEnum::TurnStarted));
+            });
+            $this->assertSame('session.started', $registration['kind']);
+            $this->assertSame('first', $registration['sessionId']);
+            $latest = $this->acceptFrame($server);
+            $this->assertSame('session.started', $latest['kind']);
+            $this->assertSame('second', $latest['sessionId']);
+            $this->assertGreaterThan($registration['sequence'], $latest['sequence']);
+            $turn = $this->acceptFrame($server);
+            $this->assertSame('turn.started', $turn['kind']);
+            $this->assertSame($latest['sessionEpoch'], $turn['actorStart']);
+            $activity = $this->acceptFrame($server);
+            $this->assertSame('activity.changed', $activity['kind']);
+            $this->assertSame($turn['sequence'], $activity['turnStart']);
+        } finally {
+            if (isset($server)) {
+                $server->close();
+            }
+            foreach ($previous as $key => $value) {
+                putenv(false === $value ? $key : $key.'='.$value);
+            }
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     /** @return array<string, mixed> */
-    private function acceptFrame(ServerSocket $server, string $reply = '{"ok":true,"status":"accepted"}'): array
+    private function acceptFrame(ServerSocket $server, string $reply = '{"ok":true,"status":"accepted"}', ?\Closure $beforeReply = null): array
     {
         $deadline = new TimeoutCancellation(2);
         $connection = $server->accept($deadline);
@@ -158,6 +230,7 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             }
             $frame = json_decode($line, true, flags: \JSON_THROW_ON_ERROR);
             $this->assertIsArray($frame);
+            $beforeReply?->__invoke();
             $connection->write($reply."\n");
 
             return $frame;

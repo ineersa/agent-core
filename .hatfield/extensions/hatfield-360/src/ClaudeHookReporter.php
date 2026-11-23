@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\Hatfield360;
 
+use Ineersa\HatfieldExt\Hatfield360\DTO\SessionCheckpointDTO;
 use Symfony\Component\Filesystem\Exception\IOException;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\Exception\ExceptionInterface as LockExceptionInterface;
@@ -13,6 +14,8 @@ use Symfony\Component\Uid\Uuid;
 
 final class ClaudeHookReporter
 {
+    private const array CAPABILITIES = ['session-end'];
+
     /** @param array<array-key, mixed> $hook */
     public function report(StatusClient $client, array $hook): bool
     {
@@ -73,54 +76,80 @@ final class ClaudeHookReporter
             if (!\in_array($source, ['startup', 'resume', 'clear'], true) || ('startup' === $source && [] !== $previous)) {
                 return false;
             }
-            $kind = 'session.started';
-            $epoch = $sequence;
-            $fields = ['provider' => 'claude', 'capabilities' => ['session-end']];
-        } else {
-            if (($previous['session'] ?? null) !== $session || ($previous['ended'] ?? true)) {
+            $state = [
+                'sequence' => $sequence, 'epoch' => $sequence, 'session' => $session,
+                'ended' => false, 'prompt' => null, 'turn' => null,
+                'checkpoint' => ['eventId' => (string) Uuid::v7(), 'capabilities' => self::CAPABILITIES],
+            ];
+            $this->writeState($path, $state);
+            if (!$this->ensure($client, $session, $sequence, $state['checkpoint'])) {
                 return false;
             }
-            if ('SessionEnd' === $event) {
-                // Selection hooks establish the replacement epoch. An old switch-end
-                // hook cannot disambiguate two epochs using the same provider ID.
-                if (!\in_array($hook['reason'] ?? null, ['logout', 'prompt_input_exit', 'other'], true)) {
+            $state['checkpoint'] = null;
+            $this->writeState($path, $state);
+
+            return true;
+        }
+
+        if (($previous['session'] ?? null) !== $session || ($previous['ended'] ?? true)) {
+            return false;
+        }
+        if ('SessionEnd' === $event) {
+            // Selection hooks establish the replacement epoch. An old switch-end
+            // hook cannot disambiguate two epochs using the same provider ID.
+            if (!\in_array($hook['reason'] ?? null, ['logout', 'prompt_input_exit', 'other'], true)) {
+                return false;
+            }
+            $kind = 'session.ended';
+        } else {
+            $promptId = $hook['prompt_id'] ?? null;
+            if (!\is_string($promptId) || !Uuid::isValid($promptId)) {
+                return false;
+            }
+            $fields = ['actorId' => 'main', 'actorStart' => $epoch, 'turnId' => $promptId];
+            if ('UserPromptSubmit' === $event) {
+                if ($promptId === ($previous['prompt'] ?? null)) {
                     return false;
                 }
-                $kind = 'session.ended';
+                $prompt = $promptId;
+                $turn = $sequence;
+                $kind = 'turn.started';
             } else {
-                $promptId = $hook['prompt_id'] ?? null;
-                if (!\is_string($promptId) || !Uuid::isValid($promptId)) {
+                if ($promptId !== ($previous['prompt'] ?? null) || !isset($previous['turn']) || !\is_string($hook['error'] ?? null)) {
                     return false;
                 }
-                $fields = ['actorId' => 'main', 'actorStart' => $epoch, 'turnId' => $promptId];
-                if ('UserPromptSubmit' === $event) {
-                    if ($promptId === ($previous['prompt'] ?? null)) {
-                        return false;
-                    }
-                    $prompt = $promptId;
-                    $turn = $sequence;
-                    $kind = 'turn.started';
-                } else {
-                    if ($promptId !== ($previous['prompt'] ?? null) || !isset($previous['turn']) || !\is_string($hook['error'] ?? null)) {
-                        return false;
-                    }
-                    $fields += ['turnStart' => $previous['turn'], 'outcome' => 'failed'];
-                    $kind = 'turn.ended';
-                }
+                $fields += ['turnStart' => $previous['turn'], 'outcome' => 'failed'];
+                $kind = 'turn.ended';
             }
         }
 
-        // Reserve before sending: a lost reply must not cause sequence reuse. Hold the
-        // nonblocking lock through delivery so another invocation cannot overtake this write.
-        (new Filesystem())->dumpFile($path, json_encode([
+        $checkpoint = $previous['checkpoint'] ?? null;
+        if (null !== $checkpoint && !$this->ensure($client, $session, $epoch, $checkpoint)) {
+            return false;
+        }
+        // Reserve before sending: a lost reply must not cause sequence reuse. The
+        // lock also holds through the checkpoint acknowledgement and dependent write.
+        $this->writeState($path, [
             'sequence' => $sequence, 'epoch' => $epoch, 'session' => $session,
-            'ended' => 'session.ended' === $kind, 'prompt' => $prompt, 'turn' => $turn,
-        ], \JSON_THROW_ON_ERROR));
+            'ended' => 'session.ended' === $kind, 'prompt' => $prompt, 'turn' => $turn, 'checkpoint' => null,
+        ]);
 
         return $client->send($kind, $session, $sequence, $epoch, $fields);
     }
 
-    /** @return array{sequence: int, epoch: int, session: string, ended: bool, prompt: ?string, turn: ?int}|null */
+    /** @param array{eventId: string, capabilities: list<string>} $checkpoint */
+    private function ensure(StatusClient $client, string $session, int $epoch, array $checkpoint): bool
+    {
+        return $client->ensureSession(new SessionCheckpointDTO($session, $epoch, $checkpoint['eventId'], 'claude', $checkpoint['capabilities']));
+    }
+
+    /** @param array{sequence: int, epoch: int, session: string, ended: bool, prompt: ?string, turn: ?int, checkpoint: ?array{eventId: string, capabilities: list<string>}} $state */
+    private function writeState(string $path, array $state): void
+    {
+        (new Filesystem())->dumpFile($path, json_encode($state, \JSON_THROW_ON_ERROR));
+    }
+
+    /** @return array{sequence: int, epoch: int, session: string, ended: bool, prompt: ?string, turn: ?int, checkpoint: ?array{eventId: string, capabilities: list<string>}}|null */
     private function readState(string $path): ?array
     {
         if (is_link($path) || !is_file($path)) {
@@ -140,7 +169,19 @@ final class ClaudeHookReporter
             return null;
         }
 
+        $checkpoint = $state['checkpoint'] ?? null;
+        if (null !== $checkpoint) {
+            $eventId = \is_array($checkpoint) ? ($checkpoint['eventId'] ?? null) : null;
+            $capabilities = \is_array($checkpoint) ? ($checkpoint['capabilities'] ?? null) : null;
+            if (!\is_string($eventId) || !Uuid::isValid($eventId) || !\is_array($capabilities) || !array_is_list($capabilities)
+                || !array_all($capabilities, static fn (mixed $value): bool => \is_string($value))
+                || !EventSchema::accepts('session.started', $state['session'], $state['epoch'], $state['epoch'], ['provider' => 'claude', 'capabilities' => $capabilities])) {
+                return null;
+            }
+            $checkpoint = ['eventId' => $eventId, 'capabilities' => $capabilities];
+        }
+
         return ['sequence' => $state['sequence'], 'epoch' => $state['epoch'], 'session' => $state['session'],
-            'ended' => $state['ended'], 'prompt' => $prompt, 'turn' => $turn];
+            'ended' => $state['ended'], 'prompt' => $prompt, 'turn' => $turn, 'checkpoint' => $checkpoint];
     }
 }

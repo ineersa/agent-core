@@ -63,6 +63,49 @@ final class Hatfield360ReportCommandTest extends TestCase
         }
     }
 
+    public function testRecoversExactRegistrationAfterLostAcknowledgement(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $endpoint = $directory.'/s';
+        $environment = [
+            'H360_STATUS_ENDPOINT' => $endpoint,
+            'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444',
+            'H360_STATUS_TOKEN' => str_repeat('a', 64),
+        ];
+        $selection = ['session_id' => 'claude-1', 'hook_event_name' => 'SessionStart', 'source' => 'startup'];
+        $prompt = ['session_id' => 'claude-1', 'hook_event_name' => 'UserPromptSubmit', 'prompt_id' => '44444444-4444-4444-8444-555555555555'];
+        try {
+            // The first observations fail open while no socket is listening.
+            $selectionProcess = $this->launch($environment, $selection);
+            $this->assertSame(0, $selectionProcess->wait(), $selectionProcess->getErrorOutput());
+            $promptProcess = $this->launch($environment, $prompt);
+            $this->assertSame(0, $promptProcess->wait(), $promptProcess->getErrorOutput());
+            $server = listen('unix://'.$endpoint);
+            // The first frame received by the peer still loses its acknowledgement.
+            $first = $this->exchange($server, $this->launch($environment, $prompt), reply: null);
+            $this->assertSame('session.started', $first['kind']);
+            $this->assertSame(1, $first['sequence']);
+            $stale = $this->exchange($server, $this->launch($environment, $prompt), reply: '{"ok":true,"status":"stale"}');
+            $this->assertSame($first, $stale);
+            $process = $this->launch($environment, $prompt);
+            $duplicate = $this->exchange($server, $process, reply: '{"ok":true,"status":"duplicate"}', finish: false);
+            $this->assertSame($first, $duplicate);
+            $turn = $this->exchange($server, $process);
+            $this->assertSame('turn.started', $turn['kind']);
+            $this->assertSame($first['sessionEpoch'], $turn['actorStart']);
+            $failure = ['session_id' => 'claude-1', 'hook_event_name' => 'StopFailure', 'prompt_id' => $prompt['prompt_id'], 'error' => 'server_error'];
+            $end = $this->exchange($server, $this->launch($environment, $failure), reply: '{"ok":false,"error":"state"}');
+            $this->assertSame('turn.ended', $end['kind']);
+            $next = $this->exchange($server, $this->launch($environment, array_replace($prompt, ['prompt_id' => '44444444-4444-4444-8444-666666666666'])));
+            $this->assertSame('turn.started', $next['kind']);
+        } finally {
+            if (isset($server)) {
+                $server->close();
+            }
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     /** @param array<string, string> $environment @param array<string, mixed> $input */
     private function launch(array $environment, array $input, bool $hook = true): Process
     {
@@ -79,7 +122,7 @@ final class Hatfield360ReportCommandTest extends TestCase
     }
 
     /** @return array<array-key, mixed> */
-    private function exchange(\Amp\Socket\ServerSocket $server, Process $process): array
+    private function exchange(\Amp\Socket\ServerSocket $server, Process $process, ?string $reply = '{"ok":true,"status":"accepted"}', bool $finish = true): array
     {
         try {
             $deadline = new TimeoutCancellation(2);
@@ -94,19 +137,23 @@ final class Hatfield360ReportCommandTest extends TestCase
                 }
                 $frame = json_decode($line, true, flags: \JSON_THROW_ON_ERROR);
                 $this->assertIsArray($frame);
-                $socket->write("{\"ok\":true,\"status\":\"accepted\"}\n");
+                if (null !== $reply) {
+                    $socket->write($reply."\n");
+                }
             } finally {
                 $socket->close();
             }
 
-            $this->assertSame(0, $process->wait(), $process->getErrorOutput());
-            $this->assertSame('', $process->getOutput());
+            if ($finish) {
+                $this->assertSame(0, $process->wait(), $process->getErrorOutput());
+                $this->assertSame('', $process->getOutput());
+            }
 
             return $frame;
         } catch (CancelledException $exception) {
             $this->fail('Reporter did not send a frame: '.$process->getErrorOutput().' '.$process->getOutput().' ('.$exception::class.')');
         } finally {
-            if ($process->isRunning()) {
+            if ($finish && $process->isRunning()) {
                 $process->stop(0);
             }
         }
