@@ -57,7 +57,9 @@ final readonly class NativeExecutionObservationPublisher
         $event = $published->event;
         $type = match ($event->type) {
             RunEventTypeEnum::RunStarted->value => RuntimeEventTypeEnum::ChildExecutionStarted,
-            RunEventTypeEnum::TurnAdvanced->value => true === ($event->payload['resumes_execution'] ?? false) ? RuntimeEventTypeEnum::ChildExecutionStarted : null,
+            RunEventTypeEnum::TurnAdvanced->value => true === ($event->payload['resumes_execution'] ?? false) ? RuntimeEventTypeEnum::ChildExecutionStarted : RuntimeEventTypeEnum::ChildTurnObservation,
+            RunEventTypeEnum::WaitingHuman->value => RuntimeEventTypeEnum::ChildTurnObservation,
+            RunEventTypeEnum::AgentCommandApplied->value => 'human_response' === ($event->payload['kind'] ?? null) ? RuntimeEventTypeEnum::ChildTurnObservation : null,
             RunEventTypeEnum::AgentEnd->value => RuntimeEventTypeEnum::ChildExecutionEnded,
             default => null,
         };
@@ -73,9 +75,26 @@ final readonly class NativeExecutionObservationPublisher
             if (null === $parent || null === $root || $root === $event->runId) {
                 return;
             }
-            $this->emit(new RuntimeEvent($type->value, $root, 0, [
-                'child_run_id' => $event->runId, 'parent_run_id' => $parent, 'child_sequence' => $event->seq,
-            ]));
+            $fields = [];
+            if (RuntimeEventTypeEnum::ChildTurnObservation === $type) {
+                $fields['phase'] = match ($event->type) {
+                    RunEventTypeEnum::TurnAdvanced->value => 'turn',
+                    RunEventTypeEnum::WaitingHuman->value => isset($event->payload['approval_context']) ? 'permission' : 'question',
+                    default => 'resolved',
+                };
+                if ('turn' !== $fields['phase']) {
+                    $requestId = $event->payload['question_id'] ?? null;
+                    if (!\is_string($requestId) || '' === $requestId) {
+                        return;
+                    }
+                    $fields['request_id'] = hash('sha256', $requestId);
+                }
+            }
+            $identity = ['child_run_id' => $event->runId, 'parent_run_id' => $parent, 'child_sequence' => $event->seq];
+            $this->emit(new RuntimeEvent($type->value, $root, 0, $identity + $fields));
+            if (RuntimeEventTypeEnum::ChildExecutionStarted === $type && RunEventTypeEnum::TurnAdvanced->value === $event->type) {
+                $this->emit(new RuntimeEvent(RuntimeEventTypeEnum::ChildTurnObservation->value, $root, 0, $identity + ['phase' => 'turn']));
+            }
         } catch (\Throwable $exception) {
             $this->logger->warning('child_execution.observation_failed', [
                 'component' => 'child_execution', 'event_type' => 'observation_failed',

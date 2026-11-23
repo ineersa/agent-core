@@ -13,7 +13,7 @@ final class TuiRunObservationMapper
 {
     public static function map(RuntimeEvent $event): ?TuiRunObservationDTO
     {
-        if (0 === $event->seq && \in_array($event->type, [RuntimeEventTypeEnum::ChildExecutionStarted->value, RuntimeEventTypeEnum::ChildExecutionEnded->value], true)) {
+        if (0 === $event->seq && \in_array($event->type, [RuntimeEventTypeEnum::ChildExecutionStarted->value, RuntimeEventTypeEnum::ChildExecutionEnded->value, RuntimeEventTypeEnum::ChildTurnObservation->value], true)) {
             $child = $event->payload['child_run_id'] ?? null;
             $parent = $event->payload['parent_run_id'] ?? null;
             $sequence = $event->payload['child_sequence'] ?? null;
@@ -21,8 +21,21 @@ final class TuiRunObservationMapper
                 return null;
             }
 
-            return new TuiRunObservationDTO($event->runId, $sequence, RuntimeEventTypeEnum::ChildExecutionStarted->value === $event->type
-                ? TuiRunObservationTypeEnum::ChildExecutionStarted : TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: $child, parentRunId: $parent);
+            $type = match ($event->type) {
+                RuntimeEventTypeEnum::ChildExecutionStarted->value => TuiRunObservationTypeEnum::ChildExecutionStarted,
+                RuntimeEventTypeEnum::ChildExecutionEnded->value => TuiRunObservationTypeEnum::ChildExecutionEnded,
+                default => match ($event->payload['phase'] ?? null) {
+                    'turn' => TuiRunObservationTypeEnum::TurnStarted,
+                    'question' => TuiRunObservationTypeEnum::QuestionRequested,
+                    'permission' => TuiRunObservationTypeEnum::ApprovalRequested,
+                    'resolved' => TuiRunObservationTypeEnum::InputResolved,
+                    default => null,
+                },
+            };
+            $request = $event->payload['request_id'] ?? null;
+
+            return null === $type ? null : new TuiRunObservationDTO($event->runId, $sequence, $type,
+                \is_string($request) && '' !== $request ? $request : null, $child, $parent);
         }
         if ($event->seq <= 0) {
             return null;

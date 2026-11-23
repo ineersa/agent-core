@@ -28,6 +28,7 @@ enum RuntimeEventTypeEnum: string
 
     /** Process-client-only notification; controller stdout cannot authorize a replacement attach. */
     case ChildExecutionStarted = 'child_execution.started';
+    case ChildTurnObservation = 'child_execution.turn_observed';
     case ChildExecutionEnded = 'child_execution.ended';
     case BackgroundJobStarted = 'background_job.started';
     case BackgroundJobEnded = 'background_job.ended';

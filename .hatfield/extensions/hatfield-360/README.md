@@ -45,6 +45,13 @@ child `AgentEnd` closes the matching execution. Reservations and parent-side
 artifact settlement alone do not establish native start or exit. Attach and
 reload do not reconstruct active actors, and missed events are not replayed.
 
+A committed child turn advance reports working activity. Internal model steps
+stay in the same reported turn. Committed child input requests and applied
+responses are paired by an opaque request ID within that turn; prompts and
+answers are never sent. Child terminal events end the reported turn as
+`unknown` before closing the actor. Parent intervention, a tool error, and
+an unobserved or unpaired input response are not terminal evidence.
+
 ## Claude hook coverage
 
 The plugin reports explicitly launched Claude session selections (`startup`, `resume`, `clear`) and terminal session-end reasons. It excludes compaction and forks, which do not reliably indicate a new foreground conversation. A foreground `UserPromptSubmit` carrying a UUID `prompt_id` starts a turn. Subsequent hooks must match that prompt and the selected session; child hooks are ignored. `Stop` with `stop_hook_active: false` ends the foreground turn as `unknown`, never as `completed`; `StopFailure` reports a correlated failure. `PreToolUse` reports working activity for that turn without tool names, inputs, or results.

@@ -243,7 +243,7 @@ final class RuntimeEventPoller
                     continue;
                 }
 
-                if (\in_array($runtimeEvent->type, [RuntimeEventTypeEnum::ChildExecutionStarted->value, RuntimeEventTypeEnum::ChildExecutionEnded->value], true)) {
+                if (\in_array($runtimeEvent->type, [RuntimeEventTypeEnum::ChildExecutionStarted->value, RuntimeEventTypeEnum::ChildExecutionEnded->value, RuntimeEventTypeEnum::ChildTurnObservation->value], true)) {
                     if (0 === $seq && $state->sessionReady && $runtimeEvent->runId === $state->sessionId) {
                         $this->notifyRunObservers($runtimeEvent);
                     }

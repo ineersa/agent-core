@@ -40,7 +40,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     private array $waits = [];
     /** @var array<string, array{start: int, ending: bool}> */
     private array $scripts = [];
-    /** @var array<string, array{native: int, start: int, parent: string, end: ?int}> */
+    /** @var array<string, array{native: int, start: int, parent: string, end: ?int, turn: ?int, last: int, waits: array<string, int>}> */
     private array $actors = [];
     /** @var array<string, int> */
     private array $confirmedActors = [];
@@ -113,7 +113,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
             return;
         }
 
-        if (TuiRunObservationTypeEnum::ChildExecutionStarted === $observation->type || TuiRunObservationTypeEnum::ChildExecutionEnded === $observation->type) {
+        if (null !== $observation->childRunId) {
             $this->observeChild($observation);
 
             return;
@@ -232,19 +232,73 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
             }
             $start = ++self::$sequence;
             if ($this->enqueue('actor.started', $start, ['actorId' => $id, 'parentId' => $parentId, 'parentStart' => $parentStart])) {
-                $this->actors[$id] = ['native' => $observation->sequence, 'start' => $start, 'parent' => $parentId, 'end' => null];
+                $this->actors[$id] = ['native' => $observation->sequence, 'start' => $start, 'parent' => $parentId, 'end' => null, 'turn' => null, 'last' => $observation->sequence - 1, 'waits' => []];
             }
 
             return;
         }
-        if (null === $actor || $actor['parent'] !== $parentId || null !== $actor['end'] || $observation->sequence <= $actor['native']) {
+        if (null === $actor || $actor['parent'] !== $parentId || null !== $actor['end'] || $observation->sequence <= $actor['last']) {
             return;
+        }
+        if (TuiRunObservationTypeEnum::ChildExecutionEnded !== $observation->type) {
+            $this->observeChildTurn($id, $observation);
+
+            return;
+        }
+        if ($observation->sequence <= $actor['native']) {
+            return;
+        }
+        if (null !== $actor['turn']) {
+            $this->enqueue('turn.ended', ++self::$sequence, $this->childTurnFields($id, $actor['start'], $actor['turn']) + ['outcome' => 'unknown']);
         }
         if ($this->enqueue('actor.ended', ++self::$sequence, ['actorId' => $id, 'actorStart' => $actor['start']])) {
             $this->actors[$id]['end'] = $observation->sequence;
         } else {
             unset($this->actors[$id]);
         }
+    }
+
+    private function observeChildTurn(string $id, TuiRunObservationDTO $observation): void
+    {
+        $actor = &$this->actors[$id];
+        if ($observation->sequence < $actor['native']) {
+            return;
+        }
+        $actor['last'] = $observation->sequence;
+        if (TuiRunObservationTypeEnum::TurnStarted === $observation->type) {
+            if (null === $actor['turn']) {
+                $turn = ++self::$sequence;
+                $fields = $this->childTurnFields($id, $actor['start'], $turn);
+                if ($this->enqueue('turn.started', $turn, array_diff_key($fields, ['turnStart' => true]))) {
+                    $actor['turn'] = $turn;
+                    $this->enqueue('activity.changed', ++self::$sequence, $fields + ['activity' => 'working']);
+                }
+            }
+
+            return;
+        }
+        if (null === $actor['turn'] || null === $observation->requestId) {
+            return;
+        }
+        $fields = $this->childTurnFields($id, $actor['start'], $actor['turn']);
+        $waitId = $observation->requestId;
+        if (TuiRunObservationTypeEnum::InputResolved === $observation->type) {
+            if (isset($actor['waits'][$waitId])) {
+                $this->enqueue('wait.resolved', ++self::$sequence, $fields + ['waitId' => $waitId, 'waitStart' => $actor['waits'][$waitId]]);
+                unset($actor['waits'][$waitId]);
+            }
+        } elseif (!isset($actor['waits'][$waitId]) && \count($actor['waits']) < 16) {
+            $start = ++self::$sequence;
+            if ($this->enqueue('wait.started', $start, $fields + ['waitId' => $waitId, 'reason' => TuiRunObservationTypeEnum::ApprovalRequested === $observation->type ? 'permission' : 'question'])) {
+                $actor['waits'][$waitId] = $start;
+            }
+        }
+    }
+
+    /** @return array{actorId: string, actorStart: int, turnId: string, turnStart: int} */
+    private function childTurnFields(string $id, int $actorStart, int $turn): array
+    {
+        return ['actorId' => $id, 'actorStart' => $actorStart, 'turnId' => (string) $turn, 'turnStart' => $turn];
     }
 
     /** @return array{actorId: string, actorStart: int, turnId: string} */
@@ -317,6 +371,10 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                     $actorStart = 'actor.started' === $kind;
                     $actorEnd = 'actor.ended' === $kind;
                     $actorId = ($actorStart || $actorEnd) ? (string) $fields['actorId'] : '';
+                    if (!$actorStart && !$actorEnd && isset($fields['actorId']) && 'main' !== $fields['actorId']
+                        && ($this->confirmedActors[(string) $fields['actorId']] ?? null) !== $fields['actorStart']) {
+                        continue;
+                    }
                     if ($actorEnd && ($this->confirmedActors[$actorId] ?? null) !== $fields['actorStart']) {
                         continue;
                     }

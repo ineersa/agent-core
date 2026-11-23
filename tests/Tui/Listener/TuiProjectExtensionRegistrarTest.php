@@ -116,7 +116,10 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
                 new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 12]),
                 new RuntimeEvent(Event::ChildExecutionStarted->value, $draft->sessionId, 0, ['child_run_id' => 'nested', 'parent_run_id' => 'private-child', 'child_sequence' => 1]),
                 new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, ['child_run_id' => 'nested', 'parent_run_id' => 'private-child', 'child_sequence' => 2]),
-                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 22]),
+                new RuntimeEvent(Event::ChildTurnObservation->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 20, 'phase' => 'turn']),
+                new RuntimeEvent(Event::ChildTurnObservation->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 21, 'phase' => 'permission', 'request_id' => hash('sha256', 'private request')]),
+                new RuntimeEvent(Event::ChildTurnObservation->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 22, 'phase' => 'resolved', 'request_id' => hash('sha256', 'private request')]),
+                new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 23]),
             ]);
             $context->sessionServices->parentPoller->poll($draft, $client);
             $actorStart = $this->acceptFrame($server);
@@ -156,6 +159,16 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $reopened = $this->acceptFrame($server);
             $nested = $this->acceptFrame($server);
             $nestedEnd = $this->acceptFrame($server);
+            $childFrames = [];
+            for ($i = 0; $i < 5; ++$i) {
+                $childFrames[] = $this->acceptFrame($server);
+            }
+            $this->assertSame(['turn.started', 'activity.changed', 'wait.started', 'wait.resolved', 'turn.ended'], array_column($childFrames, 'kind'));
+            $this->assertSame(array_fill(0, 5, $reopened['sequence']), array_column($childFrames, 'actorStart'));
+            $this->assertSame($childFrames[0]['sequence'], $childFrames[3]['turnStart']);
+            $this->assertSame($childFrames[2]['sequence'], $childFrames[3]['waitStart']);
+            $this->assertSame('permission', $childFrames[2]['reason']);
+            $this->assertSame('unknown', $childFrames[4]['outcome']);
             $resumedEnd = $this->acceptFrame($server);
             $this->assertSame(['actor.started', 'actor.started', 'actor.ended', 'actor.ended'], array_column([$reopened, $nested, $nestedEnd, $resumedEnd], 'kind'));
             $this->assertSame($actorStart['actorId'], $reopened['actorId']);

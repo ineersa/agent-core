@@ -173,6 +173,7 @@ final class RuntimeEventPerRunCompactBuffer
         return \in_array($event->type, [
             RuntimeEventTypeEnum::ChildExecutionStarted->value,
             RuntimeEventTypeEnum::ChildExecutionEnded->value,
+            RuntimeEventTypeEnum::ChildTurnObservation->value,
             RuntimeEventTypeEnum::BackgroundJobStarted->value,
             RuntimeEventTypeEnum::BackgroundJobEnded->value,
             RuntimeEventTypeEnum::HumanInputRequested->value,
