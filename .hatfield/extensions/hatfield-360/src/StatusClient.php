@@ -8,7 +8,6 @@ use Amp\ByteStream\StreamException;
 use Amp\CancelledException;
 use Amp\Socket\DnsSocketConnector;
 use Amp\TimeoutCancellation;
-use Ineersa\HatfieldExt\Hatfield360\DTO\SessionCheckpointDTO;
 use Symfony\Component\Uid\Uuid;
 
 final readonly class StatusClient
@@ -65,21 +64,10 @@ final readonly class StatusClient
     }
 
     /** @param array<array-key, mixed> $fields */
-    public function send(string $kind, string $sessionId, int $sequence, int $sessionEpoch, array $fields = [], bool $requireApplied = false): bool
+    public function send(string $kind, string $sessionId, int $sequence, int $sessionEpoch, array $fields = []): bool
     {
         $reply = $this->sendEvent($kind, $sessionId, $sequence, $sessionEpoch, (string) Uuid::v7(), $fields);
 
-        return \in_array($reply, ['accepted', 'duplicate'], true) || (!$requireApplied && 'stale' === $reply);
-    }
-
-    public function ensureSession(SessionCheckpointDTO $checkpoint): bool
-    {
-        $reply = $this->sendEvent('session.started', $checkpoint->sessionId, $checkpoint->epoch, $checkpoint->epoch, $checkpoint->eventId, [
-            'provider' => $checkpoint->provider, 'capabilities' => $checkpoint->capabilities,
-        ]);
-
-        // Stale says only that the launch high-water mark has advanced, not
-        // that this registration (or even this session) was ever accepted.
         return \in_array($reply, ['accepted', 'duplicate'], true);
     }
 

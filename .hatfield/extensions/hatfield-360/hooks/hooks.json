@@ -6,6 +6,10 @@
         "StopFailure": [{"hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}],
         "Stop": [{"hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}],
         "PreToolUse": [{"hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}],
+        "PostToolUse": [{"hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}],
+        "PostToolUseFailure": [{"hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}],
+        "SubagentStart": [{"hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}],
+        "SubagentStop": [{"hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}],
         "Elicitation": [{"hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}],
         "ElicitationResult": [{"hooks": [{"type": "command", "command": "php", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/h360-report", "--claude-hook"], "timeout": 1}]}]
     }

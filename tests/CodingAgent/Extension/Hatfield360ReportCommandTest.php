@@ -32,7 +32,7 @@ final class Hatfield360ReportCommandTest extends TestCase
             $first = $this->exchange($server, $startup);
             $resume = $this->launch($environment, ['session_id' => 'claude-2', 'hook_event_name' => 'SessionStart', 'source' => 'resume']);
             $second = $this->exchange($server, $resume);
-            $this->assertSame('session.started', $first['kind']);
+            $this->assertSame('session.snapshot', $first['kind']);
             $this->assertSame('claude', $first['provider']);
             $this->assertSame('claude-2', $second['sessionId']);
             $this->assertGreaterThan($first['sequence'], $second['sequence']);
@@ -41,14 +41,12 @@ final class Hatfield360ReportCommandTest extends TestCase
             $prompt = '44444444-4444-4444-8444-555555555555';
             $start = $this->launch($environment, ['session_id' => 'claude-2', 'hook_event_name' => 'UserPromptSubmit', 'prompt_id' => $prompt, 'prompt' => 'private prompt']);
             $turn = $this->exchange($server, $start);
-            $this->assertSame('turn.started', $turn['kind']);
+            $this->assertSame('session.snapshot', $turn['kind']);
             $this->assertArrayNotHasKey('prompt', $turn);
-            $this->assertSame($second['sessionEpoch'], $turn['actorStart']);
+            $this->assertSame($second['sessionEpoch'], $turn['sessionEpoch']);
             $failure = $this->launch($environment, ['session_id' => 'claude-2', 'hook_event_name' => 'StopFailure', 'prompt_id' => $prompt, 'error' => 'server_error']);
             $end = $this->exchange($server, $failure);
-            $this->assertSame('turn.ended', $end['kind']);
-            $this->assertSame('failed', $end['outcome']);
-            $this->assertSame($turn['sequence'], $end['turnStart']);
+            $this->assertSame(['id' => $prompt, 'status' => 'failed'], $end['turn']);
 
             // Explicit mode is a separate producer with its own launch and epoch.
             $explicitEnvironment = array_replace($environment, [
@@ -56,11 +54,11 @@ final class Hatfield360ReportCommandTest extends TestCase
                 'H360_STATUS_TOKEN' => str_repeat('b', 64),
             ]);
             $registration = $this->launch($explicitEnvironment, [
-                'kind' => 'session.started', 'sessionId' => 'explicit-test', 'sessionEpoch' => 1, 'sequence' => 1,
-                'provider' => 'hatfield', 'capabilities' => ['notifications'],
+                'kind' => 'session.snapshot', 'sessionId' => 'explicit-test', 'sessionEpoch' => 1, 'sequence' => 1,
+                'provider' => 'hatfield', 'turn' => null, 'attention' => null, 'activeSubagents' => null, 'backgroundScripts' => null, 'tool' => null,
             ], false);
             $selected = $this->exchange($server, $registration);
-            $this->assertSame('session.started', $selected['kind']);
+            $this->assertSame('session.snapshot', $selected['kind']);
             $this->assertNotSame($first['launchId'], $selected['launchId']);
 
             $notification = $this->launch($explicitEnvironment, [
@@ -80,7 +78,7 @@ final class Hatfield360ReportCommandTest extends TestCase
         }
     }
 
-    public function testRecoversExactRegistrationAfterLostAcknowledgement(): void
+    public function testLaterSnapshotReplacesLostObservations(): void
     {
         $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
         $endpoint = $directory.'/s';
@@ -98,23 +96,17 @@ final class Hatfield360ReportCommandTest extends TestCase
             $promptProcess = $this->launch($environment, $prompt);
             $this->assertSame(0, $promptProcess->wait(), $promptProcess->getErrorOutput());
             $server = listen('unix://'.$endpoint);
-            // The first frame received by the peer still loses its acknowledgement.
-            $first = $this->exchange($server, $this->launch($environment, $prompt), reply: null);
-            $this->assertSame('session.started', $first['kind']);
-            $this->assertSame(1, $first['sequence']);
-            $stale = $this->exchange($server, $this->launch($environment, $prompt), reply: '{"ok":true,"status":"stale"}');
-            $this->assertSame($first, $stale);
-            $process = $this->launch($environment, $prompt);
-            $duplicate = $this->exchange($server, $process, reply: '{"ok":true,"status":"duplicate"}', finish: false);
-            $this->assertSame($first, $duplicate);
-            $turn = $this->exchange($server, $process);
-            $this->assertSame('turn.started', $turn['kind']);
-            $this->assertSame($first['sessionEpoch'], $turn['actorStart']);
-            $failure = ['session_id' => 'claude-1', 'hook_event_name' => 'StopFailure', 'prompt_id' => $prompt['prompt_id'], 'error' => 'server_error'];
-            $end = $this->exchange($server, $this->launch($environment, $failure), reply: '{"ok":false,"error":"state"}');
-            $this->assertSame('turn.ended', $end['kind']);
-            $next = $this->exchange($server, $this->launch($environment, array_replace($prompt, ['prompt_id' => '44444444-4444-4444-8444-666666666666'])));
-            $this->assertSame('turn.started', $next['kind']);
+            $agent = ['session_id' => 'claude-1', 'agent_id' => 'child-1'];
+            $first = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStart']), reply: null);
+            $this->assertSame('session.snapshot', $first['kind']);
+            $this->assertSame(1, $first['sessionEpoch']);
+            $this->assertSame(3, $first['sequence']);
+            $this->assertSame('working', $first['turn']['status']);
+            $this->assertSame(1, $first['activeSubagents']);
+            $latest = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStop']));
+            $this->assertNotSame($first['eventId'], $latest['eventId']);
+            $this->assertSame($first['turn'], $latest['turn']);
+            $this->assertSame(0, $latest['activeSubagents']);
         } finally {
             if (isset($server)) {
                 $server->close();
@@ -140,32 +132,41 @@ final class Hatfield360ReportCommandTest extends TestCase
         $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'last_assistant_message' => 'private'];
         try {
             $start = $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionStart', 'source' => 'startup']));
-            $this->assertContains('waits', $start['capabilities']);
+            $this->assertNull($start['backgroundScripts']);
             $turn = $this->exchange($server, $this->launch($environment, $prompt + ['hook_event_name' => 'UserPromptSubmit']));
+            $this->assertSame('working', $turn['turn']['status']);
             $this->assertQuietHook($environment, $prompt + $tool + ['agent_id' => 'child']);
-            $this->assertQuietHook($environment, $session + $tool + ['prompt_id' => '44444444-4444-4444-8444-666666666666']);
-            $activity = $this->exchange($server, $this->launch($environment, $prompt + $tool));
-            $this->assertSame($turn['sequence'] + 1, $activity['sequence']);
-            $this->assertSame('working', $activity['activity']);
-            $this->assertSame($turn['sequence'], $activity['turnStart']);
-            $this->assertArrayNotHasKey('tool', $activity);
-            $this->assertArrayNotHasKey('tool_input', $activity);
             $this->assertQuietHook($environment, $prompt + ['hook_event_name' => 'Elicitation', 'mcp_server_name' => 'mcp-private']);
             $this->assertQuietHook($environment, $prompt + $wait + ['hook_event_name' => 'ElicitationResult', 'action' => 'accept']);
+            $builtin = $prompt + ['tool_name' => 'Bash', 'tool_use_id' => 'tool-2'];
+            $working = $this->exchange($server, $this->launch($environment, $builtin + ['hook_event_name' => 'PreToolUse', 'tool_input' => ['private' => true]]));
+            $this->assertSame('Bash', $working['tool']);
+            $this->assertArrayNotHasKey('tool_input', $working);
+            $recovery = $this->exchange($server, $this->launch($environment, $builtin + ['hook_event_name' => 'PostToolUseFailure', 'error' => 'private']));
+            $this->assertNull($recovery['tool']);
+            $this->assertSame($turn['turn'], $recovery['turn']);
             $request = $this->exchange($server, $this->launch($environment, $prompt + $wait + ['hook_event_name' => 'Elicitation', 'message' => 'private']));
-            $this->assertSame('external-input', $request['reason']);
-            $this->assertSame($activity['sequence'] + 1, $request['sequence']);
+            $this->assertSame('external-input', $request['attention']['reason']);
+            $this->assertSame($recovery['sequence'] + 1, $request['sequence']);
             $this->assertArrayNotHasKey('message', $request);
             $this->assertQuietHook($environment, $prompt + ['mcp_server_name' => 'other'] + $wait + ['hook_event_name' => 'ElicitationResult', 'action' => 'accept']);
             $answer = $this->exchange($server, $this->launch($environment, $prompt + $wait + ['hook_event_name' => 'ElicitationResult', 'action' => 'accept', 'content' => ['secret' => true]]));
-            $this->assertSame($request['sequence'], $answer['waitStart']);
-            $this->assertSame($request['waitId'], $answer['waitId']);
+            $this->assertNull($answer['attention']);
+            $this->assertSame($turn['turn'], $answer['turn']);
             $this->assertArrayNotHasKey('content', $answer);
             $this->assertQuietHook($environment, $prompt + $wait + ['hook_event_name' => 'Elicitation', 'message' => 'private']);
+            $agent = $session + ['agent_id' => 'child-1'];
+            $child = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStart']));
+            $this->assertSame(1, $child['activeSubagents']);
+            $this->assertQuietHook($environment, $agent + ['hook_event_name' => 'SubagentStart']);
             $end = $this->exchange($server, $this->launch($environment, $prompt + $stop));
-            $this->assertSame('unknown', $end['outcome']);
-            $this->assertSame($answer['sequence'] + 1, $end['sequence']);
+            $this->assertSame('completed', $end['turn']['status']);
+            $this->assertSame($child['sequence'] + 1, $end['sequence']);
             $this->assertArrayNotHasKey('last_assistant_message', $end);
+            $this->assertSame(1, $end['activeSubagents']);
+            $settled = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStop']));
+            $this->assertSame(0, $settled['activeSubagents']);
+            $this->assertSame($end['turn'], $settled['turn']);
             $this->assertQuietHook($environment, $prompt + $stop);
             $this->assertQuietHook($environment, $prompt + $tool);
 
@@ -174,7 +175,7 @@ final class Hatfield360ReportCommandTest extends TestCase
             $this->assertSame($directory, realpath(\dirname($state)));
             $this->assertFalse(is_link($state));
             file_put_contents($state, '{broken-private');
-            $this->assertQuietHook($environment, $prompt + $tool, 'hook_state_failed');
+            $this->assertQuietHook($environment, $prompt + $stop, 'hook_state_failed');
         } finally {
             $server->close();
             TestDirectoryIsolation::removeDirectory($directory);

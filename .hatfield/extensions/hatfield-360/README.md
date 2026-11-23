@@ -9,57 +9,59 @@ On Unix, install the package's Composer dependencies (`composer install --no-dev
 The desktop launcher supplies `H360_STATUS_ENDPOINT`, `H360_STATUS_LAUNCH_ID`, and `H360_STATUS_TOKEN`. Do not put credentials in the payload or command arguments. Outside a desktop launch, Claude hooks do nothing. The CLI's explicit mode reads exactly one JSON event object from stdin, using the v1 event fields at the top level. It supplies `version`, `eventId`, `launchId` and `token` itself; any such fields in the payload are rejected.
 
 ```sh
-printf '%s\n' '{"kind":"session.started","sessionId":"a-conversation","sequence":1,"sessionEpoch":1,"provider":"hatfield","capabilities":[]}' | bin/h360-report
+printf '%s\n' '{"kind":"session.snapshot","sessionId":"a-conversation","sequence":1,"sessionEpoch":1,"provider":"hatfield","turn":null,"attention":null,"activeSubagents":null,"backgroundScripts":null,"tool":null}' | bin/h360-report
 ```
 
-In explicit mode the caller owns sequencing and correlation. Exit 0 means a successful protocol reply (including stale or duplicate no-ops); 1 means delivery failed or credentials were absent; 2 means the event was invalid. Do not mix explicit reporting with Claude hook reporting under the same launch credentials. For manual Hatfield registration, the host supplies a verified owner identity to `StatusClient::registerManual()`; the library does not discover or infer process ownership.
+In explicit mode the caller owns sequencing and correlation. Exit 0 means an accepted event or an exact duplicate; 1 means the event was stale, delivery failed, or credentials were absent; 2 means the event was invalid. Do not mix explicit reporting with Claude hook reporting under the same launch credentials. For manual Hatfield registration, the host supplies a verified owner identity to `StatusClient::registerManual()`; the library does not discover or infer process ownership.
 
-## Hatfield graceful quit
+## Snapshot delivery
 
-Hatfield advertises `session-end` and makes a bounded, best-effort attempt to
-report `session.ended` for the selected conversation on final interactive quit.
-It discards unsent activity and does not initiate manual registration during quit.
-Switches, drafts, reloads and abrupt termination do not send this event.
-Hatfield 360 still observes process exit independently.
+Each snapshot replaces the entire selected conversation status. A later snapshot
+can establish an epoch even when the first was lost. Hatfield coalesces unsent
+snapshots. Neither adapter replays historical observations, retries in the
+background, or guarantees eventual delivery. `session.ended` requires an already
+live epoch and does not imply process exit. The explicit CLI supports additional
+notifications; no automatic provider source is wired. Hatfield's owner notices
+are messages to the owning agent, not opt-in desktop alerts. Claude's generic
+notification hook mixes lifecycle notices with other messages and is not
+forwarded. The desktop derives lifecycle notices from snapshots.
 
-## Hatfield background scripts
+## Hatfield coverage
 
-Hatfield advertises `scripts` for live native Bash and code-mode background
-observations, including child-owned jobs routed to the selected root. The adapter
-sends only an opaque script ID and the matching start sequence on end. A script
-can outlive the foreground turn; script end is not a success notification.
+Foreground observations report work, final response, failure or cancellation,
+correlated foreground and child question/approval waits and tool names (not tool inputs or results).
+Tool completion or failure clears the matching progress marker, not the response.
+Native child execution and accepted Bash/code-mode background work contribute
+independent counts, including work routed from nested children. A terminal child
+observation must follow the recorded start. Cancellation requests and synthetic
+parent-side artifact settlement do not count as native exits. Counts are
+best effort; resume/attach does not reconstruct already-running work and sends
+`null` for the unavailable counts. Final interactive quit attempts
+`session.ended`; drafts, switches, reloads and abrupt exits do not send it. Quit
+never initiates manual Linux bootstrap.
 
-At most 32 scripts are tracked per selection. Work already running at attach,
-resume, or reload is not reconstructed. Delivery is best effort: dropped script
-events are not replayed, even if the session registration subsequently recovers.
-A lost end can leave a script visible until the desktop session is replaced or
-closed. Live desktop and managed-shell script smoke tests have not been run.
+## Claude Code coverage
 
-## Hatfield child actors
+Explicit launches report startup, clear and resume selections and terminal exit
+hooks. A foreground `UserPromptSubmit` starts a response; a matching final
+`Stop` ends it as completed, and a matching `StopFailure` marks it failed.
+Subagent start/stop hooks track an approximate active count by agent ID, without
+parent links or execution IDs. Reused IDs and overlapping hooks can make the
+count approximate; resume cannot reconstruct existing work and reports `null`.
+A matching elicitation request/result pair with a server and elicitation ID
+reports external-input attention. Selected built-in tool hooks report only
+names, correlated by tool-use ID, never inputs or results. The plugin does not
+infer permission waits, Esc cancellation, scripts, or manual owner identity.
 
-Hatfield advertises `actors` for live child execution. A committed run start
-or a committed turn advance that reopens a terminal run starts an actor under
-its recorded immediate parent. A nested actor is only reported when its parent
-actor is known. Main turn boundaries do not close child actors; a committed
-child `AgentEnd` closes the matching execution. Reservations and parent-side
-artifact settlement alone do not establish native start or exit. Attach and
-reload do not reconstruct active actors, and missed events are not replayed.
+A nonblocking launch lock protects bounded state in the private socket directory.
+A competing hook can be dropped rather than waiting behind socket I/O. Once a
+selection is observed, a delayed startup cannot replace it; hooks carrying an
+old session ID cannot update it, and foreground hooks must match the current
+prompt. Claude supplies no causal sequence for competing clear/resume selections,
+so a late selection hook can still replace the current selection; the same
+session ID also cannot distinguish a prior selection of that conversation.
+State stores no credentials, prompts or results. Hook failures do not interrupt
+Claude; caught input/state exceptions log only a fixed diagnostic code to stderr.
 
-A committed child turn advance reports working activity. Internal model steps
-stay in the same reported turn. Committed child input requests and applied
-responses are paired by an opaque request ID within that turn; prompts and
-answers are never sent. A committed child terminal event ends the reported turn as `failed`,
-`cancelled`, or `unknown` before closing the actor. It never reports success. Parent intervention, a tool error, and
-an unobserved or unpaired input response are not terminal evidence.
-
-## Claude hook coverage
-
-The plugin reports explicitly launched Claude session selections (`startup`, `resume`, `clear`) and terminal session-end reasons. It excludes compaction and forks, which do not reliably indicate a new foreground conversation. A foreground `UserPromptSubmit` carrying a UUID `prompt_id` starts a turn. Subsequent hooks must match that prompt and the selected session; child hooks are ignored. `Stop` with `stop_hook_active: false` ends the foreground turn as `unknown`, never as `completed`; `StopFailure` reports a correlated failure. `PreToolUse` reports working activity for that turn without tool names, inputs, or results.
-
-The `waits` capability covers only MCP `Elicitation`/`ElicitationResult` pairs whose hooks both supply matching `mcp_server_name`, `elicitation_id`, and current `prompt_id`. This is `external-input`, not a permission wait. In particular, common form-mode examples omit `elicitation_id`; those do not produce telemetry. Only a hash of the server/request pair is sent, never a message, URL, schema, or response. At most 16 distinct pairs per turn are tracked. There is no inferred cancellation, idle, permission, subagent, script, or manual Claude registration telemetry.
-
-The reporter holds a nonblocking per-launch lock in the desktop app's private socket directory. State contains only session/turn identifiers and sequence numbers, never credentials or prompt text. An overlapping hook may be dropped. Hook execution order is not a causal guarantee: Claude can start some session hooks in the background and supplies no selection sequence. A delayed startup cannot replace an already observed selection, but overlapping `/clear` and resume hooks without a causal marker are only best effort. The hook command exits successfully without stdout on delivery or input failure. Caught input and state exceptions write only a fixed JSON diagnostic to stderr (`component: hatfield_360`, `event_type: hook_input_failed` or `hook_state_failed`); normally filtered hooks are silent.
-
-Mapping reference: [Claude Code hooks](https://code.claude.com/docs/en/hooks#hook-events) and [Hatfield 360 v1 protocol](https://github.com/ineersa/hatfield-360/blob/main/docs/agents/agent-status-protocol.md).
-
-Both host adapters retain only the latest unacknowledged session selection and retry its original frame on a later eligible observation before sending dependent events. Only `accepted` and `duplicate` confirm registration. A newer selection replaces the checkpoint and drops older queued observations. There is no background retry loop or historical replay; transient bootstrap or socket failures remain fail-open.
+See [Claude Code hooks](https://code.claude.com/docs/en/hooks#hook-events) and the
+[Hatfield 360 snapshot protocol](https://github.com/ineersa/hatfield-360/blob/main/docs/agents/agent-status-protocol.md).

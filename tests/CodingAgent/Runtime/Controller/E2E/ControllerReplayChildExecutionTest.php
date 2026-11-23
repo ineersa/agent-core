@@ -14,6 +14,14 @@ final class ControllerReplayChildExecutionTest extends ControllerReplayE2eTestCa
     /** @var resource */
     private $gate;
 
+    protected function tearDown(): void
+    {
+        if (isset($this->gate)) {
+            fclose($this->gate);
+        }
+        parent::tearDown();
+    }
+
     public function testNativeChildLifecycleReachesRootControllerStream(): void
     {
         $this->assertSame($this->tempDir, realpath($this->tempDir));
@@ -63,19 +71,9 @@ final class ControllerReplayChildExecutionTest extends ControllerReplayE2eTestCa
         foreach ([$start, $end] as $event) {
             $this->assertSame($root, $event['runId']);
             $this->assertSame(0, $event['seq']);
-            $this->assertSame($root, $event['payload']['parent_run_id']);
             $this->assertSame($child, $event['payload']['child_run_id']);
         }
         $this->assertGreaterThan($start['payload']['child_sequence'], $end['payload']['child_sequence']);
-        $this->assertSame('unknown', $end['payload']['outcome']);
-    }
-
-    protected function tearDown(): void
-    {
-        if (isset($this->gate)) {
-            fclose($this->gate);
-        }
-        parent::tearDown();
     }
 
     protected function controllerExtraArgs(): array

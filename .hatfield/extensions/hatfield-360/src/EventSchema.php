@@ -7,23 +7,11 @@ namespace Ineersa\HatfieldExt\Hatfield360;
 /** Strict mirror of the Hatfield 360 v1 event schema, excluding generated credentials and event ID. */
 final class EventSchema
 {
-    private const array ACTOR = ['actorId' => 'id', 'actorStart' => 'sequence'];
-    private const array TURN = self::ACTOR + ['turnId' => 'id', 'turnStart' => 'sequence'];
     private const array EVENTS = [
-        'session.started' => ['provider' => 'id', 'capabilities' => 'capabilities'],
+        'session.snapshot' => ['provider' => ['hatfield', 'claude'], 'turn' => 'turn', 'attention' => 'attention', 'activeSubagents' => 'count', 'backgroundScripts' => 'count', 'tool' => 'tool'],
         'session.ended' => [],
-        'actor.started' => ['actorId' => 'id', 'parentId' => 'id', 'parentStart' => 'sequence'],
-        'actor.ended' => self::ACTOR,
-        'script.started' => ['scriptId' => 'id'],
-        'script.ended' => ['scriptId' => 'id', 'scriptStart' => 'sequence'],
-        'turn.started' => self::ACTOR + ['turnId' => 'id'],
-        'turn.ended' => self::TURN + ['outcome' => ['completed', 'failed', 'cancelled', 'unknown']],
-        'activity.changed' => self::TURN + ['activity' => ['working', 'idle']],
-        'wait.started' => self::TURN + ['waitId' => 'id', 'reason' => ['permission', 'question', 'external-input']],
-        'wait.resolved' => self::TURN + ['waitId' => 'id', 'waitStart' => 'sequence'],
         'notification' => ['title' => 200, 'body' => 2000],
     ];
-    private const array CAPABILITIES = ['waits', 'actors', 'notifications', 'session-end', 'scripts'];
 
     /** @param array<array-key, mixed> $fields */
     public static function accepts(string $kind, string $sessionId, int $sequence, int $sessionEpoch, array $fields): bool
@@ -33,7 +21,7 @@ final class EventSchema
             || !self::sequence($sessionEpoch) || $sessionEpoch > $sequence) {
             return false;
         }
-        $allowed = $required + ['at' => 64] + ('activity.changed' === $kind ? ['tool' => 128] : []);
+        $allowed = $required + ['at' => 64];
         if ([] !== array_diff_key($required, $fields) || [] !== array_diff_key($fields, $allowed)) {
             return false;
         }
@@ -68,25 +56,25 @@ final class EventSchema
 
         return match ($rule) {
             'id' => self::id($value),
-            'sequence' => self::sequence($value),
-            'capabilities' => self::capabilities($value),
+            'turn' => self::record($value, 'status', ['working', 'completed', 'failed', 'cancelled', 'unknown']),
+            'attention' => self::record($value, 'reason', ['permission', 'question', 'external-input']),
+            'count' => null === $value || (\is_int($value) && $value >= 0 && $value <= 1024),
+            'tool' => null === $value || self::matches($value, 128),
             default => false,
         };
     }
 
-    private static function capabilities(mixed $value): bool
+    /** @param list<string> $values */
+    private static function record(mixed $value, string $field, array $values): bool
     {
-        if (!\is_array($value) || !array_is_list($value) || \count($value) > \count(self::CAPABILITIES)) {
-            return false;
+        if (null === $value) {
+            return true;
         }
-        $seen = [];
-        foreach ($value as $capability) {
-            if (!\in_array($capability, self::CAPABILITIES, true) || isset($seen[$capability])) {
-                return false;
-            }
-            $seen[$capability] = true;
+        if ($value instanceof \stdClass) {
+            $value = get_object_vars($value);
         }
 
-        return true;
+        return \is_array($value) && 2 === \count($value) && self::id($value['id'] ?? null)
+            && \in_array($value[$field] ?? null, $values, true);
     }
 }

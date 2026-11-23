@@ -60,7 +60,7 @@ final class TuiProjectExtensionRegistrar implements TuiListenerRegistrar
                     }
 
                     try {
-                        $extension->onTuiSessionSelected($sessionId);
+                        $extension->onTuiSessionSelected($sessionId, TuiSessionLifecycleEventTypeEnum::SessionResumed === $event);
                     } catch (\Throwable $exception) {
                         $this->logger->warning('extension.tui_session_observer_failed', [
                             'component' => 'tui_extension', 'event_type' => 'tui_session_observer_failed',

@@ -86,9 +86,9 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertSame($launchId, $first['launchId']);
             $this->assertSame($token, $first['token']);
             $this->assertSame(1, $first['version']);
-            $this->assertSame('session.started', $first['kind']);
+            $this->assertSame('session.snapshot', $first['kind']);
             $this->assertSame('hatfield', $first['provider']);
-            $this->assertSame(['waits', 'session-end', 'scripts', 'actors'], $first['capabilities']);
+            $this->assertNull($first['turn']);
             $this->assertSame($first['sequence'], $first['sessionEpoch']);
 
             $client = $this->createStub(AgentSessionClient::class);
@@ -115,76 +115,19 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
                 new RuntimeEvent(Event::ChildExecutionStarted->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 20]),
                 new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 12]),
                 new RuntimeEvent(Event::ChildExecutionStarted->value, $draft->sessionId, 0, ['child_run_id' => 'nested', 'parent_run_id' => 'private-child', 'child_sequence' => 1]),
-                new RuntimeEvent(Event::ChildTurnObservation->value, $draft->sessionId, 0, ['child_run_id' => 'nested', 'parent_run_id' => 'private-child', 'child_sequence' => 2, 'phase' => 'turn']),
                 new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, ['child_run_id' => 'nested', 'parent_run_id' => 'private-child', 'child_sequence' => 3, 'outcome' => 'cancelled']),
-                new RuntimeEvent(Event::ChildTurnObservation->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 20, 'phase' => 'turn']),
-                new RuntimeEvent(Event::ChildTurnObservation->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 21, 'phase' => 'permission', 'request_id' => hash('sha256', 'private request')]),
-                new RuntimeEvent(Event::ChildTurnObservation->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 22, 'phase' => 'resolved', 'request_id' => hash('sha256', 'private request')]),
                 new RuntimeEvent(Event::ToolExecutionFailed->value, 'private-child', 23),
                 new RuntimeEvent(Event::ChildExecutionEnded->value, $draft->sessionId, 0, [...$child, 'child_sequence' => 24, 'outcome' => 'failed']),
             ]);
             $context->sessionServices->parentPoller->poll($draft, $client);
-            $actorStart = $this->acceptFrame($server);
-            $this->assertSame('actor.started', $actorStart['kind']);
-            $this->assertSame('main', $actorStart['parentId']);
-            $this->assertSame($first['sessionEpoch'], $actorStart['parentStart']);
-            $this->assertSame(hash('sha256', 'private-child'), $actorStart['actorId']);
-            $scriptStart = $this->acceptFrame($server);
-            $this->assertSame('script.started', $scriptStart['kind']);
-            $this->assertSame(hash('sha256', "private-child\0bash:7"), $scriptStart['scriptId']);
-            $this->assertSame($first['sessionEpoch'], $scriptStart['sessionEpoch']);
-            $this->assertArrayNotHasKey('owner_run_id', $scriptStart);
-            $frames = [];
-            for ($i = 0; $i < 5; ++$i) {
-                $frames[] = $this->acceptFrame($server);
-            }
-            $this->assertSame(['turn.started', 'activity.changed', 'wait.started', 'wait.resolved', 'turn.ended'], array_column($frames, 'kind'));
-            $this->assertSame('working', $frames[1]['activity']);
-            $this->assertSame('permission', $frames[2]['reason']);
-            $this->assertSame($frames[2]['sequence'], $frames[3]['waitStart']);
-            $this->assertSame($frames[0]['sequence'], $frames[4]['turnStart']);
-            $this->assertSame('cancelled', $frames[4]['outcome']);
-            $this->assertArrayNotHasKey('prompt', $frames[2]);
-            $this->assertArrayNotHasKey('answer', $frames[3]);
-            $scriptEnd = $this->acceptFrame($server);
-            $this->assertSame('script.ended', $scriptEnd['kind']);
-            $this->assertSame($scriptStart['scriptId'], $scriptEnd['scriptId']);
-            $this->assertSame($scriptStart['sequence'], $scriptEnd['scriptStart']);
-            $this->assertSame($scriptStart['sessionEpoch'], $scriptEnd['sessionEpoch']);
-            $this->assertSame($frames[4]['sequence'] + 1, $scriptEnd['sequence']);
-            $this->assertArrayNotHasKey('outcome', $scriptEnd);
-            $actorEnd = $this->acceptFrame($server);
-            $this->assertSame('actor.ended', $actorEnd['kind']);
-            $this->assertSame($actorStart['actorId'], $actorEnd['actorId']);
-            $this->assertSame($actorStart['sequence'], $actorEnd['actorStart']);
-            $this->assertSame($first['sessionEpoch'], $actorEnd['sessionEpoch']);
-            $reopened = $this->acceptFrame($server);
-            $nested = $this->acceptFrame($server);
-            $nestedTurn = $this->acceptFrame($server);
-            $nestedActivity = $this->acceptFrame($server);
-            $nestedTerminal = $this->acceptFrame($server);
-            $this->assertSame(['turn.started', 'activity.changed', 'turn.ended'], array_column([$nestedTurn, $nestedActivity, $nestedTerminal], 'kind'));
-            $this->assertSame($nested['sequence'], $nestedTerminal['actorStart']);
-            $this->assertSame('cancelled', $nestedTerminal['outcome']);
-            $nestedEnd = $this->acceptFrame($server);
-            $childFrames = [];
-            for ($i = 0; $i < 5; ++$i) {
-                $childFrames[] = $this->acceptFrame($server);
-            }
-            $this->assertSame(['turn.started', 'activity.changed', 'wait.started', 'wait.resolved', 'turn.ended'], array_column($childFrames, 'kind'));
-            $this->assertSame(array_fill(0, 5, $reopened['sequence']), array_column($childFrames, 'actorStart'));
-            $this->assertSame($childFrames[0]['sequence'], $childFrames[3]['turnStart']);
-            $this->assertSame($childFrames[2]['sequence'], $childFrames[3]['waitStart']);
-            $this->assertSame('permission', $childFrames[2]['reason']);
-            $this->assertSame('failed', $childFrames[4]['outcome']);
-            $this->assertArrayNotHasKey('reason', $childFrames[4]);
-            $resumedEnd = $this->acceptFrame($server);
-            $this->assertSame(['actor.started', 'actor.started', 'actor.ended', 'actor.ended'], array_column([$reopened, $nested, $nestedEnd, $resumedEnd], 'kind'));
-            $this->assertSame($actorStart['actorId'], $reopened['actorId']);
-            $this->assertSame($reopened['actorId'], $nested['parentId']);
-            $this->assertSame($reopened['sequence'], $nested['parentStart']);
-            $this->assertSame($nested['sequence'], $nestedEnd['actorStart']);
-            $this->assertSame($reopened['sequence'], $resumedEnd['actorStart']);
+            $snapshot = $this->acceptFrame($server);
+            $this->assertSame('session.snapshot', $snapshot['kind']);
+            $this->assertSame($first['sessionEpoch'], $snapshot['sessionEpoch']);
+            $this->assertSame('cancelled', $snapshot['turn']['status']);
+            $this->assertNull($snapshot['attention']);
+            $this->assertSame(0, $snapshot['activeSubagents']);
+            $this->assertSame(0, $snapshot['backgroundScripts']);
+            $this->assertArrayNotHasKey('child_run_id', $snapshot);
 
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
             $harness = new VirtualTuiHarness(sessionId: 'resumed-session');
@@ -223,7 +166,7 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
     }
 
     #[DataProvider('credentials')]
-    public function testRecoversLatestCheckpointAfterUnavailableSocket(bool $manual): void
+    public function testSendsLatestSnapshotAfterUnavailableSocket(bool $manual): void
     {
         if ($manual && 'Linux' !== \PHP_OS_FAMILY) {
             $this->markTestSkipped('Manual launch identity requires Linux.');
@@ -261,18 +204,29 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
                 $extension->onTuiSessionSelected('second');
                 $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 2, TuiRunObservationTypeEnum::TurnStarted));
             });
-            $this->assertSame('session.started', $registration['kind']);
+            $this->assertSame('session.snapshot', $registration['kind']);
             $this->assertSame('first', $registration['sessionId']);
             $latest = $this->acceptFrame($server);
-            $this->assertSame('session.started', $latest['kind']);
+            $this->assertSame('session.snapshot', $latest['kind']);
             $this->assertSame('second', $latest['sessionId']);
             $this->assertGreaterThan($registration['sequence'], $latest['sequence']);
-            $turn = $this->acceptFrame($server);
-            $this->assertSame('turn.started', $turn['kind']);
-            $this->assertSame($latest['sessionEpoch'], $turn['actorStart']);
-            $activity = $this->acceptFrame($server);
-            $this->assertSame('activity.changed', $activity['kind']);
-            $this->assertSame($turn['sequence'], $activity['turnStart']);
+            $this->assertGreaterThan($latest['sessionEpoch'], $latest['sequence']);
+            $this->assertSame('working', $latest['turn']['status']);
+
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 1, TuiRunObservationTypeEnum::ChildExecutionStarted, childRunId: 'child'));
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 2, TuiRunObservationTypeEnum::QuestionRequested, 'same-request', 'child'));
+            $childWait = $this->acceptFrame($server);
+            $this->assertSame('question', $childWait['attention']['reason']);
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 3, TuiRunObservationTypeEnum::ApprovalRequested, 'same-request'));
+            $mainWait = $this->acceptFrame($server);
+            $this->assertSame('permission', $mainWait['attention']['reason']);
+            $this->assertNotSame($childWait['attention']['id'], $mainWait['attention']['id']);
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 4, TuiRunObservationTypeEnum::InputResolved, 'same-request'));
+            $this->assertSame($childWait['attention'], $this->acceptFrame($server)['attention']);
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 5, TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: 'child'));
+            $cleared = $this->acceptFrame($server);
+            $this->assertNull($cleared['attention']);
+            $this->assertSame(0, $cleared['activeSubagents']);
         } finally {
             if (isset($server)) {
                 $server->close();

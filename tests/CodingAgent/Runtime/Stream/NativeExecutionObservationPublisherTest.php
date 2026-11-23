@@ -81,19 +81,17 @@ final class NativeExecutionObservationPublisherTest extends IsolatedKernelTestCa
             putenv(false === $previous ? 'HATFIELD_CONSUMER_STDOUT_EVENTS' : 'HATFIELD_CONSUMER_STDOUT_EVENTS='.$previous);
         }
         $events = iterator_to_array($container->get(InMemoryRuntimeEventSink::class)->drain($root));
-        $this->assertSame(['child_execution.started', 'child_execution.started', 'child_execution.turn_observed', 'child_execution.ended', 'child_execution.started', 'child_execution.turn_observed', 'child_execution.turn_observed', 'child_execution.turn_observed', 'child_execution.ended', 'child_execution.ended'], array_column($events, 'type'));
-        $this->assertSame([0, 0, 0, 0, 0, 0, 0, 0, 0, 0], array_column($events, 'seq'));
+        $this->assertSame(['child_execution.started', 'child_execution.started', 'child_execution.ended', 'child_execution.started', 'child_execution.input_observed', 'child_execution.input_observed', 'child_execution.ended', 'child_execution.ended'], array_column($events, 'type'));
+        $this->assertSame(array_fill(0, 8, 0), array_column($events, 'seq'));
         $this->assertSame([
-            ['child_run_id' => 'fork-run', 'parent_run_id' => $root, 'child_sequence' => 2],
-            ['child_run_id' => 'nested', 'parent_run_id' => 'fork-run', 'child_sequence' => 3],
-            ['child_run_id' => 'fork-run', 'parent_run_id' => $root, 'child_sequence' => 4, 'phase' => 'turn'],
-            ['child_run_id' => 'fork-run', 'parent_run_id' => $root, 'child_sequence' => 5, 'outcome' => 'failed'],
-            ['child_run_id' => 'fork-run', 'parent_run_id' => $root, 'child_sequence' => 6],
-            ['child_run_id' => 'fork-run', 'parent_run_id' => $root, 'child_sequence' => 6, 'phase' => 'turn'],
-            ['child_run_id' => 'fork-run', 'parent_run_id' => $root, 'child_sequence' => 7, 'phase' => 'permission', 'request_id' => hash('sha256', 'private-id')],
-            ['child_run_id' => 'fork-run', 'parent_run_id' => $root, 'child_sequence' => 8, 'phase' => 'resolved', 'request_id' => hash('sha256', 'private-id')],
-            ['child_run_id' => 'fork-run', 'parent_run_id' => $root, 'child_sequence' => 10, 'outcome' => 'cancelled'],
-            ['child_run_id' => 'nested', 'parent_run_id' => 'fork-run', 'child_sequence' => 11, 'outcome' => 'unknown'],
+            ['child_run_id' => 'fork-run', 'child_sequence' => 2],
+            ['child_run_id' => 'nested', 'child_sequence' => 3],
+            ['child_run_id' => 'fork-run', 'child_sequence' => 5],
+            ['child_run_id' => 'fork-run', 'child_sequence' => 6],
+            ['child_run_id' => 'fork-run', 'child_sequence' => 7, 'request_id' => hash('sha256', 'private-id'), 'phase' => 'permission'],
+            ['child_run_id' => 'fork-run', 'child_sequence' => 8, 'request_id' => hash('sha256', 'private-id'), 'phase' => 'resolved'],
+            ['child_run_id' => 'fork-run', 'child_sequence' => 10],
+            ['child_run_id' => 'nested', 'child_sequence' => 11],
         ], array_column($events, 'payload'));
     }
 }

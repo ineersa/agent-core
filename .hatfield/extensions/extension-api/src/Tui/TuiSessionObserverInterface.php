@@ -8,5 +8,5 @@ namespace Ineersa\Hatfield\ExtensionApi\Tui;
 interface TuiSessionObserverInterface
 {
     /** Called on new/resumed sessions and draft promotion. Do not block the UI. */
-    public function onTuiSessionSelected(string $sessionId): void;
+    public function onTuiSessionSelected(string $sessionId, bool $resumed = false): void;
 }

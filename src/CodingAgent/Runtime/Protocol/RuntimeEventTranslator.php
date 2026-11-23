@@ -118,7 +118,7 @@ final class RuntimeEventTranslator
         );
     }
 
-    public static function agentEndType(mixed $reason): RuntimeEventTypeEnum
+    private static function agentEndType(mixed $reason): RuntimeEventTypeEnum
     {
         return match ($reason) {
             'cancelled' => RuntimeEventTypeEnum::RunCancelled,

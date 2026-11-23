@@ -15,4 +15,6 @@ enum TuiRunObservationTypeEnum
     case QuestionRequested;
     case ApprovalRequested;
     case InputResolved;
+    case ToolStarted;
+    case ToolFinished;
 }
