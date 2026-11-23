@@ -50,12 +50,29 @@ final class Hatfield360ReportCommandTest extends TestCase
             $this->assertSame('failed', $end['outcome']);
             $this->assertSame($turn['sequence'], $end['turnStart']);
 
-            $notification = $this->launch($environment, [
+            // Explicit mode is a separate producer with its own launch and epoch.
+            $explicitEnvironment = array_replace($environment, [
+                'H360_STATUS_LAUNCH_ID' => '55555555-5555-4555-8555-555555555555',
+                'H360_STATUS_TOKEN' => str_repeat('b', 64),
+            ]);
+            $registration = $this->launch($explicitEnvironment, [
+                'kind' => 'session.started', 'sessionId' => 'explicit-test', 'sessionEpoch' => 1, 'sequence' => 1,
+                'provider' => 'hatfield', 'capabilities' => ['notifications'],
+            ], false);
+            $selected = $this->exchange($server, $registration);
+            $this->assertSame('session.started', $selected['kind']);
+            $this->assertNotSame($first['launchId'], $selected['launchId']);
+
+            $notification = $this->launch($explicitEnvironment, [
                 'kind' => 'notification', 'sessionId' => 'explicit-test', 'sessionEpoch' => 1, 'sequence' => 2,
                 'title' => 'Ready', 'body' => 'Extra message',
             ], false);
             $frame = $this->exchange($server, $notification);
             $this->assertSame('notification', $frame['kind']);
+            $this->assertSame($selected['launchId'], $frame['launchId']);
+            $this->assertSame($selected['sessionId'], $frame['sessionId']);
+            $this->assertSame($selected['sessionEpoch'], $frame['sessionEpoch']);
+            $this->assertGreaterThan($selected['sequence'], $frame['sequence']);
             $this->assertSame('Extra message', $frame['body']);
         } finally {
             $server->close();
