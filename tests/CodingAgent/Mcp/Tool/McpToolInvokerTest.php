@@ -16,6 +16,9 @@ use Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Ineersa\CodingAgent\Mcp\Tool\McpResultMapper;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker;
+use Mcp\Client\Exception\RequestException;
+use Mcp\Schema\JsonRpc\Error;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class McpToolInvokerTest extends TestCase
@@ -103,6 +106,29 @@ final class McpToolInvokerTest extends TestCase
         $this->assertSame(7, $manager->timeoutSeconds);
     }
 
+    #[DataProvider('remoteRequestErrors')]
+    public function testRemoteRequestErrorRemainsRetryable(string $message): void
+    {
+        $error = RequestException::fromError(Error::forInvalidRequest($message, 1));
+        $manager = $this->createStub(McpConnectionManagerInterface::class);
+        $manager->method('callTool')->willThrowException($error);
+        $this->assertActionableFailure($manager, 'tool.invoke_failed', RequestException::class.': '.$message, $error, retryable: true);
+    }
+
+    public static function remoteRequestErrors(): iterable
+    {
+        yield 'established HTTP 503 represented as an SDK request error' => ['Server answered with HTTP 503 Service Unavailable.'];
+        yield 'remote JSON-RPC invalid request' => ['Invalid request.'];
+    }
+
+    public function testRequestExceptionDoesNotMakeWrappedProgrammingErrorRetryable(): void
+    {
+        $wrapped = new RequestException('Request wrapper', previous: new \TypeError('Invalid reply type'));
+        $manager = $this->createStub(McpConnectionManagerInterface::class);
+        $manager->method('callTool')->willThrowException($wrapped);
+        $this->assertActionableFailure($manager, 'tool.invoke_failed', 'TypeError: Invalid reply type', $wrapped);
+    }
+
     public function testInvocationPreservesProgrammingErrorWrappedByConnectionLayer(): void
     {
         $source = new \TypeError('Invalid reply type');
@@ -160,7 +186,7 @@ final class McpToolInvokerTest extends TestCase
         }
     }
 
-    private function assertActionableFailure(McpConnectionManagerInterface $manager, string $event, string $message, ?\Throwable $original = null): void
+    private function assertActionableFailure(McpConnectionManagerInterface $manager, string $event, string $message, ?\Throwable $original = null, bool $retryable = false): void
     {
         $accessor = new StackToolExecutionContextAccessor();
         $logger = new TestLogger();
@@ -173,7 +199,7 @@ final class McpToolInvokerTest extends TestCase
             $this->fail('Expected a failed tool invocation.');
         } catch (ToolCallException $e) {
             $this->assertStringStartsWith($message, $e->getMessage());
-            $this->assertFalse($e->retryable());
+            $this->assertSame($retryable, $e->retryable());
             $this->assertNull($e->hint());
             $cause = $e->getPrevious();
             if (null !== $original) {

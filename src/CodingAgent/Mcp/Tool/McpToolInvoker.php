@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Mcp\Client\McpClientInterruptedException;
 use Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Mcp\Client\Exception\ConnectionException;
+use Mcp\Client\Exception\RequestException;
 use Psr\Log\LoggerInterface;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 
@@ -114,6 +115,7 @@ final readonly class McpToolInvoker
         }
         $retryable = 'tool.invoke_failed' === $event && ($origin instanceof TransportExceptionInterface
             || $origin instanceof ConnectionException
+            || $origin instanceof RequestException
             || $origin instanceof McpClientConnectionException
             || $origin instanceof McpClientInvocationException);
 
