@@ -7,6 +7,11 @@ namespace Ineersa\CodingAgent\Mcp\Catalog;
 use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use Ineersa\CodingAgent\Utility\AtomicFileWriterException;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Serializer\Encoder\JsonDecode;
+use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Exception\NotEncodableValueException;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
 
 /**
  * Session-file implementation of the MCP tool catalog store.
@@ -60,8 +65,9 @@ final class SessionFileMcpToolCatalogStore implements McpToolCatalogStoreInterfa
         }
 
         try {
-            $data = json_decode($content, true, 512, \JSON_THROW_ON_ERROR);
-        } catch (\JsonException $exception) {
+            // Keep JSON objects distinct from arrays inside schema values.
+            $data = (new JsonDecode())->decode($content, JsonEncoder::FORMAT);
+        } catch (NotEncodableValueException $exception) {
             $this->logger?->warning('MCP catalog JSON decode failed — treating as missing catalog.', [
                 'component' => 'mcp',
                 'event_type' => 'mcp.catalog.read_decode_failed',
@@ -74,11 +80,32 @@ final class SessionFileMcpToolCatalogStore implements McpToolCatalogStoreInterfa
             return null;
         }
 
-        if (!\is_array($data)) {
+        if (!$data instanceof \stdClass && !\is_array($data)) {
             return null;
         }
 
+        $data = (array) $data;
+        $this->normalizeInputSchemas($data);
+
         return McpToolCatalogDTO::fromArray($data);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function normalizeInputSchemas(array $data): void
+    {
+        $normalizer = new Serializer([new ObjectNormalizer()]);
+        foreach ((array) ($data['servers'] ?? []) as $server) {
+            if (!$server instanceof \stdClass || !\is_array($server->tools ?? null)) {
+                continue;
+            }
+
+            foreach ($server->tools as $tool) {
+                if ($tool instanceof \stdClass && isset($tool->inputSchema)) {
+                    // Keep the legacy associative input schema without touching output values.
+                    $tool->inputSchema = $normalizer->normalize($tool->inputSchema);
+                }
+            }
+        }
     }
 
     /**

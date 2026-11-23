@@ -34,7 +34,7 @@ final class LibrarianClientTest extends TestCase
         $this->assertSame('index_unavailable', $client->call('memory_search', ['query' => 'identifier'])['error']);
         $recall = $client->call('recall', ['id' => str_repeat('a', 12)]);
         $this->assertTrue($recall['isError']);
-        $this->assertSame('Actual memory', $recall['candidates'][0]['content']);
+        $this->assertSame([['id' => str_repeat('a', 64), 'content' => 'Actual memory']], $recall['candidates']);
         $this->assertSame(['ensure_project', 'memory_search', 'recall'], $calls);
         $client->disconnect();
         $client->call('memory_search', ['query' => 'identifier']);
@@ -120,6 +120,16 @@ final class LibrarianClientTest extends TestCase
         $this->assertLessThanOrEqual(30, $budgets[2]);
     }
 
+    public function testScalarAndNullStructuredResponsesAreRejected(): void
+    {
+        foreach (['{"ok":true}', null] as $payload) {
+            $calls = [];
+            $client = $this->client($calls, static fn (string $tool): mixed => 'ensure_project' === $tool ? ['ok' => true] : $payload);
+            $this->assertSame('librarian_unavailable', $client->call('recall', ['id' => str_repeat('a', 12)])['error']);
+            $this->assertSame(['ensure_project', 'recall'], $calls);
+        }
+    }
+
     public function testOversizedStructuredResponseIsNotReturned(): void
     {
         $calls = [];
@@ -180,7 +190,7 @@ final class LibrarianClientTest extends TestCase
                     self::assertSame(['id' => str_repeat('a', 12)], $request['params']['arguments']);
                 }
                 $value = $payload($tool, $options);
-                $result = ['content' => [['type' => 'text', 'text' => json_encode($value, \JSON_THROW_ON_ERROR)]], 'structuredContent' => $value, 'isError' => false === ($value['ok'] ?? true)];
+                $result = ['content' => [['type' => 'text', 'text' => json_encode($value, \JSON_THROW_ON_ERROR)]], 'structuredContent' => $value, 'isError' => \is_array($value) && false === ($value['ok'] ?? true)];
             }
 
             return new MockResponse(json_encode(['jsonrpc' => '2.0', 'id' => $request['id'], 'result' => $result], \JSON_THROW_ON_ERROR), [

@@ -12,10 +12,12 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
+use Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandler;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -573,6 +575,60 @@ final class McpToolRegistrarTest extends TestCase
 
         $this->assertNotSame($firstHandler, $secondHandler, 'Changed catalog must re-create the handler');
         $this->assertSame('Tool X updated', $this->registry->toolDefinition('srv_x')?->description);
+    }
+
+    public function testOutputSchemaOnlyCatalogUpdateReplacesDefinition(): void
+    {
+        $makeCatalog = static fn (?array $schema): McpToolCatalogDTO => new McpToolCatalogDTO(
+            runId: 'run-1',
+            servers: [
+                'srv' => new McpServerCatalogEntryDTO(
+                    serverName: 'srv',
+                    transport: 'stdio',
+                    status: McpServerCatalogStatusEnum::CONNECTED,
+                    tools: [new McpToolDefinitionDTO('srv_x', 'srv', 'x', 'Tool X', [], $schema)],
+                ),
+            ],
+        );
+        $project = TestDirectoryIsolation::createProjectTempDir('mcp-output-schema');
+        try {
+            $store = new SessionFileMcpToolCatalogStore($project);
+            $store->write('run-1', $makeCatalog(null));
+            $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
+            $registrar->registerUsingCatalogFrom('run-1', 'run-1');
+            $first = $this->registry->toolDefinition('srv_x');
+            $this->assertNotNull($first);
+            $this->assertNull($first->outputJsonSchema);
+
+            $schema = [
+                'properties' => [
+                    'object' => ['const' => new \stdClass()],
+                    'list' => ['const' => []],
+                    'numericKeys' => ['const' => (object) ['zero', 'one']],
+                ],
+            ];
+            $expected = '{"properties":{"object":{"const":{}},"list":{"const":[]},"numericKeys":{"const":{"0":"zero","1":"one"}}}}';
+            $store->write('run-1', $makeCatalog($schema));
+            $reloaded = $store->read('run-1');
+            $this->assertNotNull($reloaded);
+            $this->assertSame($expected, json_encode($reloaded->servers['srv']->tools[0]->outputSchema, \JSON_THROW_ON_ERROR));
+
+            $registrar->registerUsingCatalogFrom('run-1', 'run-1');
+            $second = $this->registry->toolDefinition('srv_x');
+            $this->assertNotSame($first, $second);
+            $this->assertSame('Tool X', $second?->description);
+            $this->assertSame($expected, json_encode($second?->outputJsonSchema, \JSON_THROW_ON_ERROR));
+
+            $registrar->registerUsingCatalogFrom('run-1', 'run-1');
+            $this->assertSame($second, $this->registry->toolDefinition('srv_x'));
+
+            $schema['properties']['object']['const'] = [];
+            $store->write('run-1', $makeCatalog($schema));
+            $registrar->registerUsingCatalogFrom('run-1', 'run-1');
+            $this->assertNotSame($second, $this->registry->toolDefinition('srv_x'));
+        } finally {
+            TestDirectoryIsolation::removeDirectory($project);
+        }
     }
 
     public function testMissingCatalogAfterRegistrationRemovesOwnedTools(): void

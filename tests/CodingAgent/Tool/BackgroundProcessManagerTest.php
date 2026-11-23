@@ -61,7 +61,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             $this->manager->stopByRecordId($record->id, $this->runId);
             $this->assertTrue($this->manager->cleanupFinishedRecord($record->id, $this->runId));
         }
-        $this->manager->cleanupSessionSidecars($this->runId);
+        $this->manager->cleanupSessionSidecars([$this->runId]);
         TestDirectoryIsolation::removeDirectory($this->directory);
         parent::tearDown();
     }
@@ -356,6 +356,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         [$server, $command] = $this->blockedCommand();
         $peers = [];
         $foreign = 'other-session';
+        $child = 'owned-child';
         try {
             $local = $this->manager->start($command, $this->runId);
             $peers[] = stream_socket_accept($server, 2);
@@ -363,11 +364,15 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             $other = $this->manager->start($command, $foreign);
             $peers[] = stream_socket_accept($server, 2);
             $this->assertIsResource($peers[1]);
+            $nested = $this->manager->start($command, $child);
+            $peers[] = stream_socket_accept($server, 2);
+            $this->assertIsResource($peers[2]);
             $this->assertSame([], $this->store->sessionSnapshots($this->runId));
             $this->assertSame([], $this->store->sessionSnapshots($foreign));
             $sweeper = $this->newManager();
-            $sweeper->cleanupSessionSidecars($this->runId);
+            $this->assertSame(0, $sweeper->cleanupSessionSidecars([$this->runId, $child]));
             $this->assertNotNull($this->manager->observeNativeByStatusPath($local->statusPath, $this->runId)?->finishedAt);
+            $this->assertNotNull($this->manager->observeNativeByStatusPath($nested->statusPath, $child)?->finishedAt);
             $this->assertNull($this->manager->observeNativeByStatusPath($other->statusPath, $foreign)?->finishedAt);
             $this->manager->releaseNativeInvocation($local->statusPath);
             $this->assertFileDoesNotExist($local->statusPath);
@@ -379,6 +384,39 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             }
             fclose($server);
             $this->manager->shutdownCleanup();
+        }
+    }
+
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testBatchedSidecarSweepIsScopedAndContinuesAfterUnsafeEvidence(bool $permanentDeletion): void
+    {
+        $this->assertSame(0, $this->manager->cleanupSessionSidecars([]));
+        $storage = $this->directory.'/bg';
+        mkdir($storage);
+        $prefixes = [];
+        foreach ([$this->runId, 'owned-child', 'foreign-run'] as $runId) {
+            $prefix = $storage.'/'.hash('sha256', $runId).'-'.hash('sha256', 'invocation');
+            $prefixes[$runId] = $prefix;
+            file_put_contents($prefix.'.log', 'completed output');
+            file_put_contents($prefix.'.status', '0');
+            file_put_contents($prefix.'.pid', $runId === $this->runId ? 'invalid' : '2147483647');
+        }
+        // This unrelated lookalike is not a native invocation name.
+        $lookalike = $storage.'/'.hash('sha256', 'owned-child').'-invalid.pid';
+        file_put_contents($lookalike, 'invalid');
+
+        $this->assertSame(1, $this->manager->cleanupSessionSidecars([$this->runId, 'owned-child'], $permanentDeletion));
+
+        $this->assertFileExists($prefixes[$this->runId].'.pid');
+        $this->assertFileExists($prefixes['foreign-run'].'.pid');
+        $this->assertFileExists($lookalike);
+        foreach (['.pid', '.status', '.log'] as $suffix) {
+            if ($permanentDeletion) {
+                $this->assertFileDoesNotExist($prefixes['owned-child'].$suffix);
+            } else {
+                $this->assertFileExists($prefixes['owned-child'].$suffix);
+            }
         }
     }
 

@@ -693,31 +693,65 @@ final class BackgroundProcessManager
         return $this->reapUnacceptedNativeLaunches();
     }
 
-    /** Stop unreported wrappers after launchers stop; only deletion erases replay evidence. */
-    public function cleanupSessionSidecars(string $runId, bool $permanentDeletion = false): void
+    /**
+     * Stop unreported wrappers after launchers stop; only deletion erases replay evidence.
+     *
+     * @param list<string> $runIds
+     *
+     * @return int Number of sidecars whose cleanup failed
+     */
+    public function cleanupSessionSidecars(array $runIds, bool $permanentDeletion = false): int
     {
+        if ([] === $runIds) {
+            return 0;
+        }
         $directory = $this->lifecycle->ensureStorageDir();
-        $prefix = hash('sha256', $runId).'-';
-        foreach ((new Finder())->files()->in($directory)->depth('== 0')->name('/^'.preg_quote($prefix, '/').'[a-f0-9]{64}\.pid$/') as $file) {
+        $runsByPrefix = [];
+        foreach ($runIds as $runId) {
+            $runsByPrefix[hash('sha256', $runId)] = $runId;
+        }
+        $failed = 0;
+        // The storage directory is shared by all sessions and retains completed
+        // replay evidence. Scan it once, not once per owned child run: repeated
+        // Finder traversals can exhaust the controller readiness deadline.
+        foreach ((new Finder())->files()->in($directory)->depth('== 0')->name('/^[a-f0-9]{64}-[a-f0-9]{64}\.pid$/') as $file) {
+            $runId = $runsByPrefix[substr($file->getFilename(), 0, 64)] ?? null;
+            if (null === $runId) {
+                continue;
+            }
             $statusPath = substr($file->getPathname(), 0, -4).'.status';
             $logPath = substr($file->getPathname(), 0, -4).'.log';
-            $this->lifecycle->withSidecarLock($statusPath, function () use ($runId, $statusPath, $logPath, $permanentDeletion): void {
-                if (null !== $this->store->recordIdForStatusPath($statusPath, $runId)) {
-                    return; // A failed row cleanup must retain its native evidence.
-                }
-                if (!$this->lifecycle->ownsSidecarPaths($logPath, $statusPath)) {
-                    throw new \RuntimeException('Session native cleanup encountered unsafe sidecars.');
-                }
-                $pid = $this->lifecycle->readPidFile($statusPath);
-                if (null === $pid) {
-                    throw new \RuntimeException('Session native cleanup cannot establish wrapper ownership.');
-                }
-                $this->lifecycle->stopProcess($pid, $this->lifecycle->ownedPgid($pid, $statusPath), $statusPath);
-                if ($permanentDeletion && !$this->lifecycle->deleteLockedRecordSidecars($logPath, $statusPath)) {
-                    throw new \RuntimeException('Session native sidecar cleanup failed.');
-                }
-            });
+            try {
+                $this->lifecycle->withSidecarLock($statusPath, function () use ($runId, $statusPath, $logPath, $permanentDeletion): void {
+                    if (null !== $this->store->recordIdForStatusPath($statusPath, $runId)) {
+                        return; // A failed row cleanup must retain its native evidence.
+                    }
+                    if (!$this->lifecycle->ownsSidecarPaths($logPath, $statusPath)) {
+                        throw new \RuntimeException('Session native cleanup encountered unsafe sidecars.');
+                    }
+                    $pid = $this->lifecycle->readPidFile($statusPath);
+                    if (null === $pid) {
+                        throw new \RuntimeException('Session native cleanup cannot establish wrapper ownership.');
+                    }
+                    $this->lifecycle->stopProcess($pid, $this->lifecycle->ownedPgid($pid, $statusPath), $statusPath);
+                    if ($permanentDeletion && !$this->lifecycle->deleteLockedRecordSidecars($logPath, $statusPath)) {
+                        throw new \RuntimeException('Session native sidecar cleanup failed.');
+                    }
+                });
+            } catch (\Throwable $exception) {
+                // One unsafe wrapper must not prevent cleanup of other owned runs.
+                ++$failed;
+                $this->logger->warning('background_process.session_sidecar_cleanup_failed', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.session_sidecar_cleanup_failed',
+                    'session_id' => $runId,
+                    'run_id' => $runId,
+                    'exception_class' => $exception::class,
+                ]);
+            }
         }
+
+        return $failed;
     }
 
     /**

@@ -71,7 +71,7 @@ final class CodeModeTerminalReportHandlerTest extends IsolatedKernelTestCase
             $raw = CodeModeTerminalIdentity::forInvocation($runId, $call->deferredId);
             $payloads->publishFirstResult(new ToolCallResult(
                 $runId, $raw->turnNo, $raw->stepId, $raw->attempt, $raw->idempotencyKey, $raw->toolCallId, $raw->orderIndex,
-                ['ok' => true, 'result' => 42],
+                ['ok' => true, 'result' => ['attachment_refs' => [['type' => 'image_ref', 'path' => 'opaque-data']]]],
             ), $raw);
             $bus = new TestMessageBus();
             $handler = new CodeModeTerminalReportHandler(
@@ -100,8 +100,8 @@ final class CodeModeTerminalReportHandlerTest extends IsolatedKernelTestCase
             $this->assertFalse($message->isError);
             $this->assertSame([
                 'tool_name' => 'code_mode',
-                'content' => [['type' => 'text', 'text' => "42\n\ncode_mode diagnostics\nstdout:\nshutdown output\n\nstderr:\nshutdown warning"]],
-                'details' => ['raw_result' => 42],
+                'content' => [['type' => 'text', 'text' => '{"attachment_refs":[{"type":"image_ref","path":"opaque-data"}]}'."\n\ncode_mode diagnostics\nstdout:\nshutdown output\n\nstderr:\nshutdown warning"]],
+                'details' => [],
                 'tool_idempotency_key' => null,
                 'mode' => null,
                 'arguments' => ['script' => 'return 42;'],

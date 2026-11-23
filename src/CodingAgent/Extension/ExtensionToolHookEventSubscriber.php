@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\AgentCore\Domain\Tool\ToolResult as DomainToolResult;
 use Ineersa\CodingAgent\Tool\Event\ToolCallFailedEvent;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerHookInterface;
@@ -210,11 +211,13 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 
     public function onToolCallSucceeded(ToolCallSucceeded $event): void
     {
+        $result = $event->getResult()->getResult();
+        // Observe the presentation, not the typed result's programmatic payload.
         $this->runResultHooks(
             toolCall: $event->getResult()->getToolCall(),
-            isError: false,
-            rawResult: $event->getResult()->getResult(),
-            details: ['raw_result' => $event->getResult()->getResult()],
+            isError: $result instanceof DomainToolResult && $result->isError,
+            content: $result instanceof DomainToolResult ? $result->content : $this->contentBlocks($result),
+            details: $result instanceof DomainToolResult ? [] : ['raw_result' => $result],
         );
     }
 
@@ -226,7 +229,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         $this->runResultHooks(
             toolCall: $event->toolCall,
             isError: true,
-            rawResult: $event->exception->getMessage(),
+            content: $this->contentBlocks($event->exception->getMessage()),
             details: [
                 'error_type' => $event->exception::class,
                 'message' => $event->exception->getMessage(),
@@ -425,11 +428,11 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
     }
 
     /**
-     * @param array<string, mixed> $details
+     * @param array<int, array<string, mixed>> $content
+     * @param array<string, mixed>             $details
      */
-    private function runResultHooks(ToolCall $toolCall, bool $isError, mixed $rawResult, array $details): void
+    private function runResultHooks(ToolCall $toolCall, bool $isError, array $content, array $details): void
     {
-        $content = $this->contentBlocks($rawResult);
         $currentIsError = $isError;
         $currentDetails = $details;
 

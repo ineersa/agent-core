@@ -8,7 +8,7 @@
 # Refresh: hatfield providers:update
 # Interactive setup: bin/console setup
 
-version: 19
+version: 20
 
 providers:
     mistral:
@@ -184,6 +184,18 @@ providers:
                 thinking_level_map: { minimal: null, low: low, medium: null, high: high, xhigh: null, max: max }
                 compatibility: { supports_reasoning_effort: true, zai_tool_stream: true }
                 cost: { input: 0.075, output: 0.25, cache_read: 0.015, cache_write: 0 }
+            glm-5.4:
+                name: GLM 5.4
+                context_window: 1000000
+                max_tokens: 131072
+                input: [text, image, video, pdf]
+                tool_calling: true
+                reasoning: true
+                thinking_level_map: { minimal: null, low: low, medium: null, high: high, xhigh: null, max: max }
+                compatibility: { supports_reasoning_effort: true, zai_tool_stream: true }
+                # No pay-as-you-go API rates are published yet: GLM-5.4 ships with the
+                # GLM Coding Plan only (Model API access pending security assessment),
+                # so cost is intentionally omitted (unknown, not free).
 
     openai-codex:
         label: 'ChatGPT'

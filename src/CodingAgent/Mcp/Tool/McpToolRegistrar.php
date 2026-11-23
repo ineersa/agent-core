@@ -113,7 +113,7 @@ final class McpToolRegistrar
     /**
      * Deterministic content fingerprint of the effective MCP registration
      * surface: catalog run id plus every connected server's tool identity,
-     * description, and input schema, in catalog order. Non-cryptographic
+     * description, and input and output schemas, in catalog order. Non-cryptographic
      * (xxh128) — it only guards against redundant re-registration churn.
      */
     private function fingerprintFor(string $catalogRunId, ?\Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO $catalog): string
@@ -133,12 +133,13 @@ final class McpToolRegistrar
                         $tool->hatfieldName,
                         $tool->description,
                         $tool->inputSchema,
+                        $tool->outputSchema,
                     ];
                 }
             }
         }
 
-        return hash('xxh128', serialize($content));
+        return hash('xxh128', json_encode($content, \JSON_THROW_ON_ERROR));
     }
 
     /**
@@ -246,6 +247,7 @@ final class McpToolRegistrar
         $handler = $this->handlerFactory->create(
             serverName: $serverName,
             mcpName: $toolDef->mcpName,
+            outputSchema: $toolDef->outputSchema,
         );
 
         try {
@@ -253,6 +255,7 @@ final class McpToolRegistrar
                 name: $hatfieldName,
                 description: $description,
                 parametersJsonSchema: $toolDef->inputSchema,
+                outputJsonSchema: $toolDef->outputSchema,
                 handler: $handler,
                 executionMode: ToolExecutionMode::Sequential,
             );

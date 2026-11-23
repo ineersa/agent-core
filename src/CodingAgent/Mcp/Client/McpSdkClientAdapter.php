@@ -22,9 +22,9 @@ use Mcp\Schema\Content\TextResourceContents;
 /**
  * Hatfield adapter wrapping the official PHP MCP SDK client.
  *
- * This is the ONLY class outside the Mcp\Client namespace that may
- * import `Mcp\*` vendor types. It translates between the vendor API
- * and the Hatfield {@see McpClientInterface} contract.
+ * Translates the vendor client API to the Hatfield {@see McpClientInterface}
+ * contract. Output-schema validation separately reuses the SDK validator
+ * in Hatfield's MCP result mapper.
  *
  * All return types are Hatfield-owned or PHP-native arrays,
  * ensuring no vendor types leak to callers.
@@ -62,7 +62,7 @@ final class McpSdkClientAdapter implements McpClientInterface
     }
 
     /**
-     * @return list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>
+     * @return list<array{name: string, description?: string|null, inputSchema: array<string, mixed>, outputSchema?: array<string, mixed>}>
      */
     public function listTools(): array
     {
@@ -74,11 +74,15 @@ final class McpSdkClientAdapter implements McpClientInterface
             $result = $this->client->listTools($cursor);
 
             foreach ($result->tools as $tool) {
-                $tools[] = [
+                $definition = [
                     'name' => $tool->name,
                     'description' => $tool->description,
                     'inputSchema' => $tool->inputSchema,
                 ];
+                if (null !== $tool->outputSchema) {
+                    $definition['outputSchema'] = $tool->outputSchema;
+                }
+                $tools[] = $definition;
             }
 
             $cursor = $result->nextCursor;
@@ -92,13 +96,11 @@ final class McpSdkClientAdapter implements McpClientInterface
             }
         } while (null !== $cursor);
 
-        // Return type matches McpClientInterface::listTools(): list<array{name, description, inputSchema}>
-        // The array shapes are derived from SDK Tool properties — inputSchema is a JSON Schema shape.
         return $tools;
     }
 
     /**
-     * @return array{content: list<array<string, mixed>>, isError: bool}
+     * @return array{content: list<array<string, mixed>>, isError: bool, structuredContent?: mixed}
      */
     public function callTool(string $name, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
     {
@@ -133,10 +135,7 @@ final class McpSdkClientAdapter implements McpClientInterface
         return [
             'content' => $content,
             'isError' => $result->isError,
-            // TODO Phase 3: surface CallToolResult::structuredContent and meta
-            // in McpClientInterface::callTool() return shape before runtime tool
-            // invocation is wired. These fields are intentionally omitted in Phase 0
-            // to keep the boundary minimal.
+            ...($result->hasStructuredContent() ? ['structuredContent' => $result->structuredContent] : []),
         ];
     }
 

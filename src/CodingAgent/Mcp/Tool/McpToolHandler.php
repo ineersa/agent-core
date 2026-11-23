@@ -19,12 +19,13 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 final readonly class McpToolHandler
 {
     /**
-     * @param McpToolInvoker $invoker Shared runtime invoker
+     * @param array<string, mixed>|null $outputSchema
      */
     public function __construct(
         public string $serverName,
         public string $mcpName,
         private McpToolInvoker $invoker,
+        private ?array $outputSchema = null,
     ) {
     }
 
@@ -38,6 +39,7 @@ final readonly class McpToolHandler
                 serverName: $this->serverName,
                 mcpName: $this->mcpName,
                 arguments: $arguments,
+                outputSchema: $this->outputSchema,
             );
         } catch (ToolCallException $e) {
             // Add single server/tool context prefix.  Lower layers

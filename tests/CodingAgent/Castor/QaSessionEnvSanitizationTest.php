@@ -20,6 +20,7 @@ final class QaSessionEnvSanitizationTest extends TestCase
         'HATFIELD_LLM_TRANSPORT_DSN',
         'HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN',
         'HATFIELD_TOOL_TRANSPORT_DSN',
+        'HATFIELD_CODE_MODE_REQUESTS_TRANSPORT_DSN',
         'HATFIELD_AGENT_TRANSPORT_DSN',
         'HATFIELD_MCP_TRANSPORT_DSN',
         'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN',
@@ -104,11 +105,11 @@ final class QaSessionEnvSanitizationTest extends TestCase
         $poisoned = [];
         try {
             foreach (self::DSN_VARS as $var) {
+                $poisoned[$var] = getenv($var);
                 putenv($var.'='.$dsn);
-                $poisoned[] = $var;
             }
+            $poisoned[self::CONTROL_VAR] = getenv(self::CONTROL_VAR);
             putenv(self::CONTROL_VAR.'=session-test-control-42');
-            $poisoned[] = self::CONTROL_VAR;
 
             // Prove the poison is actually active before building the prefix.
             $this->assertSame($dsn, getenv('HATFIELD_LLM_TRANSPORT_DSN'));
@@ -124,8 +125,8 @@ final class QaSessionEnvSanitizationTest extends TestCase
             $out = shell_exec($prefix.' '.$phpBin.' -r '.escapeshellarg('echo (string) getenv('.var_export(self::CONTROL_VAR, true).');'));
             $this->assertSame('session-test-control-42', (string) $out, 'control var must still pass through');
         } finally {
-            foreach ($poisoned as $var) {
-                putenv($var);
+            foreach ($poisoned as $var => $previous) {
+                putenv(false === $previous ? $var : $var.'='.$previous);
             }
         }
     }

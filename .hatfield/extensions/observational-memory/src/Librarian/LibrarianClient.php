@@ -17,6 +17,8 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpClient\CurlHttpClient;
 use Symfony\Component\HttpClient\DecoratorTrait;
 use Symfony\Component\HttpClient\Psr18Client;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
 use Symfony\Contracts\HttpClient\Exception\TimeoutExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
@@ -195,13 +197,15 @@ final class LibrarianClient
     private function payload(CallToolResult $result): array
     {
         $payload = $result->structuredContent;
-        if (!\is_array($payload)) {
+        if (!\is_array($payload) && !$payload instanceof \stdClass) {
             throw new \UnexpectedValueException('Librarian did not return structured content.');
         }
         // Match Librarian's byte budget, not JSON's expanded Unicode/slash escaping.
         if (\strlen(json_encode($payload, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES)) > self::MAX_PAYLOAD_BYTES) {
             throw new \LengthException('Librarian response exceeded the payload limit.');
         }
+        $payload = (new Serializer([new ObjectNormalizer()]))->normalize($payload);
+        \assert(\is_array($payload));
         $payload['isError'] = $result->isError || false === ($payload['ok'] ?? null);
 
         return $payload;

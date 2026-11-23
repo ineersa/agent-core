@@ -38,6 +38,7 @@ final readonly class ToolDefinitionDTO
     /**
      * @param string                    $name                 Model-visible tool name (unique identifier)
      * @param string                    $description          Provider-schema description shown to the LLM
+     * @param array<string, mixed>|null $outputJsonSchema     Source JSON Schema for structured output, when declared
      * @param array<string, mixed>|null $parametersJsonSchema Runtime-provided JSON Schema for raw-array handlers; null for typed DTO handlers (native generation)
      * @param object                    $handler              Invokable execution handler
      * @param string                    $promptLine           One-line description for the <available_tools> prompt section
@@ -57,6 +58,7 @@ final readonly class ToolDefinitionDTO
         public readonly ?int $timeoutSeconds = null,
         public readonly ?string $extensionOwnerClass = null,
         public readonly bool $mainOnly = false,
+        public readonly ?array $outputJsonSchema = null,
     ) {
     }
 }

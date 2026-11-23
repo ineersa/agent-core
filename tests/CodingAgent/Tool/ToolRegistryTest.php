@@ -639,6 +639,23 @@ final class ToolRegistryTest extends TestCase
         $this->assertSame('X2', $replacement?->description);
     }
 
+    public function testOutputSchemaOnlyDynamicUpdateReplacesDefinition(): void
+    {
+        $handler = $this->dummyHandler();
+        $this->registry->addDynamicTool('mcp_x', 'X', $handler, [], outputJsonSchema: ['properties' => new \stdClass()]);
+        $first = $this->registry->toolDefinition('mcp_x');
+        $this->assertNotNull($first);
+
+        $this->registry->addDynamicTool('mcp_x', 'X', $handler, [], outputJsonSchema: ['properties' => new \stdClass()]);
+        $this->assertSame($first, $this->registry->toolDefinition('mcp_x'));
+
+        $schema = ['type' => 'object'];
+        $this->registry->addDynamicTool('mcp_x', 'X', $handler, [], outputJsonSchema: $schema);
+        $replacement = $this->registry->toolDefinition('mcp_x');
+        $this->assertNotSame($first, $replacement);
+        $this->assertSame($schema, $replacement?->outputJsonSchema);
+    }
+
     public function testRemoveAndReAddDynamicToolCreatesNewDefinitionIdentity(): void
     {
         $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());

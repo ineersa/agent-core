@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Mcp\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Mcp\Server\Capability\Discovery\SchemaValidator;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
 
 use function Symfony\Component\String\u;
 
@@ -29,7 +32,7 @@ final class McpResultMapper
     /**
      * Map a raw MCP callTool result to a Hatfield tool output string.
      *
-     * @param array{content: list<array<string, mixed>>, isError: bool} $rawResult
+     * @param array{content: list<array<string, mixed>>, isError: bool, structuredContent?: mixed} $rawResult
      *
      * @throws ToolCallException when isError is true
      */
@@ -41,6 +44,24 @@ final class McpResultMapper
         }
 
         return $this->mergeTextContent($rawResult['content']);
+    }
+
+    /** @param array<string, mixed>|null $outputSchema */
+    public function mapStructuredContent(mixed $value, ?array $outputSchema): mixed
+    {
+        // Validate before PHP array normalization erases object/list distinctions.
+        // The SDK's default null logger keeps validation diagnostics out of runtime logs.
+        if (null !== $outputSchema) {
+            $errors = (new SchemaValidator())->validateAgainstJsonSchema($value, (object) $outputSchema);
+            if ([] !== $errors) {
+                $message = 'internal' === $errors[0]['keyword']
+                    ? 'MCP declared output schema could not be applied.'
+                    : 'MCP structured content does not match the declared output schema.';
+                throw new ToolCallException($message, retryable: false);
+            }
+        }
+
+        return (new Serializer([new ObjectNormalizer()]))->normalize($value);
     }
 
     /**

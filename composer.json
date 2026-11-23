@@ -9,6 +9,11 @@
     },
     "repositories": [
         {
+            "type": "vcs",
+            "url": "https://github.com/ineersa/php-sdk.git",
+            "only": ["mcp/sdk"]
+        },
+        {
             "type": "package",
             "package": {
                 "name": "symfony/ai-open-responses-platform",
@@ -147,7 +152,7 @@
         "symfony/process": "8.2.*@dev",
         "league/oauth2-client": "^2.8",
         "symfony/scheduler": "8.2.*@dev",
-        "mcp/sdk": "^0.10",
+        "mcp/sdk": "dev-fix/preserve-client-structured-json#0ec2028a5e353e5b61f67c079778df423dbf9e12 as 0.10.0",
         "amphp/http-client": "^5.3",
         "league/commonmark": "^2.8",
         "tempest/highlight": "^2.27",
