@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore;
+use Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandler;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker;
@@ -20,6 +21,7 @@ use Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpClient\Exception\TransportException;
 
 /**
  * Test thesis 1: A session catalog with connected server tools registers
@@ -95,12 +97,12 @@ final class McpToolRegistrarTest extends TestCase
     public function testHandlerThrowsStructuredToolCallException(): void
     {
         $throwingInvoker = $this->makeThrowingInvoker(
-            new ToolCallException('MCP server error', retryable: false, hint: 'Try later'),
+            new \UnexpectedValueException('MCP reply could not be decoded'),
         );
         $handler = new McpToolHandler('my-server', 'read', $throwingInvoker);
 
         $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('MCP tool "read" (server "my-server"): MCP server error');
+        $this->expectExceptionMessage('MCP tool "read" (server "my-server"): UnexpectedValueException: MCP reply could not be decoded');
 
         $this->contextAccessor->with(
             new \Ineersa\AgentCore\Application\Tool\ToolContext('run-1', 1, 'tc1', 'my_server_read', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30),
@@ -110,15 +112,9 @@ final class McpToolRegistrarTest extends TestCase
 
     public function testHandlerExceptionPreservesRetryabilityFromInvoker(): void
     {
-        // Simulate a permanent isError from the MCP server by throwing
-        // a non-retryable ToolCallException from the connection manager.
-        // The invoker translates McpClientInvocationException (from the
-        // connection manager layer) to retryable=true, so this test
-        // verifies the handler preserves whatever retryable value the
-        // invoker sets.
-        $throwingInvoker = $this->makeThrowingInvoker(
-            new ToolCallException('Timeout', retryable: false, hint: 'Retry later'),
-        );
+        $transportError = new TransportException('Connection reset');
+        $connectionError = new McpClientInvocationException('Connection wrapper', previous: $transportError);
+        $throwingInvoker = $this->makeThrowingInvoker($connectionError);
         $handler = new McpToolHandler('my-server', 'read', $throwingInvoker);
 
         try {
@@ -126,10 +122,14 @@ final class McpToolRegistrarTest extends TestCase
                 new \Ineersa\AgentCore\Application\Tool\ToolContext('run-1', 1, 'tc1', 'my_server_read', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30),
                 static fn () => ($handler)([]),
             );
+            $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            // The invoker translates McpClientInvocationException → retryable:true
-            $this->assertTrue($e->retryable(), 'Client-layer exceptions should be retryable');
-            $this->assertNotNull($e->hint());
+            $this->assertSame('MCP tool "read" (server "my-server"): '.TransportException::class.': Connection reset', $e->getMessage());
+            $this->assertTrue($e->retryable());
+            $this->assertNull($e->hint());
+            $this->assertInstanceOf(ToolCallException::class, $e->getPrevious());
+            $this->assertSame($connectionError, $e->getPrevious()->getPrevious());
+            $this->assertSame($transportError, $connectionError->getPrevious());
         }
     }
 
@@ -697,7 +697,7 @@ final class McpToolRegistrarTest extends TestCase
 
             public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?\Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
             {
-                throw new \Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException($this->exception->getMessage(), 0, $this->exception);
+                throw $this->exception;
             }
         };
 
