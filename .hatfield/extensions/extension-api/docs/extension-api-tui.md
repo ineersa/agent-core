@@ -34,6 +34,16 @@ That is part of the public API. Do **not** depend on in-repo `Ineersa\Tui\*` cla
 There is no footer-segment API and no API to retain/write transcript rows from this context.
 Extensions must not mutate core transcript widgets directly.
 
+## Session selection
+
+Implement `TuiSessionObserverInterface` alongside `HatfieldExtensionInterface`
+to receive `onTuiSessionSelected($sessionId)` from the interactive process.
+The callback runs for a fresh established session, a selected resume target,
+or when a draft obtains a real session ID. An empty draft does not notify.
+This is a selection signal, not confirmation that restore or a turn succeeded.
+Repeat selections can have the same ID. The callback receives no prompt or
+transcript and must not block the UI. Headless workers do not call it.
+
 ## UX guidelines
 
 - Keep overlays dismissible (Esc) where practical.
