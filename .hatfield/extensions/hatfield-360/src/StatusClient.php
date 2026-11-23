@@ -65,11 +65,11 @@ final readonly class StatusClient
     }
 
     /** @param array<array-key, mixed> $fields */
-    public function send(string $kind, string $sessionId, int $sequence, int $sessionEpoch, array $fields = []): bool
+    public function send(string $kind, string $sessionId, int $sequence, int $sessionEpoch, array $fields = [], bool $requireApplied = false): bool
     {
         $reply = $this->sendEvent($kind, $sessionId, $sequence, $sessionEpoch, (string) Uuid::v7(), $fields);
 
-        return \in_array($reply, ['accepted', 'duplicate', 'stale'], true);
+        return \in_array($reply, ['accepted', 'duplicate'], true) || (!$requireApplied && 'stale' === $reply);
     }
 
     public function ensureSession(SessionCheckpointDTO $checkpoint): bool

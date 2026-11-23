@@ -9,7 +9,10 @@ use Amp\Future;
 use Amp\TimeoutCancellation;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
@@ -21,7 +24,7 @@ use Symfony\Component\Uid\Uuid;
 
 use function Amp\async;
 
-final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, LoggerAwareInterface
+final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, TuiBackgroundJobObserverInterface, LoggerAwareInterface
 {
     use LoggerAwareTrait;
 
@@ -35,6 +38,8 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     private ?int $turn = null;
     /** @var array<string, int> */
     private array $waits = [];
+    /** @var array<string, array{start: int, ending: bool}> */
+    private array $scripts = [];
     private bool $closing = false;
     /** @var Future<void>|null */
     private ?Future $drain = null;
@@ -61,9 +66,10 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         $this->epoch = ++self::$sequence;
         $this->turn = null;
         $this->waits = [];
+        $this->scripts = [];
         // Previous unsent work no longer describes the selected session.
         $this->pending = [];
-        $this->checkpoint = new SessionCheckpointDTO($sessionId, $this->epoch, (string) Uuid::v7(), 'hatfield', ['waits', 'session-end']);
+        $this->checkpoint = new SessionCheckpointDTO($sessionId, $this->epoch, (string) Uuid::v7(), 'hatfield', ['waits', 'session-end', 'scripts']);
         $this->scheduleDrain();
     }
 
@@ -73,6 +79,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
             return;
         }
         $this->closing = true;
+        $this->scripts = [];
         // Drop historical work rather than spending one socket deadline per queued
         // event. An in-flight frame keeps its original order before the final frame.
         $this->pending = [];
@@ -151,6 +158,41 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
         }
     }
 
+    public function onTuiBackgroundJobObserved(TuiBackgroundJobObservationDTO $observation): void
+    {
+        if ($this->closing || '' === $this->sessionId || $observation->sessionId !== $this->sessionId) {
+            return;
+        }
+
+        $id = hash('sha256', $observation->ownerRunId."\0".$observation->jobId);
+        if (TuiBackgroundJobObservationTypeEnum::Started === $observation->type) {
+            if (isset($this->scripts[$id])) {
+                return;
+            }
+            if (\count($this->scripts) >= 32) {
+                $this->logDrop($this->sessionId);
+
+                return;
+            }
+            $start = ++self::$sequence;
+            if ($this->enqueue('script.started', $start, ['scriptId' => $id])) {
+                $this->scripts[$id] = ['start' => $start, 'ending' => false];
+            }
+
+            return;
+        }
+
+        $script = $this->scripts[$id] ?? null;
+        if (null === $script || $script['ending']) {
+            return;
+        }
+        if ($this->enqueue('script.ended', ++self::$sequence, ['scriptId' => $id, 'scriptStart' => $script['start']])) {
+            $this->scripts[$id]['ending'] = true;
+        } else {
+            unset($this->scripts[$id]);
+        }
+    }
+
     /** @return array{actorId: string, actorStart: int, turnId: string} */
     private function turnFields(int $turn): array
     {
@@ -158,15 +200,17 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     }
 
     /** @param array<string, mixed> $fields */
-    private function enqueue(string $kind, int $sequence, array $fields): void
+    private function enqueue(string $kind, int $sequence, array $fields): bool
     {
         if (\count($this->pending) >= self::MAX_PENDING) {
             $this->logDrop($this->sessionId);
 
-            return;
+            return false;
         }
         $this->pending[] = [$kind, $this->sessionId, $sequence, $this->epoch, $fields];
         $this->scheduleDrain();
+
+        return true;
     }
 
     private function scheduleDrain(): void
@@ -180,6 +224,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                 if (null === $client) {
                     $this->logDrop($this->sessionId);
                     $this->pending = [];
+                    $this->scripts = [];
 
                     return;
                 }
@@ -194,6 +239,7 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                         if (!$confirmed) {
                             $this->logDrop($checkpoint->sessionId);
                             $this->pending = [];
+                            $this->scripts = [];
 
                             return;
                         }
@@ -204,13 +250,26 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
                         return;
                     }
                     [$kind, $sessionId, $sequence, $epoch, $fields] = $event;
-                    if (!$client->send($kind, $sessionId, $sequence, $epoch, $fields)) {
+                    $scriptStart = 'script.started' === $kind;
+                    $scriptEnd = 'script.ended' === $kind;
+                    $id = ($scriptStart || $scriptEnd) ? (string) $fields['scriptId'] : '';
+                    if ($scriptEnd && ($this->scripts[$id]['start'] ?? null) !== $fields['scriptStart']) {
+                        continue;
+                    }
+                    $sent = $client->send($kind, $sessionId, $sequence, $epoch, $fields, requireApplied: $scriptStart);
+                    if (!$sent) {
                         $this->logDrop($sessionId);
+                    }
+                    // A failed start cannot authorize an end. Do not mutate a
+                    // new session's map if selection changed while I/O yielded.
+                    if ($this->epoch === $epoch && ($scriptEnd || ($scriptStart && !$sent))) {
+                        unset($this->scripts[$id]);
                     }
                 }
             } catch (\Throwable) {
                 $this->logDrop($this->sessionId);
                 $this->pending = [];
+                $this->scripts = [];
             } finally {
                 $this->drain = null;
             }

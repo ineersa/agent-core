@@ -88,19 +88,31 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertSame(1, $first['version']);
             $this->assertSame('session.started', $first['kind']);
             $this->assertSame('hatfield', $first['provider']);
-            $this->assertSame(['waits', 'session-end'], $first['capabilities']);
+            $this->assertSame(['waits', 'session-end', 'scripts'], $first['capabilities']);
             $this->assertSame($first['sequence'], $first['sessionEpoch']);
 
             $client = $this->createStub(AgentSessionClient::class);
             $draft->handle = new RunHandle($draft->sessionId);
+            $job = ['owner_run_id' => 'private-child', 'job_id' => 'bash:7'];
             $client->method('events')->willReturn([
+                new RuntimeEvent(Event::BackgroundJobStarted->value, 'unrelated', 0, $job),
+                new RuntimeEvent(Event::BackgroundJobEnded->value, $draft->sessionId, 0, $job),
+                new RuntimeEvent(Event::BackgroundJobStarted->value, $draft->sessionId, 0, $job),
+                new RuntimeEvent(Event::BackgroundJobStarted->value, $draft->sessionId, 0, $job),
                 new RuntimeEvent(Event::TurnStarted->value, $draft->sessionId, 1),
                 new RuntimeEvent(Event::HumanInputRequested->value, $draft->sessionId, 2, ['question_id' => 'wait-1', 'approval_context' => [], 'prompt' => 'private prompt']),
                 new RuntimeEvent(Event::HumanInputAnswered->value, $draft->sessionId, 3, ['question_id' => 'wait-1', 'answer' => 'private answer']),
                 new RuntimeEvent(Event::ToolExecutionFailed->value, $draft->sessionId, 4),
                 new RuntimeEvent(Event::RunCancelled->value, $draft->sessionId, 5),
+                new RuntimeEvent(Event::BackgroundJobEnded->value, $draft->sessionId, 0, $job),
+                new RuntimeEvent(Event::BackgroundJobEnded->value, $draft->sessionId, 0, $job),
             ]);
             $context->sessionServices->parentPoller->poll($draft, $client);
+            $scriptStart = $this->acceptFrame($server);
+            $this->assertSame('script.started', $scriptStart['kind']);
+            $this->assertSame(hash('sha256', "private-child\0bash:7"), $scriptStart['scriptId']);
+            $this->assertSame($first['sessionEpoch'], $scriptStart['sessionEpoch']);
+            $this->assertArrayNotHasKey('owner_run_id', $scriptStart);
             $frames = [];
             for ($i = 0; $i < 5; ++$i) {
                 $frames[] = $this->acceptFrame($server);
@@ -113,6 +125,13 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertSame('cancelled', $frames[4]['outcome']);
             $this->assertArrayNotHasKey('prompt', $frames[2]);
             $this->assertArrayNotHasKey('answer', $frames[3]);
+            $scriptEnd = $this->acceptFrame($server);
+            $this->assertSame('script.ended', $scriptEnd['kind']);
+            $this->assertSame($scriptStart['scriptId'], $scriptEnd['scriptId']);
+            $this->assertSame($scriptStart['sequence'], $scriptEnd['scriptStart']);
+            $this->assertSame($scriptStart['sessionEpoch'], $scriptEnd['sessionEpoch']);
+            $this->assertSame($frames[4]['sequence'] + 1, $scriptEnd['sequence']);
+            $this->assertArrayNotHasKey('outcome', $scriptEnd);
 
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
             $harness = new VirtualTuiHarness(sessionId: 'resumed-session');

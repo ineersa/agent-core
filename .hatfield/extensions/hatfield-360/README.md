@@ -22,6 +22,19 @@ It discards unsent activity and does not initiate manual registration during qui
 Switches, drafts, reloads and abrupt termination do not send this event.
 Hatfield 360 still observes process exit independently.
 
+## Hatfield background scripts
+
+Hatfield advertises `scripts` for live native Bash and code-mode background
+observations, including child-owned jobs routed to the selected root. The adapter
+sends only an opaque script ID and the matching start sequence on end. A script
+can outlive the foreground turn; script end is not a success notification.
+
+At most 32 scripts are tracked per selection. Work already running at attach,
+resume, or reload is not reconstructed. Delivery is best effort: dropped script
+events are not replayed, even if the session registration subsequently recovers.
+A lost end can leave a script visible until the desktop session is replaced or
+closed. Live desktop and managed-shell script smoke tests have not been run.
+
 ## Claude hook coverage
 
 The plugin reports explicitly launched Claude session selections (`startup`, `resume`, `clear`) and terminal session-end reasons. It excludes compaction and forks, which do not reliably indicate a new foreground conversation. A foreground `UserPromptSubmit` carrying a UUID `prompt_id` starts a turn. Subsequent hooks must match that prompt and the selected session; child hooks are ignored. `Stop` with `stop_hook_active: false` ends the foreground turn as `unknown`, never as `completed`; `StopFailure` reports a correlated failure. `PreToolUse` reports working activity for that turn without tool names, inputs, or results.
