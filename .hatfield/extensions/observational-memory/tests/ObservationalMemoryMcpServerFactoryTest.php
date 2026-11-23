@@ -12,6 +12,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Claude\ClaudeOmSettingsProvider;
 use Ineersa\HatfieldExt\ObservationalMemory\Claude\ObservationalMemoryMcpServerFactory;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
 use Ineersa\HatfieldExt\ObservationalMemory\Tool\OmToolRegistrationFactory;
+use Mcp\Client\Exception\ConnectionException;
 use Mcp\Server\Transport\StdioTransport;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
@@ -68,6 +69,29 @@ final class ObservationalMemoryMcpServerFactoryTest extends OmTestCase
         $this->assertSame($isError, $responses[2]['result']['isError'] ?? false);
         $text = Toon::decode($responses[2]['result']['content'][0]['text']);
         $this->assertSame($isError ? $error : null, $text['error'] ?? null);
+    }
+
+    public function testLibrarianHttp503ReturnsAndLogsConnectionFailure(): void
+    {
+        $this->project("observational_memory:\n            librarian: {url: 'http://librarian.test/_mcp'}");
+        $exec = $this->createStub(ExecInterface::class);
+        $exec->method('exec')->willReturn(new ExecResultDTO($this->directory.'/project/.git'."\n".$this->directory.'/project/.git', '', 0));
+        $logger = new TestLogger();
+        $responses = $this->exchange([
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'memory_search', 'arguments' => ['query' => 'deploy']]],
+        ], exec: $exec, http: new MockHttpClient(static fn (): MockResponse => new MockResponse('', ['http_code' => 503])), logger: $logger);
+
+        $this->assertTrue($responses[2]['result']['isError']);
+        $message = 'Initialization failed: Server answered with HTTP 503 Service Unavailable.';
+        $this->assertSame(ConnectionException::class.': '.$message, $responses[2]['result']['content'][0]['text']);
+        $logs = array_values(array_filter($logger->records, static fn (array $record): bool => 'om.claude.tool_failed' === $record['message']));
+        $this->assertCount(1, $logs);
+        $chain = $logs[0]['context']['exception_chain'];
+        $origin = $chain[array_key_last($chain)];
+        $this->assertSame(ConnectionException::class, $origin['class']);
+        $this->assertSame($message, $origin['message']);
+        $this->assertStringEndsWith('/HttpTransport.php', $origin['file']);
+        $this->assertGreaterThan(0, $origin['line']);
     }
 
     public function testLibrarianTypeErrorIsReturnedAndLoggedWithoutStoppingServer(): void

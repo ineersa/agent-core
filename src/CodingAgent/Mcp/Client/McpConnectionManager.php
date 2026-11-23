@@ -19,9 +19,6 @@ use Psr\Log\LoggerInterface;
  * This manager lives inside the single mcp Messenger consumer so the
  * "one client per server" invariant is enforced naturally by the process
  * boundary — there is exactly one mcp consumer per controller session.
- *
- * SDK imports are isolated to this namespace and {@see McpSdkClientFactory},
- * preserving the SDK boundary.
  */
 final class McpConnectionManager implements McpConnectionManagerInterface
 {

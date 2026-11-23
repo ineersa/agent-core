@@ -159,8 +159,11 @@ class McpConnectionManagerTest extends TestCase
 
     public function testConnectionFailureDuringToolCallPreservesSdkCause(): void
     {
+        $port = $this->findAvailablePort();
+        $this->assertNotNull($port, 'No available port found for failed-HTTP test');
+
         file_put_contents($this->projectDir.'/.hatfield/mcp.json', json_encode([
-            'mcpServers' => ['fixture' => ['command' => $this->projectDir.'/missing-mcp-executable']],
+            'mcpServers' => ['fixture' => ['url' => \sprintf('http://127.0.0.1:%d/mcp', $port)]],
         ], \JSON_THROW_ON_ERROR));
 
         try {
