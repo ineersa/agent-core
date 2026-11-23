@@ -28,6 +28,37 @@ final class McpResultMapperTest extends TestCase
         $this->mapper = new McpResultMapper();
     }
 
+    public function testValidatesOriginalJsonBeforeNormalizingObjects(): void
+    {
+        $schema = ['type' => 'object', 'properties' => [
+            'empty' => ['const' => new \stdClass()],
+            'list' => ['const' => []],
+            'numeric' => ['type' => 'object'],
+        ]];
+        $this->assertSame(
+            ['empty' => [], 'list' => [], 'numeric' => ['zero']],
+            $this->mapper->mapStructuredContent((object) ['empty' => new \stdClass(), 'list' => [], 'numeric' => (object) ['0' => 'zero']], $schema),
+        );
+        $this->assertSame(['x' => null], $this->mapper->mapStructuredContent((object) ['x' => null], null));
+        $this->assertSame([1, false, 'text'], $this->mapper->mapStructuredContent([1, false, 'text'], []));
+        $this->assertNull($this->mapper->mapStructuredContent(null, ['type' => 'null']));
+    }
+
+    public function testRejectsShapeMismatchWithoutExposingPayloadOrSchema(): void
+    {
+        $this->expectExceptionMessage('MCP structured content does not match the declared output schema.');
+        $this->expectException(ToolCallException::class);
+        $this->mapper->mapStructuredContent((object) ['secret' => [], 'value' => 'private payload'], ['properties' => ['secret' => ['const' => new \stdClass()]]]);
+    }
+
+    public function testRejectsUnresolvableSchemaWithoutExposingPayloadOrSchema(): void
+    {
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessageMatches('/^MCP declared output schema could not be applied\.$/');
+
+        $this->mapper->mapStructuredContent((object) ['value' => 'private payload'], ['$ref' => '#/$defs/private-missing-definition']);
+    }
+
     // ── Test thesis 1: Text content → string ──
 
     public function testMapsSingleTextBlock(): void

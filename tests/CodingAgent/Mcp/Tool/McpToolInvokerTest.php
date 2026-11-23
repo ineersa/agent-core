@@ -7,7 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Mcp\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Mcp\Client\McpClientInterruptedException;
 use Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException;
@@ -18,6 +20,26 @@ use PHPUnit\Framework\TestCase;
 
 final class McpToolInvokerTest extends TestCase
 {
+    public function testStructuredNullKeepsOriginalPresentationAndInvocationIdentity(): void
+    {
+        $manager = $this->createStub(McpConnectionManagerInterface::class);
+        $content = [['type' => 'text', 'text' => 'original presentation']];
+        $manager->method('callTool')->willReturn(['content' => $content, 'isError' => false, 'structuredContent' => null]);
+        $accessor = new StackToolExecutionContextAccessor();
+        $invoker = new McpToolInvoker($manager, $accessor, new McpResultMapper(), new TestLogger());
+        $result = $accessor->with(
+            new ToolContext('run', 1, 'call', 'fixture_tool', new NullCancellationToken(), null),
+            static fn () => $invoker->invoke('fixture', 'tool', [], ['type' => 'null']),
+        );
+
+        $this->assertInstanceOf(ToolResult::class, $result);
+        $this->assertSame('call', $result->toolCallId);
+        $this->assertSame('fixture_tool', $result->toolName);
+        $this->assertSame($content, $result->content);
+        $this->assertNull($result->details);
+        $this->assertSame([null], $result->programmaticResult);
+    }
+
     public function testInvokePropagatesTokenBudgetAndMapsInterruption(): void
     {
         $token = new class implements CancellationTokenInterface {

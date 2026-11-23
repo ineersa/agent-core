@@ -68,6 +68,7 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
     public function testRoundTripWithConnectedAndFailedServers(): void
     {
         $runId = 'test-run-roundtrip';
+        $outputSchema = ['type' => 'object', 'properties' => ['value' => ['type' => 'string']]];
 
         $tools = [
             new McpToolDefinitionDTO(
@@ -75,6 +76,7 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
                 serverName: 'filesystem',
                 mcpName: 'read_file',
                 description: 'Read a file from the filesystem',
+                outputSchema: $outputSchema,
                 inputSchema: ['type' => 'object', 'properties' => ['path' => ['type' => 'string']]],
             ),
             new McpToolDefinitionDTO(
@@ -133,11 +135,40 @@ class SessionFileMcpToolCatalogStoreTest extends TestCase
         $this->assertSame('Read a file from the filesystem', $read->servers['filesystem']->tools[0]->description);
         $this->assertSame('object', $read->servers['filesystem']->tools[0]->inputSchema['type']);
 
+        $this->assertSame(json_encode($outputSchema, \JSON_THROW_ON_ERROR), json_encode($read->servers['filesystem']->tools[0]->outputSchema, \JSON_THROW_ON_ERROR));
+        $this->assertSame($tools[0]->inputSchema, $read->servers['filesystem']->tools[0]->inputSchema);
+        $this->assertNull($read->servers['filesystem']->tools[1]->outputSchema);
+        $this->assertArrayNotHasKey('outputSchema', $read->servers['filesystem']->tools[1]->toArray());
+
         // Verify failed server
         $this->assertArrayHasKey('github', $read->servers);
         $this->assertSame(McpServerCatalogStatusEnum::FAILED, $read->servers['github']->status);
         $this->assertSame('Connection refused', $read->servers['github']->errorMessage);
         $this->assertCount(0, $read->servers['github']->tools);
+    }
+
+    public function testDeclaredEmptyOutputSchemaIsAnObjectAndNotAbsent(): void
+    {
+        $runId = 'empty-output-schema';
+        $catalog = new McpToolCatalogDTO(runId: $runId, servers: [
+            'server' => new McpServerCatalogEntryDTO('server', 'stdio', McpServerCatalogStatusEnum::CONNECTED, tools: [
+                new McpToolDefinitionDTO('server_declared', 'server', 'declared', '', [], []),
+                new McpToolDefinitionDTO('server_absent', 'server', 'absent', '', []),
+            ]),
+        ]);
+        $this->store->write($runId, $catalog);
+
+        $contents = file_get_contents($this->projectDir.'/.hatfield/sessions/'.$runId.'/mcp-tools.json');
+        $this->assertIsString($contents);
+        $this->assertStringContainsString('"outputSchema": {}', $contents);
+        $this->assertSame(1, substr_count($contents, '"outputSchema"'));
+        $reloaded = $this->store->read($runId);
+        $this->assertNotNull($reloaded);
+        [$declared, $absent] = $reloaded->servers['server']->tools;
+        $this->assertSame([], $declared->outputSchema);
+        $this->assertInstanceOf(\stdClass::class, $declared->toArray()['outputSchema']);
+        $this->assertNull($absent->outputSchema);
+        $this->assertArrayNotHasKey('outputSchema', $absent->toArray());
     }
 
     public function testWriteReplacesPreviousCatalog(): void

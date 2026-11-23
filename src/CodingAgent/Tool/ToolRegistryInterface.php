@@ -46,6 +46,7 @@ interface ToolRegistryInterface
      *
      * @param string                    $name                 Model-visible tool name
      * @param string                    $description          Provider-schema description
+     * @param array<string, mixed>|null $outputJsonSchema     JSON Schema for structured output, when declared
      * @param array<string, mixed>|null $parametersJsonSchema JSON Schema for raw-array handlers; null to let Symfony AI describe the handler
      * @param object                    $handler              Invokable execution handler
      * @param string                    $promptLine           Single-line description for <available_tools>
@@ -67,6 +68,7 @@ interface ToolRegistryInterface
         ?int $timeoutSeconds = null,
         ?string $extensionOwnerClass = null,
         bool $mainOnly = false,
+        ?array $outputJsonSchema = null,
     ): void;
 
     /**
@@ -76,12 +78,13 @@ interface ToolRegistryInterface
      * are included in active provider-schema and execution-allowlist
      * snapshots.
      *
-     * @param string               $name                 Model-visible tool name (must not
-     *                                                   conflict with a permanent tool name)
-     * @param string               $description          Provider-schema description
-     * @param array<string, mixed> $parametersJsonSchema JSON Schema for tool parameters
-     * @param object               $handler              Invokable execution handler
-     * @param ToolExecutionMode    $executionMode        Execution mode (default: Sequential)
+     * @param string                    $name                 Model-visible tool name (must not
+     *                                                        conflict with a permanent tool name)
+     * @param string                    $description          Provider-schema description
+     * @param array<string, mixed>|null $outputJsonSchema     JSON Schema for structured output, when declared
+     * @param array<string, mixed>      $parametersJsonSchema JSON Schema for tool parameters
+     * @param object                    $handler              Invokable execution handler
+     * @param ToolExecutionMode         $executionMode        Execution mode (default: Sequential)
      *
      * @throws \InvalidArgumentException on name conflict with permanent tool
      */
@@ -91,6 +94,7 @@ interface ToolRegistryInterface
         object $handler,
         array $parametersJsonSchema,
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
+        ?array $outputJsonSchema = null,
     ): void;
 
     /**

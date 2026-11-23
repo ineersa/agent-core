@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\AgentCore\Domain\Tool\ToolResult as DomainToolResult;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
 use Ineersa\CodingAgent\Tool\Event\ToolCallFailedEvent;
@@ -21,6 +22,7 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
@@ -390,7 +392,9 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $this->assertSame(['arguments' => ['q' => 'x'], 'query' => 'x'], $seen->arguments);
     }
 
-    public function testSucceededResultHookSeesOriginalFlatArguments(): void
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testSucceededResultHookSeesOriginalFlatArgumentsAndPresentation(bool $typed): void
     {
         $seen = null;
         $hook = new class($seen) implements ToolResultHookInterface {
@@ -411,7 +415,9 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $subscriber = new ExtensionToolHookEventSubscriber($registry, '/tmp');
 
         $toolCall = new ToolCall('call-ok', 'read', ['path' => './ok.txt']);
-        $result = new ToolResult($toolCall, 'ok');
+        $content = [['type' => 'text', 'text' => 'ok']];
+        $value = $typed ? new DomainToolResult('call-ok', 'read', $content, ['raw_result' => 'private programmatic value']) : 'ok';
+        $result = new ToolResult($toolCall, $value);
 
         $subscriber->onToolCallSucceeded(new ToolCallSucceeded(
             tool: new class {
@@ -430,6 +436,9 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $this->assertFalse($seen->isError);
         $this->assertSame('call-ok', $seen->toolCallId);
         $this->assertSame(['path' => './ok.txt'], $seen->arguments);
+        $this->assertSame($content, $seen->content);
+        $this->assertSame($typed ? [] : ['raw_result' => 'ok'], $seen->details);
+        $this->assertSame($value, $result->getResult());
     }
 
     public function testResultHookFailureIsLoggedAndSkipped(): void

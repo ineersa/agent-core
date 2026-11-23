@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Psr\Container\ContainerInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
@@ -64,7 +66,31 @@ final readonly class CodeModeNestedToolExecutor
                 throw new ToolCallException($previous?->getMessage() ?? $exception->getMessage(), retryable: false, previous: $previous ?? $exception);
             }
 
-            return $toolboxResult->getResult();
+            $result = $toolboxResult->getResult();
+            if (!$result instanceof ToolResult) {
+                return $result;
+            }
+            if ($result->toolCallId !== $toolCallId || $result->toolName !== $name) {
+                throw new ToolCallException('Typed tool result identity does not match its invocation.', retryable: false);
+            }
+            $failure = ToolResultText::failureMessage($result->content) ?? ToolResultText::failureMessage($result->details);
+            if (null !== $failure || $result->isError) {
+                throw new ToolCallException($failure ?? 'Nested tool returned an error.', retryable: false);
+            }
+
+            if (null === $result->programmaticResult) {
+                throw new ToolCallException('Typed tool result has no programmatic value.', retryable: false);
+            }
+            if ([0] !== array_keys($result->programmaticResult)) {
+                throw new ToolCallException('Typed tool result has an invalid programmatic value slot.', retryable: false);
+            }
+            $value = $result->programmaticResult[0];
+            $failure = ToolResultText::failureMessage($value);
+            if (null !== $failure) {
+                throw new ToolCallException($failure, retryable: false);
+            }
+
+            return $value;
         });
     }
 

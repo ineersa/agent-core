@@ -84,13 +84,9 @@ final readonly class CodeModeTerminalReportHandler
         }
         $tool = new ToolCall($id, 'code_mode', [], 0, $runId);
         $result = $this->process($tool, $invocation, $reply);
-        $details = $result->details;
-        if (\is_array($details)) {
-            unset($details['raw_result']); // The caller receives already processed content.
-        }
         $body = 'code-mode-'.bin2hex(random_bytes(32));
         $reference = $this->payloads->publish(new ToolCallResult($runId, $identity->turnNo, $identity->stepId, $identity->attempt,
-            $body, $body, $identity->orderIndex, ['content' => $result->content, 'details' => $details], $result->isError));
+            $body, $body, $identity->orderIndex, ['content' => $result->content, 'details' => $result->details], $result->isError));
         $this->replies->sendStandalone($address, $id, $reference);
         $this->processes->retireStandalone($runId, $id);
     }

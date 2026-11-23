@@ -67,6 +67,28 @@ without a configured maximum there is no background deadline.
 
 Broker delivery can repeat a nested tool request. Individual tools own idempotency if they need it.
 
+`tool()` preserves native tool values: strings stay strings (even if they look
+like JSON), and scalars and arrays keep their types. A status field inside a
+successful value is data, not an exception.
+
+For MCP tools, `tool()` returns explicitly supplied structured content (including
+`null`); if it is absent, `tool()` returns MCP text. The output schema shown in a
+tool's description applies only to structured content, not to fallback text.
+Hatfield validates the original JSON against the declared schema, if any, before
+converting objects to associative PHP arrays. For example, read a returned object
+field as `$result['name']`. After conversion, `{}` and `[]` both become `[]`, and
+numeric object keys may become integer array keys, making an object look like a list.
+Model-facing MCP text remains separate from the value returned to the script.
+
+Tool invocation failures, including MCP-reported errors, transport failures,
+cancellation, and schema mismatches, are catchable as `RuntimeException` inside
+the script. An invalid structured result never falls back to text.
+
+A script's final return is rendered as text, subject to normal output capping.
+Attachment-shaped fields in that value are data, not instructions to attach files.
+Even `return tool('view_image', ...)` returns metadata without attaching the image;
+call `view_image` directly when the model needs to see it.
+
 Enable `tools.code_mode.enabled: true` in settings and restart Hatfield. The tool
 accepts a PHP **function body** in `script`, not a file path. It is useful for
 multi-step tool work whose intermediate results do not need model interpretation.
