@@ -23,14 +23,12 @@ final class ClaudeProcessIdentityProvider
 
         $chain = [];
         $owner = null;
-        // Walk the whole visible chain, not a guessed hop. A second match or
-        // a chain we cannot finish cannot establish a unique native owner.
+        // Walk the whole visible chain, not a guessed hop. An unreadable exe
+        // cannot identify an owner, but a readable stat still links the chain.
+        // Reject a second positive match or an incomplete chain.
         for ($hop = 0; $hop < 64 && $pid > 0; ++$hop) {
             $row = self::process($pid);
             if (null === $row || isset($chain[$pid])) {
-                return null;
-            }
-            if ('0' !== $row['tty'] && null === $row['exe']) {
                 return null;
             }
             $chain[$pid] = $row;
