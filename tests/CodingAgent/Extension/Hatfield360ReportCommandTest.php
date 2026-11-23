@@ -9,6 +9,8 @@ use Amp\TimeoutCancellation;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
@@ -302,6 +304,62 @@ final class Hatfield360ReportCommandTest extends TestCase
             $this->assertSame(2, $snapshot['sequence']);
             $this->assertSame(1, $snapshot['sessionEpoch']);
 
+            // Two distinct native PTY owners share the state admission lock.
+            $barrier = listen('unix://'.$directory.'/b');
+            $pause = escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg('$s = stream_socket_client("unix://".$argv[1]); exit(fread($s, 1) === "!" ? 0 : 1);').' '.escapeshellarg($directory.'/b');
+            $stop = array_replace($turn, ['hook_event_name' => 'Stop', 'stop_hook_active' => false]);
+            $agent = array_replace($turn, ['hook_event_name' => 'SubagentStart', 'agent_id' => 'agent-1']);
+            $ownerA = new Process($shell(implode('; ', [$call($hook), $call($turn), $pause, $call($agent), $pause, $call($stop)])), env: $env, timeout: 5);
+            $ownerB = new Process($shell(implode('; ', [$call($hook), $call($turn), $pause, $call($stop)])), env: $env, timeout: 5);
+            $lock = (new LockFactory(new FlockStore($directory)))->createLock('claude-managed');
+            try {
+                $ready = function (Process $owner) use ($server, $reply, $barrier): array {
+                    $owner->start();
+                    $registration = $this->exchange($server, $owner, reply: $reply, finish: false);
+                    $this->exchange($server, $owner, finish: false);
+                    $this->assertSame($registration, $this->exchange($server, $owner, reply: $reply, finish: false));
+                    $this->assertSame(0, $this->exchange($server, $owner, finish: false)['activeSubagents']);
+                    $signal = $barrier->accept(new TimeoutCancellation(2));
+                    $this->assertNotNull($signal);
+
+                    return [$registration, $signal];
+                };
+                [$registrationA, $signalA] = $ready($ownerA);
+                [$registrationB, $signalB] = $ready($ownerB);
+                $this->assertNotSame($registrationA['owner']['pid'], $registrationB['owner']['pid']);
+                $this->assertTrue($lock->acquire());
+                $signalA->write('!');
+                $signalA->close();
+                $signalA = $barrier->accept(new TimeoutCancellation(2));
+                $this->assertNotNull($signalA);
+                $this->assertStringContainsString('hook_lock_timeout', $ownerA->getOutput());
+                $lock->release();
+                foreach ([[$ownerA, $signalA, $registrationA, null], [$ownerB, $signalB, $registrationB, 0]] as [$native, $signal, $registration, $count]) {
+                    $signal->write('!');
+                    $signal->close();
+                    $this->assertSame($registration, $this->exchange($server, $native, reply: $reply, finish: false));
+                    $completed = $this->exchange($server, $native, finish: false);
+                    $this->assertSame('completed', $completed['turn']['status']);
+                    $this->assertSame($count, $completed['activeSubagents']);
+                    $this->assertSame(0, $native->wait());
+                }
+                $this->assertStringNotContainsString('hook_lock_timeout', $ownerB->getOutput());
+            } finally {
+                $lock->release();
+                if (isset($signalA)) {
+                    $signalA->close();
+                }
+                if (isset($signalB)) {
+                    $signalB->close();
+                }
+                $barrier->close();
+                foreach ([$ownerA, $ownerB] as $native) {
+                    if ($native->isRunning()) {
+                        $native->wait();
+                    }
+                }
+            }
+
             foreach ([$env, array_replace($env, ['H360_STATUS_TOKEN' => 'malformed'])] as $environment) {
                 // In the second case the owner is valid, but explicit auth forbids
                 // bootstrap. The first case has no native owner in its ancestry.
@@ -391,6 +449,47 @@ final class Hatfield360ReportCommandTest extends TestCase
         }
     }
 
+    public function testStopCannotSettleWhileAnEnteredStartIsPending(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $server = listen('unix://'.$directory.'/s');
+        $barrier = listen('unix://'.$directory.'/b');
+        $environment = [
+            'H360_STATUS_ENDPOINT' => $directory.'/s',
+            'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444',
+            'H360_STATUS_TOKEN' => str_repeat('a', 64),
+            'H360_TEST_BARRIER' => $directory.'/b',
+            'H360_TEST_HOLD_START' => '1',
+        ];
+        $session = ['session_id' => 'claude-1'];
+        $prompt = $session + ['prompt_id' => '44444444-4444-4444-8444-111111111111'];
+        try {
+            $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionStart', 'source' => 'startup']));
+            $this->exchange($server, $this->launch($environment, $prompt + ['hook_event_name' => 'UserPromptSubmit']));
+            $start = $this->launch($environment, $prompt + ['hook_event_name' => 'SubagentStart', 'agent_id' => 'agent-1'], observeContention: true);
+            $signal = $barrier->accept(new TimeoutCancellation(2));
+            $this->assertNotNull($signal);
+            $stop = $this->exchange($server, $this->launch($environment, $prompt + ['hook_event_name' => 'Stop', 'stop_hook_active' => false]));
+            $signal->write('!');
+            $signal->close();
+            $agent = $this->exchange($server, $start);
+            $this->assertSame('completed', $stop['turn']['status']);
+            $this->assertNull($stop['activeSubagents']);
+            $this->assertSame($stop['sequence'] + 1, $agent['sequence']);
+            $this->assertSame(1, $agent['activeSubagents']);
+        } finally {
+            if (isset($signal)) {
+                $signal->close();
+            }
+            if (isset($start) && $start->isRunning()) {
+                $start->stop(0);
+            }
+            $barrier->close();
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     /** @param array<string, string> $environment @param array<string, mixed>|string $input */
     private function assertQuietHook(array $environment, array|string $input, ?string $diagnostic = null): void
     {
@@ -412,9 +511,13 @@ final class Hatfield360ReportCommandTest extends TestCase
                 function flock($handle, $operation): bool {
                     static $signaled = false;
                     $acquired = \flock($handle, $operation);
-                    if (!$acquired && !$signaled) {
+                    $hold = $acquired && ($operation & \LOCK_SH) && getenv('H360_TEST_HOLD_START');
+                    if ((!$acquired || $hold) && !$signaled) {
                         $signaled = true;
                         $signal = stream_socket_client('unix://'.getenv('H360_TEST_BARRIER'));
+                        if ($hold) {
+                            fread($signal, 1);
+                        }
                         fclose($signal);
                     }
                     return $acquired;

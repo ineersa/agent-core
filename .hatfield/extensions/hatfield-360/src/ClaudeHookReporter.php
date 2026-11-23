@@ -10,6 +10,7 @@ use Symfony\Component\Filesystem\Exception\IOException;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\Exception\ExceptionInterface as LockExceptionInterface;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\SharedLockInterface;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Uid\Uuid;
 
@@ -29,7 +30,7 @@ final class ClaudeHookReporter
             return false;
         }
 
-        return $this->withLaunchLock($client, fn (string $path, \Closure $authorize, string $marker): bool => $this->reportLocked($authorize, $path, $marker, $session, $event, $hook), 'SubagentStart' === $event);
+        return $this->withLaunchLock($client, fn (string $path, \Closure $authorize, string $marker, SharedLockInterface $pending): bool => $this->reportLocked($authorize, $path, $marker, $pending, $session, $event, $hook), 'SubagentStart' === $event);
     }
 
     /** @param array<array-key, mixed> $fields */
@@ -51,7 +52,7 @@ final class ClaudeHookReporter
         });
     }
 
-    /** @param \Closure(string, \Closure(): ?StatusClient, string): bool $callback */
+    /** @param \Closure(string, \Closure(): ?StatusClient, string, SharedLockInterface): bool $callback */
     private function withLaunchLock(?StatusClient $client, \Closure $callback, bool $agentStart = false): bool
     {
         $endpoint = getenv('H360_STATUS_ENDPOINT');
@@ -90,11 +91,19 @@ final class ClaudeHookReporter
             $name = $lockName = 'claude-status-'.$launch;
             $authorize = static fn (): StatusClient => $client;
         }
-        $marker = $directory.'/'.($managed ? 'claude-managed' : $name).'.agents-unknown';
+        $marker = $directory.'/'.$name.'.agents-unknown';
         $path = $directory.'/'.$name.'.json';
 
         try {
-            $lock = (new LockFactory(new FlockStore($directory)))->createLock($lockName);
+            $factory = new LockFactory(new FlockStore($directory));
+            $pending = $factory->createLock($name.'-pending-agent');
+            // Only an already admitted selection can advertise a pending start.
+            // Managed state is never removed during the socket directory lifetime.
+            $trackStart = $agentStart && is_file($path);
+            if ($trackStart && !$pending->acquireRead()) {
+                (new Filesystem())->touch($marker);
+            }
+            $lock = $factory->createLock($lockName);
             // Managed hooks may need two 250 ms exchanges. Leave room for
             // both and local setup within Claude's one-second hook timeout.
             $deadline = new TimeoutCancellation($managed ? 0.35 : 0.65);
@@ -102,11 +111,10 @@ final class ClaudeHookReporter
                 try {
                     delay(0.01, cancellation: $deadline);
                 } catch (CancelledException) {
-                    if ($agentStart && ($managed || is_file($path))) {
+                    if ($trackStart) {
                         // A missed start must not turn a later completed response
                         // into a false known-zero observation. This marker is
-                        // sticky and contains no hook data. Managed launches share
-                        // one marker so lock failures cannot bypass the state cap.
+                        // sticky, owner-scoped, and contains no hook data.
                         (new Filesystem())->touch($marker);
                     }
                     HookDiagnostic::write('hook_lock_timeout');
@@ -122,7 +130,7 @@ final class ClaudeHookReporter
                     }
                 }
 
-                return $callback($path, $authorize, $marker);
+                return $callback($path, $authorize, $marker, $pending);
             } finally {
                 $lock->release();
             }
@@ -137,7 +145,7 @@ final class ClaudeHookReporter
      * @param \Closure(): ?StatusClient $authorize
      * @param array<array-key, mixed>   $hook
      */
-    private function reportLocked(\Closure $authorize, string $path, string $marker, string $session, string $event, array $hook): bool
+    private function reportLocked(\Closure $authorize, string $path, string $marker, SharedLockInterface $pending, string $session, string $event, array $hook): bool
     {
         $previous = file_exists($path) ? $this->readState($path) : [];
         if (null === $previous) {
@@ -264,14 +272,33 @@ final class ClaudeHookReporter
         $fields = 'session.snapshot' === $kind ? [
             'provider' => 'claude', 'turn' => $state['turn'],
             'attention' => $attention,
-            'activeSubagents' => null === $state['agents'] || is_file($marker) ? null : \count($state['agents']),
+            'activeSubagents' => null === $state['agents'] ? null : \count($state['agents']),
             'backgroundScripts' => $state['scripts'], 'tool' => $state['tools'][array_key_last($state['tools']) ?? '']['name'] ?? null,
         ] : [];
         // Persist the observation and reserve its sequence before I/O. A missed
         // reply does not discard local state or cause historical replay.
         (new Filesystem())->dumpFile($path, json_encode($state, \JSON_THROW_ON_ERROR));
 
-        return $authorize()?->send($kind, $session, $sequence, $state['epoch'], $fields) ?? false;
+        $client = $authorize();
+        if (null === $client) {
+            return false;
+        }
+        if ('session.snapshot' === $kind) {
+            // Check at publication, after any managed credential round trip.
+            // A start waiting for the state lock holds a shared pending lock.
+            $pendingStart = false;
+            if (0 === $fields['activeSubagents'] && 'completed' === ($state['turn']['status'] ?? null)) {
+                $pendingStart = !$pending->acquire();
+                if (!$pendingStart) {
+                    $pending->release();
+                }
+            }
+            if ($pendingStart || is_file($marker)) {
+                $fields['activeSubagents'] = null;
+            }
+        }
+
+        return $client->send($kind, $session, $sequence, $state['epoch'], $fields);
     }
 
     /**

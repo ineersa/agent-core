@@ -94,8 +94,10 @@ socket directory. A competing hook waits up to 650 ms with explicit credentials
 or 350 ms for a managed launch. Each socket exchange has its own 250 ms deadline
 (managed reporting can need two). If a
 subagent start times out, subsequent snapshots conservatively report an unknown
-subagent count for that launch (all managed launches in that socket directory
-share one uncertainty marker). An already-sent snapshot cannot be recalled. The first
+subagent count only for that admitted owner instance. A completed snapshot also
+reports an unknown count if a start has announced itself but is still waiting for
+the launch lock. This check runs just before publication; it cannot account for a
+hook that has not yet announced itself or recall an already-sent snapshot. The first
 startup, resume or clear can establish a selection without a previous boundary.
 Afterward, switching requires a matching outgoing `SessionEnd` from the current
 selection. Resume pairs by prompt ID; clear consumes one clear boundary because
