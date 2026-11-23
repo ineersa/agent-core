@@ -29,15 +29,14 @@ $server = Server::builder()
     ->setInstructions('Test echo server for MCP integration tests.')
     ->setLogger(new Psr\Log\NullLogger())
     ->addTool(
-        handler: static function (string $text): array {
-            return [
-                'content' => [
-                    [
-                        'type' => 'text',
-                        'text' => 'echo: '.$text,
-                    ],
-                ],
-            ];
+        handler: static function (string $text): Mcp\Schema\Result\CallToolResult {
+            $content = [new Mcp\Schema\Content\TextContent('echo: '.$text)];
+
+            return match ($text) {
+                'structured-object' => new Mcp\Schema\Result\CallToolResult($content, structuredContent: (object) ['data' => str_repeat('m', 1_100_000)]),
+                'structured-list' => new Mcp\Schema\Result\CallToolResult($content, structuredContent: []),
+                default => new Mcp\Schema\Result\CallToolResult($content),
+            };
         },
         name: 'echo',
         title: 'Echo Tool',

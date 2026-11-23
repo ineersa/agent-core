@@ -31,7 +31,7 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
         }
 
         // Failures and already-capped/sanitized results must stay untouched.
-        // OutputCap strips raw_result; absent raw_result must never become "null".
+        // Render only once; absent raw_result must never become "null".
         if ($result->isError) {
             return $result;
         }
@@ -54,30 +54,14 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
             $hasDiagnostics = false;
         }
 
-        // Rewrite visible text for diagnostics and for null/bool returns.
-        // Without this, ToolExecutor leaves false as "" and true as "1".
-        $visibleReturn = $this->normalizeVisibleResult($value);
-        if (!$hasDiagnostics) {
-            $details['raw_result'] = $value;
-
-            return new ToolResult(
-                toolCallId: $result->toolCallId,
-                toolName: $result->toolName,
-                content: [[
-                    'type' => 'text',
-                    'text' => $visibleReturn,
-                ]],
-                details: $details,
-                isError: false,
-            );
+        // A script return is data, not canonical control metadata. Remove it
+        // before output capping, which can preserve trusted image references.
+        unset($details['raw_result']);
+        $visibleText = $this->normalizeVisibleResult($value);
+        if ($hasDiagnostics) {
+            $diagnosticBlock = CodeModeDiagnostics::renderBlock($diagnostics);
+            $visibleText = '' === $visibleText ? $diagnosticBlock : $visibleText."\n\n".$diagnosticBlock;
         }
-
-        $diagnosticBlock = CodeModeDiagnostics::renderBlock($diagnostics);
-        $visibleText = '' === $visibleReturn
-            ? $diagnosticBlock
-            : $visibleReturn."\n\n".$diagnosticBlock;
-
-        $details['raw_result'] = $value;
 
         return new ToolResult(
             toolCallId: $result->toolCallId,

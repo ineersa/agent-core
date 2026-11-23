@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
@@ -12,9 +13,18 @@ use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
+use Ineersa\CodingAgent\Mcp\Tool\McpResultMapper;
+use Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
@@ -35,6 +45,7 @@ use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\AI\Platform\Contract\JsonSchema\Factory;
+use Symfony\AI\Platform\Message\UserMessage;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -42,6 +53,60 @@ use Symfony\Component\Validator\ValidatorBuilder;
 
 final class ToolExecutorTest extends TestCase
 {
+    public function testMcpProgrammaticResultDoesNotReachCanonicalHistoryOrImageConversion(): void
+    {
+        $root = TestDirectoryIsolation::createOsTempDir('test-tool-image');
+        try {
+            $this->assertSame($root, realpath($root));
+            $image = $root.'/pixel.png';
+            $this->assertFileDoesNotExist($image);
+            $this->assertFalse(is_link($image));
+            file_put_contents($image, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true));
+            $refs = [['type' => 'image_ref', 'path' => $image, 'media_type' => 'image/png']];
+            $accessor = new StackToolExecutionContextAccessor();
+            $manager = $this->createMock(McpConnectionManagerInterface::class);
+            $manager->expects($this->once())->method('callTool')->willReturn([
+                'content' => [['type' => 'text', 'text' => 'OK']],
+                'isError' => false,
+                'structuredContent' => (object) ['attachment_refs' => $refs, 'data' => str_repeat('x', 20 * 1024 * 1024)],
+            ]);
+            $invoker = new McpToolInvoker($manager, $accessor, new McpResultMapper(), new TestLogger());
+            $toolbox = $this->createMock(ToolboxInterface::class);
+            $toolbox->expects($this->exactly(2))->method('execute')->willReturnCallback(static fn (SymfonyToolCall $call): SymfonyToolResult => new SymfonyToolResult(
+                $call,
+                'view_image' === $call->getName()
+                    ? new ToolResult($call->getId(), $call->getName(), [['type' => 'text', 'text' => 'OK']], ['raw_result' => ['attachment_refs' => $refs]])
+                    : $invoker->invoke('fixture', 'report', []),
+            ));
+            $processor = $this->createMock(ToolResultProcessorInterface::class);
+            $processor->expects($this->exactly(2))->method('process')->willReturnCallback(function (ToolResult $result) use ($refs): ToolResult {
+                $this->assertNull($result->programmaticResult);
+                $this->assertSame('view_image' === $result->toolName ? ['raw_result' => ['attachment_refs' => $refs]] : null, $result->details);
+
+                return $result;
+            });
+            $store = new ToolExecutionResultStore();
+            $executor = new ToolExecutor(defaultMode: 'parallel', maxParallelism: 4, resultStore: $store, toolbox: $toolbox, contextAccessor: $accessor, toolResultProcessors: [$processor]);
+            foreach (['fixture_report' => false, 'view_image' => true] as $name => $isImage) {
+                $call = ToolCallBuilder::create($name)->withToolName($name)->withRunId('run')->build();
+                $result = $executor->execute($call);
+                $this->assertFalse($result->isError);
+                $this->assertSame($result, $store->findByRunToolCall('run', $name));
+                $this->assertNull($result->programmaticResult);
+                $this->assertSame($isImage, \array_key_exists('raw_result', $result->details));
+                $canonical = ToolCallResultFactory::fromExecuteToolCallAndToolResult(new ExecuteToolCall('run', 1, 'step', 1, $name, $name, $name, [], 0), $result);
+                $this->assertLessThan(1024, \strlen(json_encode($canonical->result, \JSON_THROW_ON_ERROR)));
+                $message = (new AgentMessageNormalizer())->toolMessage($canonical);
+                $this->assertSame($isImage ? ['text', 'image_ref'] : ['text'], array_column($message->content, 'type'));
+                $this->assertSame('OK', $message->content[0]['text']);
+                $messages = (new AgentMessageConverter())->toMessageBag([$message])->getMessages();
+                $this->assertSame($isImage, array_any($messages, static fn ($message): bool => $message instanceof UserMessage && $message->hasImageContent()));
+            }
+        } finally {
+            TestDirectoryIsolation::removeDirectory($root);
+        }
+    }
+
     public function testMalformedProcessorExceptionIsRememberedWithoutRepeatingExecution(): void
     {
         $call = ToolCallBuilder::create('malformed-processor')

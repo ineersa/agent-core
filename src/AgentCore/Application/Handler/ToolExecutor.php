@@ -583,7 +583,15 @@ final class ToolExecutor implements ToolExecutorInterface
                 throw new ToolCallException($failure, retryable: false);
             }
 
-            return $rawResult;
+            // Only nested tool calls can consume programmatic data. Do not expose
+            // it to result processors, execution storage, or canonical messages.
+            return null === $rawResult->programmaticResult ? $rawResult : new ToolResult(
+                $rawResult->toolCallId,
+                $rawResult->toolName,
+                $rawResult->content,
+                $rawResult->details,
+                $rawResult->isError,
+            );
         }
 
         if ($rawResult instanceof ToolExecutionHumanInputSuspension) {

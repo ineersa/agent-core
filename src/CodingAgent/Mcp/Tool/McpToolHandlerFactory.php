@@ -22,14 +22,15 @@ final class McpToolHandlerFactory
     }
 
     /**
-     * Create a tool handler for a specific MCP server/tool.
+     * @param array<string, mixed>|null $outputSchema
      */
-    public function create(string $serverName, string $mcpName): McpToolHandler
+    public function create(string $serverName, string $mcpName, ?array $outputSchema = null): McpToolHandler
     {
         return new McpToolHandler(
             serverName: $serverName,
             mcpName: $mcpName,
             invoker: $this->invoker,
+            outputSchema: $outputSchema,
         );
     }
 }

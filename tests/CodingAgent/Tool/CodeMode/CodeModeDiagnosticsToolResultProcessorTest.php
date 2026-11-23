@@ -55,8 +55,7 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
         $processed = $processor->process($result, $toolCall);
 
         $this->assertSame('null', $processed->content[0]['text'] ?? null);
-        $this->assertArrayHasKey('raw_result', $processed->details);
-        $this->assertNull($processed->details['raw_result']);
+        $this->assertArrayNotHasKey('raw_result', $processed->details);
     }
 
     public function testBooleanReturnsBecomeVisibleTrueFalseWithoutDiagnostics(): void
@@ -101,7 +100,7 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
 
         $this->assertStringStartsWith("false\n\ncode_mode diagnostics\n", $visible);
         $this->assertStringContainsString("stdout:\nout", $visible);
-        $this->assertFalse($processed->details['raw_result'] ?? null);
+        $this->assertArrayNotHasKey('raw_result', $processed->details);
     }
 
     public function testErrorResultWithoutRawResultIsLeftUntouched(): void
@@ -162,7 +161,7 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
         $this->assertStringStartsWith("9\n\ncode_mode diagnostics\n", $visible);
         $this->assertStringContainsString("stdout:\nout", $visible);
         $this->assertStringContainsString("stderr:\nwarn", $visible);
-        $this->assertSame(9, $processed->details['raw_result'] ?? null);
+        $this->assertArrayNotHasKey('raw_result', $processed->details);
         $this->assertArrayNotHasKey('code_mode_diagnostics', \is_array($processed->details) ? $processed->details : []);
         $this->assertArrayNotHasKey('model_notifications', \is_array($processed->details) ? $processed->details : []);
     }
@@ -181,7 +180,7 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
             content: [['type' => 'text', 'text' => '{}']],
             details: [
                 'raw_result' => [
-                    'code_mode_value' => str_repeat('A', 300),
+                    'code_mode_value' => ['data' => str_repeat('A', 300), 'attachment_refs' => [['type' => 'image_ref', 'path' => 'opaque-data']]],
                     'code_mode_diagnostics' => ['stdout' => 'diag'],
                 ],
             ],
@@ -190,6 +189,8 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
         $afterDiagnostics = $diagnostics->process($result, $toolCall);
         $afterCap = $capProcessor->process($afterDiagnostics, $toolCall);
 
+        $this->assertFileExists($afterCap->details['output_cap']['saved_path']);
+        $this->assertStringContainsString(str_repeat('A', 300), (string) file_get_contents($afterCap->details['output_cap']['saved_path']));
         $this->assertSame(CodeModeTool::NAME.' completed', $afterCap->content[0]['text'] ?? null);
         $this->assertArrayNotHasKey('raw_result', \is_array($afterCap->details) ? $afterCap->details : []);
         $this->assertArrayNotHasKey('code_mode_diagnostics', \is_array($afterCap->details) ? $afterCap->details : []);

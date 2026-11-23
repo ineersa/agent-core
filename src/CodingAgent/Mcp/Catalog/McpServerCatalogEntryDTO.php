@@ -54,8 +54,8 @@ final readonly class McpServerCatalogEntryDTO
         $tools = [];
         if (isset($data['tools']) && \is_array($data['tools'])) {
             foreach ($data['tools'] as $toolData) {
-                if (\is_array($toolData)) {
-                    $tools[] = McpToolDefinitionDTO::fromArray($toolData);
+                if (\is_array($toolData) || $toolData instanceof \stdClass) {
+                    $tools[] = McpToolDefinitionDTO::fromArray((array) $toolData);
                 }
             }
         }

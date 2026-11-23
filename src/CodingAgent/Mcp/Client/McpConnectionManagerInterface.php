@@ -34,10 +34,10 @@ interface McpConnectionManagerInterface
      * publish partial catalogs incrementally so successful servers
      * are visible before slow or failing servers finish.
      *
-     * @param string                                                                                                                                                                                                        $runId              Session/run identifier
-     * @param ?callable(array<string, array{status: 'connected'|'failed', transport: string, tools: list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>, errorMessage?: string}>): void $onServerDiscovered Called after each server result is known with cumulative results
+     * @param string                                                                                                                                                                                                                                             $runId              Session/run identifier
+     * @param ?callable(array<string, array{status: 'connected'|'failed', transport: string, tools: list<array{name: string, description?: string|null, inputSchema: array<string, mixed>, outputSchema?: array<string, mixed>}>, errorMessage?: string}>): void $onServerDiscovered Called after each server result is known with cumulative results
      *
-     * @return array<string, array{status: 'connected'|'failed', transport: string, tools: list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>, errorMessage?: string}>
+     * @return array<string, array{status: 'connected'|'failed', transport: string, tools: list<array{name: string, description?: string|null, inputSchema: array<string, mixed>, outputSchema?: array<string, mixed>}>, errorMessage?: string}>
      */
     public function discover(string $runId, ?callable $onServerDiscovered = null): array;
 
@@ -61,7 +61,7 @@ interface McpConnectionManagerInterface
      * @param string               $toolName   Raw MCP tool name
      * @param array<string, mixed> $arguments  Tool arguments
      *
-     * @return array{content: list<array<string, mixed>>, isError: bool}
+     * @return array{content: list<array<string, mixed>>, isError: bool, structuredContent?: mixed}
      *
      * @throws McpClientInvocationException on missing client after reconnect
      * @throws McpClientInvocationException on SDK call failures

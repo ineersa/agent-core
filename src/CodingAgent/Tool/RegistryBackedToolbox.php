@@ -24,6 +24,8 @@ use Symfony\AI\Platform\Contract\JsonSchema\Factory;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
+use Symfony\Component\Serializer\Encoder\JsonEncode;
+use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -238,11 +240,18 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
      */
     private function buildMetadata(ToolDefinitionDTO $definition): Tool
     {
+        $description = $definition->description;
+        if (null !== $definition->outputJsonSchema) {
+            $schema = (new JsonEncode())->encode((object) $definition->outputJsonSchema, JsonEncoder::FORMAT);
+            $description .= "\n\nOutput schema (applies only when structured content is supplied): ".$schema
+                ."\nIn code mode, the original JSON is validated before objects become associative PHP arrays. If structured content is absent, tool() returns text.";
+        }
+
         if (null !== $definition->parametersJsonSchema) {
             return new Tool(
                 reference: new ExecutionReference($definition->handler::class, '__invoke'),
                 name: $definition->name,
-                description: $definition->description,
+                description: $description,
                 parameters: $this->normalizeRawParametersSchema($definition->parametersJsonSchema),
                 metadata: ['raw_arguments' => true],
             );
@@ -256,7 +265,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         return new Tool(
             reference: new ExecutionReference($definition->handler::class, '__invoke'),
             name: $definition->name,
-            description: $definition->description,
+            description: $description,
             parameters: $parameters,
         );
     }

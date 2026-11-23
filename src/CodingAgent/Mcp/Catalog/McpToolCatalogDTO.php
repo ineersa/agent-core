@@ -59,10 +59,10 @@ final readonly class McpToolCatalogDTO
     public static function fromArray(array $data): self
     {
         $servers = [];
-        if (isset($data['servers']) && \is_array($data['servers'])) {
+        if (isset($data['servers']) && (\is_array($data['servers']) || $data['servers'] instanceof \stdClass)) {
             foreach ($data['servers'] as $name => $serverData) {
-                if (\is_array($serverData)) {
-                    $servers[(string) $name] = McpServerCatalogEntryDTO::fromArray($serverData);
+                if (\is_array($serverData) || $serverData instanceof \stdClass) {
+                    $servers[(string) $name] = McpServerCatalogEntryDTO::fromArray((array) $serverData);
                 }
             }
         }
