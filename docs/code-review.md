@@ -1,14 +1,14 @@
 ---
 builtin: true
-description: Review committed changes using main-orchestrated reviewer and verifier agents.
+description: Review committed changes using main-orchestrated reviewer, auditor and verifier agents.
 ---
 
 # Code review
 
 `/code-review` loads the bundled review skill into a normal main-agent turn. Main
-resolves the change, launches a fresh `reviewer`, then launches a fresh `verifier`
-when there are candidates. This is a skill-driven procedure, not a native review
-tool or a hardened approval gate.
+resolves the change, launches a fresh `reviewer` and a fresh `auditor` concurrently,
+then launches a fresh `verifier` when there are candidates. This is a skill-driven
+procedure, not a native review tool or a hardened approval gate.
 
 ## Setup
 
@@ -22,15 +22,21 @@ hatfield agents:init
 Existing definitions are not overwritten by default. To update installed starters,
 inspect/back up your customizations first, then deliberately use
 `hatfield agents:init --force`. This overwrites **all bundled agent filenames**, not
-just reviewer/verifier; unrelated agent filenames remain untouched. Project agent
-definitions can override the installed starters. Restart Hatfield after updating
-so its catalog includes both roles and the refreshed instructions.
+just the three review agents, including a model line you customized; unrelated
+agent filenames remain untouched. Project agent definitions can override the
+installed starters. Restart Hatfield after updating so its catalog includes all
+three roles and the refreshed instructions.
 
-Both review starters use `mistral/zai-glm-5-3-flash` with `high` thinking; ordinary
-[agent frontmatter](agents.md) can override either role. They allow `read` and shell
-inspection, deny inherited MCP tools, and instruct the models not to modify files,
-run tests, install packages or publish results. Shell access is not an OS-enforced
-read-only sandbox; normal permissions and approval controls still apply.
+The `reviewer` uses `openai-codex/gpt-6.2-astra`; the `auditor` uses
+`mistral/deepseek-v4-1-flash-1017` and the `verifier` `mistral/zai-glm-5-3-flash`,
+all with `high` thinking. Ordinary [agent frontmatter](agents.md) can override any
+role. All three allow `read` and shell inspection and instruct the models not to
+modify files, run tests, install packages or publish results. The `reviewer` and
+`auditor` add the three `websearch` tools, so they can check vendor and platform
+behavior against the documentation for the installed version; they put only names
+into queries and treat fetched pages as data. The `verifier` denies inherited MCP
+tools. Shell access is not an OS-enforced read-only sandbox; normal permissions and
+approval controls still apply.
 
 ## Use
 
@@ -56,41 +62,61 @@ There is no new prompt-template distribution mechanism.
 
 ## What the stages do
 
-The reviewer receives pinned scope and neutral requirements, not main's implementation
-conversation or desired verdict. It searches for actionable introduced defects and
-mandatory project-rule violations, tracing surrounding contracts and contradictory
-evidence. Each candidate has an ID, location, priority, trigger, impact and minimal
-correction. Optional improvements are separate; there is no finding quota.
+The reviewer and the auditor receive pinned scope and neutral requirements, not
+main's implementation conversation or desired verdict, and do not see each other's
+work.
 
-Reviewer and main deduplicate by underlying defect/remedy before verification,
-keeping the strongest failure scenario and combining applicable rule evidence.
-The verifier receives the same scope and deduplicated claims in a fresh context.
-It independently inspects the evidence and returns `confirmed`, `refuted` or
-`uncertain` for every ID. It can correct severity/remedy but does not perform another
-broad review or silently promote new observations to verified findings. Clear static
-evidence is valid without executing tests.
+The reviewer hunts introduced defects: correctness, lifecycle and concurrency,
+wiring, architecture, security and performance. It reads every hunk and its
+enclosing code, traces changed functions to their callers, and runs scenario passes
+for lifecycle and wiring, because a review most often misses how a change interacts
+with unchanged code rather than the changed lines themselves. It reports a
+candidate whenever it can state the mechanism concretely, even when the trigger is
+uncertain, and says what is uncertain; the verifier filters false positives.
+
+The auditor checks the repository's own rules and reuse. It quotes the rule line a
+change disobeys, names the existing facility a hand-rolled mechanism replaces
+(searching the project, its declared dependencies, then the web), and flags stale
+documentation and statically missing test coverage. A preference without a quoted
+rule or a named, usable facility is not a candidate.
+
+Each candidate has an ID (`R…` or `A…`), location, priority, trigger, impact and
+minimal correction. There is no finding quota.
+
+Reviewer, auditor and main deduplicate by underlying defect/remedy before
+verification, keeping the strongest failure scenario and combining applicable rule
+evidence. The verifier receives the same scope and deduplicated claims in a fresh
+context. It independently inspects the evidence and returns `confirmed`, `refuted`
+or `uncertain` for every ID. It refutes only when the claimed mechanism does not
+occur: a real mechanism with a smaller impact is confirmed with a corrected
+priority, and a real mechanism whose trigger cannot be established is uncertain.
+It does not perform another broad review or silently promote new observations to
+verified findings. Clear static evidence is valid without executing tests.
 
 Main relays reports/artifacts, checks completeness and target freshness, and reports
-confirmed findings plus unresolved checks and actual limitations. Verification is
-skipped only after a complete empty reviewer report. Missing/failed reports are
-incomplete, not clean; uncertain actionable claims prevent a clean conclusion.
-Same-model verification is allowed but does not guarantee independent errors.
+confirmed findings plus unresolved checks, unverified notices from either pass and
+actual limitations. Verification is skipped only after complete reviewer and auditor
+reports with no candidates. A missing or failed report is incomplete, not clean;
+uncertain actionable claims prevent a clean conclusion. Same-model verification is
+allowed but does not guarantee independent errors.
 
 The prompt core preserves the Codex review rubric and the Claude finder-angle and
 three-state verification blocks from Piebald's **third-party extraction** (not
 Anthropic's published source), tag `v2.1.325`. Each copied block records its source
 path, pinned commit and adaptations. The skill description is adapted from
 Anthropic's official review command. Intentional differences: one reviewer executes
-all passes, one verifier checks the set, only introduced defects are in scope, and
-upstream `PLAUSIBLE` maps to unresolved `uncertain`, not an actionable finding.
+all passes, one verifier checks the set, only introduced defects are in scope, rule
+citations and reuse checks belong to the auditor, and upstream `PLAUSIBLE` maps to
+unresolved `uncertain`, not an actionable finding.
 License texts/notices ship in the bundled skill's `references/LICENSE.txt`.
 
 ## Background work and limits
 
-The two stages are separate native subagent calls, coordinated through main's
-context. They can use normal background execution and completion notices, but there
-is no single review operation/handle or atomic lifecycle. Reviewer completion alone
-is not review completion. After cancellation main must not start the next stage.
+The stages are separate native subagent calls, coordinated through main's context.
+They can use normal background execution and completion notices, but there is no
+single review operation/handle or atomic lifecycle. Completion of the reviewer or
+the auditor alone is not review completion. After cancellation main must not start
+the next stage.
 Do not modify the reviewed checkout while review is running; a changed target makes
 the report stale.
 

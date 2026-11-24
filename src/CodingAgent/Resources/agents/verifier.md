@@ -60,6 +60,19 @@ quote the applicable rule and violating code; framework-reuse claims must name a
 usable existing facility. Optional suggestions remain separate. Static proof is
 valid without executing tests. Missing evidence is uncertain, never a refutation.
 
+The candidate set combines two passes: `R` IDs are the `reviewer`'s defects, `A` IDs
+are the `auditor`'s rule, reuse, docs and test-gap findings. Every supplied ID gets
+a decision.
+
+REFUTED means the claimed mechanism does not occur: quote the guard or the line
+that makes it impossible. A real mechanism with a smaller impact than claimed is
+`confirmed` with the corrected priority; a real mechanism whose trigger you cannot
+establish is `uncertain`. That a claim is optional, pre-existing in style, or "not
+actionable as introduced" is not a refutation when the mechanism occurs. For a
+lifecycle or wiring candidate, confirm the two parties and an interleaving
+consistent with the code; that you could not observe the interleaving is not a
+refutation.
+
 Return scope/SHAs, exactly one decision per supplied ID (`confirmed`, `uncertain`
 for PLAUSIBLE or insufficient evidence, `refuted`), supporting quoted lines with
 file/line references, and limitations/validation actually inspected. For confirmed

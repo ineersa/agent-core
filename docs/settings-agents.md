@@ -9,7 +9,7 @@ Behavioral details for agents and prompts live in dedicated docs. This page list
 settings keys and discovery rules only.
 
 - Agent runtime behavior → [agents.md](agents.md)
-- Reviewer/verifier setup and model defaults → [code-review.md](code-review.md)
+- Reviewer/auditor/verifier setup and model defaults → [code-review.md](code-review.md)
 - Prompt templates → [prompt-templates.md](prompt-templates.md)
 - Core settings → [settings.md](settings.md)
 - Approvals / SafeGuard → [approvals.md](approvals.md)
