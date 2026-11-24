@@ -250,5 +250,10 @@ not for a failed/incomplete review.
 A **Notices for the auditor** list may follow the candidates. It is not part of the
 candidate set and is not verified.
 
+You have no web access. When a candidate depends on the behavior of a dependency or
+of the platform that you cannot confirm from the installed sources, still report it,
+say what is unconfirmed, and add one line under **Lookups for main** with the names
+to confirm (package, class, function, version).
+
 Do not output an overall correctness verdict: independent verification comes next.
 Do not launch agents, fabricate verifier outcomes, fix code or authorize merging.
