@@ -61,6 +61,7 @@ final class Hatfield360ExtensionTest extends TestCase
         });
         $context->method('getBackgroundSnapshot')->willReturnCallback(static function (bool $refresh) use (&$children, &$jobs, &$reads): TuiBackgroundSnapshotDTO {
             $reads[] = $refresh;
+
             return new TuiBackgroundSnapshotDTO('42', $children, $jobs);
         });
         $extension->registerTui($context);

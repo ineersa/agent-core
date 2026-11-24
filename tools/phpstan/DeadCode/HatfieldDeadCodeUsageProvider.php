@@ -17,6 +17,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionActivityContextInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\DTO\LibrarianResponseDTO;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use ShipMonk\PHPStan\DeadCode\Provider\ReflectionBasedMemberUsageProvider;
@@ -84,6 +85,11 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         if (\in_array($method->getName(), ['setExtensionWarning', 'formatMuted', 'formatRolePrefix', 'turnRowsInDisplayOrder', 'setStatus', 'onTick'], true)
             && $method->getDeclaringClass()->implementsInterface(TuiExtensionContextInterface::class)) {
             return VirtualUsageData::withNote('Published TuiExtensionContextInterface method with no current extension callers');
+        }
+
+        if (\in_array($method->getName(), ['getBackgroundAgents', 'getBackgroundJobs'], true)
+            && $method->getDeclaringClass()->implementsInterface(TuiSessionActivityContextInterface::class)) {
+            return VirtualUsageData::withNote('Published TuiSessionActivityContextInterface method with no current extension callers');
         }
 
         if ('contextWindow' === $method->getName()

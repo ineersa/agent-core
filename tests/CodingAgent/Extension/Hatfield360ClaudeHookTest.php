@@ -506,7 +506,7 @@ final class Hatfield360ClaudeHookTest extends TestCase
                 [$registrationA, $signalA] = $ready($ownerA);
                 // One prior owner and A are already admitted; leave one slot for B.
                 for ($i = 0; $i < 61; ++$i) {
-                    $fixture = sprintf('%s/node-claude-managed-00000000-0000-4000-8000-%012x.json', $directory, $i);
+                    $fixture = \sprintf('%s/node-claude-managed-00000000-0000-4000-8000-%012x.json', $directory, $i);
                     $this->assertFalse(is_link($fixture));
                     $this->assertNotFalse(file_put_contents($fixture, '{}'));
                 }

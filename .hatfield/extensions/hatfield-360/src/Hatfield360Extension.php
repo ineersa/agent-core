@@ -8,7 +8,6 @@ use Amp\CancelledException;
 use Amp\DeferredFuture;
 use Amp\Future;
 use Amp\TimeoutCancellation;
-use DateTimeImmutable;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
@@ -67,7 +66,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     /** @var Future<void>|null */
     private ?Future $drain = null;
     private bool $snapshotUnconfirmed = false;
-    private ?DateTimeImmutable $retryAt = null;
+    private ?\DateTimeImmutable $retryAt = null;
     private int $retryDelay = 1;
     private bool $snapshotOutage = false;
     private ?string $lastSnapshotFingerprint = null;
