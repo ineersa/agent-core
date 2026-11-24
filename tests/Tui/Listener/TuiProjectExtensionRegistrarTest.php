@@ -18,12 +18,17 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum as Event;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiForegroundBaselineDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiForegroundRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
@@ -162,6 +167,40 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $this->assertSame(1, $reconciled['activeSubagents']);
             $this->assertSame($second['sessionEpoch'], $reconciled['sessionEpoch']);
 
+            // The registered optional observer receives only the accepted ready
+            // baseline; real spool frames pass through the production poller.
+            $spools = self::getContainer()->get(SessionBootstrapSpoolStore::class);
+            $foreground = ['current_foreground_response_seq' => 7, 'pending_foreground_requests' => [['request_id' => 'resumed-question', 'category' => 'approval']]];
+            $resume = array_replace((new SessionResumeMetadataProjection())->toArray(), $foreground,
+                ['status' => 'waiting_human', 'model' => null, 'turn_no' => 3]);
+            $cut = $spools->seal($sessionId, 40, 500, 0, [], $resume);
+            $events = [new RuntimeEvent(Event::BootstrapAvailable->value, $sessionId, 0, $cut->toArray() + ['command_id' => 'resume-ready']),
+                ...iterator_to_array(self::getContainer()->get(SessionBootstrapTransfer::class)->frames($cut))];
+            $attached = $this->createMock(AgentSessionClient::class);
+            $attached->method('events')->willReturnCallback(static function () use (&$events): array { return $events; });
+            $attached->expects($this->once())->method('acknowledgeBootstrap')->with($cut->toArray())->willReturnCallback(static function () use ($spools, $cut): void { $spools->acknowledge($cut); });
+            $resumed->state->handle = new RunHandle($sessionId, 'bootstrapping', 'resume-ready');
+            $resumed->state->beginBootstrapAttach();
+            $poll = static function () use ($resumed, $attached): void {
+                $resumed->state->lastPoll = 0;
+                $resumed->sessionServices->parentPoller->poll($resumed->state, $attached,
+                    onBootstrapMounted: static fn () => $resumed->screen->setTranscriptBlocks($resumed->state->transcript));
+            };
+            $poll();
+            $this->assertFalse($resumed->state->sessionReady);
+            $events = [new RuntimeEvent(Event::SessionReady->value, $sessionId, 0, $cut->toArray() + ['foreground' => $foreground])];
+            $poll();
+            $baseline = $this->acceptFrame($server);
+            $this->assertSame(['id' => '7', 'status' => 'working'], $baseline['turn']);
+            $this->assertSame('permission', $baseline['attention']['reason']);
+            $this->assertSame(1, $baseline['activeSubagents']);
+            $events = [new RuntimeEvent(Event::HumanInputAnswered->value, $sessionId, 41, ['question_id' => 'resumed-question'])];
+            $poll();
+            $this->assertNull($this->acceptFrame($server)['attention']);
+            $events = [new RuntimeEvent(Event::RunCompleted->value, $sessionId, 42)];
+            $poll();
+            $this->assertSame(['id' => '7', 'status' => 'completed'], $this->acceptFrame($server)['turn']);
+
             $resumed->state->sessionId = 'missing-session';
             $resumed->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionResumed);
             $missing = $this->acceptFrame($server);
@@ -216,11 +255,11 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $extension = new Hatfield360Extension();
             $logger = $this->createMock(LoggerInterface::class);
             $drops = [];
-            $logger->expects($this->exactly(4))->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$drops, $failed, $settlementFailed): void {
+            $logger->expects($this->exactly(3))->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$drops, $failed, $settlementFailed): void {
                 $drops[] = $context['session_id'];
                 if (1 === \count($drops)) {
                     $failed->complete();
-                } elseif (4 === \count($drops)) {
+                } elseif (3 === \count($drops)) {
                     $settlementFailed->complete();
                 }
             });
@@ -239,19 +278,21 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             }
             $registration = $this->acceptFrame($server, '{"ok":true,"status":"stale"}', beforeReply: static function () use ($extension): void {
                 $extension->onTuiSessionSelected('second');
-                $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 2, TuiRunObservationTypeEnum::TurnStarted));
+                $extension->onTuiForegroundBaseline(new TuiForegroundBaselineDTO('second', 2, 2, []));
             });
             $this->assertSame('session.snapshot', $registration['kind']);
             $this->assertSame('first', $registration['sessionId']);
+            $this->assertSame('1', $registration['turn']['id'], 'Live response identity is the canonical opening sequence.');
             $latest = $this->acceptFrame($server, waitForPeerClose: true);
             $this->assertSame('session.snapshot', $latest['kind']);
             $this->assertSame('second', $latest['sessionId']);
             $this->assertGreaterThan($registration['sequence'], $latest['sequence']);
             $this->assertGreaterThan($latest['sessionEpoch'], $latest['sequence']);
             $this->assertSame('working', $latest['turn']['status']);
+            $this->assertSame('2', $latest['turn']['id']);
 
             $context = $this->createMock(CommandContextInterface::class);
-            $context->expects($this->exactly(3))->method('notify')->with('Hatfield 360 accepted the notification.', 'success');
+            $context->expects($this->exactly(5))->method('notify')->with('Hatfield 360 accepted the notification.', 'success');
             $assertNoDuplicate = function (?int $children, ?int $scripts) use ($extension, $context, $server): void {
                 $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', $children, $scripts));
                 // The notice is an ordering barrier: any duplicate would arrive first.
@@ -297,7 +338,13 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $mainWait = $this->acceptFrame($server);
             $this->assertSame('permission', $mainWait['attention']['reason']);
             $this->assertNotSame($childWait['attention']['id'], $mainWait['attention']['id']);
-            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 4, TuiRunObservationTypeEnum::InputResolved, 'same-request'));
+            // A same-response baseline and internal start preserve both identities,
+            // without another snapshot ahead of the explicit ordering barrier.
+            $extension->onTuiForegroundBaseline(new TuiForegroundBaselineDTO('second', 4, 2,
+                [new TuiForegroundRequestDTO('same-request', TuiRunObservationTypeEnum::ApprovalRequested)]));
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 5, TuiRunObservationTypeEnum::TurnStarted));
+            $assertNoDuplicate(2, 0);
+            $extension->onTuiForegroundBaseline(new TuiForegroundBaselineDTO('second', 6, 2, []));
             $this->assertSame($childWait['attention'], $this->acceptFrame($server)['attention']);
             $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 5, TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: 'child'));
             $cleared = $this->acceptFrame($server);
@@ -309,6 +356,7 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 20, TuiRunObservationTypeEnum::TurnCompleted));
             $completed = $this->acceptFrame($server);
             $this->assertSame('completed', $completed['turn']['status']);
+            $this->assertSame('2', $completed['turn']['id'], 'Live completion settles the restored canonical response.');
             $this->assertNull($completed['activeSubagents']);
             $this->assertSame(1, $completed['backgroundScripts']);
             $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 1, 1));
@@ -326,14 +374,20 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 1));
             $unconfirmed = $this->acceptFrame($server, '{"ok":true,"status":"stale"}');
             $settlementFailed->getFuture()->await(new TimeoutCancellation(2));
-            $this->assertSame(['first', 'first', 'second', 'second'], $drops);
+            $this->assertSame(['first', 'second', 'second'], $drops);
             $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 1));
+            $exhausted = $this->acceptFrame($server, '{"ok":true,"status":"stale"}', waitForPeerClose: true);
+            $assertNoDuplicate(0, 1);
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 0));
+            $this->acceptFrame($server, '{"ok":true,"status":"stale"}', waitForPeerClose: true);
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 0));
             $settled = $this->acceptFrame($server);
+            $this->assertGreaterThan($exhausted['sequence'], $settled['sequence']);
             $this->assertGreaterThan($unconfirmed['sequence'], $settled['sequence']);
             $this->assertNotSame($unconfirmed['eventId'], $settled['eventId']);
             $this->assertSame($unconfirmed['sessionEpoch'], $settled['sessionEpoch']);
             $this->assertSame(0, $settled['activeSubagents']);
-            $this->assertSame(1, $settled['backgroundScripts']);
+            $this->assertSame(0, $settled['backgroundScripts']);
             $this->assertSame($completed['turn'], $settled['turn']);
 
             // A resumed child can outlive the parent's interim response.
@@ -349,6 +403,18 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $afterChild = $this->acceptFrame($server);
             $this->assertSame($interim['turn'], $afterChild['turn']);
             $this->assertSame(0, $afterChild['activeSubagents']);
+
+            // Unknown response identity stays unknown while current input can
+            // still be reconciled and resolved. No historical terminal is sent.
+            $extension->onTuiForegroundBaseline(new TuiForegroundBaselineDTO('second', 24, null,
+                [new TuiForegroundRequestDTO('attached-question', TuiRunObservationTypeEnum::QuestionRequested)]));
+            $unknown = $this->acceptFrame($server);
+            $this->assertNull($unknown['turn']);
+            $this->assertSame('question', $unknown['attention']['reason']);
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 25, TuiRunObservationTypeEnum::InputResolved, 'attached-question'));
+            $resolved = $this->acceptFrame($server);
+            $this->assertNull($resolved['attention']);
+            $this->assertNull($resolved['turn']);
         } finally {
             if (isset($server)) {
                 $server->close();

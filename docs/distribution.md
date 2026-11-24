@@ -15,7 +15,9 @@ Internals: [phar-packaging.md](phar-packaging.md) · [static-packaging.md](stati
 | `hatfield.linux-amd64` | Fused PHP-micro native (Linux x86_64) |
 | `hatfield.linux-arm64` | Fused PHP-micro native (Linux aarch64) |
 | `hatfield.darwin-arm64` | Fused PHP-micro native (macOS arm64) |
-| `SHA256SUMS` | SHA-256 for every release asset |
+| `SHA256SUMS` | SHA-256 for the PHAR and three native binaries |
+| `hatfield-360.zip` | Standalone Claude Code plugin (PHP ≥ 8.4.1, Node.js ≥ 18.14 for titles) |
+| `hatfield-360.zip.sha256` | Separate SHA-256 for the plugin ZIP |
 
 Native releases are single-file per target. Amp SQLite workers relaunch the same
 fused binary through `--internal-sqlite-worker`. Foreground and background Bash
@@ -38,6 +40,7 @@ is unsupported for normal product runs even with a downloaded PHAR.
 castor distribution:build
 castor distribution:build-static
 castor distribution:checksums
+castor distribution:claude-plugin --release-version=v1.2.3
 castor distribution:verify
 castor distribution:verify --skip-topology --allow-missing-native
 scripts/build-distribution.sh --version=1.2.3 --commit=$(git rev-parse HEAD)

@@ -51,6 +51,25 @@ bridge adapts these contracts; packages do not import internal `PickerOverlay` o
 replace the host renderer. Transient notices clear on the next nonempty submission;
 persistent status rows retain their lifetime.
 
+Foreground attach reconciliation shares the owner's bounded resume projection.
+The producer seeds pending request identities/categories from `RunState`; the
+spool owner validates and retains only content-free foreground metadata before
+acknowledgement removes the spool. The existing canonical suffix traversal folds
+that projection, including history-position and tail-discard fences that have no
+runtime mapping. Controller drain-race passes retain the same projection until
+the current ready cut. Older output drains before the final cut check; readiness
+is published once as the first normal-live record without an intervening yield.
+No second archive scan or execution-state registry exists.
+
+The bootstrap assembler validates the ready baseline before advancing readiness.
+`RuntimeEventPoller` dispatches the optional public foreground baseline observer
+only on that accepted transition, before following live observations. Host mapping
+keeps runtime types out of ExtensionApi. Historical terminal outcomes do not become
+completion observations. Hatfield 360 uses canonical response-opening sequences
+for both live and resumed responses, reconciles foreground attention by request
+identity, and leaves verified child attention and operational counts on their
+existing sources.
+
 Dependency edges follow [depfile.yaml](../depfile.yaml): TUI can use owning
 CodingAgent services directly where allowed. Runtime contracts describe the session
 protocol, not wrappers invented to hide permitted CodingAgent dependencies.

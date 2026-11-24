@@ -543,6 +543,29 @@ PHP
         $this->assertInstanceOf($observer::class, $manager->getTuiExtensions()[0]);
     }
 
+    public function testDiscoversForegroundBaselineObserverWithoutOtherTuiCapabilities(): void
+    {
+        $observer = new class implements HatfieldExtensionInterface, \Ineersa\Hatfield\ExtensionApi\Tui\TuiForegroundBaselineObserverInterface {
+            public function register(\Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface $api): void
+            {
+            }
+
+            public function onTuiForegroundBaseline(\Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiForegroundBaselineDTO $baseline): void
+            {
+            }
+        };
+        $manager = new ExtensionManager(
+            $this->createAppConfig($this->extensionsDir, [$observer::class]),
+            new InMemoryExtensionApiBridge(),
+            new TestLogger(),
+            new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'),
+        );
+        $this->assertSame([], $manager->loadExtensions());
+        $this->assertCount(1, $manager->getTuiExtensions());
+        $this->assertInstanceOf($observer::class, $manager->getTuiExtensions()[0]);
+    }
+
     public function testLifecycleFailuresDoNotPreventLaterExtensionsOrRepeatLoading(): void
     {
         foreach (['construct', 'logger', 'register', 'subscribe'] as $stage) {

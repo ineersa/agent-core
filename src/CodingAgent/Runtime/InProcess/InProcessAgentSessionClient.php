@@ -158,9 +158,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         if (!$this->bootstrapEnded || null === $this->bootstrapDescriptor || $descriptor->toArray() !== $this->bootstrapDescriptor->toArray()) {
             throw new \RuntimeException('Bootstrap acknowledgement is stale or incomplete.');
         }
-        $this->bootstrapSpools->acknowledge($descriptor);
+        $resume = $this->bootstrapSpools->acknowledge($descriptor);
         $this->bootstrapEnded = false;
-        $this->bootstrapStream = $this->bootstrapTransfer->catchUp($descriptor);
+        $this->bootstrapStream = $this->bootstrapTransfer->catchUp($descriptor, $resume);
     }
 
     public function cancelBootstrap(string $runId): void

@@ -67,7 +67,8 @@ while (false !== ($line = fgets(\STDIN))) {
             ['bootstrap_id' => $cut['bootstrap_id'], 'view_epoch' => $cut['view_epoch'], 'canonical_seq' => $sequence,
                 'index' => 0, 'last' => true, 'data' => base64_encode(JsonlCodec::encodeEvent($suffix))]);
         $emit(RuntimeEventTypeEnum::SessionReady->value, $command->runId, 0,
-            ['bootstrap_id' => $cut['bootstrap_id'], 'view_epoch' => $cut['view_epoch'], 'canonical_seq' => $sequence, 'end_offset' => $cut['end_offset'] + 1]);
+            ['bootstrap_id' => $cut['bootstrap_id'], 'view_epoch' => $cut['view_epoch'], 'canonical_seq' => $sequence, 'end_offset' => $cut['end_offset'] + 1,
+                'foreground' => ['current_foreground_response_seq' => null, 'pending_foreground_requests' => []]]);
     } elseif ('follow_up' === $command->type || 'user_message' === $command->type) {
         if ('exit-controller' === ($command->payload['text'] ?? null)) {
             exit(0);

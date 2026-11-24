@@ -23,9 +23,10 @@ final class ClaudeHookReporter
     private const int MAX_SWITCHES = 128;
 
     /** @param array<array-key, mixed> $hook */
-    public function report(?StatusClient $client, array $hook): bool
+    public function report(?StatusClient $client, array $hook, ?float $deadline = null): bool
     {
-        $metadataDeadline = hrtime(true) / 1e9 + (null === $client ? 0.45 : 0.70) - Process::TIMEOUT_PRECISION;
+        $deadline ??= hrtime(true) / 1e9 + 0.95;
+        $metadataDeadline = $deadline - (null === $client ? 0.50 : 0.25) - Process::TIMEOUT_PRECISION;
         $session = $hook['session_id'] ?? null;
         $event = $hook['hook_event_name'] ?? null;
         if (!\is_string($session) || !EventSchema::id($session)
@@ -33,7 +34,7 @@ final class ClaudeHookReporter
             return false;
         }
 
-        return $this->withLaunchLock($client, fn (string $path, \Closure $authorize, string $marker, SharedLockInterface $pending): bool => $this->reportLocked($authorize, $path, $marker, $pending, $session, $event, $hook, $metadataDeadline), 'SubagentStart' === $event);
+        return $this->withLaunchLock($client, fn (string $path, \Closure $authorize, string $marker, SharedLockInterface $pending): bool => $this->reportLocked($authorize, $path, $marker, $pending, $session, $event, $hook, $metadataDeadline, $deadline), 'SubagentStart' === $event, $deadline);
     }
 
     /** @param array<array-key, mixed> $fields */
@@ -56,7 +57,7 @@ final class ClaudeHookReporter
     }
 
     /** @param \Closure(string, \Closure(): ?StatusClient, string, SharedLockInterface): bool $callback */
-    private function withLaunchLock(?StatusClient $client, \Closure $callback, bool $agentStart = false): bool
+    private function withLaunchLock(?StatusClient $client, \Closure $callback, bool $agentStart = false, ?float $deadline = null): bool
     {
         $endpoint = getenv('H360_STATUS_ENDPOINT');
         if (!\is_string($endpoint) || !str_starts_with($endpoint, '/') || \strlen($endpoint) > 103) {
@@ -82,7 +83,7 @@ final class ClaudeHookReporter
             $instance = Uuid::v5(Uuid::fromString('f7ddf8d2-76b9-4e45-9ab0-c13ce270fb4f'), hash_hmac('sha256', implode(':', $owner), $bootstrap))->toRfc4122();
             $name = 'claude-managed-'.$instance;
             $authorize = static fn (): ?StatusClient => ClaudeProcessIdentityProvider::find() === $owner
-                ? StatusClient::registerManual('claude', $instance, $owner['pid'], $owner['pidNamespace'], $owner['startTicks']) : null;
+                ? StatusClient::registerManual('claude', $instance, $owner['pid'], $owner['pidNamespace'], $owner['startTicks'], $deadline) : null;
             // One shared lock bounds the total managed state admitted to
             // this app-private directory without a persistent bearer cache.
             $lockName = 'claude-managed';
@@ -109,10 +110,11 @@ final class ClaudeHookReporter
             $lock = $factory->createLock($lockName);
             // Managed hooks may need two 250 ms exchanges. Leave room for
             // both and local setup within Claude's one-second hook timeout.
-            $deadline = new TimeoutCancellation($managed ? 0.35 : 0.65);
+            $lockBudget = $managed ? 0.35 : 0.65;
+            $lockCancellation = new TimeoutCancellation(null === $deadline ? $lockBudget : max(0.0, min($lockBudget, $deadline - hrtime(true) / 1e9)));
             while (!$lock->acquire()) {
                 try {
-                    delay(0.01, cancellation: $deadline);
+                    delay(0.01, cancellation: $lockCancellation);
                 } catch (CancelledException) {
                     if ($trackStart) {
                         // A missed start must not turn a later completed response
@@ -148,7 +150,7 @@ final class ClaudeHookReporter
      * @param \Closure(): ?StatusClient $authorize
      * @param array<array-key, mixed>   $hook
      */
-    private function reportLocked(\Closure $authorize, string $path, string $marker, SharedLockInterface $pending, string $session, string $event, array $hook, float $metadataDeadline): bool
+    private function reportLocked(\Closure $authorize, string $path, string $marker, SharedLockInterface $pending, string $session, string $event, array $hook, float $metadataDeadline, float $deadline): bool
     {
         $previous = file_exists($path) ? $this->readState($path) : [];
         if (null === $previous) {
@@ -167,7 +169,7 @@ final class ClaudeHookReporter
             }
             $state = [
                 'epoch' => $sequence, 'session' => $session, 'ended' => false, 'switch' => null, 'boundaries' => $previous['boundaries'] ?? [],
-                'title' => null, 'turn' => null, 'waits' => [], 'tools' => [], 'scripts' => null, 'agents' => 'resume' === $source ? null : [],
+                'title' => null, 'turn' => null, 'waits' => [], 'tools' => [], 'scripts' => null, 'agents' => [], 'agentsUncertain' => 'resume' === $source,
             ];
         } elseif (($state['session'] ?? null) !== $session || ($state['ended'] ?? true)) {
             return false;
@@ -186,10 +188,16 @@ final class ClaudeHookReporter
                 } else {
                     $state['agents'][$id] = true;
                 }
-            } elseif (isset($state['agents'][$id])) {
-                unset($state['agents'][$id]);
             } else {
-                return false;
+                $registry = self::taskRegistry($hook['background_tasks'] ?? null);
+                if (isset($state['agents'][$id])) {
+                    unset($state['agents'][$id]);
+                } elseif (null === $registry || $registry['subagents'] === ($state['agentsUncertain'] ?? false)) {
+                    return false;
+                }
+                if (null !== $registry) {
+                    $state['agentsUncertain'] = $registry['subagents'];
+                }
             }
         } elseif (isset($hook['agent_id'])) {
             return false;
@@ -230,7 +238,9 @@ final class ClaudeHookReporter
             } elseif ('working' !== $turn['status']) {
                 return false;
             } elseif ('Stop' === $event && false === ($hook['stop_hook_active'] ?? null)) {
-                $state['scripts'] = self::scriptCount($hook['background_tasks'] ?? null);
+                $registry = self::taskRegistry($hook['background_tasks'] ?? null);
+                $state['scripts'] = $registry['scripts'] ?? null;
+                $state['agentsUncertain'] = $registry['subagents'] ?? true;
                 $state['turn']['status'] = 'completed';
                 $state['waits'] = [];
                 $state['tools'] = [];
@@ -279,7 +289,7 @@ final class ClaudeHookReporter
         $fields = 'session.snapshot' === $kind ? [
             'provider' => 'claude', 'title' => $state['title'] ?? null, 'turn' => $state['turn'],
             'attention' => $attention,
-            'activeSubagents' => null === $state['agents'] ? null : \count($state['agents']),
+            'activeSubagents' => null === $state['agents'] || ([] === $state['agents'] && ($state['agentsUncertain'] ?? false)) ? null : \count($state['agents']),
             'backgroundScripts' => $state['scripts'], 'tool' => $state['tools'][array_key_last($state['tools']) ?? '']['name'] ?? null,
         ] : [];
         // Persist the observation and reserve its sequence before I/O. A missed
@@ -305,7 +315,7 @@ final class ClaudeHookReporter
             }
         }
 
-        return $client->send($kind, $session, $sequence, $state['epoch'], $fields);
+        return $client->send($kind, $session, $sequence, $state['epoch'], $fields, $deadline);
     }
 
     /**
@@ -367,12 +377,14 @@ final class ClaudeHookReporter
         return \strlen($json) <= 16_384 ? hash_hmac('sha256', $json, $token) : null;
     }
 
-    private static function scriptCount(mixed $tasks): ?int
+    /** @return array{scripts: int, subagents: bool}|null */
+    private static function taskRegistry(mixed $tasks): ?array
     {
         if (!\is_array($tasks) || !array_is_list($tasks) || \count($tasks) > 1024) {
             return null;
         }
         $shells = [];
+        $subagents = false;
         foreach ($tasks as $task) {
             if (!$task instanceof \stdClass || !EventSchema::id($task->id ?? null) || !\is_string($task->type ?? null) || !\is_string($task->status ?? null)
                 || '' === $task->type || '' === $task->status) {
@@ -381,9 +393,11 @@ final class ClaudeHookReporter
             if ('shell' === $task->type && 'running' === $task->status) {
                 $shells[$task->id] = true;
             }
+            // The registry is point-in-time evidence, not an agent-ID mapping.
+            $subagents = $subagents || 'subagent' === $task->type;
         }
 
-        return \count($shells);
+        return ['scripts' => \count($shells), 'subagents' => $subagents];
     }
 
     /** @param array<string, mixed> $previous */
@@ -417,11 +431,11 @@ final class ClaudeHookReporter
         // contended lock can consume all available time for optional metadata.
         $remaining = min(0.15, $deadline - hrtime(true) / 1e9);
         if ($remaining >= 0.025) {
-            $process = new Process(['node', __DIR__.'/../bin/session-title.mjs', $session, $cwd], $cwd, [
-                'NODE_OPTIONS' => false, 'NODE_V8_COVERAGE' => false,
-                'H360_STATUS_TOKEN' => false, 'H360_STATUS_BOOTSTRAP_TOKEN' => false,
-            ], timeout: $remaining);
             try {
+                $process = new Process(['node', __DIR__.'/../bin/session-title.mjs', $session, $cwd], $cwd, [
+                    'NODE_OPTIONS' => false, 'NODE_V8_COVERAGE' => false,
+                    'H360_STATUS_TOKEN' => false, 'H360_STATUS_BOOTSTRAP_TOKEN' => false,
+                ], timeout: $remaining);
                 if (0 === $process->run() && null !== ($title = self::sessionTitle(json_decode($process->getOutput(), true, flags: \JSON_THROW_ON_ERROR)))) {
                     return $title;
                 }
@@ -438,7 +452,7 @@ final class ClaudeHookReporter
         return null;
     }
 
-    /** @return array{sequence: int, epoch: int, session: string, title?: ?string, ended: bool, switch: 'resume'|'clear'|null, boundaries: array<string, true>, turn: array{id: string, status: string}|null, waits: array<string, int>, tools: array<string, array{name: string, fingerprint: ?string, wait: ?int}>, scripts: ?int, agents: array<string, true>|null}|null */
+    /** @return array{sequence: int, epoch: int, session: string, title?: ?string, ended: bool, switch: 'resume'|'clear'|null, boundaries: array<string, true>, turn: array{id: string, status: string}|null, waits: array<string, int>, tools: array<string, array{name: string, fingerprint: ?string, wait: ?int}>, scripts: ?int, agents: array<string, true>|null, agentsUncertain?: bool}|null */
     private function readState(string $path): ?array
     {
         if (is_link($path) || !is_file($path)) {
@@ -458,7 +472,8 @@ final class ClaudeHookReporter
         }
         $agents = $state['agents'];
         $waits = $state['waits'];
-        if (\count($state['tools']) > 32 || !array_all($state['tools'], static fn (mixed $tool): bool => \is_array($tool) && \is_string($tool['name'] ?? null)
+        if (!\is_bool($state['agentsUncertain'] ?? false)
+            || \count($state['tools']) > 32 || !array_all($state['tools'], static fn (mixed $tool): bool => \is_array($tool) && \is_string($tool['name'] ?? null)
             && \array_key_exists('wait', $tool) && (null === $tool['wait'] || EventSchema::sequence($tool['wait']))
             && \array_key_exists('fingerprint', $tool) && (null === $tool['fingerprint'] || (\is_string($tool['fingerprint']) && 1 === preg_match('/\A[a-f0-9]{64}\z/', $tool['fingerprint']))))
             || \count($waits) > 16 || !array_all($waits, static fn (mixed $value): bool => \is_int($value) && 0 !== $value)

@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
+use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -20,6 +21,7 @@ final class SessionBootstrapDelivery
 {
     private ?string $runId = null;
     private ?SessionBootstrapDescriptorDTO $descriptor = null;
+    private ?SessionResumeMetadataProjection $resume = null;
     /** @var \Generator<int, RuntimeEvent>|null */
     private ?\Generator $stream = null;
     private ?string $timeout = null;
@@ -95,9 +97,9 @@ final class SessionBootstrapDelivery
         if (!$this->ended || null === $this->descriptor || $descriptor->toArray() !== $this->descriptor->toArray()) {
             throw new \RuntimeException('Bootstrap acknowledgement is stale or incomplete.');
         }
-        $this->spools->acknowledge($descriptor);
+        $this->resume = $this->spools->acknowledge($descriptor);
         $this->ended = false;
-        $this->stream = $this->wireSuffix($this->transfer->catchUp($descriptor), $descriptor);
+        $this->stream = $this->wireSuffix($this->transfer->catchUp($descriptor, $this->resume), $descriptor);
         $this->pump();
     }
 
@@ -119,6 +121,7 @@ final class SessionBootstrapDelivery
         }
         $this->runId = null;
         $this->descriptor = null;
+        $this->resume = null;
         $this->ended = false;
         $this->requestId = null;
         $this->commandId = null;
@@ -150,6 +153,12 @@ final class SessionBootstrapDelivery
             }
             $event = $this->stream->current();
             $id = $this->descriptor->bootstrapId;
+            if (RuntimeEventTypeEnum::SessionReady->value === $event->type) {
+                // Recheck after older output drains, before publishing readiness.
+                $this->emitter->whenDrained(fn () => $this->completeReady($event, $id));
+
+                return;
+            }
             $this->emitter->emitTransfer($event, function () use ($id, $event): void {
                 if (null === $this->descriptor || $this->descriptor->bootstrapId !== $id || null === $this->stream) {
                     return;
@@ -157,11 +166,6 @@ final class SessionBootstrapDelivery
                 if (RuntimeEventTypeEnum::BootstrapEnd->value === $event->type) {
                     $this->ended = true;
                     $this->stream = null;
-
-                    return;
-                }
-                if (RuntimeEventTypeEnum::SessionReady->value === $event->type) {
-                    $this->emitter->whenDrained(fn () => $this->completeReady($event, $id));
 
                     return;
                 }
@@ -200,13 +204,16 @@ final class SessionBootstrapDelivery
             $cursor = new SessionBootstrapDescriptorDTO($this->descriptor->runId, $id, $this->descriptor->viewEpoch,
                 $event->payload['canonical_seq'], $event->payload['end_offset'], $this->descriptor->selectedAnchor,
                 $this->descriptor->records, $this->descriptor->bytes, $this->descriptor->checksum);
-            $this->stream = $this->wireSuffix($this->transfer->catchUp($cursor), $cursor);
+            $this->stream = $this->wireSuffix($this->transfer->catchUp($cursor, $this->resume ?? throw new \LogicException('Missing acknowledged bootstrap baseline.')), $cursor);
             $this->pump();
 
             return;
         }
         $this->cancel(false);
         $this->emitter->finishBootstrapOutput();
+        // Enter normal live output and publish its first record without yielding.
+        // Later consumer events are no longer filtered while this write drains.
+        $this->emitter->emit($event);
     }
 
     /** Canonical records may exceed an IPC frame, but the pipe never receives an oversized line.

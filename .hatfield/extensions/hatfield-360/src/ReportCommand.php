@@ -22,6 +22,7 @@ final class ReportCommand
         if ($claudeHook && $claudeNotify) {
             return Command::INVALID;
         }
+        $deadline = $claudeHook ? hrtime(true) / 1e9 + 0.95 : null;
         $client = StatusClient::fromEnvironment();
         if (null === $client && !$claudeHook && !$claudeNotify) {
             return Command::FAILURE;
@@ -29,7 +30,7 @@ final class ReportCommand
 
         try {
             // Hook stdin may contain a large prompt; the wire frame is capped separately.
-            $json = buffer(getStdin(), new TimeoutCancellation(0.25), $claudeHook ? 1_048_576 : StatusClient::MAX_FRAME_BYTES);
+            $json = buffer(getStdin(), new TimeoutCancellation(null === $deadline ? 0.25 : max(0.0, min(0.25, $deadline - hrtime(true) / 1e9))), $claudeHook ? 1_048_576 : StatusClient::MAX_FRAME_BYTES);
             $decoded = json_decode($json, depth: 16, flags: \JSON_THROW_ON_ERROR);
         } catch (StreamException|CancelledException|\JsonException) {
             if ($claudeHook) {
@@ -40,7 +41,7 @@ final class ReportCommand
         }
         if ($claudeHook) {
             if ($decoded instanceof \stdClass) {
-                (new ClaudeHookReporter())->report($client, get_object_vars($decoded));
+                (new ClaudeHookReporter())->report($client, get_object_vars($decoded), $deadline);
             }
 
             return Command::SUCCESS;

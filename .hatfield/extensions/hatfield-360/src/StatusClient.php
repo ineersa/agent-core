@@ -34,7 +34,7 @@ final readonly class StatusClient
     }
 
     /** Retry a transient response once with exactly the same owner identity. */
-    public static function registerManual(string $provider, string $instanceId, int $pid, string $pidNamespace, string $startTicks): ?self
+    public static function registerManual(string $provider, string $instanceId, int $pid, string $pidNamespace, string $startTicks, ?float $deadline = null): ?self
     {
         $endpoint = self::endpoint();
         $bootstrap = getenv('H360_STATUS_BOOTSTRAP_TOKEN');
@@ -50,9 +50,9 @@ final readonly class StatusClient
             'instanceId' => $instanceId, 'provider' => $provider,
             'owner' => ['pid' => $pid, 'pidNamespace' => $pidNamespace, 'startTicks' => $startTicks],
         ];
-        $reply = self::request($endpoint, $request);
+        $reply = self::request($endpoint, $request, $deadline);
         if (null === $reply || \in_array($reply['error'] ?? null, ['unavailable', 'limit'], true)) {
-            $reply = self::request($endpoint, $request);
+            $reply = self::request($endpoint, $request, $deadline);
         }
         $launchId = $reply['launchId'] ?? null;
         $token = $reply['token'] ?? null;
@@ -64,15 +64,15 @@ final readonly class StatusClient
     }
 
     /** @param array<array-key, mixed> $fields */
-    public function send(string $kind, string $sessionId, int $sequence, int $sessionEpoch, array $fields = []): bool
+    public function send(string $kind, string $sessionId, int $sequence, int $sessionEpoch, array $fields = [], ?float $deadline = null): bool
     {
-        $reply = $this->sendEvent($kind, $sessionId, $sequence, $sessionEpoch, (string) Uuid::v7(), $fields);
+        $reply = $this->sendEvent($kind, $sessionId, $sequence, $sessionEpoch, (string) Uuid::v7(), $fields, $deadline);
 
         return \in_array($reply, ['accepted', 'duplicate'], true);
     }
 
     /** @param array<array-key, mixed> $fields */
-    private function sendEvent(string $kind, string $sessionId, int $sequence, int $sessionEpoch, string $eventId, array $fields): ?string
+    private function sendEvent(string $kind, string $sessionId, int $sequence, int $sessionEpoch, string $eventId, array $fields, ?float $deadline): ?string
     {
         if (!EventSchema::id($eventId) || !EventSchema::accepts($kind, $sessionId, $sequence, $sessionEpoch, $fields)) {
             return null;
@@ -87,7 +87,7 @@ final readonly class StatusClient
             'sessionId' => $sessionId,
             'sequence' => $sequence,
             'sessionEpoch' => $sessionEpoch,
-        ] + $fields);
+        ] + $fields, $deadline);
 
         return true === ($reply['ok'] ?? null) && \is_string($reply['status'] ?? null) ? $reply['status'] : null;
     }
@@ -117,7 +117,7 @@ final readonly class StatusClient
      *
      * @return array<array-key, mixed>|null
      */
-    private static function request(string $endpoint, #[\SensitiveParameter] array $payload): ?array
+    private static function request(string $endpoint, #[\SensitiveParameter] array $payload, ?float $deadline): ?array
     {
         try {
             $frame = json_encode($payload, \JSON_THROW_ON_ERROR)."\n";
@@ -125,17 +125,21 @@ final readonly class StatusClient
                 return null;
             }
 
-            $deadline = new TimeoutCancellation(0.25);
+            $remaining = null === $deadline ? 0.25 : min(0.25, $deadline - hrtime(true) / 1e9);
+            if ($remaining <= 0.0) {
+                return null;
+            }
+            $cancellation = new TimeoutCancellation($remaining);
             // The default Amp connector backs off without observing cancellation.
             // One connection attempt keeps the launch reporter's deadline bounded.
-            $socket = (new DnsSocketConnector())->connect('unix://'.$endpoint, cancellation: $deadline);
+            $socket = (new DnsSocketConnector())->connect('unix://'.$endpoint, cancellation: $cancellation);
             // Close on the same absolute deadline to bound uncancellable socket writes.
-            $subscription = $deadline->subscribe(static fn () => $socket->close());
+            $subscription = $cancellation->subscribe(static fn () => $socket->close());
             try {
                 $socket->write($frame);
                 $reply = '';
                 while (\strlen($reply) < self::MAX_FRAME_BYTES) {
-                    $chunk = $socket->read($deadline, self::MAX_FRAME_BYTES - \strlen($reply));
+                    $chunk = $socket->read($cancellation, self::MAX_FRAME_BYTES - \strlen($reply));
                     if (null === $chunk) {
                         return null;
                     }
@@ -148,7 +152,7 @@ final readonly class StatusClient
                     }
                 }
             } finally {
-                $deadline->unsubscribe($subscription);
+                $cancellation->unsubscribe($subscription);
                 $socket->close();
             }
         } catch (CancelledException|StreamException|\JsonException) {

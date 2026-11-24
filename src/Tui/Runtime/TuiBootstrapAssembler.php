@@ -84,6 +84,7 @@ final class TuiBootstrapAssembler
                 || $event->payload['end_offset'] < $cut->endOffset) {
                 throw new RuntimeTransportException('Session readiness does not match the mounted bootstrap.');
             }
+            TuiRunObservationMapper::foregroundBaseline($event);
             // Some canonical event types have no runtime mapping. The validated
             // ready cut, not a seq-zero envelope, establishes their durable cursor.
             $state->lastSeq = $event->payload['canonical_seq'];

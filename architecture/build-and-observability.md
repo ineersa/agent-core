@@ -26,6 +26,8 @@ flowchart TD
 The GIF and VHS tape under `docs/assets/` are not catalog-selected Markdown.
 Native builds reuse the PHAR rather than introducing a second documentation catalog.
 
+The standalone Claude plugin takes a separate path: Castor installs its locked PHP and Node dependencies, stamps the manifest from the release tag, checks and tests the extracted ZIP, and writes a dedicated checksum. Neither the ZIP nor its checksum participates in the four-payload Hatfield installer gate.
+
 ## QA ownership
 
 ```mermaid

@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Session\Replay;
 use Ineersa\AgentCore\Domain\Event\AgentCommandKindEnum;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 
@@ -28,6 +29,23 @@ final class SessionResumeMetadataProjection
         if ([] !== $data) {
             $this->data = $data;
         }
+        $responseSeq = $this->data['current_foreground_response_seq'] ?? null;
+        if (null !== $responseSeq && (!\is_int($responseSeq) || $responseSeq <= 0)) {
+            throw new \InvalidArgumentException('Resume foreground response requires a positive canonical sequence.');
+        }
+        $this->data['current_foreground_response_seq'] = $responseSeq;
+        $requests = \array_key_exists('pending_foreground_requests', $this->data) ? $this->data['pending_foreground_requests'] : [];
+        if (!\is_array($requests) || !array_is_list($requests) || \count($requests) > 2000) {
+            throw new \InvalidArgumentException('Resume foreground requests exceed their item budget.');
+        }
+        foreach ($requests as $request) {
+            $id = \is_array($request) ? ($request['request_id'] ?? null) : null;
+            $category = \is_array($request) ? ($request['category'] ?? null) : null;
+            if (!\is_array($request) || 2 !== \count($request) || !\is_string($id) || '' === $id || \strlen($id) > 1024 || !\in_array($category, ['question', 'approval'], true)) {
+                throw new \InvalidArgumentException('Resume foreground requests require bounded identities and categories.');
+            }
+        }
+        $this->data['pending_foreground_requests'] = $requests;
         if (\array_key_exists('selected_prompt_turn_no', $this->data)
             && (!\is_int($this->data['selected_prompt_turn_no']) || $this->data['selected_prompt_turn_no'] < 0)) {
             throw new \InvalidArgumentException('Resume history selection requires a non-negative prompt turn.');
@@ -47,7 +65,24 @@ final class SessionResumeMetadataProjection
 
     public function observe(RunEvent $event, ?RuntimeEvent $runtime, bool $pending = false): void
     {
+        // History fences can be dropped by the runtime translator, so fold them canonically.
+        if (\in_array($event->type, [RunEventTypeEnum::HistoryPositionSet->value, RunEventTypeEnum::HistoryTailDiscarded->value], true)) {
+            $this->data['current_foreground_response_seq'] = null;
+            $this->data['pending_foreground_requests'] = [];
+        }
         $kind = AgentCommandKindEnum::fromPayload($event->payload['kind'] ?? null);
+        if (RunEventTypeEnum::WaitingHuman->value === $event->type) {
+            $this->addForegroundRequest($event->payload['question_id'] ?? null, isset($event->payload['approval_context']) ? 'approval' : 'question');
+        } elseif (RunEventTypeEnum::AgentCommandApplied->value === $event->type) {
+            if (AgentCommandKindEnum::Cancel === $kind || true === $kind?->appendsMessage()) {
+                $this->data['pending_foreground_requests'] = [];
+            } elseif ('human_response' === ($event->payload['kind'] ?? null)) {
+                $id = $event->payload['question_id'] ?? null;
+                if (\is_string($id)) {
+                    $this->data['pending_foreground_requests'] = array_values(array_filter($this->data['pending_foreground_requests'], static fn (array $request): bool => $request['request_id'] !== $id));
+                }
+            }
+        }
         if (RunEventTypeEnum::HistoryPositionSet->value === $event->type && 'history_select' === ($event->payload['reason'] ?? null)) {
             $prompt = $event->payload['selected_prompt_turn_no'] ?? null;
             if (!\is_int($prompt) || $prompt < 0) {
@@ -81,6 +116,15 @@ final class SessionResumeMetadataProjection
         }
         if (null === $runtime) {
             return;
+        }
+        if ($runtime->seq > 0) {
+            // Internal model/tool steps retain the opening of the logical response.
+            if (RuntimeEventTypeEnum::TurnStarted->value === $runtime->type) {
+                $this->data['current_foreground_response_seq'] ??= $runtime->seq;
+            } elseif (\in_array($runtime->type, [RuntimeEventTypeEnum::RunCompleted->value, RuntimeEventTypeEnum::RunFailed->value, RuntimeEventTypeEnum::TurnFailed->value, RuntimeEventTypeEnum::RunCancelled->value, RuntimeEventTypeEnum::TurnCancelled->value], true)) {
+                $this->data['current_foreground_response_seq'] = null;
+                $this->data['pending_foreground_requests'] = [];
+            }
         }
         if (RuntimeEventTypeEnum::TurnStarted->value === $runtime->type) {
             $this->data['usage']['turnOutputTokens'] = 0;
@@ -130,6 +174,35 @@ final class SessionResumeMetadataProjection
         return $this->data;
     }
 
+    /** Seal attention from the authoritative owner, never from transcript text. */
+    public function seedForegroundRequests(RunState $state): void
+    {
+        $this->data['pending_foreground_requests'] = [];
+        foreach ($state->pendingHumanInputRequests as $request) {
+            $this->addForegroundRequest($request->questionId, isset($request->payload['approval_context']) ? 'approval' : 'question');
+        }
+    }
+
+    /** @return array{current_foreground_response_seq: ?int, pending_foreground_requests: list<array{request_id: string, category: string}>} */
+    public function foreground(): array
+    {
+        $foreground = ['current_foreground_response_seq' => $this->data['current_foreground_response_seq'],
+            'pending_foreground_requests' => $this->data['pending_foreground_requests']];
+        if (\strlen(json_encode($foreground, \JSON_THROW_ON_ERROR)) > 32768) {
+            throw new \LengthException('Resume foreground baseline exceeds its wire budget.');
+        }
+
+        return $foreground;
+    }
+
+    private function addForegroundRequest(mixed $id, string $category): void
+    {
+        if (!\is_string($id) || '' === $id || \strlen($id) > 1024 || \count($this->data['pending_foreground_requests']) >= 2000) {
+            throw new \InvalidArgumentException('Resume foreground request exceeds its identity budget.');
+        }
+        $this->data['pending_foreground_requests'][] = ['request_id' => $id, 'category' => $category];
+    }
+
     private function messageBytes(string $key, string $text): int
     {
         if (\strlen($key) + \strlen($text) > self::MAX_BYTES) {
@@ -155,6 +228,7 @@ final class SessionResumeMetadataProjection
 
     private function assertBudget(): void
     {
+        $this->foreground();
         if ($this->queuedBytes > self::MAX_BYTES || \strlen(json_encode($this->data, \JSON_THROW_ON_ERROR)) > self::MAX_BYTES) {
             throw new \LengthException('Resume metadata exceeds the bootstrap view budget.');
         }

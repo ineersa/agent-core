@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiForegroundBaselineObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Psr\Log\LoggerInterface;
 
@@ -49,6 +50,8 @@ final class RuntimeEventPoller
 
     /** @var list<TuiRunObserverInterface> */
     private array $runObservers = [];
+    /** @var list<TuiForegroundBaselineObserverInterface> */
+    private array $foregroundObservers = [];
     /** @var list<TuiBackgroundJobObserverInterface> */
     private array $backgroundJobObservers = [];
 
@@ -75,6 +78,11 @@ final class RuntimeEventPoller
     public function observeRun(TuiRunObserverInterface $observer): void
     {
         $this->runObservers[] = $observer;
+    }
+
+    public function observeForegroundBaseline(TuiForegroundBaselineObserverInterface $observer): void
+    {
+        $this->foregroundObservers[] = $observer;
     }
 
     /**
@@ -214,6 +222,9 @@ final class RuntimeEventPoller
                     $wasReady = $state->sessionReady;
                     if ($this->eventApplier->applyBootstrap($state, $client, $runtimeEvent, $onBootstrapMounted)) {
                         if (!$wasReady && $state->sessionReady) {
+                            if ($runtimeEvent->runId === $state->sessionId) {
+                                $this->notifyForegroundObservers($runtimeEvent);
+                            }
                             // The suffix may supersede the snapshot outcome. Reconcile
                             // only after mount, exact ACK and complete catch-up.
                             if (RunActivityStateEnum::Failed === $state->activity) {
@@ -562,6 +573,25 @@ final class RuntimeEventPoller
                 $this->logger->warning('extension.tui_background_job_observer_failed', [
                     'component' => 'tui_extension', 'event_type' => 'tui_background_job_observer_failed',
                     'run_id' => $event->runId, 'session_id' => $event->runId, 'exception_class' => $exception::class,
+                ]);
+            }
+        }
+    }
+
+    private function notifyForegroundObservers(RuntimeEvent $event): void
+    {
+        if ([] === $this->foregroundObservers) {
+            return;
+        }
+        $baseline = TuiRunObservationMapper::foregroundBaseline($event);
+        foreach ($this->foregroundObservers as $observer) {
+            try {
+                $observer->onTuiForegroundBaseline($baseline);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('extension.tui_foreground_baseline_observer_failed', [
+                    'component' => 'tui_extension', 'event_type' => 'tui_foreground_baseline_observer_failed',
+                    'run_id' => $baseline->sessionId, 'session_id' => $baseline->sessionId,
+                    'extension' => $observer::class, 'exception_class' => $exception::class,
                 ]);
             }
         }

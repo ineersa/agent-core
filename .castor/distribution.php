@@ -1805,6 +1805,7 @@ function distribution_claude_plugin(
         foreach (['composer.json', 'composer.lock', 'package.json', 'package-lock.json', 'README.md'] as $file) {
             $filesystem->copy($source.'/'.$file, $plugin.'/'.$file);
         }
+        $filesystem->copy($root.'/LICENSE', $plugin.'/LICENSE');
         $manifestPath = $plugin.'/.claude-plugin/plugin.json';
         $manifest = json_decode((string) file_get_contents($manifestPath), true, flags: \JSON_THROW_ON_ERROR);
         $manifest['version'] = $matches[1];
@@ -1839,7 +1840,7 @@ function distribution_claude_plugin(
             if ($matches[1] !== ($embedded['version'] ?? null)) {
                 throw new RuntimeException('Archive plugin version does not match the release tag.');
             }
-            foreach (['hooks/hooks.json', 'bin/h360-report', 'bin/session-title.mjs', 'vendor/autoload.php', 'node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs'] as $file) {
+            foreach (['LICENSE', 'hooks/hooks.json', 'bin/h360-report', 'bin/session-title.mjs', 'vendor/autoload.php', 'node_modules/@anthropic-ai/claude-agent-sdk/core.mjs'] as $file) {
                 if (false === $zip->locateName($prefix.$file)) {
                     throw new RuntimeException('Missing plugin runtime entry: '.$file);
                 }

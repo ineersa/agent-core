@@ -7,10 +7,15 @@ namespace Ineersa\CodingAgent\Session\Bootstrap;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Serializer\Encoder\DecoderInterface;
 use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /** Disposable, private, bounded transfer files. The archive remains authoritative. */
 final readonly class SessionBootstrapSpoolStore
@@ -20,7 +25,7 @@ final readonly class SessionBootstrapSpoolStore
     private const int MAX_RECORDS = 2001;
     private const int TIMEOUT_SECONDS = 60;
 
-    public function __construct(private HatfieldSessionStore $sessions, private LockFactory $locks, private Filesystem $filesystem, private SerializerInterface $serializer)
+    public function __construct(private HatfieldSessionStore $sessions, private LockFactory $locks, private Filesystem $filesystem, private SerializerInterface $serializer, private ValidatorInterface $validator, private DecoderInterface $decoder)
     {
     }
 
@@ -111,52 +116,59 @@ final readonly class SessionBootstrapSpoolStore
      * @return \Generator<int, string> bounded raw byte chunks, not decoded products */
     public function frames(SessionBootstrapDescriptorDTO $descriptor): \Generator
     {
-        $this->matchingManifest($descriptor);
-        $stream = fopen($this->directory($descriptor->runId).'/'.$descriptor->bootstrapId.'.jsonl', 'rb');
-        if (false === $stream) {
-            throw new \RuntimeException('Bootstrap spool is unavailable.');
-        }
-        try {
-            $hash = hash_init('sha256');
-            $bytes = 0;
-            while (!feof($stream)) {
-                // Supersession, timeout and cancellation invalidate even an already-open transfer.
-                $this->matchingManifest($descriptor);
-                $chunk = fread($stream, self::FRAME_BYTES);
-                if (false === $chunk) {
-                    throw new \RuntimeException('Cannot read bootstrap frame.');
-                }
-                if ('' === $chunk) {
-                    if (!feof($stream)) {
-                        throw new \RuntimeException('Bootstrap transfer made no progress.');
-                    }
-                    break;
-                }
-                $bytes += \strlen($chunk);
-                if ($bytes > $descriptor->bytes || $bytes > self::MAX_BYTES) {
-                    throw new \RuntimeException('Bootstrap spool length changed.');
-                }
-                hash_update($hash, $chunk);
-                yield $chunk;
-                unset($chunk);
-            }
-            $this->matchingManifest($descriptor);
-            if ($bytes !== $descriptor->bytes || !hash_equals($descriptor->checksum, hash_final($hash))) {
-                throw new \RuntimeException('Bootstrap spool checksum mismatch.');
-            }
-        } finally {
-            fclose($stream);
-        }
+        yield from $this->readFrames($descriptor);
     }
 
     /** A complete identity/cut acknowledgement, not just possession of a token. */
-    public function acknowledge(SessionBootstrapDescriptorDTO $descriptor): void
+    public function acknowledge(SessionBootstrapDescriptorDTO $descriptor): SessionResumeMetadataProjection
     {
         $lock = $this->locks->createLock('session-bootstrap-'.$descriptor->runId);
         $lock->acquire(true);
         try {
             $this->matchingManifest($descriptor, true);
+            // Read through the owning checksummed stream before removal. Retain only
+            // the first bounded record; transcript bodies never enter transfer state.
+            $first = '';
+            $complete = false;
+            foreach ($this->readFrames($descriptor, true) as $chunk) {
+                if ($complete) {
+                    continue;
+                }
+                $newline = strpos($chunk, "\n");
+                $first .= false === $newline ? $chunk : substr($chunk, 0, $newline);
+                if (\strlen($first) > 4 * 1024 * 1024) {
+                    throw new \LengthException('Bootstrap resume record exceeds its view budget.');
+                }
+                $complete = false !== $newline;
+            }
+            $record = $this->decoder->decode($first, 'json');
+            $errors = $this->validator->validate($record, new Assert\Collection([
+                'kind' => new Assert\EqualTo('resume'),
+                'data' => [new Assert\NotNull(), new Assert\Type('array')],
+            ]));
+            if (!$complete || \count($errors) > 0) {
+                throw new ValidationFailedException($record, $errors);
+            }
+            $data = $record['data'];
+            $errors = $this->validator->validate($data, new Assert\Collection(fields: [
+                'current_foreground_response_seq' => new Assert\Sequentially([new Assert\Type('integer'), new Assert\Positive(), new Assert\LessThanOrEqual($descriptor->canonicalSeq)]),
+                'pending_foreground_requests' => new Assert\Sequentially([new Assert\NotNull(), new Assert\Type('array'), new Assert\Count(max: 2000),
+                    new Assert\All([new Assert\Collection([
+                        'request_id' => [new Assert\NotBlank(), new Assert\Type('string'), new Assert\Length(max: 1024)],
+                        'category' => [new Assert\NotNull(), new Assert\Choice(choices: ['question', 'approval'])],
+                    ])]),
+                ]),
+            ], allowExtraFields: true));
+            if (\count($errors) > 0) {
+                throw new ValidationFailedException($data, $errors);
+            }
+            $projection = new SessionResumeMetadataProjection(array_replace((new SessionResumeMetadataProjection())->toArray(), [
+                'current_foreground_response_seq' => $data['current_foreground_response_seq'],
+                'pending_foreground_requests' => $data['pending_foreground_requests'],
+            ]));
             $this->removeTransfer($this->directory($descriptor->runId));
+
+            return $projection;
         } finally {
             $lock->release();
         }
@@ -180,6 +192,47 @@ final readonly class SessionBootstrapSpoolStore
             $this->removeTransfer($this->directory($runId));
         } finally {
             $lock->release();
+        }
+    }
+
+    /** @return \Generator<int, string> */
+    private function readFrames(SessionBootstrapDescriptorDTO $descriptor, bool $underLock = false): \Generator
+    {
+        $this->matchingManifest($descriptor, $underLock);
+        $stream = fopen($this->directory($descriptor->runId).'/'.$descriptor->bootstrapId.'.jsonl', 'rb');
+        if (false === $stream) {
+            throw new \RuntimeException('Bootstrap spool is unavailable.');
+        }
+        try {
+            $hash = hash_init('sha256');
+            $bytes = 0;
+            while (!feof($stream)) {
+                // Supersession, timeout and cancellation invalidate even an already-open transfer.
+                $this->matchingManifest($descriptor, $underLock);
+                $chunk = fread($stream, self::FRAME_BYTES);
+                if (false === $chunk) {
+                    throw new \RuntimeException('Cannot read bootstrap frame.');
+                }
+                if ('' === $chunk) {
+                    if (!feof($stream)) {
+                        throw new \RuntimeException('Bootstrap transfer made no progress.');
+                    }
+                    break;
+                }
+                $bytes += \strlen($chunk);
+                if ($bytes > $descriptor->bytes || $bytes > self::MAX_BYTES) {
+                    throw new \RuntimeException('Bootstrap spool length changed.');
+                }
+                hash_update($hash, $chunk);
+                yield $chunk;
+                unset($chunk);
+            }
+            $this->matchingManifest($descriptor, $underLock);
+            if ($bytes !== $descriptor->bytes || !hash_equals($descriptor->checksum, hash_final($hash))) {
+                throw new \RuntimeException('Bootstrap spool checksum mismatch.');
+            }
+        } finally {
+            fclose($stream);
         }
     }
 

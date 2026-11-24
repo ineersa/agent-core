@@ -4,7 +4,7 @@ This package implements Hatfield 360's v1 Unix socket protocol. The Hatfield hos
 
 ## Install and run
 
-The standalone Claude plugin requires PHP 8.5 with mbstring and POSIX, and Node.js 18.14 or later for title lookup. Both executables must be on `PATH`. The release ZIP includes its locked PHP and Node dependencies; it does not require the Hatfield executable, Composer, or npm at runtime. Hooks never install dependencies.
+The standalone Claude plugin requires PHP 8.4.1 or later with mbstring and POSIX, and Node.js 18.14 or later for title lookup. Both executables must be on `PATH`. The release ZIP includes its locked PHP and Node dependencies; it does not require the Hatfield executable, Composer, or npm at runtime. Hooks never install dependencies.
 
 The marketplace archive will be available after the first tagged release that publishes `hatfield-360.zip`. For local development, run `castor distribution:claude-plugin --release-version=v0.0.0` from the repository root and pass `var/tmp/dist/hatfield-360.zip` to `claude --plugin-dir` on Claude versions supporting ZIPs, or extract it and pass the plugin directory. Build again to test local changes.
 
@@ -82,11 +82,21 @@ never initiates manual Linux bootstrap.
 ## Claude Code coverage
 
 Explicit and verified Linux managed launches report startup, clear and resume selections and terminal exit
-hooks. A foreground `UserPromptSubmit` starts a response; a matching final
-`Stop` ends it as completed, and a matching `StopFailure` marks it failed.
+hooks. A foreground `UserPromptSubmit` starts a response; the adapter treats a
+matching `Stop` with `stop_hook_active: false` as completed, and a matching
+`StopFailure` as failed. The Stop flag does not guarantee that another hook
+will not block the stop and continue the response. This integration has no
+authoritative post-hook continuation or interruption signal.
 Subagent start/stop hooks track an approximate active count by agent ID, without
 parent links or execution IDs. Reused IDs and overlapping hooks can make the
-count approximate; resume cannot reconstruct existing work and reports `null`.
+count approximate. Resume starts with an unknown baseline. A validated
+parent-scoped `background_tasks` sample from a matching foreground `Stop` or
+same-session `SubagentStop` can establish zero only when it contains no subagent
+entries and no observed child is still live. Missing or malformed samples do
+not establish zero. Registry task IDs are not treated as agent IDs; any
+subagent entry prevents zero regardless of its status. `SubagentStop` does not
+complete the main response, and the registry may still include the stopping
+child in that hook's sample.
 A matching elicitation request/result pair with a server and elicitation ID
 reports external-input attention. Selected built-in tool hooks report only
 names, correlated by tool-use ID, never inputs or results. `AskUserQuestion`
@@ -107,8 +117,9 @@ marker for background-only refresh.
 
 A launch lock serializes hooks and associated socket delivery in the private
 socket directory. A competing hook waits up to 650 ms with explicit credentials
-or 350 ms for a managed launch. Each socket exchange has its own 250 ms deadline
-(managed reporting can need two). If a
+or 350 ms for a managed launch. Stdin and each socket exchange are capped at
+250 ms within a shared 950 ms hook budget, including any registration retry.
+If a
 subagent start times out, subsequent snapshots conservatively report an unknown
 subagent count only for that admitted owner instance. A completed snapshot also
 reports an unknown count if a start has announced itself but is still waiting for
