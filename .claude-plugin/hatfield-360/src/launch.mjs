@@ -66,14 +66,14 @@ export function launch(endpoint) {
     const { H360_STATUS_LAUNCH_ID: launchId, H360_STATUS_TOKEN: statusToken, H360_STATUS_BOOTSTRAP_TOKEN: secret } = process.env;
     if (uuid(launchId) && launchId === launchId.toLowerCase() && token(statusToken)) {
         const name = `claude-status-${launchId}`;
-        return { name, lock: name, secret: statusToken, managed: false, authorize: async () => ({ launchId, token: statusToken }) };
+        return { name, secret: statusToken, managed: false, authorize: async () => ({ launchId, token: statusToken }) };
     }
     if (launchId !== undefined || statusToken !== undefined || !token(secret)) return null;
     const identity = owner();
     if (!identity) return null;
     const instance = instanceId(identity, secret);
     return {
-        name: `claude-managed-${instance}`, lock: 'claude-managed', secret, managed: true,
+        name: `claude-managed-${instance}`, secret, managed: true,
         async authorize(deadline) {
             if (!same(identity, owner())) return null;
             const registration = { kind: 'launch.register', bootstrapToken: secret, instanceId: instance, provider: 'claude', owner: identity };

@@ -62,6 +62,7 @@ export function privateDirectory(directory) {
 
 export async function withState(directory, launch, start, deadline, callback) {
     const { default: { lock: acquire } } = await import('proper-lockfile');
+    const waitDeadline = Math.min(deadline, performance.now() + 5000);
     const path = join(directory, `node-${launch.name}.json`);
     const pending = `${path}.pending`;
     const marker = `${path}.uncertain`;
@@ -72,7 +73,7 @@ export async function withState(directory, launch, start, deadline, callback) {
     const releasePending = trackStart ? await lock(acquire, pending) : null;
     try {
         if (trackStart && !releasePending) mark();
-        const release = performance.now() < deadline ? await lock(acquire, join(directory, `node-${launch.lock}-state`), stateRetries) : null;
+        const release = performance.now() < deadline ? await lock(acquire, join(directory, `node-${launch.name}-state`), stateRetries) : null;
         if (!release) {
             if (trackStart) mark();
             diagnostic('hook_lock_unavailable');
@@ -85,13 +86,35 @@ export async function withState(directory, launch, start, deadline, callback) {
                 return false;
             }
             const previous = existsSync(path) ? read(path) : null;
-            if (!previous && launch.managed && readdirSync(directory).filter(name => /^node-claude-managed-.*\.json$/.test(name)).length >= 64) return false;
+            const persist = async state => {
+                if (!previous && launch.managed) {
+                    // Publish the first state under the admission lock, so the
+                    // cap includes every admitted instance before any socket I/O.
+                    const remaining = Math.max(0, Math.min(waitDeadline, deadline) - performance.now());
+                    const admission = await lock(acquire, join(directory, 'node-claude-managed-admission'), {
+                        ...stateRetries, retries: Math.floor(remaining / stateRetries.minTimeout),
+                    });
+                    if (!admission) {
+                        diagnostic('hook_lock_unavailable');
+                        return false;
+                    }
+                    try {
+                        if (performance.now() >= deadline) {
+                            diagnostic('hook_deadline');
+                            return false;
+                        }
+                        if (readdirSync(directory).filter(name => /^node-claude-managed-.*\.json$/.test(name)).length >= 64) return false;
+                        save(path, state);
+                    } finally { await admission(); }
+                } else save(path, state);
+                return true;
+            };
             const pendingStart = async () => {
                 const exclusive = await lock(acquire, pending);
                 await exclusive?.();
                 return !exclusive || existsSync(marker);
             };
-            return await callback(previous, state => save(path, state), pendingStart);
+            return await callback(previous, persist, pendingStart);
         } finally { await release(); }
     } finally { await releasePending?.(); }
 }

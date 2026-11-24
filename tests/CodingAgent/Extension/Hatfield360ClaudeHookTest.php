@@ -484,12 +484,12 @@ final class Hatfield360ClaudeHookTest extends TestCase
             $this->assertSame(2, $snapshot['sequence']);
             $this->assertSame(1, $snapshot['sessionEpoch']);
 
-            // Two distinct native PTY owners share the state admission lock.
+            // A first report from B must not wait for A’s socket acknowledgement.
             $barrier = listen('unix://'.$directory.'/b');
             $pause = escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg('$s = stream_socket_client("unix://".$argv[1]); exit(fread($s, 1) === "!" ? 0 : 1);').' '.escapeshellarg($directory.'/b');
             $stop = array_replace($turn, ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'background_tasks' => []]);
             $agent = array_replace($turn, ['hook_event_name' => 'SubagentStart', 'agent_id' => 'agent-1']);
-            $ownerA = new Process($shell(implode('; ', [$call($hook), $call($turn), $pause, $call($agent), $pause, $call($stop)])), env: ['NODE_OPTIONS' => $this->retryProbe()] + $env, timeout: 9);
+            $ownerA = new Process($shell(implode('; ', [$call($hook), $call($turn), $pause, $call($agent), $pause, $call($stop)])), env: $env, timeout: 5);
             $ownerB = new Process($shell(implode('; ', [$call($hook), $call($turn), $pause, $call($stop)])), env: $env, timeout: 5);
             try {
                 $ready = function (Process $owner) use ($server, $reply, $barrier): array {
@@ -504,18 +504,32 @@ final class Hatfield360ClaudeHookTest extends TestCase
                     return [$registration, $signal];
                 };
                 [$registrationA, $signalA] = $ready($ownerA);
-                [$registrationB, $signalB] = $ready($ownerB);
-                $this->assertNotSame($registrationA['owner']['pid'], $registrationB['owner']['pid']);
-                $release = $this->holdLock($directory.'/node-claude-managed-state');
+                // One prior owner and A are already admitted; leave one slot for B.
+                for ($i = 0; $i < 61; ++$i) {
+                    $fixture = sprintf('%s/node-claude-managed-00000000-0000-4000-8000-%012x.json', $directory, $i);
+                    $this->assertFalse(is_link($fixture));
+                    $this->assertNotFalse(file_put_contents($fixture, '{}'));
+                }
                 $signalA->write('!');
                 $signalA->close();
-                $this->awaitLockRetry($ownerA);
-                $release();
-                unset($release);
                 $this->assertSame($registrationA, $this->exchange($server, $ownerA, reply: $reply, finish: false));
-                $this->assertSame(1, $this->exchange($server, $ownerA, finish: false)['activeSubagents']);
+                $agentReport = $this->exchange($server, $ownerA, finish: false, beforeReply: function () use ($ownerB, $server, $reply, &$registrationB): void {
+                    $ownerB->start();
+                    $registrationB = $this->exchange($server, $ownerB, reply: $reply, finish: false);
+                });
+                $this->assertNotSame($registrationA['owner']['pid'], $registrationB['owner']['pid']);
+                $this->assertSame(1, $agentReport['activeSubagents']);
                 $signalA = $barrier->accept(new TimeoutCancellation(2));
                 $this->assertNotNull($signalA);
+                $this->assertSame(1, $this->exchange($server, $ownerB, finish: false)['sequence']);
+                $this->assertSame($registrationB, $this->exchange($server, $ownerB, reply: $reply, finish: false));
+                $this->assertSame(0, $this->exchange($server, $ownerB, finish: false)['activeSubagents']);
+                $signalB = $barrier->accept(new TimeoutCancellation(2));
+                $this->assertNotNull($signalB);
+                $this->assertCount(64, glob($directory.'/node-claude-managed-*.json'));
+                $overflow = new Process($shell($call($hook)), env: $env, timeout: 5);
+                $this->assertSame(0, $overflow->run());
+                $this->assertCount(64, glob($directory.'/node-claude-managed-*.json'));
                 foreach ([[$ownerA, $signalA, $registrationA, 1], [$ownerB, $signalB, $registrationB, 0]] as [$native, $signal, $registration, $count]) {
                     $signal->write('!');
                     $signal->close();
@@ -527,9 +541,6 @@ final class Hatfield360ClaudeHookTest extends TestCase
                 }
                 $this->assertStringNotContainsString('hook_lock_unavailable', $ownerB->getOutput());
             } finally {
-                if (isset($release)) {
-                    $release();
-                }
                 if (isset($signalA)) {
                     $signalA->close();
                 }

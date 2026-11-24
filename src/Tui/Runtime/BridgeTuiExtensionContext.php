@@ -17,11 +17,13 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
 /**
  * Adapts {@see TuiRuntimeContext} to the public ExtensionApi TUI contract.
  */
-final readonly class BridgeTuiExtensionContext implements TuiSessionActivityContextInterface
+final class BridgeTuiExtensionContext implements TuiSessionActivityContextInterface
 {
+    private ?TuiBackgroundSnapshotDTO $backgroundSample = null;
+
     public function __construct(
-        private TuiRuntimeContext $runtime,
-        private LoggerInterface $logger = new NullLogger(),
+        private readonly TuiRuntimeContext $runtime,
+        private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -55,13 +57,21 @@ final readonly class BridgeTuiExtensionContext implements TuiSessionActivityCont
         return $this->getBackgroundSnapshot()->backgroundScripts;
     }
 
-    public function getBackgroundSnapshot(): TuiBackgroundSnapshotDTO
+    public function getBackgroundSnapshot(bool $refresh = true): TuiBackgroundSnapshotDTO
     {
         $sessionId = $this->getSessionId();
+        if (!$this->canReadSelectedSession() || $this->backgroundSample?->sessionId !== $sessionId) {
+            $this->backgroundSample = null;
+        }
         if (!$this->canReadSelectedSession()) {
             return new TuiBackgroundSnapshotDTO($sessionId, null, null);
         }
 
+        if (!$refresh) {
+            return $this->backgroundSample ?? new TuiBackgroundSnapshotDTO($sessionId, null, null);
+        }
+
+        $this->backgroundSample = null;
         try {
             $snapshot = $this->runtime->client->backgroundWork($sessionId, observedChildRunIds: $this->runtime->state->subagentLiveCatalog->activeRunIds());
         } catch (\Throwable $exception) {
@@ -76,11 +86,18 @@ final readonly class BridgeTuiExtensionContext implements TuiSessionActivityCont
             return new TuiBackgroundSnapshotDTO($sessionId, null, null);
         }
 
-        return new TuiBackgroundSnapshotDTO(
+        return $this->backgroundSample = new TuiBackgroundSnapshotDTO(
             $sessionId,
             \count(array_filter($snapshot->children, static fn (BackgroundChildStatusDTO $child): bool => !SubagentLiveStatusEnum::fromProgressString($child->status)->isTerminal())),
             \count(array_filter($snapshot->work, static fn (BackgroundWorkDTO $work): bool => !$work->terminal && \in_array($work->kind, ['bash', 'code_mode'], true))),
         );
+    }
+
+    public function rememberBackgroundSample(TuiBackgroundSnapshotDTO $snapshot): void
+    {
+        if ($snapshot->sessionId === $this->getSessionId() && $this->canReadSelectedSession()) {
+            $this->backgroundSample = $snapshot;
+        }
     }
 
     public function requestRender(bool $force = false): void

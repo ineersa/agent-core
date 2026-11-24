@@ -17,6 +17,6 @@ interface TuiSessionActivityContextInterface extends TuiSessionMetadataContextIn
     /** Number of nonterminal background jobs, or null when inventory is unavailable. */
     public function getBackgroundJobs(): ?int;
 
-    /** Read both counts in one inventory refresh. */
-    public function getBackgroundSnapshot(): TuiBackgroundSnapshotDTO;
+    /** Read both counts together. Pass false to reuse the latest host sample without querying. */
+    public function getBackgroundSnapshot(bool $refresh = true): TuiBackgroundSnapshotDTO;
 }

@@ -55,15 +55,22 @@ final class Hatfield360ExtensionTest extends TestCase
         $active = true;
         $children = 1;
         $jobs = 1;
+        $reads = [];
         $context->method('isMainActive')->willReturnCallback(static function () use (&$active): bool {
             return $active;
         });
-        $context->method('getBackgroundSnapshot')->willReturnCallback(static function () use (&$children, &$jobs): TuiBackgroundSnapshotDTO {
+        $context->method('getBackgroundSnapshot')->willReturnCallback(static function (bool $refresh) use (&$children, &$jobs, &$reads): TuiBackgroundSnapshotDTO {
+            $reads[] = $refresh;
             return new TuiBackgroundSnapshotDTO('42', $children, $jobs);
         });
         $extension->registerTui($context);
 
         $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::TurnStarted));
+        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::QuestionRequested, 'question'));
+        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 1));
+        $this->assertSame([false, false], $reads, 'Ordinary observations use the host sample; poll callbacks already have it.');
+        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::ChildExecutionStarted, childRunId: 'child'));
+        $this->assertSame(1, $this->snapshot($extension)['activeSubagents']);
         $active = false;
         $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::TurnCompleted));
         $this->assertSame(1, $this->snapshot($extension)['activeSubagents']);
@@ -90,6 +97,7 @@ final class Hatfield360ExtensionTest extends TestCase
         $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 4, Observation::TurnCompleted));
         $this->assertSame(['id' => '3', 'status' => 'completed'], $this->snapshot($extension)['turn']);
         $this->assertSame(0, $this->snapshot($extension)['activeSubagents']);
+        $this->assertSame([false, false, true, true, true, true, false, true, true], $reads);
     }
 
     public function testUnknownStateAndMainReactivationCannotSettleOldCompletion(): void

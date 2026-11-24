@@ -8,6 +8,7 @@ use Amp\CancelledException;
 use Amp\DeferredFuture;
 use Amp\Future;
 use Amp\TimeoutCancellation;
+use DateTimeImmutable;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
@@ -28,6 +29,8 @@ use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionMetadataContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionObserverInterface;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\MonotonicClock;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
@@ -64,13 +67,18 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     /** @var Future<void>|null */
     private ?Future $drain = null;
     private bool $snapshotUnconfirmed = false;
-    private bool $snapshotRetried = false;
+    private ?DateTimeImmutable $retryAt = null;
+    private int $retryDelay = 1;
     private bool $snapshotOutage = false;
     private ?string $lastSnapshotFingerprint = null;
     /** @var list<array{string, string, int, int, array<string, mixed>}> */
     private array $pending = [];
     /** @var DeferredFuture<bool>|null */
     private ?DeferredFuture $notice = null;
+
+    public function __construct(private readonly ClockInterface $clock = new MonotonicClock())
+    {
+    }
 
     public function getConfiguration(): ConfigurationInterface
     {
@@ -139,6 +147,8 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $this->tools = [];
         $this->childTerminals = [];
         $this->snapshotUnconfirmed = false;
+        $this->retryAt = null;
+        $this->retryDelay = 1;
         $this->snapshotOutage = false;
         $this->lastSnapshotFingerprint = null;
         $this->snapshot(selection: true);
@@ -171,11 +181,13 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         }
         $type = $observation->type;
         $deduplicate = false;
+        $refresh = false;
         if (null !== $observation->childRunId) {
             $attentionChanged = $this->observeChild($observation, $observation->childRunId);
             $deduplicate = !$attentionChanged;
+            $refresh = \in_array($type, [TuiRunObservationTypeEnum::ChildExecutionStarted, TuiRunObservationTypeEnum::ChildExecutionEnded], true);
             if (!$attentionChanged && (!$this->metadata instanceof TuiSessionActivityContextInterface
-                || !\in_array($type, [TuiRunObservationTypeEnum::ChildExecutionStarted, TuiRunObservationTypeEnum::ChildExecutionEnded], true))) {
+                || !$refresh)) {
                 return;
             }
         } elseif (TuiRunObservationTypeEnum::TurnStarted === $type) {
@@ -203,6 +215,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
                 default => null,
             };
             if (null !== $outcome) {
+                $refresh = 'completed' === $outcome;
                 $this->turn['status'] = $outcome;
                 $this->waits = [];
                 $this->waitOverflow = null;
@@ -231,7 +244,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         } else {
             return;
         }
-        $this->snapshot(deduplicate: $deduplicate);
+        $this->snapshot(deduplicate: $deduplicate, refresh: $refresh);
     }
 
     public function onTuiBackgroundSnapshot(TuiBackgroundSnapshotDTO $snapshot): void
@@ -245,7 +258,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     public function onTuiBackgroundJobObserved(TuiBackgroundJobObservationDTO $observation): void
     {
         if ($this->observes($observation->sessionId)) {
-            $this->snapshot(deduplicate: true);
+            $this->snapshot(deduplicate: true, refresh: true);
         }
     }
 
@@ -314,7 +327,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         return !$this->closing && '' !== $this->sessionId && $sessionId === $this->sessionId;
     }
 
-    private function snapshot(?TuiBackgroundSnapshotDTO $background = null, bool $selection = false, bool $deduplicate = false): void
+    private function snapshot(?TuiBackgroundSnapshotDTO $background = null, bool $selection = false, bool $deduplicate = false, bool $refresh = false): void
     {
         $epoch = $this->epoch;
         $sessionId = $this->sessionId;
@@ -325,7 +338,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             if ($context->getSessionId() !== $sessionId) {
                 return;
             }
-            $background ??= $context->getBackgroundSnapshot();
+            $background ??= $context->getBackgroundSnapshot($selection || $refresh);
             $mainActive = $context->isMainActive();
             if ($context->getSessionId() !== $sessionId || $background->sessionId !== $sessionId
                 || $this->epoch !== $epoch || !$this->observes($sessionId)) {
@@ -356,10 +369,9 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         ];
         $fingerprint = hash('sha256', serialize($fields));
         $retry = $deduplicate && $fingerprint === $this->lastSnapshotFingerprint;
-        if ($retry && (!$polled || !$this->snapshotUnconfirmed || $this->snapshotRetried || null !== $this->drain)) {
+        if ($retry && (!$polled || !$this->snapshotUnconfirmed || null !== $this->drain || (null !== $this->retryAt && $this->clock->now() < $this->retryAt))) {
             return;
         }
-        $this->snapshotRetried = $retry;
         $this->lastSnapshotFingerprint = $fingerprint;
         $this->enqueue('session.snapshot', $selection && self::$sequence === $epoch ? $epoch : ++self::$sequence, $fields);
     }
@@ -394,6 +406,13 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
                     }
                     if ('session.snapshot' === $kind && $this->epoch === $epoch && !$this->closing) {
                         $this->snapshotUnconfirmed = !$sent;
+                        if ($sent) {
+                            $this->retryAt = null;
+                            $this->retryDelay = 1;
+                        } else {
+                            $this->retryAt = $this->clock->now()->modify('+'.$this->retryDelay.' seconds');
+                            $this->retryDelay = min(30, 2 * $this->retryDelay);
+                        }
                         if (!$sent && !$this->snapshotOutage) {
                             $this->logDrop($sessionId);
                         }

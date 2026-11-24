@@ -28,6 +28,7 @@ final class TuiProjectExtensionRegistrar implements TuiListenerRegistrar
     public function register(TuiRuntimeContext $context): void
     {
         $bridge = new BridgeTuiExtensionContext($context, $this->logger);
+        $context->lifecycle->subscribeBackgroundSnapshot($bridge->rememberBackgroundSample(...));
         foreach ($this->extensionManager->getTuiExtensions() as $extension) {
             if ($extension instanceof TuiExtensionInterface) {
                 $extension->registerTui($bridge);

@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryEntryView;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
 use Ineersa\Tui\Runtime\BridgeTuiExtensionContext;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -51,10 +52,16 @@ final class BridgeTuiExtensionContextTest extends TestCase
         $this->assertNull($bridge->getBackgroundJobs());
         $state->sessionReady = true;
         $this->assertTrue($bridge->isMainActive());
+        $sample = new TuiBackgroundSnapshotDTO('current', 2, 3);
+        $bridge->rememberBackgroundSample($sample);
+        $bridge->rememberBackgroundSample(new TuiBackgroundSnapshotDTO('other', 0, 0));
+        $this->assertSame($sample, $bridge->getBackgroundSnapshot(false));
         $snapshot = $bridge->getBackgroundSnapshot();
         $this->assertSame(0, $snapshot->activeSubagents);
         $this->assertSame(0, $snapshot->backgroundScripts);
+        $this->assertSame($snapshot, $bridge->getBackgroundSnapshot(false));
         $this->assertNull($bridge->getBackgroundAgents(), 'Read failure is not an empty inventory.');
+        $this->assertNull($bridge->getBackgroundSnapshot(false)->activeSubagents, 'A failure invalidates the previous zero.');
         $this->assertNull($bridge->getBackgroundJobs(), 'A selection change invalidates the in-flight read.');
     }
 

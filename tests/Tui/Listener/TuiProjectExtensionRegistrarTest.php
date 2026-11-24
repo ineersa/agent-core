@@ -36,6 +36,7 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 use function Amp\async;
@@ -220,7 +221,9 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             }
             $failed = new DeferredFuture();
             $settlementFailed = new DeferredFuture();
-            $extension = new Hatfield360Extension();
+            $clock = new MockClock();
+            $extension = new Hatfield360Extension($clock);
+            $drain = new \ReflectionProperty($extension, 'drain');
             $selection = 'first';
             $children = $scripts = null;
             $activity = $this->createStub(TuiSessionActivityContextInterface::class);
@@ -235,7 +238,7 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             };
             $logger = $this->createMock(LoggerInterface::class);
             $drops = [];
-            $logger->expects($this->exactly(3))->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$drops, $failed, $settlementFailed): void {
+            $logger->expects($this->exactly(4))->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$drops, $failed, $settlementFailed): void {
                 $drops[] = $context['session_id'];
                 if (1 === \count($drops)) {
                     $failed->complete();
@@ -353,19 +356,29 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $unconfirmed = $this->acceptFrame($server, '{"ok":true,"status":"stale"}');
             $settlementFailed->getFuture()->await(new TimeoutCancellation(2));
             $this->assertSame(['first', 'second', 'second'], $drops);
-            $sample(0, 1);
-            $exhausted = $this->acceptFrame($server, '{"ok":true,"status":"stale"}', waitForPeerClose: true);
+            $drain->getValue($extension)?->await(new TimeoutCancellation(2));
             $assertNoDuplicate(0, 1);
-            $sample(0, 0);
-            $this->acceptFrame($server, '{"ok":true,"status":"stale"}', waitForPeerClose: true);
-            $sample(0, 0);
+            $clock->modify('+1 second');
+            $sample(0, 1);
+            $attempt = $drain->getValue($extension);
+            $retried = $this->acceptFrame($server, '{"ok":true,"status":"stale"}');
+            $attempt->await(new TimeoutCancellation(2));
+            $sample(0, 1);
+            $this->assertNull($drain->getValue($extension), 'The next poll is too early.');
+            $clock->modify('+2 seconds');
+            $sample(0, 1);
+            $attempt = $drain->getValue($extension);
             $settled = $this->acceptFrame($server);
-            $this->assertGreaterThan($exhausted['sequence'], $settled['sequence']);
+            $attempt->await(new TimeoutCancellation(2));
+            $clock->modify('+30 seconds');
+            $sample(0, 1);
+            $this->assertNull($drain->getValue($extension), 'Confirmation ends periodic retries.');
+            $this->assertGreaterThan($retried['sequence'], $settled['sequence']);
             $this->assertGreaterThan($unconfirmed['sequence'], $settled['sequence']);
             $this->assertNotSame($unconfirmed['eventId'], $settled['eventId']);
             $this->assertSame($unconfirmed['sessionEpoch'], $settled['sessionEpoch']);
             $this->assertSame(0, $settled['activeSubagents']);
-            $this->assertSame(0, $settled['backgroundScripts']);
+            $this->assertSame(1, $settled['backgroundScripts']);
             $this->assertSame($completed['turn'], $settled['turn']);
 
             // A resumed child can outlive the parent's interim response.
@@ -381,6 +394,18 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $afterChild = $this->acceptFrame($server);
             $this->assertSame($interim['turn'], $afterChild['turn']);
             $this->assertSame(0, $afterChild['activeSubagents']);
+
+            $sample(0, 2);
+            $attempt = $drain->getValue($extension);
+            $this->acceptFrame($server, '{"ok":true,"status":"stale"}');
+            $attempt->await(new TimeoutCancellation(2));
+            $extension->onTuiSessionSelected($selection = 'third');
+            $attempt = $drain->getValue($extension);
+            $this->assertSame('third', $this->acceptFrame($server)['sessionId']);
+            $attempt->await(new TimeoutCancellation(2));
+            $clock->modify('+30 seconds');
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 2));
+            $this->assertNull($drain->getValue($extension), 'A past selection cannot resurrect a failed report.');
         } finally {
             if (isset($server)) {
                 $server->close();

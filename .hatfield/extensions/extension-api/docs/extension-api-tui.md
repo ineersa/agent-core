@@ -92,7 +92,8 @@ reports the selected session's live main activity, or `null` when unavailable.
 An inactive main run does not imply successful completion; use the terminal
 run observation for the outcome. `getBackgroundAgents()` and
 `getBackgroundJobs()` return current counts. Use `getBackgroundSnapshot()` when
-you need both in one inventory read.
+you need both in one inventory read. Pass `false` to reuse the latest host
+sample without an inventory query; counts remain `null` until a sample is available.
 
 Implement `TuiBackgroundSnapshotObserverInterface` to receive
 `TuiBackgroundSnapshotDTO` from the existing host operational poll once the

@@ -60,7 +60,7 @@ async function report() {
         }
         // Reserve sequence and commit provider observations before I/O. A lost
         // acknowledgement is not permission to replay or reuse the sequence.
-        save(state);
+        if (!await save(state)) return false;
         const credential = await context.authorize(deadline);
         if (!credential) return false;
         if (fields.turn?.status === 'completed' && fields.activeSubagents === 0 && await pendingStart()) fields.activeSubagents = null;
