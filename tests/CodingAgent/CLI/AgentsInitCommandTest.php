@@ -157,12 +157,12 @@ final class AgentsInitCommandTest extends TestCase
     }
 
     #[Test]
-    public function generalPurposeInheritsExecutionDefaultsButUsesItsOwnPrompt(): void
+    public function generalPurposePinsExecutionDefaultsAndUsesItsOwnPrompt(): void
     {
         $agent = $this->createParser()->parseFile($this->sourceDir.'/general-purpose.md');
 
-        $this->assertNull($agent->model);
-        $this->assertNull($agent->thinking);
+        $this->assertSame('openai-codex/gpt-6.2-sol', $agent->model);
+        $this->assertSame('low', $agent->thinking);
         $this->assertNull($agent->tools);
         $this->assertTrue($agent->inheritProjectContext);
         $this->assertSame(SystemPromptModeEnum::Replace, $agent->systemPromptMode);
