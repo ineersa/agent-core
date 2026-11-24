@@ -30,14 +30,13 @@ three roles and the refreshed instructions.
 The `reviewer` uses `openai-codex/gpt-6.2-astra`; the `auditor` uses
 `mistral/deepseek-v4-1-flash-1017` and the `verifier` `mistral/zai-glm-5-3-flash`,
 all with `high` thinking. Ordinary [agent frontmatter](agents.md) can override any
-role. All three allow `read` and shell inspection, deny inherited MCP tools, and
-instruct the models not to modify files, run tests, install packages or publish
-results. None has web access: a fetched page can carry instructions into an agent
-that has a shell. When a pass needs a package or vendor behavior it cannot verify
-from the installed sources, its report lists the names under **Lookups for main**;
-`main` performs the lookup with its own web tools and hands the result to the
-verifier as untrusted evidence with its source. Shell access is not an OS-enforced
-read-only sandbox; normal permissions and approval controls still apply.
+role. All three allow `read` and shell inspection and instruct the models not to
+modify files, run tests, install packages or publish results. The `reviewer` and
+`auditor` add the three `websearch` tools, so they can check vendor and platform
+behavior against the documentation for the installed version; they put only names
+into queries and treat fetched pages as data. The `verifier` denies inherited MCP
+tools. Shell access is not an OS-enforced read-only sandbox; normal permissions and
+approval controls still apply.
 
 ## Use
 
@@ -77,7 +76,7 @@ uncertain, and says what is uncertain; the verifier filters false positives.
 
 The auditor checks the repository's own rules and reuse. It quotes the rule line a
 change disobeys, names the existing facility a hand-rolled mechanism replaces
-(searching the project and its installed dependencies), and flags stale
+(searching the project, its declared dependencies, then the web), and flags stale
 documentation and statically missing test coverage. A preference without a quoted
 rule or a named, usable facility is not a candidate.
 

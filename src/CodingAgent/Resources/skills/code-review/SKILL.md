@@ -61,12 +61,6 @@ carry its items into the final report as unverified concerns. Retrieve omitted
 artifact output through existing authorized facilities. A missing, failed, malformed
 or materially partial report from either is NOT an empty review.
 
-Either report may end with a **Lookups for main** list: names of packages, classes,
-functions or versions the pass could not verify from local sources. Decide which
-lookups the candidates need, perform them with your own web tools, and give the
-verifier the results with their sources as untrusted evidence. No review agent has
-web tools; do not relay raw pages to one.
-
 ## Fresh verifier
 
 Before proceeding, recheck checkout cleanliness, pinned revisions and actual PR
@@ -100,8 +94,8 @@ the strongest failure scenario and union applicable rule evidence when merging;
 retain original IDs as aliases to the surviving ID for traceability. Reviewer's
 deduplication does not replace main's check. Do not send duplicates to the verifier.
 
-Pass the same pinned scope/requirements, deduplicated candidate claims and any
-lookup results with their sources. Pass the report text or an accessible
+Pass the same pinned scope/requirements and deduplicated candidate claims. Pass
+the report text or an accessible
 artifact/file reference; opaque child references are not automatically readable by
 another child. Main retrieves and relays evidence when necessary. Do not forward
 the reviewer's or the auditor's reasoning transcript, or direct the verifier toward

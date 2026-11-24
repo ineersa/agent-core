@@ -137,12 +137,13 @@ final class AgentsInitCommandTest extends TestCase
     #[Test]
     public function reviewAgentsUsePinnedModelsWithExplicitInspectionTools(): void
     {
-        // No review agent gets web tools: a fetched page can carry instructions into an agent that has a shell.
-        $inspection = ['read', 'bash', 'mcp:-'];
+        // Only the verifier stays offline: it checks candidates against the checkout and needs no fetched content.
+        $offline = ['read', 'bash', 'mcp:-'];
+        $web = ['read', 'bash', 'mcp:websearch_search', 'mcp:websearch_open', 'mcp:websearch_find'];
         $expected = [
-            'reviewer' => ['openai-codex/gpt-6.2-astra', $inspection],
-            'auditor' => ['mistral/deepseek-v4-1-flash-1017', $inspection],
-            'verifier' => ['mistral/zai-glm-5-3-flash', $inspection],
+            'reviewer' => ['openai-codex/gpt-6.2-astra', $web],
+            'auditor' => ['mistral/deepseek-v4-1-flash-1017', $web],
+            'verifier' => ['mistral/zai-glm-5-3-flash', $offline],
         ];
 
         foreach ($expected as $name => [$model, $tools]) {
