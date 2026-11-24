@@ -14,12 +14,10 @@ use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiForegroundBaselineDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundSnapshotObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiForegroundBaselineObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
@@ -32,7 +30,7 @@ use Symfony\Component\Config\Definition\ConfigurationInterface;
 
 use function Amp\async;
 
-final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, TuiBackgroundSnapshotObserverInterface, TuiForegroundBaselineObserverInterface, ExtensionCommandHandlerInterface, LoggerAwareInterface
+final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, TuiBackgroundSnapshotObserverInterface, ExtensionCommandHandlerInterface, LoggerAwareInterface
 {
     use LoggerAwareTrait;
 
@@ -51,7 +49,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     private ?array $turn = null;
     /** @var list<array{request: string, id: string, reason: string}> */
     private array $waits = [];
-    /** Overflow cannot be resolved by uncorrelated input; only an authoritative baseline or terminal clears it.
+    /** Overflow cannot be resolved by uncorrelated input; keep it until the response ends or the selection changes.
      * @var array{id: string, reason: string}|null */
     private ?array $waitOverflow = null;
     /** @var array<string, array<string, array{id: string, reason: string}>> */
@@ -131,6 +129,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $this->sessionId = $sessionId;
         $this->refreshTitle();
         $this->epoch = ++self::$sequence;
+        // Selection does not establish an active response or settle a previous one.
         $this->turn = null;
         $this->waits = [];
         $this->waitOverflow = null;
@@ -162,39 +161,6 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             $this->discardPending();
             $this->logDrop($sessionId);
         }
-    }
-
-    public function onTuiForegroundBaseline(TuiForegroundBaselineDTO $baseline): void
-    {
-        if (!$this->observes($baseline->sessionId)) {
-            return;
-        }
-        $turn = null === $baseline->currentResponseOpeningSequence ? null
-            : ['id' => (string) $baseline->currentResponseOpeningSequence, 'status' => 'working'];
-        $waits = [];
-        $previous = [];
-        foreach ($this->waits as $wait) {
-            $previous[$wait['request']][] = $wait;
-        }
-        foreach ($baseline->pendingRequests as $request) {
-            $key = hash('sha256', $request->requestId);
-            // Match each surviving occurrence FIFO, not every occurrence to one ID.
-            $waits[] = [] !== ($previous[$key] ?? []) ? array_shift($previous[$key]) : ['request' => $key, 'id' => (string) ++self::$sequence,
-                'reason' => TuiRunObservationTypeEnum::ApprovalRequested === $request->type ? 'permission' : 'question'];
-        }
-        if ($turn === $this->turn && $waits === $this->waits && null === $this->waitOverflow) {
-            return;
-        }
-        $this->waitOverflow = null;
-        if ($turn !== $this->turn) {
-            $this->tools = [];
-        }
-        // This is current foreground state, not terminal replay or child evidence.
-        // Keep verified child attention and operational counts on their own sources.
-        $this->turn = $turn;
-        $this->waits = $waits;
-        $this->refreshTitle();
-        $this->snapshot(++self::$sequence);
     }
 
     public function onTuiRunObserved(TuiRunObservationDTO $observation): void

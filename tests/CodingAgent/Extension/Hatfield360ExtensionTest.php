@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Amp\Future;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiForegroundBaselineDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiForegroundRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum as Observation;
 use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
@@ -25,43 +23,8 @@ final class Hatfield360ExtensionTest extends TestCase
         $second = $this->attention($extension);
         $this->assertSame('permission', $second['reason']);
         $this->assertNotSame($first['id'], $second['id']);
-        $extension->onTuiForegroundBaseline(new TuiForegroundBaselineDTO('42', 4, 1, [new TuiForegroundRequestDTO('same', Observation::ApprovalRequested)]));
-        $this->assertSame($second, $this->attention($extension));
-    }
-
-    public function testDuplicateOccurrencesResolveFifoAndReconcileStableEpisodes(): void
-    {
-        $extension = $this->extension();
-        $baseline = new TuiForegroundBaselineDTO('42', 10, 1, [
-            new TuiForegroundRequestDTO('same', Observation::QuestionRequested),
-            new TuiForegroundRequestDTO('same', Observation::ApprovalRequested),
-        ]);
-        $extension->onTuiForegroundBaseline($baseline);
-        $first = $this->attention($extension);
-        $extension->onTuiForegroundBaseline($baseline);
-        $this->assertSame($first, $this->attention($extension));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 11, Observation::InputResolved, 'same'));
-        $second = $this->attention($extension);
-        $this->assertSame('permission', $second['reason']);
-        $this->assertNotSame($first['id'], $second['id']);
-        $extension->onTuiForegroundBaseline(new TuiForegroundBaselineDTO('42', 11, 1, [$baseline->pendingRequests[1]]));
-        $this->assertSame($second, $this->attention($extension));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 12, Observation::InputResolved, 'same'));
+        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 5, Observation::InputResolved, 'same'));
         $this->assertNull($this->attention($extension));
-    }
-
-    public function testSeventeenBaselineRequestsStillNeedAttentionAfterSixteenAnswers(): void
-    {
-        $extension = $this->extension();
-        $requests = [];
-        for ($i = 0; $i < 17; ++$i) {
-            $requests[] = new TuiForegroundRequestDTO((string) $i, Observation::QuestionRequested);
-        }
-        $extension->onTuiForegroundBaseline(new TuiForegroundBaselineDTO('42', 20, 1, $requests));
-        for ($i = 0; $i < 16; ++$i) {
-            $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 21 + $i, Observation::InputResolved, (string) $i));
-        }
-        $this->assertSame('question', $this->attention($extension)['reason']);
     }
 
     public function testLiveDuplicatesAndOverflowDoNotEraseUnknownOrChildAttention(): void
@@ -74,9 +37,9 @@ final class Hatfield360ExtensionTest extends TestCase
         for ($i = 0; $i < 2001; ++$i) {
             $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 3000 + $i, Observation::InputResolved, 'same'));
         }
-        $this->assertNotNull($this->attention($extension), 'Overflow remains unknown until authoritative reconciliation.');
+        $this->assertNotNull($this->attention($extension), 'Overflow must not be resolved by an uncorrelated answer.');
         $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::ApprovalRequested, 'child-question', 'child'));
-        $extension->onTuiForegroundBaseline(new TuiForegroundBaselineDTO('42', 6000, null, []));
+        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 6000, Observation::TurnCompleted));
         $this->assertSame('permission', $this->attention($extension)['reason']);
     }
 
@@ -84,7 +47,7 @@ final class Hatfield360ExtensionTest extends TestCase
     {
         $extension = new Hatfield360Extension();
         (new \ReflectionProperty($extension, 'sessionId'))->setValue($extension, '42');
-        // Hold the outbound queue locally: exercise real observation/reconciliation
+        // Hold the outbound queue locally: exercise real live observations
         // without registration, credentials, sockets, or an asynchronous delivery race.
         (new \ReflectionProperty($extension, 'drain'))->setValue($extension, Future::complete());
 

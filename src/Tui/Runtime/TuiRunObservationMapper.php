@@ -4,34 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
-use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Session\Validation\ForegroundBaselineValidator;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiForegroundBaselineDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiForegroundRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 
 final class TuiRunObservationMapper
 {
-    /** Validate through the same boundary as the sealed owner transfer. */
-    public static function foregroundBaseline(RuntimeEvent $event): TuiForegroundBaselineDTO
-    {
-        $foreground = $event->payload['foreground'] ?? null;
-        $sequence = $event->payload['canonical_seq'] ?? null;
-        if (RuntimeEventTypeEnum::SessionReady->value !== $event->type || 0 !== $event->seq
-            || !\is_int($sequence) || $sequence < 1) {
-            throw new RuntimeTransportException('Session readiness requires a bounded foreground baseline.');
-        }
-        $data = ForegroundBaselineValidator::validate($foreground, $sequence);
-        $opening = $data['current_foreground_response_seq'];
-
-        return new TuiForegroundBaselineDTO($event->runId, $sequence, $opening,
-            array_map(static fn (array $request): TuiForegroundRequestDTO => new TuiForegroundRequestDTO($request['request_id'],
-                'approval' === $request['category'] ? TuiRunObservationTypeEnum::ApprovalRequested : TuiRunObservationTypeEnum::QuestionRequested), $data['pending_foreground_requests']));
-    }
-
     public static function map(RuntimeEvent $event): ?TuiRunObservationDTO
     {
         if (0 === $event->seq && \in_array($event->type, [RuntimeEventTypeEnum::ChildExecutionStarted->value, RuntimeEventTypeEnum::ChildExecutionEnded->value, RuntimeEventTypeEnum::ChildInputObserved->value], true)) {

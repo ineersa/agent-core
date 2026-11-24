@@ -103,9 +103,7 @@ final class SessionBootstrapProducer
             if (null === $cut || $cut['sequence'] !== $state->lastSeq) {
                 throw new \RuntimeException('Bootstrap owner and canonical cut diverged.');
             }
-            $projection = $this->resume ?? throw new \LogicException('Missing bootstrap metadata.');
-            $projection->seedForegroundRequests($state);
-            $resume = $projection->toArray();
+            $resume = $this->resume?->toArray() ?? throw new \LogicException('Missing bootstrap metadata.');
             if (\array_key_exists('selected_prompt_turn_no', $resume)) {
                 $turn = $resume['selected_prompt_turn_no'];
                 $resume['editor_prompt_text'] = 0 === $turn ? '' : $this->history->promptText($runId, $turn);

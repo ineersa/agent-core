@@ -1957,7 +1957,6 @@ final class TickPollListenerTest extends TestCase
                 'view_epoch' => $cut->viewEpoch,
                 'canonical_seq' => $cut->canonicalSeq,
                 'end_offset' => $cut->endOffset,
-                'foreground' => ['current_foreground_response_seq' => null, 'pending_foreground_requests' => []],
             ]),
         ];
     }

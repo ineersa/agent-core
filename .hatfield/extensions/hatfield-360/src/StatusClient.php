@@ -34,12 +34,12 @@ final readonly class StatusClient
     }
 
     /** Retry a transient response once with exactly the same owner identity. */
-    public static function registerManual(string $provider, string $instanceId, int $pid, string $pidNamespace, string $startTicks, ?float $deadline = null): ?self
+    public static function registerManual(string $instanceId, int $pid, string $pidNamespace, string $startTicks): ?self
     {
         $endpoint = self::endpoint();
         $bootstrap = getenv('H360_STATUS_BOOTSTRAP_TOKEN');
         if (false !== getenv('H360_STATUS_LAUNCH_ID') || false !== getenv('H360_STATUS_TOKEN')
-            || null === $endpoint || !self::token($bootstrap) || !\in_array($provider, ['hatfield', 'claude'], true)
+            || null === $endpoint || !self::token($bootstrap)
             || !self::uuid($instanceId) || $pid < 1 || $pid > 0x7FFF_FFFF
             || 1 !== preg_match('/\A[1-9][0-9]{0,19}\z/', $pidNamespace)
             || 1 !== preg_match('/\A[1-9][0-9]{0,19}\z/', $startTicks)) {
@@ -47,12 +47,12 @@ final readonly class StatusClient
         }
         $request = [
             'version' => 1, 'kind' => 'launch.register', 'bootstrapToken' => $bootstrap,
-            'instanceId' => $instanceId, 'provider' => $provider,
+            'instanceId' => $instanceId, 'provider' => 'hatfield',
             'owner' => ['pid' => $pid, 'pidNamespace' => $pidNamespace, 'startTicks' => $startTicks],
         ];
-        $reply = self::request($endpoint, $request, $deadline);
+        $reply = self::request($endpoint, $request);
         if (null === $reply || \in_array($reply['error'] ?? null, ['unavailable', 'limit'], true)) {
-            $reply = self::request($endpoint, $request, $deadline);
+            $reply = self::request($endpoint, $request);
         }
         $launchId = $reply['launchId'] ?? null;
         $token = $reply['token'] ?? null;
@@ -64,15 +64,15 @@ final readonly class StatusClient
     }
 
     /** @param array<array-key, mixed> $fields */
-    public function send(string $kind, string $sessionId, int $sequence, int $sessionEpoch, array $fields = [], ?float $deadline = null): bool
+    public function send(string $kind, string $sessionId, int $sequence, int $sessionEpoch, array $fields = []): bool
     {
-        $reply = $this->sendEvent($kind, $sessionId, $sequence, $sessionEpoch, (string) Uuid::v7(), $fields, $deadline);
+        $reply = $this->sendEvent($kind, $sessionId, $sequence, $sessionEpoch, (string) Uuid::v7(), $fields);
 
         return \in_array($reply, ['accepted', 'duplicate'], true);
     }
 
     /** @param array<array-key, mixed> $fields */
-    private function sendEvent(string $kind, string $sessionId, int $sequence, int $sessionEpoch, string $eventId, array $fields, ?float $deadline): ?string
+    private function sendEvent(string $kind, string $sessionId, int $sequence, int $sessionEpoch, string $eventId, array $fields): ?string
     {
         if (!EventSchema::id($eventId) || !EventSchema::accepts($kind, $sessionId, $sequence, $sessionEpoch, $fields)) {
             return null;
@@ -87,7 +87,7 @@ final readonly class StatusClient
             'sessionId' => $sessionId,
             'sequence' => $sequence,
             'sessionEpoch' => $sessionEpoch,
-        ] + $fields, $deadline);
+        ] + $fields);
 
         return true === ($reply['ok'] ?? null) && \is_string($reply['status'] ?? null) ? $reply['status'] : null;
     }
@@ -117,7 +117,7 @@ final readonly class StatusClient
      *
      * @return array<array-key, mixed>|null
      */
-    private static function request(string $endpoint, #[\SensitiveParameter] array $payload, ?float $deadline): ?array
+    private static function request(string $endpoint, #[\SensitiveParameter] array $payload): ?array
     {
         try {
             $frame = json_encode($payload, \JSON_THROW_ON_ERROR)."\n";
@@ -125,11 +125,7 @@ final readonly class StatusClient
                 return null;
             }
 
-            $remaining = null === $deadline ? 0.25 : min(0.25, $deadline - hrtime(true) / 1e9);
-            if ($remaining <= 0.0) {
-                return null;
-            }
-            $cancellation = new TimeoutCancellation($remaining);
+            $cancellation = new TimeoutCancellation(0.25);
             // The default Amp connector backs off without observing cancellation.
             // One connection attempt keeps the launch reporter's deadline bounded.
             $socket = (new DnsSocketConnector())->connect('unix://'.$endpoint, cancellation: $cancellation);

@@ -7,10 +7,8 @@ namespace Ineersa\CodingAgent\Session\Replay;
 use Ineersa\AgentCore\Domain\Event\AgentCommandKindEnum;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Session\Validation\ForegroundBaselineValidator;
 
 /** Scalar resume display state collected during the owner's existing body pass. */
 final class SessionResumeMetadataProjection
@@ -30,12 +28,6 @@ final class SessionResumeMetadataProjection
         if ([] !== $data) {
             $this->data = $data;
         }
-        $responseSeq = $this->data['current_foreground_response_seq'] ?? null;
-        if (null !== $responseSeq && (!\is_int($responseSeq) || $responseSeq <= 0)) {
-            throw new \InvalidArgumentException('Resume foreground response requires a positive canonical sequence.');
-        }
-        $this->data['current_foreground_response_seq'] = $responseSeq;
-        $this->data['pending_foreground_requests'] ??= [];
         if (\array_key_exists('selected_prompt_turn_no', $this->data)
             && (!\is_int($this->data['selected_prompt_turn_no']) || $this->data['selected_prompt_turn_no'] < 0)) {
             throw new \InvalidArgumentException('Resume history selection requires a non-negative prompt turn.');
@@ -55,31 +47,7 @@ final class SessionResumeMetadataProjection
 
     public function observe(RunEvent $event, ?RuntimeEvent $runtime, bool $pending = false): void
     {
-        // History fences can be dropped by the runtime translator, so fold them canonically.
-        if (\in_array($event->type, [RunEventTypeEnum::HistoryPositionSet->value, RunEventTypeEnum::HistoryTailDiscarded->value], true)) {
-            $this->data['current_foreground_response_seq'] = null;
-            $this->data['pending_foreground_requests'] = [];
-        }
         $kind = AgentCommandKindEnum::fromPayload($event->payload['kind'] ?? null);
-        if (RunEventTypeEnum::WaitingHuman->value === $event->type) {
-            $this->addForegroundRequest($event->payload['question_id'] ?? null, isset($event->payload['approval_context']) ? 'approval' : 'question');
-        } elseif (RunEventTypeEnum::AgentCommandApplied->value === $event->type) {
-            if (AgentCommandKindEnum::Cancel === $kind || true === $kind?->appendsMessage()) {
-                $this->data['pending_foreground_requests'] = [];
-            } elseif ('human_response' === ($event->payload['kind'] ?? null)) {
-                $id = $event->payload['question_id'] ?? null;
-                if (\is_string($id)) {
-                    $digest = hash('sha256', $id);
-                    foreach ($this->data['pending_foreground_requests'] as $index => $request) {
-                        if ($request['request_id'] === $id || ($request['request_digest'] ?? null) === $digest) {
-                            // Canonical human responses settle the first matching occurrence only.
-                            array_splice($this->data['pending_foreground_requests'], $index, 1);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
         if (RunEventTypeEnum::HistoryPositionSet->value === $event->type && 'history_select' === ($event->payload['reason'] ?? null)) {
             $prompt = $event->payload['selected_prompt_turn_no'] ?? null;
             if (!\is_int($prompt) || $prompt < 0) {
@@ -113,15 +81,6 @@ final class SessionResumeMetadataProjection
         }
         if (null === $runtime) {
             return;
-        }
-        if ($runtime->seq > 0) {
-            // Internal model/tool steps retain the opening of the logical response.
-            if (RuntimeEventTypeEnum::TurnStarted->value === $runtime->type) {
-                $this->data['current_foreground_response_seq'] ??= $runtime->seq;
-            } elseif (\in_array($runtime->type, [RuntimeEventTypeEnum::RunCompleted->value, RuntimeEventTypeEnum::RunFailed->value, RuntimeEventTypeEnum::TurnFailed->value, RuntimeEventTypeEnum::RunCancelled->value, RuntimeEventTypeEnum::TurnCancelled->value], true)) {
-                $this->data['current_foreground_response_seq'] = null;
-                $this->data['pending_foreground_requests'] = [];
-            }
         }
         if (RuntimeEventTypeEnum::TurnStarted->value === $runtime->type) {
             $this->data['usage']['turnOutputTokens'] = 0;
@@ -169,37 +128,6 @@ final class SessionResumeMetadataProjection
         $this->assertBudget();
 
         return $this->data;
-    }
-
-    /** Seal attention from the authoritative owner, never from transcript text. */
-    public function seedForegroundRequests(RunState $state): void
-    {
-        $this->data['pending_foreground_requests'] = [];
-        foreach ($state->pendingHumanInputRequests as $request) {
-            $this->data['pending_foreground_requests'][] = ['request_id' => $request->questionId,
-                'category' => isset($request->payload['approval_context']) ? 'approval' : 'question'];
-        }
-        $this->foreground($state->lastSeq);
-    }
-
-    /** @return array{current_foreground_response_seq: ?int, pending_foreground_requests: list<array{request_id: string, category: string}>} */
-    public function foreground(int $canonicalSequence = \PHP_INT_MAX): array
-    {
-        return ForegroundBaselineValidator::validate(['current_foreground_response_seq' => $this->data['current_foreground_response_seq'],
-            'pending_foreground_requests' => $this->data['pending_foreground_requests']], $canonicalSequence);
-    }
-
-    private function addForegroundRequest(mixed $id, string $category): void
-    {
-        if (!\is_string($id) || '' === $id) {
-            throw new \InvalidArgumentException('Resume foreground request requires an identity.');
-        }
-        // Historical identities need correlation, not wire admission. A distinct
-        // nonexportable marker survives restore and refuses if still current.
-        $this->data['pending_foreground_requests'][] = \strlen($id) > 1024
-            ? ['request_id' => null, 'category' => $category, 'request_digest' => hash('sha256', $id)]
-            : ['request_id' => $id, 'category' => $category];
-        $this->assertBudget();
     }
 
     private function messageBytes(string $key, string $text): int

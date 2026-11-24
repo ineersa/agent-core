@@ -95,24 +95,6 @@ final class SessionBootstrapProducerTest extends PerMethodIsolatedKernelTestCase
         $container->get(SessionBootstrapSpoolStore::class)->acknowledge($descriptor);
     }
 
-    public function testResolvedOversizedHistoricalRequestDoesNotPreventCompletedSessionAttach(): void
-    {
-        $container = static::getContainer();
-        $run = $container->get(HatfieldSessionStore::class)->createSession('historical identity');
-        $id = str_repeat('x', 1025);
-        PreparedEventStoreSeeder::appendMany($container->get(PreparedTransitionEventStoreInterface::class), [
-            RunEvent::forAppend($run, 0, 'run_started'),
-            RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1]),
-            RunEvent::forAppend($run, 1, 'waiting_human', ['question_id' => $id]),
-            RunEvent::forAppend($run, 1, 'agent_command_applied', ['kind' => 'human_response', 'question_id' => $id]),
-            RunEvent::forAppend($run, 1, 'agent_end', ['reason' => 'completed']),
-        ]);
-        $producer = $container->get(SessionBootstrapProducer::class);
-        $producer->prepare($run);
-        $descriptor = $producer->seal();
-        $this->assertSame([], $container->get(SessionBootstrapSpoolStore::class)->acknowledge($descriptor)->foreground()['pending_foreground_requests']);
-    }
-
     public function testOwnerAndSpoolMemoryPlateausInSeparate128MProcesses(): void
     {
         $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('owner-bootstrap-memory');

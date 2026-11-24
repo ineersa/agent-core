@@ -9,12 +9,9 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Tests\Support\ForegroundBaselineFixtureProvider;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use PHPUnit\Framework\Attributes\DataProviderExternal;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
-use Symfony\Component\Validator\Exception\ValidationFailedException;
 
 final class SessionBootstrapSpoolStoreTest extends IsolatedKernelTestCase
 {
@@ -23,8 +20,7 @@ final class SessionBootstrapSpoolStoreTest extends IsolatedKernelTestCase
         $store = static::getContainer()->get(SessionBootstrapSpoolStore::class);
         $run = static::getContainer()->get(HatfieldSessionStore::class)->createSession('bootstrap');
         $block = new TranscriptBlock('user', TranscriptBlockKindEnum::UserMessage, $run, 3, str_repeat('bounded ', 15000));
-        $foreground = ['current_foreground_response_seq' => 7, 'pending_foreground_requests' => [['request_id' => 'question-1', 'category' => 'question']]];
-        $descriptor = $store->seal($run, 11, 100, 3, [$block], $foreground + ['status' => 'completed', 'model' => null, 'turn_no' => 1]);
+        $descriptor = $store->seal($run, 11, 100, 3, [$block], ['status' => 'completed', 'model' => null, 'turn_no' => 1]);
         $content = '';
         foreach ($store->frames($descriptor) as $frame) {
             $this->assertLessThanOrEqual(SessionBootstrapSpoolStore::FRAME_BYTES, \strlen($frame));
@@ -46,54 +42,9 @@ final class SessionBootstrapSpoolStoreTest extends IsolatedKernelTestCase
             $this->assertStringContainsString('cut changed', $exception->getMessage());
         }
         $this->assertFileExists($path.'/'.$descriptor->bootstrapId.'.jsonl');
-        $this->assertSame($foreground, $store->acknowledge($descriptor)->foreground());
+        $store->acknowledge($descriptor);
         $this->assertFileDoesNotExist($path.'/active.json');
         $this->assertFileDoesNotExist($path.'/'.$descriptor->bootstrapId.'.jsonl');
-    }
-
-    #[DataProviderExternal(ForegroundBaselineFixtureProvider::class, 'malformedForeground')]
-    public function testSealRejectsMalformedBaselineBeforePublishingIt(array $foreground): void
-    {
-        $store = static::getContainer()->get(SessionBootstrapSpoolStore::class);
-        $run = static::getContainer()->get(HatfieldSessionStore::class)->createSession('invalid baseline');
-        try {
-            $store->seal($run, 11, 100, 3, [], $foreground);
-            $this->fail('Malformed sealed metadata must not become a ready baseline.');
-        } catch (ValidationFailedException $exception) {
-            $this->assertGreaterThan(0, \count($exception->getViolations()));
-            $this->assertFalse($store->isActive($run));
-        } finally {
-            $store->cancel($run);
-        }
-    }
-
-    #[DataProviderExternal(ForegroundBaselineFixtureProvider::class, 'malformedForeground')]
-    public function testAcknowledgementRejectsMalformedChecksummedBaselineWithoutDeletingIt(array $foreground): void
-    {
-        $store = static::getContainer()->get(SessionBootstrapSpoolStore::class);
-        $sessions = static::getContainer()->get(HatfieldSessionStore::class);
-        $run = $sessions->createSession('invalid acknowledged baseline');
-        $cut = $store->seal($run, 11, 100, 3, [], ['current_foreground_response_seq' => null, 'pending_foreground_requests' => []]);
-        $directory = realpath($sessions->resolveSessionsBasePath().'/'.$run.'/runtime/bootstrap');
-        $this->assertIsString($directory);
-        $this->assertStringStartsWith(realpath((string) getcwd()).'/.hatfield/', $directory);
-        $path = $directory.'/'.$cut->bootstrapId.'.jsonl';
-        $this->assertFalse(is_link($path));
-        $this->assertFalse(is_link($directory.'/active.json'));
-        $body = static::getContainer()->get('serializer')->serialize(['kind' => 'resume', 'data' => $foreground], 'json')."\n";
-        $manifest = json_decode(file_get_contents($directory.'/active.json'), true, 512, \JSON_THROW_ON_ERROR);
-        $cut = new SessionBootstrapDescriptorDTO($run, $cut->bootstrapId, $cut->viewEpoch, 11, 100, 3, 1, \strlen($body), hash('sha256', $body));
-        file_put_contents($path, $body);
-        file_put_contents($directory.'/active.json', json_encode($cut->toArray() + ['expires_at' => $manifest['expires_at']], \JSON_THROW_ON_ERROR));
-        try {
-            $store->acknowledge($cut);
-            $this->fail('A valid checksum does not admit malformed foreground data.');
-        } catch (ValidationFailedException $exception) {
-            $this->assertGreaterThan(0, \count($exception->getViolations()));
-            $this->assertTrue($store->isActive($run));
-        } finally {
-            $store->cancel($run);
-        }
     }
 
     public function testSupersededAndCancelledOpenTransfersFailClosed(): void
@@ -101,10 +52,10 @@ final class SessionBootstrapSpoolStoreTest extends IsolatedKernelTestCase
         $store = static::getContainer()->get(SessionBootstrapSpoolStore::class);
         $run = static::getContainer()->get(HatfieldSessionStore::class)->createSession('supersession');
         $blocks = [new TranscriptBlock('large', TranscriptBlockKindEnum::UserMessage, $run, 3, str_repeat('x', 100000))];
-        $old = $store->seal($run, 11, 100, 3, $blocks, ['status' => 'completed', 'model' => null, 'turn_no' => 1, 'current_foreground_response_seq' => null, 'pending_foreground_requests' => []]);
+        $old = $store->seal($run, 11, 100, 3, $blocks, ['status' => 'completed', 'model' => null, 'turn_no' => 1]);
         $open = $store->frames($old);
         $this->assertNotEmpty($open->current());
-        $current = $store->seal($run, 15, 140, 3, $blocks, ['status' => 'completed', 'model' => null, 'turn_no' => 1, 'current_foreground_response_seq' => null, 'pending_foreground_requests' => []]);
+        $current = $store->seal($run, 15, 140, 3, $blocks, ['status' => 'completed', 'model' => null, 'turn_no' => 1]);
         $this->assertGreaterThan($old->viewEpoch, $current->viewEpoch);
         try {
             $open->next();
@@ -122,7 +73,7 @@ final class SessionBootstrapSpoolStoreTest extends IsolatedKernelTestCase
         $store = static::getContainer()->get(SessionBootstrapSpoolStore::class);
         $sessions = static::getContainer()->get(HatfieldSessionStore::class);
         $run = $sessions->createSession('corruption');
-        $descriptor = $store->seal($run, 11, 100, 3, [], ['status' => 'completed', 'model' => null, 'turn_no' => 1, 'current_foreground_response_seq' => null, 'pending_foreground_requests' => []]);
+        $descriptor = $store->seal($run, 11, 100, 3, [], ['status' => 'completed', 'model' => null, 'turn_no' => 1]);
         $path = $sessions->resolveSessionsBasePath().'/'.$run.'/runtime/bootstrap/'.$descriptor->bootstrapId.'.jsonl';
         $body = file_get_contents($path);
         $this->assertNotFalse($body);
@@ -139,7 +90,7 @@ final class SessionBootstrapSpoolStoreTest extends IsolatedKernelTestCase
         $clock = Clock::get();
         Clock::set($mock = new MockClock('2026-10-09 00:00:00 UTC'));
         try {
-            $descriptor = $store->seal($run, 11, 100, 3, [], ['status' => 'completed', 'model' => null, 'turn_no' => 1, 'current_foreground_response_seq' => null, 'pending_foreground_requests' => []]);
+            $descriptor = $store->seal($run, 11, 100, 3, [], ['status' => 'completed', 'model' => null, 'turn_no' => 1]);
             $invalid = new SessionBootstrapDescriptorDTO($run, '../events', $descriptor->viewEpoch, 11, 100, 3, $descriptor->records, $descriptor->bytes, $descriptor->checksum);
             try {
                 iterator_to_array($store->frames($invalid));

@@ -13,7 +13,6 @@ use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundSnapshotObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiForegroundBaselineObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionObserverInterface;
@@ -51,7 +50,7 @@ final class ExtensionManager
     /** @var list<LoadedExtensionItemDTO> */
     private array $loadOutcomes = [];
 
-    /** @var list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface|TuiSessionCloseObserverInterface|TuiBackgroundJobObserverInterface|TuiBackgroundSnapshotObserverInterface|TuiForegroundBaselineObserverInterface> */
+    /** @var list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface|TuiSessionCloseObserverInterface|TuiBackgroundJobObserverInterface|TuiBackgroundSnapshotObserverInterface> */
     private array $tuiExtensions = [];
 
     private bool $loaded = false;
@@ -66,7 +65,7 @@ final class ExtensionManager
     }
 
     /**
-     * @return list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface|TuiSessionCloseObserverInterface|TuiBackgroundJobObserverInterface|TuiBackgroundSnapshotObserverInterface|TuiForegroundBaselineObserverInterface>
+     * @return list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface|TuiSessionCloseObserverInterface|TuiBackgroundJobObserverInterface|TuiBackgroundSnapshotObserverInterface>
      */
     public function getTuiExtensions(): array
     {
@@ -306,7 +305,7 @@ final class ExtensionManager
         }
 
         $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, true);
-        if ($instance instanceof TuiExtensionInterface || $instance instanceof TuiSessionObserverInterface || $instance instanceof TuiRunObserverInterface || $instance instanceof TuiSessionCloseObserverInterface || $instance instanceof TuiBackgroundJobObserverInterface || $instance instanceof TuiBackgroundSnapshotObserverInterface || $instance instanceof TuiForegroundBaselineObserverInterface) {
+        if ($instance instanceof TuiExtensionInterface || $instance instanceof TuiSessionObserverInterface || $instance instanceof TuiRunObserverInterface || $instance instanceof TuiSessionCloseObserverInterface || $instance instanceof TuiBackgroundJobObserverInterface || $instance instanceof TuiBackgroundSnapshotObserverInterface) {
             $this->tuiExtensions[] = $instance;
         }
 

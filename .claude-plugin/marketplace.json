@@ -21,10 +21,7 @@
     },
     {
       "name": "hatfield-360",
-      "source": {
-        "source": "archive",
-        "url": "https://github.com/ineersa/agent-core/releases/latest/download/hatfield-360.zip"
-      },
+      "source": "./.claude-plugin/hatfield-360",
       "description": "Report Claude Code session and activity status to the Hatfield 360 desktop app.",
       "category": "productivity"
     }

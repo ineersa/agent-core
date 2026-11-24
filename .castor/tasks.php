@@ -165,7 +165,6 @@ function castor_check_remaining_wall_seconds(float $checkWallDeadline): int
 function _run_castor_check_body(string $root, string $qaRunId, float $checkWallDeadline, float $checkStartedAt): void
 {
     castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before preflight');
-    prepare_hatfield360_sdk_tests(min(40, castor_check_remaining_wall_seconds($checkWallDeadline)));
     $llamaProxyCacheBaseline = begin_castor_check_llama_proxy_cache_guard($checkWallDeadline);
 
     // No PHAR ensure — the deterministic controller-replay and TUI

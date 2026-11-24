@@ -18,11 +18,6 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
 use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiForegroundBaselineDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiForegroundBaselineObserverInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -223,7 +218,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->assertSame([], $sent);
         }
         $events = array_merge($retry ? $events : [], [new RuntimeEvent('session.ready', '42', 0, ['bootstrap_id' => $cut->bootstrapId,
-            'view_epoch' => $cut->viewEpoch, 'canonical_seq' => $seq, 'end_offset' => 501, 'foreground' => ['current_foreground_response_seq' => null, 'pending_foreground_requests' => []]])]);
+            'view_epoch' => $cut->viewEpoch, 'canonical_seq' => $seq, 'end_offset' => 501])]);
         $tick();
         $this->assertTrue($state->sessionReady);
         if ($retry) {
@@ -281,7 +276,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         [$state, $harness, $poller] = $this->scope();
         [$cut, $available, $frame, $end] = $this->transfer(status: 'failed');
         $events = [$available, $frame, $end, new RuntimeEvent('session.ready', '42', 0,
-            ['bootstrap_id' => $cut->bootstrapId, 'view_epoch' => $cut->viewEpoch, 'canonical_seq' => 13, 'end_offset' => 500, 'foreground' => ['current_foreground_response_seq' => null, 'pending_foreground_requests' => []]])];
+            ['bootstrap_id' => $cut->bootstrapId, 'view_epoch' => $cut->viewEpoch, 'canonical_seq' => 13, 'end_offset' => 500])];
         $client = $this->createMock(AgentSessionClient::class);
         $client->method('events')->willReturnCallback(static function () use (&$events): array {
             $result = $events;
@@ -324,7 +319,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         [$cut, $available, $frame, $end] = $this->transfer(status: 'cancelled', queuedMessages: []);
         $state->queuedFollowUps = ['Unsent intent'];
         $events = [$available, $frame, $end, new RuntimeEvent('session.ready', '42', 0,
-            ['bootstrap_id' => $cut->bootstrapId, 'view_epoch' => $cut->viewEpoch, 'canonical_seq' => 13, 'end_offset' => 500, 'foreground' => ['current_foreground_response_seq' => null, 'pending_foreground_requests' => []]])];
+            ['bootstrap_id' => $cut->bootstrapId, 'view_epoch' => $cut->viewEpoch, 'canonical_seq' => 13, 'end_offset' => 500])];
         $client = $this->createMock(AgentSessionClient::class);
         $client->method('events')->willReturnCallback(static function () use (&$events): array {
             $result = $events;
@@ -659,105 +654,6 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testForegroundBaselineDispatchesOnceAtReadyBeforeLiveCompletionAndIsolatesObservers(): void
-    {
-        [$state, $harness, $poller] = $this->scope();
-        [$cut, $available, $frame, $end] = $this->transfer();
-        $seen = [];
-        $broken = $this->createMock(TuiForegroundBaselineObserverInterface::class);
-        $broken->expects($this->once())->method('onTuiForegroundBaseline')->willThrowException(new \RuntimeException('Observer failure'));
-        $poller->observeForegroundBaseline($broken);
-        $observer = $this->createMock(TuiForegroundBaselineObserverInterface::class);
-        $observer->expects($this->once())->method('onTuiForegroundBaseline')->willReturnCallback(function (TuiForegroundBaselineDTO $baseline) use (&$seen): void {
-            $this->assertSame('42', $baseline->sessionId);
-            $this->assertSame(13, $baseline->canonicalSequence);
-            $this->assertSame(2, $baseline->currentResponseOpeningSequence);
-            $this->assertSame('question', $baseline->pendingRequests[0]->requestId);
-            $this->assertSame(TuiRunObservationTypeEnum::QuestionRequested, $baseline->pendingRequests[0]->type);
-            $seen[] = 'baseline';
-        });
-        $poller->observeForegroundBaseline($observer);
-        $live = $this->createMock(TuiRunObserverInterface::class);
-        $live->expects($this->once())->method('onTuiRunObserved')->willReturnCallback(function (TuiRunObservationDTO $event) use (&$seen): void {
-            $this->assertSame(TuiRunObservationTypeEnum::TurnCompleted, $event->type);
-            $seen[] = 'completed';
-        });
-        $poller->observeRun($live);
-        $events = [$available, $frame, $end];
-        $client = $this->createStub(AgentSessionClient::class);
-        $client->method('events')->willReturnCallback(static function () use (&$events): array { return $events; });
-        $mount = static fn () => $harness->screen()->setTranscriptBlocks($state->transcript);
-        $poller->poll($state, $client, onBootstrapMounted: $mount);
-        $this->assertSame([], $seen, 'Mount and ACK are not ready evidence.');
-        $ready = new RuntimeEvent('session.ready', '42', 0, $cut->toArray() + ['foreground' => [
-            'current_foreground_response_seq' => 2, 'pending_foreground_requests' => [['request_id' => 'question', 'category' => 'question']],
-        ]]);
-        $events = [$ready, $ready, new RuntimeEvent('run.completed', '42', 14)];
-        $state->lastPoll = 0;
-        $poller->poll($state, $client, onBootstrapMounted: $mount);
-        $this->assertSame(['baseline', 'completed'], $seen);
-        $this->assertTrue($state->sessionReady);
-        $this->assertNull($state->bootstrapError);
-        $this->assertCount(1, array_filter($this->logger->records, static fn (array $record): bool => 'extension.tui_foreground_baseline_observer_failed' === $record['message']));
-    }
-
-    #[DataProvider('invalidForegroundReadiness')]
-    public function testStaleIncompleteAndMalformedReadyNeverDispatchesForeground(string $fault): void
-    {
-        [$state, $harness, $poller] = $this->scope();
-        [$cut, $available, $frame, $end] = $this->transfer();
-        $observer = $this->createMock(TuiForegroundBaselineObserverInterface::class);
-        $observer->expects($this->never())->method('onTuiForegroundBaseline');
-        $poller->observeForegroundBaseline($observer);
-        $payload = $cut->toArray() + ['foreground' => ['current_foreground_response_seq' => 2, 'pending_foreground_requests' => []]];
-        if ('stale' === $fault) {
-            $payload['bootstrap_id'] = str_repeat('b', 32);
-        } elseif ('missing' === $fault) {
-            unset($payload['foreground']);
-        } elseif ('future' === $fault) {
-            $payload['foreground']['current_foreground_response_seq'] = 14;
-        } elseif ('content' === $fault) {
-            $payload['foreground']['pending_foreground_requests'] = [['request_id' => 'q', 'category' => 'question', 'prompt' => 'private']];
-        }
-        $events = 'incomplete' === $fault ? [$available, $frame] : [$available, $frame, $end];
-        $events[] = new RuntimeEvent('session.ready', '42', 0, $payload);
-        $client = $this->createStub(AgentSessionClient::class);
-        $client->method('events')->willReturn($events);
-        $poller->poll($state, $client, onBootstrapMounted: static fn () => $harness->screen()->setTranscriptBlocks($state->transcript));
-        $this->assertFalse($state->sessionReady);
-        if ('stale' !== $fault) {
-            $this->assertNotNull($state->bootstrapError);
-        }
-    }
-
-    public static function invalidForegroundReadiness(): iterable
-    {
-        foreach (['stale', 'incomplete', 'missing', 'future', 'content'] as $fault) {
-            yield $fault => [$fault];
-        }
-    }
-
-    public function testTerminalSuffixBeforeReadyProducesOnlyAnEmptyBaseline(): void
-    {
-        [$state, $harness, $poller] = $this->scope();
-        [$cut, $available, $frame, $end] = $this->transfer();
-        $observer = $this->createMock(TuiForegroundBaselineObserverInterface::class);
-        $observer->expects($this->once())->method('onTuiForegroundBaseline')->willReturnCallback(function (TuiForegroundBaselineDTO $baseline): void {
-            $this->assertNull($baseline->currentResponseOpeningSequence);
-            $this->assertSame([], $baseline->pendingRequests);
-        });
-        $poller->observeForegroundBaseline($observer);
-        $live = $this->createMock(TuiRunObserverInterface::class);
-        $live->expects($this->never())->method('onTuiRunObserved');
-        $poller->observeRun($live);
-        $client = $this->createStub(AgentSessionClient::class);
-        $client->method('events')->willReturn([$available, $frame, $end, new RuntimeEvent('run.completed', '42', 14),
-            new RuntimeEvent('session.ready', '42', 0, array_replace($cut->toArray(), ['canonical_seq' => 14, 'end_offset' => 501,
-                'foreground' => ['current_foreground_response_seq' => null, 'pending_foreground_requests' => []]]))]);
-        $poller->poll($state, $client, onBootstrapMounted: static fn () => $harness->screen()->setTranscriptBlocks($state->transcript));
-        $this->assertTrue($state->sessionReady);
-    }
-
     public function testValidatedMountPrecedesExactAcknowledgementAndDurableSuffixReadiness(): void
     {
         [$state, $harness, $poller] = $this->scope();
@@ -793,7 +689,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $this->assertNull($state->bootstrapError, 'A repeated completed transfer cannot remount or acknowledge twice.');
         $this->assertSame(13, $state->lastSeq);
         $events = [new RuntimeEvent('user.message_submitted', '42', 19, ['text' => 'Canonical suffix', 'idempotency_key' => 'suffix']),
-            new RuntimeEvent('session.ready', '42', 0, ['bootstrap_id' => $cut->bootstrapId, 'view_epoch' => $cut->viewEpoch, 'canonical_seq' => 23, 'end_offset' => 999, 'foreground' => ['current_foreground_response_seq' => null, 'pending_foreground_requests' => []]])];
+            new RuntimeEvent('session.ready', '42', 0, ['bootstrap_id' => $cut->bootstrapId, 'view_epoch' => $cut->viewEpoch, 'canonical_seq' => 23, 'end_offset' => 999])];
         $state->lastPoll = 0;
         $changes = $poller->poll($state, $client, onBootstrapMounted: $mount);
         if (null !== $changes) {
@@ -1018,7 +914,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $this->assertTrue($fresh->bootstrapMounted);
         $this->assertFalse($fresh->sessionReady);
         $this->assertNull($fresh->bootstrapError);
-        $freshEvents = [new RuntimeEvent('session.ready', '42', 0, ['bootstrap_id' => $nextCut->bootstrapId, 'view_epoch' => 1, 'canonical_seq' => 13, 'end_offset' => 500, 'foreground' => ['current_foreground_response_seq' => null, 'pending_foreground_requests' => []]])];
+        $freshEvents = [new RuntimeEvent('session.ready', '42', 0, ['bootstrap_id' => $nextCut->bootstrapId, 'view_epoch' => 1, 'canonical_seq' => 13, 'end_offset' => 500])];
         $fresh->lastPoll = 0;
         $freshPoller->poll($fresh, $freshClient, onBootstrapMounted: $freshMount);
         $this->assertTrue($fresh->sessionReady);

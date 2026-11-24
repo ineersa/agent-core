@@ -57,30 +57,6 @@ and streaming deltas do not dispatch this hook. Turn start
 can reflect an internal model step; a foreground terminal event alone does not
 prove background work has settled. The callback must not block the UI.
 
-Implement the optional `TuiForegroundBaselineObserverInterface` to receive
-`onTuiForegroundBaseline(TuiForegroundBaselineDTO $baseline)` once a matching
-bootstrap has mounted, been acknowledged, and reached its validated ready cut.
-Dispatch precedes following live observations; selection, incomplete or failed
-bootstrap, stale packets, and repeated ready packets do not dispatch it.
-
-The baseline contains the selected `sessionId`, ready `canonicalSequence`, nullable
-`currentResponseOpeningSequence`, and `pendingRequests`. Each
-`TuiForegroundRequestDTO` contains only `requestId` and `type`
-(`QuestionRequested` or `ApprovalRequested`); it carries no prompt, answer, tool
-arguments, or child attention. Request IDs are bounded to 1,024 bytes, lists to
-2,000 entries, and the encoded foreground metadata to 32 KiB; oversized data
-refuses attachment rather than truncating it.
-
-The response identity is the canonical sequence of the first turn start in the
-current logical response, not a turn number or the latest internal step. A null
-identity does not describe a historical completion. Reconcile current foreground
-attention by request ID, retaining existing episodes still present and clearing
-absent ones; `InputResolved` later resolves the same IDs. Same-session rebootstrap
-delivers the current cut again and should not duplicate notifications. Child
-attention and background-work counts remain independent observations. Callback
-exceptions are logged and isolated from later observers and live events. Keep
-the callback nonblocking; it is a delivered baseline, not a query API.
-
 Implement `TuiSessionCloseObserverInterface` to receive
 `onTuiSessionClosing($sessionId)` before teardown on final graceful interactive
 quit. It does not fire for drafts, session switches, settings reloads, or abrupt

@@ -8,7 +8,7 @@ namespace Ineersa\HatfieldExt\Hatfield360;
 final class EventSchema
 {
     private const array EVENTS = [
-        'session.snapshot' => ['provider' => ['hatfield', 'claude'], 'turn' => 'turn', 'attention' => 'attention', 'activeSubagents' => 'count', 'backgroundScripts' => 'count', 'tool' => 'tool'],
+        'session.snapshot' => ['provider' => ['hatfield'], 'turn' => 'turn', 'attention' => 'attention', 'activeSubagents' => 'count', 'backgroundScripts' => 'count', 'tool' => 'tool'],
         'session.ended' => [],
         'notification' => ['title' => 200, 'body' => 2000],
     ];

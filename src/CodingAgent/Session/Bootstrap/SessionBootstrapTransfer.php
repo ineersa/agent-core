@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\JsonlPhysicalReadObservation;
-use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
 use Psr\Log\LoggerInterface;
 
 /** Stream private display bytes, then canonical records from the acknowledged byte cut. */
@@ -42,7 +41,7 @@ final readonly class SessionBootstrapTransfer
 
     /** Each pass freezes a committed indexed cut. New commits require another suffix, never an event backlog.
      * @return \Generator<int, RuntimeEvent> */
-    public function catchUp(SessionBootstrapDescriptorDTO $descriptor, SessionResumeMetadataProjection $resume): \Generator
+    public function catchUp(SessionBootstrapDescriptorDTO $descriptor): \Generator
     {
         $source = $this->sources->historySource($descriptor->runId);
         $offset = $descriptor->endOffset;
@@ -67,8 +66,6 @@ final readonly class SessionBootstrapTransfer
                     $sequence = $event->seq;
                     $offset = $location['offset'] + $location['length'];
                     $runtime = $this->mapper->toRuntimeEvent($event);
-                    // Fold canonical fences even when the runtime mapper drops them.
-                    $resume->observe($event, $runtime);
                     unset($record, $event, $location);
                     if (null !== $runtime) {
                         yield $runtime;
@@ -87,7 +84,6 @@ final readonly class SessionBootstrapTransfer
         } while (null !== $latest && $latest['sequence'] > $sequence);
 
         yield new RuntimeEvent(RuntimeEventTypeEnum::SessionReady->value, $descriptor->runId, 0,
-            ['bootstrap_id' => $descriptor->bootstrapId, 'view_epoch' => $descriptor->viewEpoch, 'canonical_seq' => $sequence, 'end_offset' => $offset,
-                'foreground' => $resume->foreground($sequence)]);
+            ['bootstrap_id' => $descriptor->bootstrapId, 'view_epoch' => $descriptor->viewEpoch, 'canonical_seq' => $sequence, 'end_offset' => $offset]);
     }
 }

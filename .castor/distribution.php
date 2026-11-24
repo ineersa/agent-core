@@ -1579,11 +1579,11 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
 /**
  * @param list<string> $artifactNames
  */
-function distribution_write_sha256sums(string $distDir, array $artifactNames, string $outputFilename = 'SHA256SUMS'): string
+function distribution_write_sha256sums(string $distDir, array $artifactNames): string
 {
     $lines = [];
     foreach ($artifactNames as $name) {
-        if ($outputFilename === $name) {
+        if ('SHA256SUMS' === $name) {
             continue;
         }
         $path = $distDir.'/'.$name;
@@ -1597,7 +1597,7 @@ function distribution_write_sha256sums(string $distDir, array $artifactNames, st
         $lines[] = $hash.'  '.$name;
     }
     sort($lines);
-    $out = $distDir.'/'.$outputFilename;
+    $out = $distDir.'/SHA256SUMS';
     \CastorTasks\write_file_checked($out, implode("\n", $lines).([] !== $lines ? "\n" : ''));
 
     return $out;
@@ -1779,88 +1779,6 @@ function distribution_checksums(
     ));
     $path = distribution_write_sha256sums($dist, $names);
     echo "Wrote {$path}\n";
-}
-
-#[AsTask(name: 'distribution:claude-plugin', description: 'Build and verify the standalone Hatfield 360 Claude plugin')]
-function distribution_claude_plugin(
-    #[AsOption(description: 'Release tag (vMAJOR.MINOR.PATCH)')]
-    string $releaseVersion,
-): void {
-    if (1 !== preg_match('/\Av([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\z/', $releaseVersion, $matches)) {
-        throw new InvalidArgumentException('Expected a v-prefixed semantic release version.');
-    }
-
-    $root = distribution_root();
-    $source = $root.'/.hatfield/extensions/hatfield-360';
-    $dist = distribution_dir();
-    $filesystem = \Castor\fs();
-    $filesystem->mkdir($dist);
-    $stage = $dist.'/.claude-plugin-'.bin2hex(random_bytes(8));
-    $plugin = $stage.'/hatfield-360';
-    $archive = $stage.'/hatfield-360.zip';
-    try {
-        foreach (['.claude-plugin', 'bin', 'hooks', 'src'] as $directory) {
-            $filesystem->mirror($source.'/'.$directory, $plugin.'/'.$directory);
-        }
-        foreach (['composer.json', 'composer.lock', 'package.json', 'package-lock.json', 'README.md'] as $file) {
-            $filesystem->copy($source.'/'.$file, $plugin.'/'.$file);
-        }
-        $filesystem->copy($root.'/LICENSE', $plugin.'/LICENSE');
-        $manifestPath = $plugin.'/.claude-plugin/plugin.json';
-        $manifest = json_decode((string) file_get_contents($manifestPath), true, flags: \JSON_THROW_ON_ERROR);
-        $manifest['version'] = $matches[1];
-        $filesystem->dumpFile($manifestPath, json_encode($manifest, \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR)."\n");
-
-        \Castor\run(['composer', 'install', '--no-dev', '--no-interaction', '--prefer-dist'], context: \Castor\context()->withWorkingDirectory($plugin));
-        // getSessionInfo is local metadata only; it never launches the optional native Claude binaries.
-        \Castor\run(['npm', 'ci', '--omit=optional', '--ignore-scripts', '--no-audit', '--no-fund'], context: \Castor\context()->withWorkingDirectory($plugin));
-        $filesystem->remove($plugin.'/node_modules/.bin');
-        \Castor\zip($plugin, $archive);
-
-        $zip = new ZipArchive();
-        if (true !== $zip->open($archive)) {
-            throw new RuntimeException('Unable to open standalone plugin archive.');
-        }
-        try {
-            $entries = $zip->numFiles;
-            $total = 0;
-            for ($i = 0; $i < $entries; ++$i) {
-                $entry = $zip->statIndex($i);
-                if (false === $entry || $entry['size'] > 512 * 1024 ** 2) {
-                    throw new RuntimeException('Archive exceeds the Claude per-entry size limit.');
-                }
-                $total += $entry['size'];
-            }
-            $bytes = (int) filesize($archive);
-            if ($entries > 100_000 || $total > 1024 ** 3 || $total > 50 * $bytes) {
-                throw new RuntimeException('Archive exceeds Claude extraction limits.');
-            }
-            $prefix = false !== $zip->locateName('.claude-plugin/plugin.json') ? '' : 'hatfield-360/';
-            $embedded = json_decode((string) $zip->getFromName($prefix.'.claude-plugin/plugin.json'), true, flags: \JSON_THROW_ON_ERROR);
-            if ($matches[1] !== ($embedded['version'] ?? null)) {
-                throw new RuntimeException('Archive plugin version does not match the release tag.');
-            }
-            foreach (['LICENSE', 'hooks/hooks.json', 'bin/h360-report', 'bin/session-title.mjs', 'vendor/autoload.php', 'node_modules/@anthropic-ai/claude-agent-sdk/core.mjs'] as $file) {
-                if (false === $zip->locateName($prefix.$file)) {
-                    throw new RuntimeException('Missing plugin runtime entry: '.$file);
-                }
-            }
-            $extracted = $stage.'/verified';
-            if (!$zip->extractTo($extracted)) {
-                throw new RuntimeException('Unable to extract the standalone plugin for verification.');
-            }
-        } finally {
-            $zip->close();
-        }
-        \Castor\run(['castor', 'test', '--filter=Hatfield360ReportCommandTest'], context: \Castor\context()->withWorkingDirectory($root)->withEnvironment([
-            'H360_TEST_PACKAGED_PLUGIN' => rtrim($extracted.'/'.$prefix, '/'),
-        ]));
-        $filesystem->rename($archive, $dist.'/hatfield-360.zip', true);
-        distribution_write_sha256sums($dist, ['hatfield-360.zip'], 'hatfield-360.zip.sha256');
-        echo "Hatfield 360 {$matches[1]}: {$bytes} ZIP bytes, {$total} extracted bytes, {$entries} entries\n";
-    } finally {
-        $filesystem->remove($stage);
-    }
 }
 
 #[AsTask(name: 'distribution:verify', description: 'Verify dist artifacts: sizes, checksums, smokes')]

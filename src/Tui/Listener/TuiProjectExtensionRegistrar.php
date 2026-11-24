@@ -9,7 +9,6 @@ use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundSnapshotObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiForegroundBaselineObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionObserverInterface;
@@ -50,9 +49,6 @@ final class TuiProjectExtensionRegistrar implements TuiListenerRegistrar
             }
             if ($extension instanceof TuiRunObserverInterface) {
                 $context->sessionServices->parentPoller->observeRun($extension);
-            }
-            if ($extension instanceof TuiForegroundBaselineObserverInterface) {
-                $context->sessionServices->parentPoller->observeForegroundBaseline($extension);
             }
             if ($extension instanceof TuiSessionCloseObserverInterface) {
                 $context->lifecycle->subscribe(function (TuiSessionLifecycleEventTypeEnum $event) use ($bridge, $extension): void {
