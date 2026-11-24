@@ -17,6 +17,8 @@ This package is the stable surface extensions depend on. Host Hatfield provides 
 - `ExtensionApiInterface` — tools, tool call/result/rewrite hooks, slash commands, settings/cwd access, after-turn-commit hooks, session-start hooks, before-compaction hooks, exec, session event reading, extension-agent jobs, and related DTOs under `Agent\`, `Approval\`, `Command\`, `Compaction\`, `Exec\`, `Lifecycle\`, `Prompt\`, `Session\`, `Tool\`.
 - `Tui\TuiExtensionInterface` / `Tui\TuiProjectExtensionInterface` and `Tui\TuiExtensionContextInterface` — generic TUI extension registration and overlay/slot APIs.
 - `Tui\TuiSessionObserverInterface` and `Tui\TuiSessionCloseObserverInterface` — session selection and graceful interactive quit.
+- `Tui\TuiSessionMetadataContextInterface` — optional context capability for the canonical nullable title of the selected session.
+- `Tui\TuiBackgroundSnapshotObserverInterface` — content-free current counts for a ready session, with null for unavailable counts (`Tui\DTO\TuiBackgroundSnapshotDTO`).
 - `Tui\TuiBackgroundJobObserverInterface` — live, content-free background job transitions (`Tui\DTO\TuiBackgroundJobObservationDTO`).
 - `Tui\TuiRunObserverInterface` — live foreground updates (`Tui\DTO\TuiRunObservationDTO`, `Tui\TuiRunObservationTypeEnum`).
 

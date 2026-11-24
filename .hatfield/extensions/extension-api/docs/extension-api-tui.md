@@ -80,3 +80,16 @@ to the selection.
 
 - Overview: [extension-api.md](extension-api.md)
 - Runtime hooks: [extension-api-runtime.md](extension-api-runtime.md)
+
+## Selected session metadata and current background work
+
+Check whether the host context implements `TuiSessionMetadataContextInterface`
+before calling `getSessionDisplayTitle()`. It returns the canonical picker title
+for the current persisted selection, or `null` when unavailable.
+
+Implement `TuiBackgroundSnapshotObserverInterface` to receive
+`TuiBackgroundSnapshotDTO` from the existing host operational poll once the
+session is ready. Each snapshot contains the selected session ID and separate
+current counts of nonterminal owned subagents and background scripts. A zero
+means none; `null` means unavailable. The DTO carries no job identities, prompts,
+commands, or history. It is a delivered observation, not a synchronous query API.

@@ -237,7 +237,12 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         }
         try {
             $title = $this->metadata->getSessionDisplayTitle();
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            $this->logger?->warning('hatfield_360.title_refresh_failed', [
+                'component' => 'hatfield_360', 'event_type' => 'title_refresh_failed',
+                'run_id' => $this->sessionId, 'session_id' => $this->sessionId, 'exception_class' => $exception::class,
+            ]);
+
             return;
         }
         if (null !== $title && mb_check_encoding($title, 'UTF-8')) {

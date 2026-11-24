@@ -41,7 +41,8 @@ final class TuiProjectExtensionRegistrar implements TuiListenerRegistrar
                         $extension->onTuiBackgroundSnapshot($snapshot);
                     } catch (\Throwable $exception) {
                         $this->logger->warning('extension.tui_background_snapshot_observer_failed', [
-                            'session_id' => $snapshot->sessionId, 'extension' => $extension::class, 'exception_class' => $exception::class,
+                            'component' => 'tui_extension', 'event_type' => 'tui_background_snapshot_observer_failed',
+                            'run_id' => $snapshot->sessionId, 'session_id' => $snapshot->sessionId, 'extension' => $extension::class, 'exception_class' => $exception::class,
                         ]);
                     }
                 });

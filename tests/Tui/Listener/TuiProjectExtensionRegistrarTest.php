@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Listener;
 use Amp\DeferredFuture;
 use Amp\Socket\ServerSocket;
 use Amp\TimeoutCancellation;
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -17,7 +18,9 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum as Event;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
@@ -30,14 +33,13 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 use function Amp\async;
 use function Amp\Socket\listen;
 
-final class TuiProjectExtensionRegistrarTest extends TestCase
+final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
 {
     use TuiRuntimeContextBuilderTrait;
 
@@ -75,16 +77,21 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             );
             $this->assertSame([], $manager->loadExtensions());
             $registrar = new TuiProjectExtensionRegistrar($manager, $logger);
+            $store = self::getContainer()->get(HatfieldSessionStore::class);
+            $sessionId = $store->createSession('Original title');
             $draft = new TuiSessionState('');
             $harness = new VirtualTuiHarness(sessionId: '');
-            $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($draft)->build();
+            $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($draft)->withSessionStore($store)->build();
             $registrar->register($context);
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionDraftStarted);
 
-            $draft->sessionId = 'promoted-session';
+            $draft->sessionId = $sessionId;
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionStarted);
             $first = $this->acceptFrame($server);
-            $this->assertSame('promoted-session', $first['sessionId']);
+            $this->assertSame($sessionId, $first['sessionId']);
+            $this->assertSame('Original title', $first['title']);
+
+            $store->updateMetadata($sessionId, ['name' => 'Renamed title']);
             $this->assertSame($launchId, $first['launchId']);
             $this->assertSame($token, $first['token']);
             $this->assertSame(1, $first['version']);
@@ -126,35 +133,48 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertSame('session.snapshot', $snapshot['kind']);
             $this->assertSame($first['sessionEpoch'], $snapshot['sessionEpoch']);
             $this->assertSame('cancelled', $snapshot['turn']['status']);
+            $this->assertSame('Renamed title', $snapshot['title']);
+
+            $entity = $store->findSession($sessionId);
+            $this->assertNotNull($entity);
+            $entity->name = str_repeat('🦊', 1025);
+            self::getContainer()->get(EntityManagerInterface::class)->flush();
             $this->assertNull($snapshot['attention']);
             $this->assertNull($snapshot['activeSubagents']);
             $this->assertNull($snapshot['backgroundScripts']);
             $this->assertArrayNotHasKey('child_run_id', $snapshot);
 
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
-            $harness = new VirtualTuiHarness(sessionId: 'resumed-session');
-            $resumed = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState(new TuiSessionState('resumed-session'))->build();
+            $harness = new VirtualTuiHarness(sessionId: $sessionId);
+            $resumed = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState(new TuiSessionState($sessionId))->withSessionStore($store)->build();
             $registrar->register($resumed);
             $resumed->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionResumed);
             $second = $this->acceptFrame($server);
-            $this->assertSame('resumed-session', $second['sessionId']);
+            $this->assertSame($sessionId, $second['sessionId']);
+            $this->assertSame(str_repeat('🦊', 1024), $second['title']);
             $this->assertNotSame($first['eventId'], $second['eventId']);
             $this->assertGreaterThan($first['sequence'], $second['sequence']);
             $this->assertSame($second['sequence'], $second['sessionEpoch']);
 
             $this->assertNull($second['activeSubagents']);
-            $resumed->lifecycle->dispatchBackgroundSnapshot(new TuiBackgroundSnapshotDTO('resumed-session', 1, 0));
+            $resumed->lifecycle->dispatchBackgroundSnapshot(new TuiBackgroundSnapshotDTO($sessionId, 1, 0));
             $reconciled = $this->acceptFrame($server);
             $this->assertSame(1, $reconciled['activeSubagents']);
             $this->assertSame($second['sessionEpoch'], $reconciled['sessionEpoch']);
+
+            $resumed->state->sessionId = 'missing-session';
+            $resumed->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionResumed);
+            $missing = $this->acceptFrame($server);
+            $this->assertSame('missing-session', $missing['sessionId']);
+            $this->assertNull($missing['title']);
 
             $closing = async(static fn () => $resumed->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionGracefullyClosing));
             $end = $this->acceptFrame($server);
             $closing->await(new TimeoutCancellation(2));
             $this->assertSame('session.ended', $end['kind']);
-            $this->assertSame($second['sessionId'], $end['sessionId']);
-            $this->assertSame($second['sessionEpoch'], $end['sessionEpoch']);
-            $this->assertSame($reconciled['sequence'] + 1, $end['sequence']);
+            $this->assertSame($missing['sessionId'], $end['sessionId']);
+            $this->assertSame($missing['sessionEpoch'], $end['sessionEpoch']);
+            $this->assertSame($missing['sequence'] + 1, $end['sequence']);
         } finally {
             if (isset($server)) {
                 $server->close();
