@@ -12,6 +12,8 @@ use Symfony\Component\Lock\Exception\ExceptionInterface as LockExceptionInterfac
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\SharedLockInterface;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Process\Exception\ExceptionInterface as ProcessExceptionInterface;
+use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\Uuid;
 
 use function Amp\delay;
@@ -23,6 +25,7 @@ final class ClaudeHookReporter
     /** @param array<array-key, mixed> $hook */
     public function report(?StatusClient $client, array $hook): bool
     {
+        $metadataDeadline = hrtime(true) / 1e9 + (null === $client ? 0.45 : 0.70) - Process::TIMEOUT_PRECISION;
         $session = $hook['session_id'] ?? null;
         $event = $hook['hook_event_name'] ?? null;
         if (!\is_string($session) || !EventSchema::id($session)
@@ -30,7 +33,7 @@ final class ClaudeHookReporter
             return false;
         }
 
-        return $this->withLaunchLock($client, fn (string $path, \Closure $authorize, string $marker, SharedLockInterface $pending): bool => $this->reportLocked($authorize, $path, $marker, $pending, $session, $event, $hook), 'SubagentStart' === $event);
+        return $this->withLaunchLock($client, fn (string $path, \Closure $authorize, string $marker, SharedLockInterface $pending): bool => $this->reportLocked($authorize, $path, $marker, $pending, $session, $event, $hook, $metadataDeadline), 'SubagentStart' === $event);
     }
 
     /** @param array<array-key, mixed> $fields */
@@ -145,7 +148,7 @@ final class ClaudeHookReporter
      * @param \Closure(): ?StatusClient $authorize
      * @param array<array-key, mixed>   $hook
      */
-    private function reportLocked(\Closure $authorize, string $path, string $marker, SharedLockInterface $pending, string $session, string $event, array $hook): bool
+    private function reportLocked(\Closure $authorize, string $path, string $marker, SharedLockInterface $pending, string $session, string $event, array $hook, float $metadataDeadline): bool
     {
         $previous = file_exists($path) ? $this->readState($path) : [];
         if (null === $previous) {
@@ -164,7 +167,7 @@ final class ClaudeHookReporter
             }
             $state = [
                 'epoch' => $sequence, 'session' => $session, 'ended' => false, 'switch' => null, 'boundaries' => $previous['boundaries'] ?? [],
-                'title' => self::sessionTitle($hook['session_title'] ?? null), 'turn' => null, 'waits' => [], 'tools' => [], 'scripts' => null, 'agents' => 'resume' === $source ? null : [],
+                'title' => null, 'turn' => null, 'waits' => [], 'tools' => [], 'scripts' => null, 'agents' => 'resume' === $source ? null : [],
             ];
         } elseif (($state['session'] ?? null) !== $session || ($state['ended'] ?? true)) {
             return false;
@@ -219,7 +222,6 @@ final class ClaudeHookReporter
                 if ($prompt === ($turn['id'] ?? null)) {
                     return false;
                 }
-                $state['title'] = self::sessionTitle($hook['session_title'] ?? null);
                 $state['turn'] = ['id' => $prompt, 'status' => 'working'];
                 $state['waits'] = [];
                 $state['tools'] = [];
@@ -261,6 +263,10 @@ final class ClaudeHookReporter
                     $state['waits'][$key] = -$start;
                 }
             }
+        }
+        if (\in_array($event, ['SessionStart', 'UserPromptSubmit', 'Stop'], true)) {
+            $state['title'] = self::sessionTitle($hook['session_title'] ?? null)
+                ?? self::lookupTitle($session, $hook['cwd'] ?? null, $metadataDeadline);
         }
         $state['sequence'] = $sequence;
         $wait = array_find($state['waits'], static fn (int $start): bool => $start > 0);
@@ -399,6 +405,37 @@ final class ClaudeHookReporter
     private static function sessionTitle(mixed $value): ?string
     {
         return \is_string($value) && mb_check_encoding($value, 'UTF-8') && mb_strlen($value, 'UTF-8') <= 1024 ? $value : null;
+    }
+
+    private static function lookupTitle(string $session, mixed $cwd, float $deadline): ?string
+    {
+        if (!Uuid::isValid($session) || !\is_string($cwd) || !str_starts_with($cwd, '/') || str_contains($cwd, "\0")) {
+            return null;
+        }
+
+        // Reserve the socket budget and one Symfony pipe timeout interval. A
+        // contended lock can consume all available time for optional metadata.
+        $remaining = min(0.15, $deadline - hrtime(true) / 1e9);
+        if ($remaining >= 0.025) {
+            $process = new Process(['node', __DIR__.'/../bin/session-title.mjs', $session, $cwd], $cwd, [
+                'NODE_OPTIONS' => false, 'NODE_V8_COVERAGE' => false,
+                'H360_STATUS_TOKEN' => false, 'H360_STATUS_BOOTSTRAP_TOKEN' => false,
+            ], timeout: $remaining);
+            try {
+                if (0 === $process->run() && null !== ($title = self::sessionTitle(json_decode($process->getOutput(), true, flags: \JSON_THROW_ON_ERROR)))) {
+                    return $title;
+                }
+            } catch (ProcessExceptionInterface|\JsonException) {
+                // Do not emit child output or exception text.
+                HookDiagnostic::write('hook_title_unavailable');
+
+                return null;
+            }
+        }
+
+        HookDiagnostic::write('hook_title_unavailable');
+
+        return null;
     }
 
     /** @return array{sequence: int, epoch: int, session: string, title?: ?string, ended: bool, switch: 'resume'|'clear'|null, boundaries: array<string, true>, turn: array{id: string, status: string}|null, waits: array<string, int>, tools: array<string, array{name: string, fingerprint: ?string, wait: ?int}>, scripts: ?int, agents: array<string, true>|null}|null */

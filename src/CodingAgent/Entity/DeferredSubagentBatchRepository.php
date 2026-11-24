@@ -121,6 +121,8 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         // one query, independently of the already-settled parent tool call.
         // Failed preparation may leave no runtime or only a previous attempt's
         // projection. A successful launch retains its actual lifecycle status.
+        // A run ID survives agent_resume. Its terminal operational state may
+        // belong to the prior batch; only this batch's projection can settle it.
         return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<SQL
             SELECT batch.backgrounded_at,
                 child.child_run_id, child.artifact_id, child.agent_name, child.task,
@@ -131,7 +133,8 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                 CASE WHEN child.launch_status = :failed_child_launch
                     OR (batch.launch_status = :failed_batch_launch AND child.launch_status = :reserved_child_launch)
                     THEN :failed_status
-                    ELSE COALESCE(child.terminal_status, state.status,
+                    ELSE COALESCE(child.terminal_status,
+                        CASE WHEN state.status NOT IN ('completed', 'failed', 'cancelled') THEN state.status END,
                         json_extract(child.child_lifecycle_projection, '$.child_status'), 'queued') END AS status
             FROM $from
             LEFT JOIN run_operational_state state ON state.run_id = child.child_run_id

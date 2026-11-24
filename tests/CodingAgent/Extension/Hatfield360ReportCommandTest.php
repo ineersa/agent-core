@@ -18,6 +18,76 @@ use function Amp\Socket\listen;
 
 final class Hatfield360ReportCommandTest extends TestCase
 {
+    public function testSdkTitleBridgeNeverFallsBackToThePrompt(): void
+    {
+        $packaged = getenv('H360_TEST_PACKAGED_PLUGIN');
+        $plugin = $packaged ?: ProjectDir::get().'/.hatfield/extensions/hatfield-360';
+        $node = (new ExecutableFinder())->find('node');
+        if (null === $node || !is_file($plugin.'/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs')) {
+            $this->assertFalse($packaged, 'Required packaged SDK dependencies are missing.');
+            $this->markTestSkipped('Install the standalone Claude plugin Node dependencies to exercise the real SDK.');
+        }
+
+        $directory = TestDirectoryIsolation::createProjectTempDir();
+        try {
+            $cwd = realpath($directory);
+            $this->assertSame($directory, $cwd);
+            $projects = $cwd.'/projects/'.preg_replace('/[^a-zA-Z0-9]/', '-', $cwd);
+            $this->assertTrue(mkdir($projects, 0o700, true));
+            $id = '22222222-2222-4222-8222-222222222222';
+            $transcript = $projects.'/'.$id.'.jsonl';
+            $this->assertFalse(is_link($transcript));
+            $this->assertSame($projects, realpath(\dirname($transcript)));
+            $prompt = json_encode(['type' => 'user', 'sessionId' => $id, 'cwd' => $cwd, 'message' => ['role' => 'user', 'content' => 'Never export this prompt']], \JSON_THROW_ON_ERROR)."\n";
+            file_put_contents($transcript, $prompt);
+            $command = [$node, $plugin.'/bin/session-title.mjs', $id, $cwd];
+            $environment = ['CLAUDE_CONFIG_DIR' => $cwd, 'NODE_OPTIONS' => false, 'HATFIELD_SESSION_ID' => false];
+            $process = new Process($command, $cwd, $environment, timeout: 2);
+            $run = static function (string $label) use ($process, $packaged): int {
+                $start = hrtime(true);
+                $exit = $process->run();
+                if ($packaged) {
+                    fwrite(\STDERR, \sprintf("SDK lookup %s: %.1f ms\n", $label, (hrtime(true) - $start) / 1e6));
+                }
+
+                return $exit;
+            };
+            $this->assertSame(1, $run('no title'));
+            $this->assertSame('', $process->getOutput());
+            $this->assertSame('', $process->getErrorOutput());
+
+            file_put_contents($transcript, json_encode(['type' => 'ai-title', 'sessionId' => $id, 'aiTitle' => 'Generated title'], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+            $this->assertSame(0, $run('generated'));
+            $this->assertSame('"Generated title"', $process->getOutput());
+            file_put_contents($transcript, json_encode(['type' => 'custom-title', 'sessionId' => $id, 'customTitle' => 'Renamed title'], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+            $this->assertSame(0, $run('renamed'));
+            $this->assertSame('"Renamed title"', $process->getOutput());
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public function testMissingAutoloaderReportsOnlyAnActionableHookDiagnostic(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        try {
+            $autoload = $directory.'/absent-autoload.php';
+            $hook = $this->launch([], 'private hook input', autoload: $autoload);
+            $this->assertSame(0, $hook->wait());
+            $this->assertSame('', $hook->getOutput());
+            $this->assertSame([
+                'component' => 'hatfield_360',
+                'event_type' => 'hook_dependencies_missing',
+                'action' => 'Ensure the active Claude plugin has its Composer runtime dependencies, then reload the plugin or restart Claude Code.',
+            ], json_decode($hook->getErrorOutput(), true, flags: \JSON_THROW_ON_ERROR));
+
+            $explicit = $this->launch([], '', hook: false, autoload: $autoload);
+            $this->assertSame(1, $explicit->wait());
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     public function testSeparateCliInvocationsShareOnlyLaunchCorrelation(): void
     {
         $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
@@ -504,11 +574,13 @@ final class Hatfield360ReportCommandTest extends TestCase
     }
 
     /** @param array<string, string> $environment @param array<string, mixed>|string $input */
-    private function launch(array $environment, array|string $input, bool $hook = true, bool $notify = false, bool $observeContention = false): Process
+    private function launch(array $environment, array|string $input, bool $hook = true, bool $notify = false, bool $observeContention = false, ?string $autoload = null): Process
     {
         $root = ProjectDir::get();
+        $packaged = getenv('H360_TEST_PACKAGED_PLUGIN');
+        $plugin = $packaged ?: $root.'/.hatfield/extensions/hatfield-360';
         $command = [\PHP_BINARY, '-r', '$_composer_autoload_path = $argv[1]; array_splice($argv, 0, 2); $_SERVER["argv"] = $argv; require $argv[0];', '--',
-            $root.'/vendor/autoload.php', $root.'/.hatfield/extensions/hatfield-360/bin/h360-report'];
+            $autoload ?? ($packaged ? $plugin.'/vendor/autoload.php' : $root.'/vendor/autoload.php'), $plugin.'/bin/h360-report'];
         if ($observeContention) {
             $command[2] = <<<'PHP'
                 namespace Symfony\Component\Lock\Store;

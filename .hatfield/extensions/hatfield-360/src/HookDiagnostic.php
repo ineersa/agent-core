@@ -6,7 +6,7 @@ namespace Ineersa\HatfieldExt\Hatfield360;
 
 final class HookDiagnostic
 {
-    /** @param 'hook_input_failed'|'hook_state_failed'|'hook_lock_timeout' $event */
+    /** @param 'hook_input_failed'|'hook_state_failed'|'hook_lock_timeout'|'hook_title_unavailable' $event */
     public static function write(string $event): void
     {
         fwrite(\STDERR, json_encode(['component' => 'hatfield_360', 'event_type' => $event], \JSON_THROW_ON_ERROR)."\n");

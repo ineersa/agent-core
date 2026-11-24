@@ -232,6 +232,9 @@ jobs:
           grep -q 'Hatfield' /tmp/native-version.txt
           grep -q 'commit' /tmp/native-version.txt
 
+      - name: Build and verify standalone Claude plugin via Castor
+        run: castor distribution:claude-plugin --release-version="${GITHUB_REF_NAME}"
+
       - name: Create GitHub Release with complete asset set
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
@@ -245,6 +248,8 @@ jobs:
             var/tmp/dist/hatfield.linux-arm64
             var/tmp/dist/hatfield.darwin-arm64
             var/tmp/dist/SHA256SUMS
+            var/tmp/dist/hatfield-360.zip
+            var/tmp/dist/hatfield-360.zip.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

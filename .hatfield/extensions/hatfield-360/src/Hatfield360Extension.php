@@ -59,6 +59,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     private array $childTerminals = [];
     /** @var Future<void>|null */
     private ?Future $drain = null;
+    private bool $snapshotUnconfirmed = false;
     /** @var list<array{string, string, int, int, array<string, mixed>}> */
     private array $pending = [];
     /** @var DeferredFuture<bool>|null */
@@ -130,6 +131,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $this->activeSubagents = null;
         $this->backgroundScripts = null;
         $this->childTerminals = [];
+        $this->snapshotUnconfirmed = false;
         $this->snapshot($this->epoch);
     }
 
@@ -222,6 +224,12 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $children = $snapshot->activeSubagents > 1024 ? null : $snapshot->activeSubagents;
         $scripts = $snapshot->backgroundScripts > 1024 ? null : $snapshot->backgroundScripts;
         if ($children === $this->activeSubagents && $scripts === $this->backgroundScripts) {
+            // The operational poll is also a recovery opportunity when the desktop
+            // missed the last checkpoint and there is no newer report in flight.
+            if ($this->snapshotUnconfirmed && null === $this->drain) {
+                $this->snapshot(++self::$sequence);
+            }
+
             return;
         }
         $this->activeSubagents = $children;
@@ -327,20 +335,30 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             try {
                 while (null !== ($event = array_shift($this->pending))) {
                     [$kind, $sessionId, $sequence, $epoch, $fields] = $event;
-                    $client = $this->client ??= ($this->closing ? null : HatfieldProcessIdentityProvider::register());
                     $eligible = $this->epoch === $epoch && (!$this->closing || 'session.ended' === $kind);
-                    $sent = $eligible && null !== $client && $client->send($kind, $sessionId, $sequence, $epoch, $fields);
-                    if ($eligible && !$sent) {
+                    $sent = false;
+                    $failed = false;
+                    if ($eligible) {
+                        try {
+                            $client = $this->client ??= ($this->closing ? null : HatfieldProcessIdentityProvider::register());
+                            // Manual registration can yield while selection changes.
+                            $eligible = $this->epoch === $epoch && (!$this->closing || 'session.ended' === $kind);
+                            $sent = $eligible && null !== $client && $client->send($kind, $sessionId, $sequence, $epoch, $fields);
+                        } catch (\Throwable) {
+                            // Degrade only this item; a newer selection or notice may already be queued.
+                            $failed = true;
+                        }
+                    }
+                    if ('session.snapshot' === $kind && $this->epoch === $epoch && !$this->closing) {
+                        $this->snapshotUnconfirmed = !$sent;
+                    }
+                    if ($failed || ($eligible && !$sent)) {
                         $this->logDrop($sessionId);
                     }
                     if ('notification' === $kind) {
                         $this->settleNotice($sent);
                     }
                 }
-            } catch (\Throwable) {
-                $this->logDrop($this->sessionId);
-                $this->discardPending();
-                $this->settleNotice(false);
             } finally {
                 $this->drain = null;
             }

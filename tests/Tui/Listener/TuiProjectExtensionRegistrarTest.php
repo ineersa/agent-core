@@ -212,9 +212,18 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
                 putenv(false === $value ? $key : $key.'='.$value);
             }
             $failed = new DeferredFuture();
+            $settlementFailed = new DeferredFuture();
             $extension = new Hatfield360Extension();
             $logger = $this->createMock(LoggerInterface::class);
-            $logger->expects($this->once())->method('warning')->willReturnCallback(static fn () => $failed->complete());
+            $drops = [];
+            $logger->expects($this->exactly(4))->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$drops, $failed, $settlementFailed): void {
+                $drops[] = $context['session_id'];
+                if (1 === \count($drops)) {
+                    $failed->complete();
+                } elseif (4 === \count($drops)) {
+                    $settlementFailed->complete();
+                }
+            });
             $extension->setLogger($logger);
             $extension->register($this->createStub(ExtensionApiInterface::class));
             $extension->onTuiSessionSelected('first');
@@ -228,13 +237,13 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
                 $this->assertSame('launch.register', $bootstrap['kind']);
                 $this->assertSame($first, $bootstrap);
             }
-            $registration = $this->acceptFrame($server, beforeReply: static function () use ($extension): void {
+            $registration = $this->acceptFrame($server, '{"ok":true,"status":"stale"}', beforeReply: static function () use ($extension): void {
                 $extension->onTuiSessionSelected('second');
                 $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 2, TuiRunObservationTypeEnum::TurnStarted));
             });
             $this->assertSame('session.snapshot', $registration['kind']);
             $this->assertSame('first', $registration['sessionId']);
-            $latest = $this->acceptFrame($server);
+            $latest = $this->acceptFrame($server, waitForPeerClose: true);
             $this->assertSame('session.snapshot', $latest['kind']);
             $this->assertSame('second', $latest['sessionId']);
             $this->assertGreaterThan($registration['sequence'], $latest['sequence']);
@@ -242,7 +251,24 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $this->assertSame('working', $latest['turn']['status']);
 
             $context = $this->createMock(CommandContextInterface::class);
-            $context->expects($this->once())->method('notify')->with('Hatfield 360 accepted the notification.', 'success');
+            $context->expects($this->exactly(3))->method('notify')->with('Hatfield 360 accepted the notification.', 'success');
+            $assertNoDuplicate = function (?int $children, ?int $scripts) use ($extension, $context, $server): void {
+                $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', $children, $scripts));
+                // The notice is an ordering barrier: any duplicate would arrive first.
+                $barrier = async(static fn () => $extension->handle('Barrier | Check snapshot order', $context));
+                $this->assertSame('notification', $this->acceptFrame($server)['kind']);
+                $barrier->await(new TimeoutCancellation(2));
+            };
+            $assertNoDuplicate(null, null);
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 1, 0));
+            $refused = $this->acceptFrame($server, '{"ok":true,"status":"stale"}', beforeReply: static function () use ($extension): void {
+                $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 2, 0));
+            });
+            $newer = $this->acceptFrame($server, waitForPeerClose: true);
+            $this->assertGreaterThan($refused['sequence'], $newer['sequence']);
+            $this->assertSame($latest['sessionEpoch'], $newer['sessionEpoch']);
+            $this->assertSame(2, $newer['activeSubagents']);
+            $assertNoDuplicate(2, 0);
             $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 3, TuiRunObservationTypeEnum::QuestionRequested, 'before-notice'));
             $invocation = null;
             $before = $this->acceptFrame($server, beforeReply: static function () use ($extension, $context, &$invocation): void {
@@ -276,7 +302,7 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 5, TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: 'child'));
             $cleared = $this->acceptFrame($server);
             $this->assertNull($cleared['attention']);
-            $this->assertNull($cleared['activeSubagents']);
+            $this->assertSame(2, $cleared['activeSubagents']);
 
             $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 1));
             $this->assertSame(0, $this->acceptFrame($server)['activeSubagents']);
@@ -298,10 +324,31 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $this->assertNull($unavailable['activeSubagents']);
             $this->assertNull($unavailable['backgroundScripts']);
             $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 1));
+            $unconfirmed = $this->acceptFrame($server, '{"ok":true,"status":"stale"}');
+            $settlementFailed->getFuture()->await(new TimeoutCancellation(2));
+            $this->assertSame(['first', 'first', 'second', 'second'], $drops);
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 1));
             $settled = $this->acceptFrame($server);
+            $this->assertGreaterThan($unconfirmed['sequence'], $settled['sequence']);
+            $this->assertNotSame($unconfirmed['eventId'], $settled['eventId']);
+            $this->assertSame($unconfirmed['sessionEpoch'], $settled['sessionEpoch']);
             $this->assertSame(0, $settled['activeSubagents']);
             $this->assertSame(1, $settled['backgroundScripts']);
             $this->assertSame($completed['turn'], $settled['turn']);
+
+            // A resumed child can outlive the parent's interim response.
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 21, TuiRunObservationTypeEnum::TurnStarted));
+            $resumedParent = $this->acceptFrame($server);
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 1, 1));
+            $this->assertSame($resumedParent['turn'], $this->acceptFrame($server)['turn']);
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 22, TuiRunObservationTypeEnum::TurnCompleted));
+            $interim = $this->acceptFrame($server);
+            $this->assertSame(['id' => $resumedParent['turn']['id'], 'status' => 'completed'], $interim['turn']);
+            $this->assertSame(1, $interim['activeSubagents']);
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 1));
+            $afterChild = $this->acceptFrame($server);
+            $this->assertSame($interim['turn'], $afterChild['turn']);
+            $this->assertSame(0, $afterChild['activeSubagents']);
         } finally {
             if (isset($server)) {
                 $server->close();
@@ -314,7 +361,7 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
     }
 
     /** @return array<string, mixed> */
-    private function acceptFrame(ServerSocket $server, string $reply = '{"ok":true,"status":"accepted"}', ?\Closure $beforeReply = null): array
+    private function acceptFrame(ServerSocket $server, string $reply = '{"ok":true,"status":"accepted"}', ?\Closure $beforeReply = null, bool $waitForPeerClose = false): array
     {
         $deadline = new TimeoutCancellation(2);
         $connection = $server->accept($deadline);
@@ -330,6 +377,9 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $this->assertIsArray($frame);
             $beforeReply?->__invoke();
             $connection->write($reply."\n");
+            if ($waitForPeerClose) {
+                $this->assertNull($connection->read($deadline));
+            }
 
             return $frame;
         } finally {

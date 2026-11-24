@@ -8,8 +8,13 @@ use Symfony\Component\Console\Application;
 
 $autoload = $_composer_autoload_path ?? dirname(__DIR__).'/vendor/autoload.php';
 if (!is_file($autoload)) {
-    // The plugin never installs dependencies from a hook.
-    exit(in_array('--claude-hook', $argv, true) ? 0 : 1);
+    if (in_array('--claude-hook', $argv, true)) {
+        // Match HookDiagnostic's stderr format without relying on autoloading.
+        fwrite(\STDERR, '{"component":"hatfield_360","event_type":"hook_dependencies_missing","action":"Ensure the active Claude plugin has its Composer runtime dependencies, then reload the plugin or restart Claude Code."}'."\n");
+        exit(0);
+    }
+
+    exit(1);
 }
 require $autoload;
 

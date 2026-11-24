@@ -4,7 +4,13 @@ This package implements Hatfield 360's v1 Unix socket protocol. The Hatfield hos
 
 ## Install and run
 
-On Unix, install the package's Composer dependencies (`composer install --no-dev` from this directory). The PHP CLI must be on `PATH`, with the mbstring and POSIX extensions enabled. Run `bin/h360-report` directly or use the Composer-installed binary. To try the Claude plugin locally, pass this installed directory to `claude --plugin-dir`. A deployed plugin must have its dependencies installed before launching Claude; hooks never run Composer or install packages.
+The standalone Claude plugin requires PHP 8.5 with mbstring and POSIX, and Node.js 18.14 or later for title lookup. Both executables must be on `PATH`. The release ZIP includes its locked PHP and Node dependencies; it does not require the Hatfield executable, Composer, or npm at runtime. Hooks never install dependencies.
+
+The marketplace archive will be available after the first tagged release that publishes `hatfield-360.zip`. For local development, run `castor distribution:claude-plugin --release-version=v0.0.0` from the repository root and pass `var/tmp/dist/hatfield-360.zip` to `claude --plugin-dir` on Claude versions supporting ZIPs, or extract it and pass the plugin directory. Build again to test local changes.
+
+**Hatfield:** Enable the built-in Hatfield 360 extension in `hatfield setup`. A project-level `extensions.enabled` list replaces the global list; if the project defines one, keep `Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension` in that list alongside the other enabled extensions. Preserve existing settings and list entries. Reload Hatfield with `/reload` or restart it after changing enablement.
+
+**Claude Code:** After updating the marketplace plugin, reload it or restart Claude Code to use the downloaded version. Update behavior for the moving release URL has not yet been verified. If the active plugin is missing `vendor/autoload.php`, the hook emits `hook_dependencies_missing` on stderr and exits successfully without reporting status. Hatfield's `/reload` does not affect the Claude plugin.
 
 The desktop launcher supplies `H360_STATUS_ENDPOINT`, `H360_STATUS_LAUNCH_ID`, and `H360_STATUS_TOKEN`. Do not put credentials in the payload or command arguments. Without an explicit or Linux managed launch context, Claude hooks do nothing. The CLI's explicit mode reads exactly one JSON event object from stdin, using the v1 event fields at the top level. It supplies `version`, `eventId`, `launchId` and `token` itself; any such fields in the payload are rejected.
 
@@ -24,9 +30,13 @@ live epoch and does not imply process exit.
 
 Snapshots can include a nullable `title` of at most 1,024 Unicode characters.
 Hatfield reads its picker title on selection and at the next foreground turn
-after a rename. Claude Code uses the optional `session_title` supplied by
-`SessionStart` and `UserPromptSubmit`; older versions or unnamed sessions may
-omit it. Neither adapter watches for rename-only updates or scrapes transcripts.
+after a rename. Claude Code prefers the hook's custom `session_title`, then
+looks up only `customTitle` (which can also contain an AI-generated title) via
+the official Agent SDK on selection, prompt submission, and a matched final
+`Stop`. This optional lookup requires Node.js 18.14 or later on `PATH` and the
+locked npm dependencies in the active plugin (`npm ci` for a local checkout).
+Hooks never install dependencies. A missing title or lookup failure produces
+`null`, not a prompt or summary. Neither adapter watches for rename-only updates.
 
 ## Send an additional notification
 

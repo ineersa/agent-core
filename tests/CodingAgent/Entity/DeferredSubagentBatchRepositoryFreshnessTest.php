@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Tests\Entity;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\OptimisticLockException;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
@@ -14,6 +16,8 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubag
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatch;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Kernel;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
@@ -104,6 +108,39 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
         $this->assertSame(23400, $rows[0]['latest_input_tokens']);
         $this->assertSame(272000, $rows[0]['context_window']);
         $this->assertSame('running', $rows[0]['status']);
+    }
+
+    #[Test]
+    public function operationalInventoryKeepsResumedChildActiveUntilItsOwnBatchSettles(): void
+    {
+        $parent = 'parent-resume-inventory';
+        $first = $this->reserveOneChild($parent, 'original');
+        $child = $this->factory->childIdentity($parent, 'original', 1);
+        $projection = self::getContainer()->get(RunOperationalProjectionRepository::class);
+        $snapshot = self::getContainer()->get(BackgroundWorkSnapshotProvider::class);
+        $markCompleted = fn (string $lifecycle): int => $this->connection->update('deferred_subagent_child', [
+            'terminal_status' => RunStatus::Completed->value,
+            'terminal_completed_at' => '2026-09-16 13:00:00',
+        ], ['batch_lifecycle_id' => $lifecycle]);
+        $projection->replace(new RunState($child['childRunId'], RunStatus::Completed, lastSeq: 10, parentRunId: $parent));
+        $this->assertSame(1, $markCompleted($first));
+        $this->assertSame([], $snapshot->snapshot($parent)->children);
+
+        // agent_resume reserves a new batch using the same run and artifact IDs.
+        $resumed = $this->reserveOneChild($parent, 'resume', $child);
+        $this->assertSame('running', $snapshot->snapshot($parent)->children[0]->status);
+        $this->repository->applyLaunchSuccessState($parent, 'resume', $resumed, new \DateTimeImmutable('2026-09-16 13:00:01'));
+        $children = $snapshot->snapshot($parent)->children;
+        $this->assertCount(1, $children);
+        $this->assertSame($child['childRunId'], $children[0]->runId);
+        $this->assertSame($child['artifactId'], $children[0]->artifactId);
+        $this->assertSame('running', $children[0]->status);
+        $projection->replace(new RunState($child['childRunId'], RunStatus::Running, lastSeq: 11, parentRunId: $parent));
+        $this->assertSame('running', $snapshot->snapshot($parent)->children[0]->status);
+        $projection->replace(new RunState($child['childRunId'], RunStatus::Completed, lastSeq: 12, parentRunId: $parent));
+        $this->assertNotSame('completed', $snapshot->snapshot($parent)->children[0]->status);
+        $this->assertSame(1, $markCompleted($resumed));
+        $this->assertSame([], $snapshot->snapshot($parent)->children);
     }
 
     #[Test]
@@ -244,10 +281,11 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
         return new SqlLoggingKernel('test', false);
     }
 
-    private function reserveOneChild(string $parent, string $tool): string
+    /** @param array{childRunId: string, artifactId: string}|null $child */
+    private function reserveOneChild(string $parent, string $tool, ?array $child = null): string
     {
         $lifecycle = $this->factory->batchLifecycleId($parent, $tool);
-        $child = $this->factory->childIdentity($parent, $tool, 1);
+        $child ??= $this->factory->childIdentity($parent, $tool, 1);
         $this->repository->reserveBatch(
             lifecycleId: $lifecycle,
             parentRunId: $parent,
