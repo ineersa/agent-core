@@ -13,13 +13,16 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundSnapshotObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionActivityContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionMetadataContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionObserverInterface;
@@ -30,7 +33,7 @@ use Symfony\Component\Config\Definition\ConfigurationInterface;
 
 use function Amp\async;
 
-final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, TuiBackgroundSnapshotObserverInterface, ExtensionCommandHandlerInterface, LoggerAwareInterface
+final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, TuiBackgroundSnapshotObserverInterface, TuiBackgroundJobObserverInterface, ExtensionCommandHandlerInterface, LoggerAwareInterface
 {
     use LoggerAwareTrait;
 
@@ -56,8 +59,6 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     private array $childWaits = [];
     /** @var array<string, string> */
     private array $tools = [];
-    private ?int $activeSubagents = null;
-    private ?int $backgroundScripts = null;
     /** @var array<string, int> */
     private array $childTerminals = [];
     /** @var Future<void>|null */
@@ -65,6 +66,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     private bool $snapshotUnconfirmed = false;
     private bool $snapshotRetried = false;
     private bool $snapshotOutage = false;
+    private ?string $lastSnapshotFingerprint = null;
     /** @var list<array{string, string, int, int, array<string, mixed>}> */
     private array $pending = [];
     /** @var DeferredFuture<bool>|null */
@@ -135,12 +137,11 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $this->waitOverflow = null;
         $this->childWaits = [];
         $this->tools = [];
-        $this->activeSubagents = null;
-        $this->backgroundScripts = null;
         $this->childTerminals = [];
         $this->snapshotUnconfirmed = false;
         $this->snapshotOutage = false;
-        $this->snapshot($this->epoch);
+        $this->lastSnapshotFingerprint = null;
+        $this->snapshot(selection: true);
     }
 
     public function onTuiSessionClosing(string $sessionId): void
@@ -169,8 +170,12 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             return;
         }
         $type = $observation->type;
+        $deduplicate = false;
         if (null !== $observation->childRunId) {
-            if (!$this->observeChild($observation, $observation->childRunId)) {
+            $attentionChanged = $this->observeChild($observation, $observation->childRunId);
+            $deduplicate = !$attentionChanged;
+            if (!$attentionChanged && (!$this->metadata instanceof TuiSessionActivityContextInterface
+                || !\in_array($type, [TuiRunObservationTypeEnum::ChildExecutionStarted, TuiRunObservationTypeEnum::ChildExecutionEnded], true))) {
                 return;
             }
         } elseif (TuiRunObservationTypeEnum::TurnStarted === $type) {
@@ -198,10 +203,6 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
                 default => null,
             };
             if (null !== $outcome) {
-                if ('completed' === $outcome && 0 === $this->activeSubagents) {
-                    // A zero sampled before the response finished cannot settle it.
-                    $this->activeSubagents = null;
-                }
                 $this->turn['status'] = $outcome;
                 $this->waits = [];
                 $this->waitOverflow = null;
@@ -230,28 +231,22 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         } else {
             return;
         }
-        $this->snapshot(++self::$sequence);
+        $this->snapshot(deduplicate: $deduplicate);
     }
 
     public function onTuiBackgroundSnapshot(TuiBackgroundSnapshotDTO $snapshot): void
     {
-        if (!$this->observes($snapshot->sessionId)) {
-            return;
+        if ($this->observes($snapshot->sessionId)) {
+            // The bottom panel already read the inventory. Reuse that sample instead of querying again.
+            $this->snapshot($snapshot, deduplicate: true);
         }
-        $children = $snapshot->activeSubagents > 1024 ? null : $snapshot->activeSubagents;
-        $scripts = $snapshot->backgroundScripts > 1024 ? null : $snapshot->backgroundScripts;
-        if ($children === $this->activeSubagents && $scripts === $this->backgroundScripts) {
-            // The operational poll is also a recovery opportunity when the desktop
-            // missed the last checkpoint and there is no newer report in flight.
-            if ($this->snapshotUnconfirmed && !$this->snapshotRetried && null === $this->drain) {
-                $this->snapshot(++self::$sequence, retry: true);
-            }
+    }
 
-            return;
+    public function onTuiBackgroundJobObserved(TuiBackgroundJobObservationDTO $observation): void
+    {
+        if ($this->observes($observation->sessionId)) {
+            $this->snapshot(deduplicate: true);
         }
-        $this->activeSubagents = $children;
-        $this->backgroundScripts = $scripts;
-        $this->snapshot(++self::$sequence);
     }
 
     private function refreshTitle(): void
@@ -319,9 +314,30 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         return !$this->closing && '' !== $this->sessionId && $sessionId === $this->sessionId;
     }
 
-    private function snapshot(int $sequence, bool $retry = false): void
+    private function snapshot(?TuiBackgroundSnapshotDTO $background = null, bool $selection = false, bool $deduplicate = false): void
     {
-        $this->snapshotRetried = $retry;
+        $epoch = $this->epoch;
+        $sessionId = $this->sessionId;
+        $context = $this->metadata instanceof TuiSessionActivityContextInterface ? $this->metadata : null;
+        $polled = null !== $background;
+        $mainActive = null;
+        if (null !== $context) {
+            if ($context->getSessionId() !== $sessionId) {
+                return;
+            }
+            $background ??= $context->getBackgroundSnapshot();
+            $mainActive = $context->isMainActive();
+            if ($context->getSessionId() !== $sessionId || $background->sessionId !== $sessionId
+                || $this->epoch !== $epoch || !$this->observes($sessionId)) {
+                return;
+            }
+        }
+        if (true === $mainActive && 'working' !== ($this->turn['status'] ?? null)) {
+            // New main work may be active before its canonical opening event arrives.
+            $this->turn = null;
+        }
+        $children = $background?->activeSubagents;
+        $scripts = $background?->backgroundScripts;
         // Prefer foreground input, then the oldest observed child episode.
         $first = $this->waits[0] ?? null;
         $attention = null === $first ? $this->waitOverflow : ['id' => $first['id'], 'reason' => $first['reason']];
@@ -333,11 +349,19 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
                 }
             }
         }
-        $this->enqueue('session.snapshot', $sequence, [
+        $fields = [
             'provider' => 'hatfield', 'title' => $this->title, 'turn' => $this->turn, 'attention' => $attention,
-            'activeSubagents' => $this->activeSubagents,
-            'backgroundScripts' => $this->backgroundScripts, 'tool' => $this->tools[array_key_last($this->tools) ?? ''] ?? null,
-        ]);
+            'activeSubagents' => $children > 1024 || ('completed' === ($this->turn['status'] ?? null) && false !== $mainActive) ? null : $children,
+            'backgroundScripts' => $scripts > 1024 ? null : $scripts, 'tool' => $this->tools[array_key_last($this->tools) ?? ''] ?? null,
+        ];
+        $fingerprint = hash('sha256', serialize($fields));
+        $retry = $deduplicate && $fingerprint === $this->lastSnapshotFingerprint;
+        if ($retry && (!$polled || !$this->snapshotUnconfirmed || $this->snapshotRetried || null !== $this->drain)) {
+            return;
+        }
+        $this->snapshotRetried = $retry;
+        $this->lastSnapshotFingerprint = $fingerprint;
+        $this->enqueue('session.snapshot', $selection && self::$sequence === $epoch ? $epoch : ++self::$sequence, $fields);
     }
 
     /** @param array<string, mixed> $fields */

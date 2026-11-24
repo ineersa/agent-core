@@ -11,28 +11,61 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\ExecutableFinder;
+use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
 use function Amp\Socket\listen;
 
 final class Hatfield360ClaudeHookTest extends TestCase
 {
+    private static string $pluginDirectory;
+
+    public static function setUpBeforeClass(): void
+    {
+        $directory = self::$pluginDirectory = TestDirectoryIsolation::createProjectTempDir();
+        self::assertSame($directory, realpath($directory));
+        $plugin = ProjectDir::get().'/.claude-plugin/hatfield-360';
+        $filesystem = new Filesystem();
+        $filesystem->mirror($plugin.'/src', $directory.'/src');
+        // Signal only after the real retry library schedules a retry for a held lock.
+        file_put_contents($directory.'/retry-barrier.cjs', <<<'JS'
+            const assert = require('node:assert/strict');
+            const retry = require('retry');
+            const operation = retry.operation;
+            retry.operation = function (options) {
+                const result = operation(options);
+                const attempt = result.retry;
+                result.retry = function (error) {
+                    const scheduled = attempt.call(this, error);
+                    if (scheduled && error.code === 'ELOCKED') {
+                        assert.deepEqual(options, { retries: 50, factor: 1, minTimeout: 100, maxTimeout: 100 });
+                        process.stderr.write('contention-retry\n');
+                    }
+                    return scheduled;
+                };
+                return result;
+            };
+            JS);
+        foreach (['package.json', 'package-lock.json'] as $file) {
+            $filesystem->copy($plugin.'/'.$file, $directory.'/'.$file);
+        }
+        self::assertSame(getenv('HATFIELD_QA_TEST_HOME'), getenv('HOME'));
+        self::assertNotEmpty(getenv('HATFIELD_QA_TEST_HOME'));
+        $setup = new Process(['npm', 'ci', '--omit=optional', '--ignore-scripts', '--no-audit', '--no-fund'], $directory, ['HATFIELD_SESSION_ID' => false, 'npm_config_cache' => $directory.'/npm-cache'], timeout: 10);
+        self::assertSame(0, $setup->run(), $setup->getErrorOutput());
+    }
+
+    public static function tearDownAfterClass(): void
+    {
+        TestDirectoryIsolation::removeDirectory(self::$pluginDirectory);
+    }
+
     public function testSdkTitlesReachTheSocketWithoutUsingPrompts(): void
     {
         $directory = TestDirectoryIsolation::createProjectTempDir();
         $socketDirectory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
         try {
-            $this->assertSame($directory, realpath($directory));
-            $plugin = ProjectDir::get().'/.claude-plugin/hatfield-360';
             $filesystem = new Filesystem();
-            $filesystem->mirror($plugin.'/src', $directory.'/src');
-            foreach (['package.json', 'package-lock.json'] as $file) {
-                $filesystem->copy($plugin.'/'.$file, $directory.'/'.$file);
-            }
-            $this->assertSame(getenv('HATFIELD_QA_TEST_HOME'), getenv('HOME'));
-            $this->assertNotEmpty(getenv('HATFIELD_QA_TEST_HOME'));
-            $setup = new Process(['npm', 'ci', '--omit=optional', '--ignore-scripts', '--no-audit', '--no-fund'], $directory, ['HATFIELD_SESSION_ID' => false, 'npm_config_cache' => $directory.'/npm-cache'], timeout: 10);
-            $this->assertSame(0, $setup->run(), $setup->getErrorOutput());
             $config = $directory.'/config';
             $project = $config.'/projects/'.preg_replace('/[^a-zA-Z0-9]/', '-', $directory);
             $filesystem->mkdir($project, 0o700);
@@ -53,7 +86,7 @@ final class Hatfield360ClaudeHookTest extends TestCase
                 'H360_STATUS_TOKEN' => str_repeat('a', 64),
             ];
             $base = ['session_id' => $session, 'cwd' => $socketDirectory];
-            $send = fn (array $hook): array => $this->exchange($server, $this->launch($environment, $base + $hook, entry: $directory.'/src/hook.mjs'));
+            $send = fn (array $hook): array => $this->exchange($server, $this->launch($environment, $base + $hook));
             $this->assertNull($send(['hook_event_name' => 'SessionStart', 'source' => 'startup'])['title']);
             $write(['type' => 'ai-title', 'aiTitle' => 'Generated title']);
             $prompt = ['hook_event_name' => 'UserPromptSubmit'];
@@ -164,6 +197,11 @@ final class Hatfield360ClaudeHookTest extends TestCase
             $second = ['prompt_id' => '55555555-5555-4555-8555-555555555553'];
             $send($second + $start);
             $this->assertNull($send($second + $stop)['activeSubagents']);
+            $teammateTurn = ['prompt_id' => '55555555-5555-4555-8555-555555555557'];
+            $send($teammateTurn + $start);
+            $teammateStop = $send($teammateTurn + $stop + ['background_tasks' => [['id' => 'teammate-task', 'type' => 'teammate', 'status' => 'running']]]);
+            $this->assertSame('completed', $teammateStop['turn']['status']);
+            $this->assertNull($teammateStop['activeSubagents'], 'A resumed registry containing only a teammate cannot establish zero.');
             $third = ['prompt_id' => '55555555-5555-4555-8555-555555555554'];
             $send($third + $start);
             $this->assertNull($send($third + $stop + ['background_tasks' => [['type' => 'subagent']]])['activeSubagents']);
@@ -329,9 +367,13 @@ final class Hatfield360ClaudeHookTest extends TestCase
             $this->assertSame($child['sequence'] + 1, $end['sequence']);
             $this->assertArrayNotHasKey('last_assistant_message', $end);
             $this->assertSame(1, $end['activeSubagents']);
-            $settled = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStop']));
-            $this->assertSame(0, $settled['activeSubagents']);
-            $this->assertSame($end['turn'], $settled['turn']);
+            // A tracked stop removes the child; a later start is still observed.
+            $attempt = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStop', 'stop_hook_active' => false, 'background_tasks' => []]));
+            $this->assertSame(0, $attempt['activeSubagents']);
+            $this->assertSame($end['turn'], $attempt['turn']);
+            $continued = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStart']));
+            $this->assertSame(1, $continued['activeSubagents']);
+            $this->assertSame($end['turn'], $continued['turn']);
             $this->assertQuietHook($environment, $prompt + $stop);
             $this->assertQuietHook($environment, $prompt + $tool);
 
@@ -447,9 +489,8 @@ final class Hatfield360ClaudeHookTest extends TestCase
             $pause = escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg('$s = stream_socket_client("unix://".$argv[1]); exit(fread($s, 1) === "!" ? 0 : 1);').' '.escapeshellarg($directory.'/b');
             $stop = array_replace($turn, ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'background_tasks' => []]);
             $agent = array_replace($turn, ['hook_event_name' => 'SubagentStart', 'agent_id' => 'agent-1']);
-            $ownerA = new Process($shell(implode('; ', [$call($hook), $call($turn), $pause, $call($agent), $pause, $call($stop)])), env: $env, timeout: 5);
+            $ownerA = new Process($shell(implode('; ', [$call($hook), $call($turn), $pause, $call($agent), $pause, $call($stop)])), env: ['NODE_OPTIONS' => $this->retryProbe()] + $env, timeout: 9);
             $ownerB = new Process($shell(implode('; ', [$call($hook), $call($turn), $pause, $call($stop)])), env: $env, timeout: 5);
-            $lock = fopen($directory.'/node-claude-managed.lock', 'cb');
             try {
                 $ready = function (Process $owner) use ($server, $reply, $barrier): array {
                     $owner->start();
@@ -465,14 +506,17 @@ final class Hatfield360ClaudeHookTest extends TestCase
                 [$registrationA, $signalA] = $ready($ownerA);
                 [$registrationB, $signalB] = $ready($ownerB);
                 $this->assertNotSame($registrationA['owner']['pid'], $registrationB['owner']['pid']);
-                $this->assertTrue(flock($lock, \LOCK_EX | \LOCK_NB));
+                $release = $this->holdLock($directory.'/node-claude-managed-state');
                 $signalA->write('!');
                 $signalA->close();
+                $this->awaitLockRetry($ownerA);
+                $release();
+                unset($release);
+                $this->assertSame($registrationA, $this->exchange($server, $ownerA, reply: $reply, finish: false));
+                $this->assertSame(1, $this->exchange($server, $ownerA, finish: false)['activeSubagents']);
                 $signalA = $barrier->accept(new TimeoutCancellation(2));
                 $this->assertNotNull($signalA);
-                $this->assertStringContainsString('hook_lock_unavailable', $ownerA->getOutput());
-                flock($lock, \LOCK_UN);
-                foreach ([[$ownerA, $signalA, $registrationA, null], [$ownerB, $signalB, $registrationB, 0]] as [$native, $signal, $registration, $count]) {
+                foreach ([[$ownerA, $signalA, $registrationA, 1], [$ownerB, $signalB, $registrationB, 0]] as [$native, $signal, $registration, $count]) {
                     $signal->write('!');
                     $signal->close();
                     $this->assertSame($registration, $this->exchange($server, $native, reply: $reply, finish: false));
@@ -483,14 +527,15 @@ final class Hatfield360ClaudeHookTest extends TestCase
                 }
                 $this->assertStringNotContainsString('hook_lock_unavailable', $ownerB->getOutput());
             } finally {
-                flock($lock, \LOCK_UN);
+                if (isset($release)) {
+                    $release();
+                }
                 if (isset($signalA)) {
                     $signalA->close();
                 }
                 if (isset($signalB)) {
                     $signalB->close();
                 }
-                fclose($lock);
                 $barrier->close();
                 foreach ([$ownerA, $ownerB] as $native) {
                     if ($native->isRunning()) {
@@ -563,22 +608,67 @@ final class Hatfield360ClaudeHookTest extends TestCase
         try {
             $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionStart', 'source' => 'startup']));
             $this->exchange($server, $this->launch($environment, $prompt + ['hook_event_name' => 'UserPromptSubmit']));
-            $pending = fopen($directory.'/node-claude-status-'.$launch.'.json.pending', 'cb');
-            $this->assertTrue(flock($pending, \LOCK_SH | \LOCK_NB));
-            $stop = $this->exchange($server, $this->launch($environment, $prompt + ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'background_tasks' => []]));
+            $release = $this->holdLock($directory.'/node-claude-status-'.$launch.'.json.pending');
+            $start = $prompt + ['hook_event_name' => 'SubagentStart', 'agent_id' => 'agent-1'];
+            $stop = $this->exchange(
+                $server,
+                $this->launch($environment, $prompt + ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'background_tasks' => []]),
+                beforeReply: function () use (&$waiting, $environment, $start): void {
+                    $waiting = $this->launch(['NODE_OPTIONS' => $this->retryProbe()] + $environment, $start);
+                    $this->awaitLockRetry($waiting);
+                },
+            );
             $this->assertSame('completed', $stop['turn']['status']);
             $this->assertNull($stop['activeSubagents']);
-            fclose($pending);
-            $agent = $this->exchange($server, $this->launch($environment, $prompt + ['hook_event_name' => 'SubagentStart', 'agent_id' => 'agent-1']));
+            $release();
+            unset($release);
+            $agent = $this->exchange($server, $waiting);
             $this->assertSame($stop['sequence'] + 1, $agent['sequence']);
             $this->assertSame(1, $agent['activeSubagents']);
         } finally {
-            if (isset($pending) && \is_resource($pending)) {
-                fclose($pending);
+            if (isset($release)) {
+                $release();
             }
             $server->close();
             TestDirectoryIsolation::removeDirectory($directory);
         }
+    }
+
+    private function retryProbe(): string
+    {
+        return '--require='.self::$pluginDirectory.'/retry-barrier.cjs';
+    }
+
+    private function awaitLockRetry(Process $process): void
+    {
+        $this->assertTrue($process->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'contention-retry')));
+        $this->assertTrue($process->isRunning());
+    }
+
+    private function holdLock(string $path): \Closure
+    {
+        $code = <<<'JS'
+            const { lockSync } = require('proper-lockfile');
+            const release = lockSync(process.argv[1], {realpath: false});
+            process.stdin.on('end', release).resume();
+            process.stdout.write('locked\n');
+            JS;
+        $input = new InputStream();
+        $process = new Process(['node', '-e', $code, $path], self::$pluginDirectory, ['HATFIELD_SESSION_ID' => false, 'NODE_OPTIONS' => false], $input, 5);
+        $process->start();
+        try {
+            $this->assertTrue($process->waitUntil(static fn (string $type, string $output): bool => Process::OUT === $type && str_contains($output, "locked\n")));
+        } catch (\Throwable $exception) {
+            $input->close();
+            $process->wait();
+
+            throw $exception;
+        }
+
+        return function () use ($input, $process): void {
+            $input->close();
+            $this->assertSame(0, $process->wait(), $process->getErrorOutput());
+        };
     }
 
     /** @param array<string, string> $environment @param array<string, mixed>|string $input */
@@ -591,13 +681,13 @@ final class Hatfield360ClaudeHookTest extends TestCase
     }
 
     /** @param array<string, string> $environment @param array<string, mixed>|string $input */
-    private function launch(array $environment, array|string $input, bool $notify = false, ?string $entry = null): Process
+    private function launch(array $environment, array|string $input, bool $notify = false): Process
     {
-        $command = ['node', $entry ?? $this->entry()];
+        $command = ['node', $this->entry()];
         if ($notify) {
             $command[] = '--notify';
         }
-        $process = new Process($command, env: $environment + ['HATFIELD_SESSION_ID' => false, 'NODE_OPTIONS' => false], input: \is_string($input) ? $input : json_encode($input, \JSON_THROW_ON_ERROR), timeout: 2);
+        $process = new Process($command, env: $environment + ['HATFIELD_SESSION_ID' => false, 'NODE_OPTIONS' => false], input: \is_string($input) ? $input : json_encode($input, \JSON_THROW_ON_ERROR), timeout: 9);
         $process->start();
 
         return $process;
@@ -605,7 +695,7 @@ final class Hatfield360ClaudeHookTest extends TestCase
 
     private function entry(): string
     {
-        return ProjectDir::get().'/.claude-plugin/hatfield-360/src/hook.mjs';
+        return self::$pluginDirectory.'/src/hook.mjs';
     }
 
     /** @return array<array-key, mixed> */

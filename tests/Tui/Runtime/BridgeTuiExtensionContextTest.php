@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Runtime;
 
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryEntryView;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\Tui\Runtime\BridgeTuiExtensionContext;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
@@ -16,6 +20,43 @@ use PHPUnit\Framework\TestCase;
 final class BridgeTuiExtensionContextTest extends TestCase
 {
     use TuiRuntimeContextBuilderTrait;
+
+    public function testActivityAndInventoryAreScopedToTheReadySelection(): void
+    {
+        $state = new TuiSessionState('current');
+        $harness = new VirtualTuiHarness(sessionId: 'current');
+        $client = $this->createMock(AgentSessionClient::class);
+        $calls = 0;
+        $client->expects($this->exactly(3))->method('backgroundWork')->with('current')->willReturnCallback(static function () use ($state, &$calls): BackgroundWorkSnapshotDTO {
+            ++$calls;
+            if (2 === $calls) {
+                throw new \RuntimeException('Inventory unavailable');
+            }
+            if (3 === $calls) {
+                $state->sessionId = 'other';
+            }
+
+            return new BackgroundWorkSnapshotDTO([], []);
+        });
+        $bridge = new BridgeTuiExtensionContext($this->buildTuiContext()
+            ->withTui($harness->tui())->withScreen($harness->screen())->withState($state)->withClient($client)->build());
+
+        $state->activity = RunActivityStateEnum::Running;
+        $this->assertNull($bridge->isMainActive(), 'Replayed activity is not live without a handle.');
+        $state->handle = new RunHandle('other');
+        $this->assertNull($bridge->getBackgroundAgents());
+        $state->handle = new RunHandle('current');
+        $state->sessionReady = false;
+        $this->assertNull($bridge->isMainActive());
+        $this->assertNull($bridge->getBackgroundJobs());
+        $state->sessionReady = true;
+        $this->assertTrue($bridge->isMainActive());
+        $snapshot = $bridge->getBackgroundSnapshot();
+        $this->assertSame(0, $snapshot->activeSubagents);
+        $this->assertSame(0, $snapshot->backgroundScripts);
+        $this->assertNull($bridge->getBackgroundAgents(), 'Read failure is not an empty inventory.');
+        $this->assertNull($bridge->getBackgroundJobs(), 'A selection change invalidates the in-flight read.');
+    }
 
     /** The public extension contract exposes user prompts with complete titles. */
     public function testTurnRowsInDisplayOrderExcludesAssistantEntriesFromMixedHistory(): void

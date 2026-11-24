@@ -89,7 +89,7 @@ main-orchestrated workflow and safe starter-update instructions.
 
 ## Launch versus continue
 
-Use `subagent` with `general-purpose` for a self-contained assignment such as investigating a bug, making a change, and validating it. Give it the facts it needs: it starts with its own prompt and project instructions, not the parent conversation or its compaction summary. The bundled definition pins `openai-codex/gpt-6.2-sol` with `low` thinking and uses normal child tool permissions. These frontmatter values are independent of `forks.model` and `forks.thinking_level`; removing them restores parent/default inheritance. Use `fork` instead when the work depends on the conversation so far.
+Use `subagent` with `general-purpose` for a self-contained assignment such as investigating a bug, making a change, and validating it. Give it the facts it needs: it starts with its own prompt and project instructions, not the parent conversation or its compaction summary. The bundled definition explicitly configures its model and thinking level and uses normal child tool permissions. These frontmatter values are independent of `forks.model` and `forks.thinking_level`; removing them restores parent/default inheritance. Use `fork` instead when the work depends on the conversation so far.
 
 Use `agent_resume` when an existing child run in the same parent session already contains useful progress or an incomplete handoff. Resume the existing run instead of launching a duplicate child. Identify the run with the artifact/run identifier returned by the earlier launch; across parent sessions, launch a new child with the prior handoff as context.
 

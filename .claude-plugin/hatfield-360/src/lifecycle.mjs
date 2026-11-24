@@ -13,8 +13,8 @@ function registry(tasks) {
     for (const task of tasks) {
         if (!id(task?.id) || typeof task.type !== 'string' || !task.type || typeof task.status !== 'string' || !task.status) return null;
         if (task.type === 'shell' && task.status === 'running') shells.add(task.id);
-        // Registry identifiers are not Claude agent identifiers.
-        subagents ||= task.type === 'subagent';
+        // The registry contains in-flight tasks; its IDs are not agent IDs.
+        subagents ||= task.type === 'subagent' || task.type === 'teammate';
     }
     return { scripts: shells.size, subagents };
 }
@@ -29,8 +29,8 @@ function observeChild(state, hook) {
     } else {
         if (!Object.hasOwn(state.agents, key)) return false;
         delete state.agents[key];
-        // Processing order does not establish sampling order. Child samples
-        // may add uncertainty, but can never establish known zero.
+        // Child samples may add uncertainty, but never clear it; processing
+        // order does not establish the order in which registries were sampled.
         state.agentsUncertain ||= registry(hook.background_tasks)?.subagents === true;
     }
     state.scripts = null;

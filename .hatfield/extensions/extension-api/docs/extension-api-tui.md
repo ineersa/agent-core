@@ -87,9 +87,17 @@ Check whether the host context implements `TuiSessionMetadataContextInterface`
 before calling `getSessionDisplayTitle()`. It returns the canonical picker title
 for the current persisted selection, or `null` when unavailable.
 
+When the host implements `TuiSessionActivityContextInterface`, `isMainActive()`
+reports the selected session's live main activity, or `null` when unavailable.
+An inactive main run does not imply successful completion; use the terminal
+run observation for the outcome. `getBackgroundAgents()` and
+`getBackgroundJobs()` return current counts. Use `getBackgroundSnapshot()` when
+you need both in one inventory read.
+
 Implement `TuiBackgroundSnapshotObserverInterface` to receive
 `TuiBackgroundSnapshotDTO` from the existing host operational poll once the
 session is ready. Each snapshot contains the selected session ID and separate
 current counts of nonterminal owned subagents and background scripts. A zero
 means none; `null` means unavailable. The DTO carries no job identities, prompts,
-commands, or history. It is a delivered observation, not a synchronous query API.
+commands, or history. Reuse the delivered counts when handling this callback
+instead of querying the same inventory again.

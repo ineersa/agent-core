@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { constants, existsSync, lstatSync, openSync, closeSync, readSync, fstatSync, writeFileSync, renameSync, unlinkSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,19 +9,15 @@ import { text } from './lifecycle.mjs';
 const maxState = 180_000;
 export const diagnostic = event_type => process.stderr.write(JSON.stringify({ component: 'hatfield-360', event_type }) + '\n');
 
-// Node does not expose flock(2). util-linux flock operates on the inherited
-// open file description; the Node process retains it until close or exit.
-async function lock(path, mode, milliseconds) {
-    const fd = openSync(path, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
-    const acquired = await new Promise(resolve => {
-        const wait = milliseconds > 0 ? ['-w', (milliseconds / 1000).toFixed(3)] : ['-n'];
-        const child = spawn('flock', [mode, ...wait, '3'], { stdio: ['ignore', 'ignore', 'ignore', fd] });
-        child.once('error', () => resolve(false));
-        child.once('close', code => resolve(code === 0));
-    });
-    if (acquired) return () => closeSync(fd);
-    closeSync(fd);
-    return null;
+// Fifty 100 ms intervals give the state lock a five-second contention window.
+// Pending-start locks are probes, not a second wait budget.
+const stateRetries = { retries: 50, factor: 1, minTimeout: 100, maxTimeout: 100 };
+async function lock(acquire, path, retries = 0) {
+    try { return await acquire(path, { realpath: false, retries }); }
+    catch (error) {
+        if (error.code !== 'ELOCKED') throw error;
+        return null;
+    }
 }
 
 const sequence = n => Number.isSafeInteger(n) && n > 0;
@@ -66,6 +61,7 @@ export function privateDirectory(directory) {
 }
 
 export async function withState(directory, launch, start, deadline, callback) {
+    const { default: { lock: acquire } } = await import('proper-lockfile');
     const path = join(directory, `node-${launch.name}.json`);
     const pending = `${path}.pending`;
     const marker = `${path}.uncertain`;
@@ -73,25 +69,29 @@ export async function withState(directory, launch, start, deadline, callback) {
     // A waiting child start must inhibit a concurrent completed/zero snapshot.
     // If acquiring its pending lock fails, leave sticky positive uncertainty.
     const trackStart = start && existsSync(path);
-    const releasePending = trackStart ? await lock(pending, '-s', 0) : null;
+    const releasePending = trackStart ? await lock(acquire, pending) : null;
     try {
         if (trackStart && !releasePending) mark();
-        const budget = Math.min(launch.managed ? 350 : 650, deadline - performance.now());
-        const release = budget > 0 ? await lock(join(directory, `node-${launch.lock}.lock`), '-x', budget) : null;
+        const release = performance.now() < deadline ? await lock(acquire, join(directory, `node-${launch.lock}-state`), stateRetries) : null;
         if (!release) {
             if (trackStart) mark();
             diagnostic('hook_lock_unavailable');
             return false;
         }
         try {
+            if (performance.now() >= deadline) {
+                if (trackStart) mark();
+                diagnostic('hook_deadline');
+                return false;
+            }
             const previous = existsSync(path) ? read(path) : null;
             if (!previous && launch.managed && readdirSync(directory).filter(name => /^node-claude-managed-.*\.json$/.test(name)).length >= 64) return false;
             const pendingStart = async () => {
-                const exclusive = await lock(pending, '-x', 0);
-                exclusive?.();
+                const exclusive = await lock(acquire, pending);
+                await exclusive?.();
                 return !exclusive || existsSync(marker);
             };
             return await callback(previous, state => save(path, state), pendingStart);
-        } finally { release(); }
-    } finally { releasePending?.(); }
+        } finally { await release(); }
+    } finally { await releasePending?.(); }
 }

@@ -6,18 +6,33 @@ PHP, Composer or the Hatfield executable.
 
 ## Setup
 
-Requires Node.js 18.14+ and `flock` from util-linux on PATH (used for
-crash-safe cross-process locking). From a checked-out plugin directory, run
-`npm ci --omit=optional --ignore-scripts`, then point Claude Code at the
-prepared directory with `claude --plugin-dir /path/to/hatfield-360`.
-The Git marketplace ships the source; it does not provision `node_modules`.
-Clean marketplace install/update with title lookup is not yet supported out of
-box. Hooks never install dependencies. Without the SDK, status still works,
-but titles not supplied by a hook cannot be looked up.
+Requires Node.js 18.14+ on macOS or Linux and npm on PATH. Add
+`ineersa/agent-core` as a Git marketplace and install `hatfield-360@hatfield`.
+Use a Claude Code version that supports [cached plugin dependency installs](https://code.claude.com/docs/en/plugins/loading.md#nodejs-package-dependencies).
+Claude Code installs the locked npm dependencies with package scripts disabled
+when it creates the cached plugin copy. Hooks never install dependencies. A
+relative plugin loaded in place from a local-path marketplace is not provisioned
+this way; use the Git marketplace for normal installs.
 
-The desktop sets the socket endpoint and scoped launch credentials. Do not
-pass credentials in arguments or input. Reload the Claude plugin or restart
-Claude after updating it; Hatfield’s `/reload` does not affect Claude.
+Launch Claude from the desktop app on macOS or Linux to receive the socket
+endpoint and scoped credentials. Manual desktop-shell registration remains
+Linux-only. Do not pass credentials in arguments or input. Restart Claude
+after updating from the `flock` reporter so old and new hooks don't write
+the same state under different locks. Hatfield’s `/reload` does not affect Claude.
+
+The JavaScript state lock retries every 100 ms for a five-second contention
+window, including while another hook sends its report. The reporter budgets
+seven seconds total for input, locking, reporting and cleanup; Claude allows
+eight seconds. If contention exhausts the wait, the hook logs a diagnostic and
+lets Claude continue without reporting that update. A skipped child start leaves
+a marker that prevents reporting a definite zero. After an abrupt exit, an
+abandoned lock can block updates until its 10-second stale timeout.
+
+The Agent SDK still declares optional platform-specific binary packages. Claude
+Code's documented cached installer disables scripts but does not document
+omitting optional packages. A network policy blocking those downloads can
+prevent a clean marketplace install; binary-free automatic installation is
+not verified. The title lookup itself does not require those optional binaries.
 
 ## Titles and notices
 
@@ -52,17 +67,13 @@ Subagent start/stop hooks track an approximate active count by agent ID, without
 parent links or execution IDs. Reused IDs and overlapping hooks can make the
 count approximate. Resume starts with an unknown baseline. A validated
 parent-scoped `background_tasks` sample from a current matching foreground `Stop`
-can establish zero only when it contains no subagent
-entries and no observed child is still live. Missing or malformed samples do
-not establish zero. Registry task IDs are not treated as agent IDs; any
-subagent entry prevents zero regardless of its status. Untracked `SubagentStop`
-hooks are ignored. A tracked stop removes only that observed membership; its
-registry may add uncertainty but cannot clear an unknown baseline. Neither
-processing under the lock nor a matching prompt establishes sample freshness.
-Unknown membership therefore remains unknown until a later current matching
-foreground Stop supplies valid evidence. Pending-start uncertainty remains
-sticky. `SubagentStop` does not complete the main response, and the registry
-may still include the stopping child in that hook's sample.
+can establish zero only when it contains no in-flight `subagent` or `teammate`
+entries and there are no tracked starts left. Missing or malformed samples do
+not establish zero. Registry task IDs are not treated as agent IDs. Untracked
+`SubagentStop` hooks are ignored. A tracked stop removes that agent; its registry
+can add uncertainty but cannot clear it. Another hook can block the stop and
+keep the child working, so this heuristic can report completion early.
+Pending-start uncertainty remains sticky.
 A matching elicitation request/result pair with a server and elicitation ID
 reports external-input attention. Selected built-in tool hooks report only
 names, correlated by tool-use ID, never inputs or results. `AskUserQuestion`

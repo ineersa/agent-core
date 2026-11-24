@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum as Event;
@@ -26,6 +27,7 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionActivityContextInterface;
 use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
 use Ineersa\Tui\Listener\TuiProjectExtensionRegistrar;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
@@ -81,7 +83,9 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $sessionId = $store->createSession('Original title');
             $draft = new TuiSessionState('');
             $harness = new VirtualTuiHarness(sessionId: '');
-            $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($draft)->withSessionStore($store)->build();
+            $inventory = $this->createStub(AgentSessionClient::class);
+            $inventory->method('backgroundWork')->willReturn(new BackgroundWorkSnapshotDTO([], []));
+            $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($draft)->withSessionStore($store)->withClient($inventory)->build();
             $registrar->register($context);
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionDraftStarted);
 
@@ -140,13 +144,13 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $entity->name = str_repeat('🦊', 1025);
             self::getContainer()->get(EntityManagerInterface::class)->flush();
             $this->assertNull($snapshot['attention']);
-            $this->assertNull($snapshot['activeSubagents']);
-            $this->assertNull($snapshot['backgroundScripts']);
+            $this->assertSame(0, $snapshot['activeSubagents']);
+            $this->assertSame(0, $snapshot['backgroundScripts']);
             $this->assertArrayNotHasKey('child_run_id', $snapshot);
 
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
             $harness = new VirtualTuiHarness(sessionId: $sessionId);
-            $resumed = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState(new TuiSessionState($sessionId))->withSessionStore($store)->build();
+            $resumed = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState(new TuiSessionState($sessionId))->withSessionStore($store)->withClient($inventory)->build();
             $registrar->register($resumed);
             $resumed->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionResumed);
             $second = $this->acceptFrame($server);
@@ -158,7 +162,7 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
 
             $this->assertNull($second['turn']);
             $this->assertNull($second['attention']);
-            $this->assertNull($second['activeSubagents']);
+            $this->assertSame(0, $second['activeSubagents']);
             $resumed->lifecycle->dispatchBackgroundSnapshot(new TuiBackgroundSnapshotDTO($sessionId, 1, 0));
             $reconciled = $this->acceptFrame($server);
             $this->assertNull($reconciled['turn']);
@@ -217,6 +221,18 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $failed = new DeferredFuture();
             $settlementFailed = new DeferredFuture();
             $extension = new Hatfield360Extension();
+            $selection = 'first';
+            $children = $scripts = null;
+            $activity = $this->createStub(TuiSessionActivityContextInterface::class);
+            $activity->method('getSessionId')->willReturnCallback(static function () use (&$selection): string { return $selection; });
+            $activity->method('isMainActive')->willReturn(false);
+            $activity->method('getBackgroundSnapshot')->willReturnCallback(static function () use (&$selection, &$children, &$scripts): TuiBackgroundSnapshotDTO {
+                return new TuiBackgroundSnapshotDTO($selection, $children, $scripts);
+            });
+            $extension->registerTui($activity);
+            $sample = static function (?int $agents, ?int $jobs) use ($extension, &$children, &$scripts, &$selection): void {
+                $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO($selection, $children = $agents, $scripts = $jobs));
+            };
             $logger = $this->createMock(LoggerInterface::class);
             $drops = [];
             $logger->expects($this->exactly(3))->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$drops, $failed, $settlementFailed): void {
@@ -240,8 +256,8 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
                 $this->assertSame('launch.register', $bootstrap['kind']);
                 $this->assertSame($first, $bootstrap);
             }
-            $registration = $this->acceptFrame($server, '{"ok":true,"status":"stale"}', beforeReply: static function () use ($extension): void {
-                $extension->onTuiSessionSelected('second');
+            $registration = $this->acceptFrame($server, '{"ok":true,"status":"stale"}', beforeReply: static function () use ($extension, &$selection): void {
+                $extension->onTuiSessionSelected($selection = 'second');
                 $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 2, TuiRunObservationTypeEnum::TurnStarted));
             });
             $this->assertSame('session.snapshot', $registration['kind']);
@@ -257,17 +273,17 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
 
             $context = $this->createMock(CommandContextInterface::class);
             $context->expects($this->exactly(5))->method('notify')->with('Hatfield 360 accepted the notification.', 'success');
-            $assertNoDuplicate = function (?int $children, ?int $scripts) use ($extension, $context, $server): void {
-                $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', $children, $scripts));
+            $assertNoDuplicate = function (?int $children, ?int $scripts) use ($sample, $extension, $context, $server): void {
+                $sample($children, $scripts);
                 // The notice is an ordering barrier: any duplicate would arrive first.
                 $barrier = async(static fn () => $extension->handle('Barrier | Check snapshot order', $context));
                 $this->assertSame('notification', $this->acceptFrame($server)['kind']);
                 $barrier->await(new TimeoutCancellation(2));
             };
             $assertNoDuplicate(null, null);
-            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 1, 0));
-            $refused = $this->acceptFrame($server, '{"ok":true,"status":"stale"}', beforeReply: static function () use ($extension): void {
-                $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 2, 0));
+            $sample(1, 0);
+            $refused = $this->acceptFrame($server, '{"ok":true,"status":"stale"}', beforeReply: static function () use ($sample): void {
+                $sample(2, 0);
             });
             $newer = $this->acceptFrame($server, waitForPeerClose: true);
             $this->assertGreaterThan($refused['sequence'], $newer['sequence']);
@@ -312,36 +328,37 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $this->assertNull($cleared['attention']);
             $this->assertSame(2, $cleared['activeSubagents']);
 
-            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 1));
+            $sample(0, 1);
             $this->assertSame(0, $this->acceptFrame($server)['activeSubagents']);
+            $children = null; // The direct refresh is unavailable, despite the previous zero sample.
             $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 20, TuiRunObservationTypeEnum::TurnCompleted));
             $completed = $this->acceptFrame($server);
             $this->assertSame('completed', $completed['turn']['status']);
             $this->assertSame('2', $completed['turn']['id'], 'Live completion settles the observed response.');
             $this->assertNull($completed['activeSubagents']);
             $this->assertSame(1, $completed['backgroundScripts']);
-            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 1, 1));
+            $sample(1, 1);
             $working = $this->acceptFrame($server);
             $this->assertSame(1, $working['activeSubagents']);
             $this->assertSame($completed['turn'], $working['turn']);
 
-            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 1, 1));
+            $sample(1, 1);
             $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('first', 0, 0));
-            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', null, null));
+            $sample(null, null);
             $unavailable = $this->acceptFrame($server);
             $this->assertSame($working['sequence'] + 1, $unavailable['sequence']);
             $this->assertNull($unavailable['activeSubagents']);
             $this->assertNull($unavailable['backgroundScripts']);
-            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 1));
+            $sample(0, 1);
             $unconfirmed = $this->acceptFrame($server, '{"ok":true,"status":"stale"}');
             $settlementFailed->getFuture()->await(new TimeoutCancellation(2));
             $this->assertSame(['first', 'second', 'second'], $drops);
-            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 1));
+            $sample(0, 1);
             $exhausted = $this->acceptFrame($server, '{"ok":true,"status":"stale"}', waitForPeerClose: true);
             $assertNoDuplicate(0, 1);
-            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 0));
+            $sample(0, 0);
             $this->acceptFrame($server, '{"ok":true,"status":"stale"}', waitForPeerClose: true);
-            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 0));
+            $sample(0, 0);
             $settled = $this->acceptFrame($server);
             $this->assertGreaterThan($exhausted['sequence'], $settled['sequence']);
             $this->assertGreaterThan($unconfirmed['sequence'], $settled['sequence']);
@@ -354,17 +371,16 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             // A resumed child can outlive the parent's interim response.
             $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 21, TuiRunObservationTypeEnum::TurnStarted));
             $resumedParent = $this->acceptFrame($server);
-            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 1, 1));
+            $sample(1, 1);
             $this->assertSame($resumedParent['turn'], $this->acceptFrame($server)['turn']);
             $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 22, TuiRunObservationTypeEnum::TurnCompleted));
             $interim = $this->acceptFrame($server);
             $this->assertSame(['id' => $resumedParent['turn']['id'], 'status' => 'completed'], $interim['turn']);
             $this->assertSame(1, $interim['activeSubagents']);
-            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 1));
+            $sample(0, 1);
             $afterChild = $this->acceptFrame($server);
             $this->assertSame($interim['turn'], $afterChild['turn']);
             $this->assertSame(0, $afterChild['activeSubagents']);
-
         } finally {
             if (isset($server)) {
                 $server->close();

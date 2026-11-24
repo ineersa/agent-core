@@ -30,11 +30,14 @@ reports whether the desktop confirmed acceptance, not whether it showed a toast.
 Foreground observations report work, final response, failure or cancellation,
 correlated foreground and child question/approval waits and tool names (not tool inputs or results).
 Tool completion or failure clears the matching progress marker, not the response.
-The existing TUI operational poll reports separate counts of owned nonterminal
-children and Bash/code-mode work. Counts start unknown and reconcile after
-session readiness, including on resume. An unavailable read reports `null`.
-A zero sampled before the foreground response finishes cannot settle it; a
-subsequent poll must confirm zero children. Scripts do not gate completion.
+Attention and tool markers still come from live observations; the visible TUI
+prompt is not an equivalent inventory of attention occurrences.
+The extension reads main activity and owned nonterminal children and Bash/code-mode
+work through the selected-session context, reusing the bottom panel's inventory
+sample when available. An unavailable read reports `null`. A successful main
+terminal event and a current zero-child count are required for completion;
+later child lifecycle events refresh the inventory. Scripts do not gate
+completion, and selecting a session does not replay past completions.
 Final interactive quit attempts `session.ended`; drafts, switches, reloads and
 abrupt exits do not send it. Quit
 never initiates manual Linux bootstrap.

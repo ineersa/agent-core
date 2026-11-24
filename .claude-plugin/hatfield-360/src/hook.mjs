@@ -8,8 +8,9 @@ import { diagnostic, privateDirectory, withState } from './state.mjs';
 import { titleFor } from './title.mjs';
 
 // Bound the whole invocation, even if optional SDK work remains in flight.
-const deadline = performance.now() + 900;
-const timeout = setTimeout(() => { diagnostic('hook_deadline'); process.exit(process.exitCode ?? 0); }, 900);
+const hookBudgetMs = 7000;
+const deadline = performance.now() + hookBudgetMs;
+const timeout = setTimeout(() => { diagnostic('hook_deadline'); process.exit(process.exitCode ?? 0); }, hookBudgetMs);
 const notify = process.argv[2] === '--notify';
 process.exitCode = notify ? 1 : 0;
 process.umask(0o077);
