@@ -1,28 +1,20 @@
 {
     "name": "ineersa/hatfield-ext-hatfield-360",
-    "description": "Hatfield 360 status reporting for Hatfield and Claude Code.",
+    "description": "Hatfield activity reporting to the Hatfield 360 desktop app.",
     "type": "hatfield-extension",
     "license": "MIT",
     "require": {
         "php": ">=8.4.1",
         "ext-mbstring": "*",
-        "ext-posix": "*",
         "amphp/amp": "^3.1",
         "amphp/byte-stream": "^2.1",
         "amphp/socket": "^2.3",
-        "symfony/console": "^8.0",
-        "symfony/filesystem": "^8.0",
-        "symfony/lock": "^8.0",
-        "symfony/process": "^8.0",
+        "symfony/clock": "^8.0",
         "symfony/uid": "^8.0"
-    },
-    "suggest": {
-        "ineersa/hatfield-extension-api": "Only the Hatfield host adapter needs the Extension API."
     },
     "autoload": {
         "psr-4": {
             "Ineersa\\HatfieldExt\\Hatfield360\\": "src/"
         }
-    },
-    "bin": ["bin/h360-report"]
+    }
 }

@@ -34,12 +34,12 @@ final readonly class StatusClient
     }
 
     /** Retry a transient response once with exactly the same owner identity. */
-    public static function registerManual(string $provider, string $instanceId, int $pid, string $pidNamespace, string $startTicks): ?self
+    public static function registerManual(string $instanceId, int $pid, string $pidNamespace, string $startTicks): ?self
     {
         $endpoint = self::endpoint();
         $bootstrap = getenv('H360_STATUS_BOOTSTRAP_TOKEN');
         if (false !== getenv('H360_STATUS_LAUNCH_ID') || false !== getenv('H360_STATUS_TOKEN')
-            || null === $endpoint || !self::token($bootstrap) || !\in_array($provider, ['hatfield', 'claude'], true)
+            || null === $endpoint || !self::token($bootstrap)
             || !self::uuid($instanceId) || $pid < 1 || $pid > 0x7FFF_FFFF
             || 1 !== preg_match('/\A[1-9][0-9]{0,19}\z/', $pidNamespace)
             || 1 !== preg_match('/\A[1-9][0-9]{0,19}\z/', $startTicks)) {
@@ -47,7 +47,7 @@ final readonly class StatusClient
         }
         $request = [
             'version' => 1, 'kind' => 'launch.register', 'bootstrapToken' => $bootstrap,
-            'instanceId' => $instanceId, 'provider' => $provider,
+            'instanceId' => $instanceId, 'provider' => 'hatfield',
             'owner' => ['pid' => $pid, 'pidNamespace' => $pidNamespace, 'startTicks' => $startTicks],
         ];
         $reply = self::request($endpoint, $request);
@@ -125,17 +125,17 @@ final readonly class StatusClient
                 return null;
             }
 
-            $deadline = new TimeoutCancellation(0.25);
+            $cancellation = new TimeoutCancellation(0.25);
             // The default Amp connector backs off without observing cancellation.
             // One connection attempt keeps the launch reporter's deadline bounded.
-            $socket = (new DnsSocketConnector())->connect('unix://'.$endpoint, cancellation: $deadline);
+            $socket = (new DnsSocketConnector())->connect('unix://'.$endpoint, cancellation: $cancellation);
             // Close on the same absolute deadline to bound uncancellable socket writes.
-            $subscription = $deadline->subscribe(static fn () => $socket->close());
+            $subscription = $cancellation->subscribe(static fn () => $socket->close());
             try {
                 $socket->write($frame);
                 $reply = '';
                 while (\strlen($reply) < self::MAX_FRAME_BYTES) {
-                    $chunk = $socket->read($deadline, self::MAX_FRAME_BYTES - \strlen($reply));
+                    $chunk = $socket->read($cancellation, self::MAX_FRAME_BYTES - \strlen($reply));
                     if (null === $chunk) {
                         return null;
                     }
@@ -148,7 +148,7 @@ final readonly class StatusClient
                     }
                 }
             } finally {
-                $deadline->unsubscribe($subscription);
+                $cancellation->unsubscribe($subscription);
                 $socket->close();
             }
         } catch (CancelledException|StreamException|\JsonException) {

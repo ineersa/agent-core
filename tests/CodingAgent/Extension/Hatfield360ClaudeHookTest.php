@@ -9,15 +9,100 @@ use Amp\TimeoutCancellation;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\ExecutableFinder;
+use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
 use function Amp\Socket\listen;
 
-final class Hatfield360ReportCommandTest extends TestCase
+final class Hatfield360ClaudeHookTest extends TestCase
 {
+    private static string $pluginDirectory;
+
+    public static function setUpBeforeClass(): void
+    {
+        $directory = self::$pluginDirectory = TestDirectoryIsolation::createProjectTempDir();
+        self::assertSame($directory, realpath($directory));
+        $plugin = ProjectDir::get().'/.claude-plugin/hatfield-360';
+        $filesystem = new Filesystem();
+        $filesystem->mirror($plugin.'/src', $directory.'/src');
+        // Signal only after the real retry library schedules a retry for a held lock.
+        file_put_contents($directory.'/retry-barrier.cjs', <<<'JS'
+            const assert = require('node:assert/strict');
+            const retry = require('retry');
+            const operation = retry.operation;
+            retry.operation = function (options) {
+                const result = operation(options);
+                const attempt = result.retry;
+                result.retry = function (error) {
+                    const scheduled = attempt.call(this, error);
+                    if (scheduled && error.code === 'ELOCKED') {
+                        assert.deepEqual(options, { retries: 50, factor: 1, minTimeout: 100, maxTimeout: 100 });
+                        process.stderr.write('contention-retry\n');
+                    }
+                    return scheduled;
+                };
+                return result;
+            };
+            JS);
+        foreach (['package.json', 'package-lock.json'] as $file) {
+            $filesystem->copy($plugin.'/'.$file, $directory.'/'.$file);
+        }
+        self::assertSame(getenv('HATFIELD_QA_TEST_HOME'), getenv('HOME'));
+        self::assertNotEmpty(getenv('HATFIELD_QA_TEST_HOME'));
+        $setup = new Process(['npm', 'ci', '--omit=optional', '--ignore-scripts', '--no-audit', '--no-fund'], $directory, ['HATFIELD_SESSION_ID' => false, 'npm_config_cache' => $directory.'/npm-cache'], timeout: 10);
+        self::assertSame(0, $setup->run(), $setup->getErrorOutput());
+    }
+
+    public static function tearDownAfterClass(): void
+    {
+        TestDirectoryIsolation::removeDirectory(self::$pluginDirectory);
+    }
+
+    public function testSdkTitlesReachTheSocketWithoutUsingPrompts(): void
+    {
+        $directory = TestDirectoryIsolation::createProjectTempDir();
+        $socketDirectory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        try {
+            $filesystem = new Filesystem();
+            $config = $directory.'/config';
+            $project = $config.'/projects/'.preg_replace('/[^a-zA-Z0-9]/', '-', $directory);
+            $filesystem->mkdir($project, 0o700);
+            $this->assertSame($project, realpath($project));
+            $session = '22222222-2222-4222-8222-222222222222';
+            $transcript = $project.'/'.$session.'.jsonl';
+            $this->assertFalse(is_link($transcript));
+            $write = static function (array $row) use ($transcript, $session): void {
+                file_put_contents($transcript, json_encode($row + ['sessionId' => $session], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+            };
+            $write(['type' => 'user', 'cwd' => $directory, 'message' => ['role' => 'user', 'content' => 'Never export this prompt']]);
+            $endpoint = $socketDirectory.'/s';
+            $server = listen('unix://'.$endpoint);
+            $environment = [
+                'CLAUDE_CONFIG_DIR' => $config,
+                'H360_STATUS_ENDPOINT' => $endpoint,
+                'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444',
+                'H360_STATUS_TOKEN' => str_repeat('a', 64),
+            ];
+            $base = ['session_id' => $session, 'cwd' => $socketDirectory];
+            $send = fn (array $hook): array => $this->exchange($server, $this->launch($environment, $base + $hook));
+            $this->assertNull($send(['hook_event_name' => 'SessionStart', 'source' => 'startup'])['title']);
+            $write(['type' => 'ai-title', 'aiTitle' => 'Generated title']);
+            $prompt = ['hook_event_name' => 'UserPromptSubmit'];
+            $this->assertSame('Generated title', $send($prompt + ['prompt_id' => '55555555-5555-4555-8555-555555555555'])['title']);
+            $write(['type' => 'custom-title', 'customTitle' => 'Renamed title']);
+            $this->assertSame('Renamed title', $send($prompt + ['prompt_id' => '55555555-5555-4555-8555-666666666666'])['title']);
+            $this->assertSame('Hook title', $send($prompt + ['prompt_id' => '55555555-5555-4555-8555-777777777777', 'session_title' => 'Hook title'])['title']);
+        } finally {
+            if (isset($server)) {
+                $server->close();
+            }
+            TestDirectoryIsolation::removeDirectory($socketDirectory);
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     public function testSeparateCliInvocationsShareOnlyLaunchCorrelation(): void
     {
         $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
@@ -76,31 +161,120 @@ final class Hatfield360ReportCommandTest extends TestCase
             $cleared = $this->exchange($server, $this->launch($environment, ['session_id' => 'claude-3', 'hook_event_name' => 'SessionStart', 'source' => 'clear']));
             $this->assertGreaterThan($returned['sessionEpoch'], $cleared['sessionEpoch']);
             $this->assertQuietHook($environment, ['session_id' => 'late', 'hook_event_name' => 'SessionStart', 'source' => 'clear']);
+        } finally {
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
 
-            // Explicit mode is a separate producer with its own launch and epoch.
-            $explicitEnvironment = array_replace($environment, [
-                'H360_STATUS_LAUNCH_ID' => '55555555-5555-4555-8555-555555555555',
-                'H360_STATUS_TOKEN' => str_repeat('b', 64),
-            ]);
-            $registration = $this->launch($explicitEnvironment, [
-                'kind' => 'session.snapshot', 'sessionId' => 'explicit-test', 'sessionEpoch' => 1, 'sequence' => 1,
-                'provider' => 'hatfield', 'turn' => null, 'attention' => null, 'activeSubagents' => null, 'backgroundScripts' => null, 'tool' => null,
-            ], false);
-            $selected = $this->exchange($server, $registration);
-            $this->assertSame('session.snapshot', $selected['kind']);
-            $this->assertNotSame($first['launchId'], $selected['launchId']);
+    public function testClaudeRegistryDoesNotInventSettledChildren(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $server = listen('unix://'.$directory.'/s');
+        $environment = ['H360_STATUS_ENDPOINT' => $directory.'/s', 'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444', 'H360_STATUS_TOKEN' => str_repeat('a', 64)];
+        $send = fn (array $hook): array => $this->exchange($server, $this->launch($environment, $hook + ['session_id' => 'registry-session']));
+        $child = ['agent_id' => 'observed-child'];
+        $unknownChild = ['agent_id' => 'unseen-child'];
+        $registry = ['background_tasks' => [['id' => 'unrelated-task-id', 'type' => 'subagent', 'status' => 'running']]];
+        $empty = ['background_tasks' => []];
+        $start = ['hook_event_name' => 'UserPromptSubmit'];
+        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false];
+        $childStop = ['hook_event_name' => 'SubagentStop'];
+        try {
+            $send(['hook_event_name' => 'SessionStart', 'source' => 'startup']);
+            $first = ['prompt_id' => '55555555-5555-4555-8555-555555555551'];
+            $send($first + $start);
+            $completed = $send($first + $stop + $registry);
+            $this->assertNull($completed['activeSubagents']);
+            // An old empty sample may arrive after this positive main Stop.
+            // The same prompt ID does not establish registry sampling order.
+            $this->assertQuietHook($environment, $first + $childStop + $unknownChild + $empty + ['session_id' => 'registry-session']);
 
-            $notification = $this->launch($explicitEnvironment, [
-                'kind' => 'notification', 'sessionId' => 'explicit-test', 'sessionEpoch' => 1, 'sequence' => 2,
-                'title' => 'Ready', 'body' => 'Extra message',
-            ], false);
-            $frame = $this->exchange($server, $notification);
-            $this->assertSame('notification', $frame['kind']);
-            $this->assertSame($selected['launchId'], $frame['launchId']);
-            $this->assertSame($selected['sessionId'], $frame['sessionId']);
-            $this->assertSame($selected['sessionEpoch'], $frame['sessionEpoch']);
-            $this->assertGreaterThan($selected['sequence'], $frame['sequence']);
-            $this->assertSame('Extra message', $frame['body']);
+            $boundary = ['prompt_id' => '55555555-5555-4555-8555-555555555552'];
+            $send($boundary + ['hook_event_name' => 'SessionEnd', 'reason' => 'resume']);
+            $resumed = $send($boundary + ['hook_event_name' => 'SessionStart', 'source' => 'resume']);
+            $this->assertNull($resumed['activeSubagents']);
+            $second = ['prompt_id' => '55555555-5555-4555-8555-555555555553'];
+            $send($second + $start);
+            $this->assertNull($send($second + $stop)['activeSubagents']);
+            $teammateTurn = ['prompt_id' => '55555555-5555-4555-8555-555555555557'];
+            $send($teammateTurn + $start);
+            $teammateStop = $send($teammateTurn + $stop + ['background_tasks' => [['id' => 'teammate-task', 'type' => 'teammate', 'status' => 'running']]]);
+            $this->assertSame('completed', $teammateStop['turn']['status']);
+            $this->assertNull($teammateStop['activeSubagents'], 'A resumed registry containing only a teammate cannot establish zero.');
+            $third = ['prompt_id' => '55555555-5555-4555-8555-555555555554'];
+            $send($third + $start);
+            $this->assertNull($send($third + $stop + ['background_tasks' => [['type' => 'subagent']]])['activeSubagents']);
+            $fourth = ['prompt_id' => '55555555-5555-4555-8555-555555555555'];
+            $send($fourth + $start);
+            $this->assertSame(0, $send($fourth + $stop + $empty)['activeSubagents']);
+
+            $fifth = ['prompt_id' => '55555555-5555-4555-8555-555555555556'];
+            $working = $send($fifth + $start);
+            $send($child + ['hook_event_name' => 'SubagentStart']);
+            $this->assertQuietHook($environment, $childStop + $unknownChild + $registry + ['session_id' => 'registry-session']);
+            $this->assertQuietHook($environment, $childStop + $unknownChild + $empty + ['session_id' => 'registry-session']);
+            $settling = $send($childStop + $child + $registry);
+            $this->assertNull($settling['activeSubagents']);
+            $this->assertSame($working['turn'], $settling['turn']);
+            $final = $send($fifth + $stop + $empty);
+            $this->assertSame(0, $final['activeSubagents']);
+            $this->assertSame($working['turn']['id'], $final['turn']['id']);
+            $this->assertSame('completed', $final['turn']['status']);
+        } finally {
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public function testDelayedChildRegistryCannotClearNewerUncertaintyOrPublishStaleScripts(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $server = listen('unix://'.$directory.'/s');
+        $environment = ['H360_STATUS_ENDPOINT' => $directory.'/s', 'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444', 'H360_STATUS_TOKEN' => str_repeat('a', 64)];
+        $session = ['session_id' => 'ordered-registry'];
+        $first = ['prompt_id' => '55555555-5555-4555-8555-555555555551'];
+        $second = ['prompt_id' => '55555555-5555-4555-8555-555555555552'];
+        $send = fn (array $hook): array => $this->exchange($server, $this->launch($environment, $hook + $session));
+        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false];
+        $shell = ['id' => 'shell', 'type' => 'shell', 'status' => 'running'];
+        $unseen = ['id' => 'not-an-agent-id', 'type' => 'subagent', 'status' => 'running'];
+        // This empty sample was captured before either newer authoritative Stop.
+        $oldEmpty = $first + ['hook_event_name' => 'SubagentStop', 'agent_id' => 'untracked', 'background_tasks' => []];
+        try {
+            $send(['hook_event_name' => 'SessionStart', 'source' => 'startup']);
+            $send($first + ['hook_event_name' => 'UserPromptSubmit']);
+            $send(['hook_event_name' => 'SubagentStart', 'agent_id' => 'tracked']);
+            $completed = $send($first + $stop + ['background_tasks' => [$unseen, $shell]]);
+            $this->assertSame(1, $completed['activeSubagents']);
+            $this->assertSame(1, $completed['backgroundScripts']);
+            $this->assertQuietHook($environment, $oldEmpty + $session);
+            $settled = $send($first + ['hook_event_name' => 'SubagentStop', 'agent_id' => 'tracked', 'background_tasks' => []]);
+            $this->assertNull($settled['activeSubagents'], 'Tracked membership cannot settle unseen-positive uncertainty.');
+            $this->assertNull($settled['backgroundScripts'], 'Unordered child samples cannot replace a script count with zero.');
+            $this->assertSame($completed['turn'], $settled['turn']);
+
+            $working = $send($second + ['hook_event_name' => 'UserPromptSubmit']);
+            $this->assertNull($working['backgroundScripts']);
+            $newer = $send($second + $stop + ['background_tasks' => [$unseen, $shell]]);
+            $this->assertNull($newer['activeSubagents']);
+            $this->assertQuietHook($environment, $oldEmpty + $session);
+            $state = json_decode(file_get_contents($directory.'/node-claude-status-'.$environment['H360_STATUS_LAUNCH_ID'].'.json'), true, flags: \JSON_THROW_ON_ERROR);
+            $this->assertTrue($state['agentsUncertain']);
+            $this->assertSame($newer['sequence'], $state['sequence']);
+            $this->assertSame(1, $state['scripts'], 'Ignored hooks do not mutate newer accepted registry fields.');
+
+            $third = ['prompt_id' => '55555555-5555-4555-8555-555555555553'];
+            $send($third + ['hook_event_name' => 'UserPromptSubmit']);
+            $send(['hook_event_name' => 'SubagentStart', 'agent_id' => 'tracked-next']);
+            $final = $send($third + $stop + ['background_tasks' => [$shell]]);
+            $this->assertSame(1, $final['activeSubagents'], 'A valid main registry cannot erase known child membership.');
+            $this->assertSame(1, $final['backgroundScripts']);
+            $settled = $send(['hook_event_name' => 'SubagentStop', 'agent_id' => 'tracked-next', 'background_tasks' => [$shell, ['id' => 'other-shell', 'type' => 'shell', 'status' => 'running']]]);
+            $this->assertSame(0, $settled['activeSubagents']);
+            $this->assertNull($settled['backgroundScripts'], 'A correlated child stop still lacks freshness for exact script counts.');
+            $this->assertSame($final['turn'], $settled['turn'], 'Script invalidation neither gates nor creates a response completion.');
+            $this->assertQuietHook($environment, $third + $stop + ['background_tasks' => []] + $session);
         } finally {
             $server->close();
             TestDirectoryIsolation::removeDirectory($directory);
@@ -158,7 +332,7 @@ final class Hatfield360ReportCommandTest extends TestCase
         $prompt = $session + ['prompt_id' => '44444444-4444-4444-8444-555555555555'];
         $tool = ['hook_event_name' => 'PreToolUse', 'tool_name' => 'mcp__private__tool', 'tool_use_id' => 'tool-1', 'tool_input' => ['private' => true]];
         $wait = ['mcp_server_name' => 'mcp-private', 'elicitation_id' => 'request-1'];
-        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'last_assistant_message' => 'private'];
+        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'last_assistant_message' => 'private', 'background_tasks' => []];
         try {
             $start = $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionStart', 'source' => 'startup']));
             $this->assertNull($start['backgroundScripts']);
@@ -193,18 +367,22 @@ final class Hatfield360ReportCommandTest extends TestCase
             $this->assertSame($child['sequence'] + 1, $end['sequence']);
             $this->assertArrayNotHasKey('last_assistant_message', $end);
             $this->assertSame(1, $end['activeSubagents']);
-            $settled = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStop']));
-            $this->assertSame(0, $settled['activeSubagents']);
-            $this->assertSame($end['turn'], $settled['turn']);
+            // A tracked stop removes the child; a later start is still observed.
+            $attempt = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStop', 'stop_hook_active' => false, 'background_tasks' => []]));
+            $this->assertSame(0, $attempt['activeSubagents']);
+            $this->assertSame($end['turn'], $attempt['turn']);
+            $continued = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStart']));
+            $this->assertSame(1, $continued['activeSubagents']);
+            $this->assertSame($end['turn'], $continued['turn']);
             $this->assertQuietHook($environment, $prompt + $stop);
             $this->assertQuietHook($environment, $prompt + $tool);
 
-            $this->assertQuietHook($environment, '{broken-private', 'hook_input_failed');
-            $state = $directory.'/claude-status-'.$environment['H360_STATUS_LAUNCH_ID'].'.json';
+            $this->assertQuietHook($environment, '{broken-private', 'hook_reporting_unavailable');
+            $state = $directory.'/node-claude-status-'.$environment['H360_STATUS_LAUNCH_ID'].'.json';
             $this->assertSame($directory, realpath(\dirname($state)));
             $this->assertFalse(is_link($state));
             file_put_contents($state, '{broken-private');
-            $this->assertQuietHook($environment, $prompt + $stop, 'hook_state_failed');
+            $this->assertQuietHook($environment, $prompt + $stop, 'hook_reporting_unavailable');
         } finally {
             $server->close();
             TestDirectoryIsolation::removeDirectory($directory);
@@ -285,9 +463,7 @@ final class Hatfield360ReportCommandTest extends TestCase
         ];
         $hook = ['session_id' => 'native-session', 'hook_event_name' => 'SessionStart', 'source' => 'startup'];
         $turn = ['session_id' => 'native-session', 'hook_event_name' => 'UserPromptSubmit', 'prompt_id' => '44444444-4444-4444-8444-555555555555'];
-        $root = ProjectDir::get();
-        $reporter = [\PHP_BINARY, '-r', '$_composer_autoload_path = $argv[1]; array_splice($argv, 0, 2); $_SERVER["argv"] = $argv; require $argv[0];', '--',
-            $root.'/vendor/autoload.php', $root.'/.hatfield/extensions/hatfield-360/bin/h360-report', '--claude-hook'];
+        $reporter = ['node', $this->entry()];
         $commands = implode(' ', array_map(escapeshellarg(...), $reporter));
         $call = static fn (array $payload): string => 'printf %s '.escapeshellarg(json_encode($payload, \JSON_THROW_ON_ERROR)).' | '.$commands;
         $owner = escapeshellarg($directory.'/claude');
@@ -308,14 +484,13 @@ final class Hatfield360ReportCommandTest extends TestCase
             $this->assertSame(2, $snapshot['sequence']);
             $this->assertSame(1, $snapshot['sessionEpoch']);
 
-            // Two distinct native PTY owners share the state admission lock.
+            // A first report from B must not wait for A’s socket acknowledgement.
             $barrier = listen('unix://'.$directory.'/b');
             $pause = escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg('$s = stream_socket_client("unix://".$argv[1]); exit(fread($s, 1) === "!" ? 0 : 1);').' '.escapeshellarg($directory.'/b');
-            $stop = array_replace($turn, ['hook_event_name' => 'Stop', 'stop_hook_active' => false]);
+            $stop = array_replace($turn, ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'background_tasks' => []]);
             $agent = array_replace($turn, ['hook_event_name' => 'SubagentStart', 'agent_id' => 'agent-1']);
             $ownerA = new Process($shell(implode('; ', [$call($hook), $call($turn), $pause, $call($agent), $pause, $call($stop)])), env: $env, timeout: 5);
             $ownerB = new Process($shell(implode('; ', [$call($hook), $call($turn), $pause, $call($stop)])), env: $env, timeout: 5);
-            $lock = (new LockFactory(new FlockStore($directory)))->createLock('claude-managed');
             try {
                 $ready = function (Process $owner) use ($server, $reply, $barrier): array {
                     $owner->start();
@@ -329,16 +504,33 @@ final class Hatfield360ReportCommandTest extends TestCase
                     return [$registration, $signal];
                 };
                 [$registrationA, $signalA] = $ready($ownerA);
-                [$registrationB, $signalB] = $ready($ownerB);
-                $this->assertNotSame($registrationA['owner']['pid'], $registrationB['owner']['pid']);
-                $this->assertTrue($lock->acquire());
+                // One prior owner and A are already admitted; leave one slot for B.
+                for ($i = 0; $i < 61; ++$i) {
+                    $fixture = \sprintf('%s/node-claude-managed-00000000-0000-4000-8000-%012x.json', $directory, $i);
+                    $this->assertFalse(is_link($fixture));
+                    $this->assertNotFalse(file_put_contents($fixture, '{}'));
+                }
                 $signalA->write('!');
                 $signalA->close();
+                $this->assertSame($registrationA, $this->exchange($server, $ownerA, reply: $reply, finish: false));
+                $agentReport = $this->exchange($server, $ownerA, finish: false, beforeReply: function () use ($ownerB, $server, $reply, &$registrationB): void {
+                    $ownerB->start();
+                    $registrationB = $this->exchange($server, $ownerB, reply: $reply, finish: false);
+                });
+                $this->assertNotSame($registrationA['owner']['pid'], $registrationB['owner']['pid']);
+                $this->assertSame(1, $agentReport['activeSubagents']);
                 $signalA = $barrier->accept(new TimeoutCancellation(2));
                 $this->assertNotNull($signalA);
-                $this->assertStringContainsString('hook_lock_timeout', $ownerA->getOutput());
-                $lock->release();
-                foreach ([[$ownerA, $signalA, $registrationA, null], [$ownerB, $signalB, $registrationB, 0]] as [$native, $signal, $registration, $count]) {
+                $this->assertSame(1, $this->exchange($server, $ownerB, finish: false)['sequence']);
+                $this->assertSame($registrationB, $this->exchange($server, $ownerB, reply: $reply, finish: false));
+                $this->assertSame(0, $this->exchange($server, $ownerB, finish: false)['activeSubagents']);
+                $signalB = $barrier->accept(new TimeoutCancellation(2));
+                $this->assertNotNull($signalB);
+                $this->assertCount(64, glob($directory.'/node-claude-managed-*.json'));
+                $overflow = new Process($shell($call($hook)), env: $env, timeout: 5);
+                $this->assertSame(0, $overflow->run());
+                $this->assertCount(64, glob($directory.'/node-claude-managed-*.json'));
+                foreach ([[$ownerA, $signalA, $registrationA, 1], [$ownerB, $signalB, $registrationB, 0]] as [$native, $signal, $registration, $count]) {
                     $signal->write('!');
                     $signal->close();
                     $this->assertSame($registration, $this->exchange($server, $native, reply: $reply, finish: false));
@@ -347,9 +539,8 @@ final class Hatfield360ReportCommandTest extends TestCase
                     $this->assertSame($count, $completed['activeSubagents']);
                     $this->assertSame(0, $native->wait());
                 }
-                $this->assertStringNotContainsString('hook_lock_timeout', $ownerB->getOutput());
+                $this->assertStringNotContainsString('hook_lock_unavailable', $ownerB->getOutput());
             } finally {
-                $lock->release();
                 if (isset($signalA)) {
                     $signalA->close();
                 }
@@ -395,10 +586,10 @@ final class Hatfield360ReportCommandTest extends TestCase
         $session = ['session_id' => 'claude-1'];
         $input = ['title' => 'Review', 'body' => 'Available'];
         try {
-            $this->assertSame(1, $this->launch($environment, $input, hook: false, notify: true)->wait());
+            $this->assertSame(1, $this->launch($environment, $input, notify: true)->wait());
             $first = $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionStart', 'source' => 'startup']));
-            $this->assertSame(2, $this->launch($environment, ['title' => str_repeat('é', 201), 'body' => 'Available'], hook: false, notify: true)->wait());
-            $notice = $this->exchange($server, $this->launch($environment, $input, hook: false, notify: true));
+            $this->assertSame(2, $this->launch($environment, ['title' => str_repeat('é', 201), 'body' => 'Available'], notify: true)->wait());
+            $notice = $this->exchange($server, $this->launch($environment, $input, notify: true));
             $this->assertSame('notification', $notice['kind']);
             $this->assertSame($first['sessionId'], $notice['sessionId']);
             $this->assertSame($first['sessionEpoch'], $notice['sessionEpoch']);
@@ -406,92 +597,89 @@ final class Hatfield360ReportCommandTest extends TestCase
             $this->assertSame($input, array_intersect_key($notice, $input));
             $end = $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionEnd', 'reason' => 'logout']));
             $this->assertSame($notice['sequence'] + 1, $end['sequence']);
-            $this->assertSame(1, $this->launch($environment, $input, hook: false, notify: true)->wait());
+            $this->assertSame(1, $this->launch($environment, $input, notify: true)->wait());
         } finally {
             $server->close();
             TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 
-    public function testConcurrentClaudeHookWaitsForTheInFlightSnapshot(): void
+    public function testStopCannotSettleWhileAnEnteredStartHoldsItsPendingLock(): void
     {
         $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
         $server = listen('unix://'.$directory.'/s');
-        $barrier = listen('unix://'.$directory.'/b');
+        $launch = '44444444-4444-4444-8444-444444444444';
         $environment = [
             'H360_STATUS_ENDPOINT' => $directory.'/s',
-            'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444',
+            'H360_STATUS_LAUNCH_ID' => $launch,
             'H360_STATUS_TOKEN' => str_repeat('a', 64),
-            'H360_TEST_BARRIER' => $directory.'/b',
-        ];
-        $session = ['session_id' => 'claude-1'];
-        $prompt = $session + ['prompt_id' => '44444444-4444-4444-8444-111111111111'];
-        try {
-            $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionStart', 'source' => 'startup']));
-            $first = $this->launch($environment, $prompt + ['hook_event_name' => 'UserPromptSubmit']);
-            $started = $this->exchange($server, $first, beforeReply: function () use ($barrier, $environment, $prompt, &$second): void {
-                // Signal only after the real flock has refused the competing process.
-                $second = $this->launch($environment, $prompt + ['hook_event_name' => 'SubagentStart', 'agent_id' => 'agent-1'], observeContention: true);
-                $signal = $barrier->accept(new TimeoutCancellation(2));
-                $this->assertNotNull($signal);
-                $signal->close();
-            });
-            $this->assertInstanceOf(Process::class, $second);
-            $agent = $this->exchange($server, $second);
-            $completed = $this->exchange($server, $this->launch($environment, $prompt + ['hook_event_name' => 'Stop', 'stop_hook_active' => false]));
-            $this->assertSame($started['sequence'] + 1, $agent['sequence']);
-            $this->assertSame(1, $agent['activeSubagents']);
-            $this->assertSame('completed', $completed['turn']['status']);
-            $this->assertSame(1, $completed['activeSubagents']);
-        } finally {
-            if (isset($second) && $second->isRunning()) {
-                $second->stop(0);
-            }
-            $barrier->close();
-            $server->close();
-            TestDirectoryIsolation::removeDirectory($directory);
-        }
-    }
-
-    public function testStopCannotSettleWhileAnEnteredStartIsPending(): void
-    {
-        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
-        $server = listen('unix://'.$directory.'/s');
-        $barrier = listen('unix://'.$directory.'/b');
-        $environment = [
-            'H360_STATUS_ENDPOINT' => $directory.'/s',
-            'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444',
-            'H360_STATUS_TOKEN' => str_repeat('a', 64),
-            'H360_TEST_BARRIER' => $directory.'/b',
-            'H360_TEST_HOLD_START' => '1',
         ];
         $session = ['session_id' => 'claude-1'];
         $prompt = $session + ['prompt_id' => '44444444-4444-4444-8444-111111111111'];
         try {
             $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionStart', 'source' => 'startup']));
             $this->exchange($server, $this->launch($environment, $prompt + ['hook_event_name' => 'UserPromptSubmit']));
-            $start = $this->launch($environment, $prompt + ['hook_event_name' => 'SubagentStart', 'agent_id' => 'agent-1'], observeContention: true);
-            $signal = $barrier->accept(new TimeoutCancellation(2));
-            $this->assertNotNull($signal);
-            $stop = $this->exchange($server, $this->launch($environment, $prompt + ['hook_event_name' => 'Stop', 'stop_hook_active' => false]));
-            $signal->write('!');
-            $signal->close();
-            $agent = $this->exchange($server, $start);
+            $release = $this->holdLock($directory.'/node-claude-status-'.$launch.'.json.pending');
+            $start = $prompt + ['hook_event_name' => 'SubagentStart', 'agent_id' => 'agent-1'];
+            $stop = $this->exchange(
+                $server,
+                $this->launch($environment, $prompt + ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'background_tasks' => []]),
+                beforeReply: function () use (&$waiting, $environment, $start): void {
+                    $waiting = $this->launch(['NODE_OPTIONS' => $this->retryProbe()] + $environment, $start);
+                    $this->awaitLockRetry($waiting);
+                },
+            );
             $this->assertSame('completed', $stop['turn']['status']);
             $this->assertNull($stop['activeSubagents']);
+            $release();
+            unset($release);
+            $agent = $this->exchange($server, $waiting);
             $this->assertSame($stop['sequence'] + 1, $agent['sequence']);
             $this->assertSame(1, $agent['activeSubagents']);
         } finally {
-            if (isset($signal)) {
-                $signal->close();
+            if (isset($release)) {
+                $release();
             }
-            if (isset($start) && $start->isRunning()) {
-                $start->stop(0);
-            }
-            $barrier->close();
             $server->close();
             TestDirectoryIsolation::removeDirectory($directory);
         }
+    }
+
+    private function retryProbe(): string
+    {
+        return '--require='.self::$pluginDirectory.'/retry-barrier.cjs';
+    }
+
+    private function awaitLockRetry(Process $process): void
+    {
+        $this->assertTrue($process->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'contention-retry')));
+        $this->assertTrue($process->isRunning());
+    }
+
+    private function holdLock(string $path): \Closure
+    {
+        $code = <<<'JS'
+            const { lockSync } = require('proper-lockfile');
+            const release = lockSync(process.argv[1], {realpath: false});
+            process.stdin.on('end', release).resume();
+            process.stdout.write('locked\n');
+            JS;
+        $input = new InputStream();
+        $process = new Process(['node', '-e', $code, $path], self::$pluginDirectory, ['HATFIELD_SESSION_ID' => false, 'NODE_OPTIONS' => false], $input, 5);
+        $process->start();
+        try {
+            $this->assertTrue($process->waitUntil(static fn (string $type, string $output): bool => Process::OUT === $type && str_contains($output, "locked\n")));
+        } catch (\Throwable $exception) {
+            $input->close();
+            $process->wait();
+
+            throw $exception;
+        }
+
+        return function () use ($input, $process): void {
+            $input->close();
+            $this->assertSame(0, $process->wait(), $process->getErrorOutput());
+        };
     }
 
     /** @param array<string, string> $environment @param array<string, mixed>|string $input */
@@ -500,44 +688,25 @@ final class Hatfield360ReportCommandTest extends TestCase
         $process = $this->launch($environment, $input);
         $this->assertSame(0, $process->wait(), $process->getErrorOutput());
         $this->assertSame('', $process->getOutput());
-        $this->assertSame(null === $diagnostic ? '' : json_encode(['component' => 'hatfield_360', 'event_type' => $diagnostic], \JSON_THROW_ON_ERROR)."\n", $process->getErrorOutput());
+        $this->assertSame(null === $diagnostic ? '' : json_encode(['component' => 'hatfield-360', 'event_type' => $diagnostic], \JSON_THROW_ON_ERROR)."\n", $process->getErrorOutput());
     }
 
     /** @param array<string, string> $environment @param array<string, mixed>|string $input */
-    private function launch(array $environment, array|string $input, bool $hook = true, bool $notify = false, bool $observeContention = false): Process
+    private function launch(array $environment, array|string $input, bool $notify = false): Process
     {
-        $root = ProjectDir::get();
-        $command = [\PHP_BINARY, '-r', '$_composer_autoload_path = $argv[1]; array_splice($argv, 0, 2); $_SERVER["argv"] = $argv; require $argv[0];', '--',
-            $root.'/vendor/autoload.php', $root.'/.hatfield/extensions/hatfield-360/bin/h360-report'];
-        if ($observeContention) {
-            $command[2] = <<<'PHP'
-                namespace Symfony\Component\Lock\Store;
-                function flock($handle, $operation): bool {
-                    static $signaled = false;
-                    $acquired = \flock($handle, $operation);
-                    $hold = $acquired && ($operation & \LOCK_SH) && getenv('H360_TEST_HOLD_START');
-                    if ((!$acquired || $hold) && !$signaled) {
-                        $signaled = true;
-                        $signal = stream_socket_client('unix://'.getenv('H360_TEST_BARRIER'));
-                        if ($hold) {
-                            fread($signal, 1);
-                        }
-                        fclose($signal);
-                    }
-                    return $acquired;
-                }
-                PHP
-                .$command[2];
+        $command = ['node', $this->entry()];
+        if ($notify) {
+            $command[] = '--notify';
         }
-        if ($hook) {
-            $command[] = '--claude-hook';
-        } elseif ($notify) {
-            $command[] = '--claude-notify';
-        }
-        $process = new Process($command, env: $environment + ['HATFIELD_SESSION_ID' => false], input: \is_string($input) ? $input : json_encode($input, \JSON_THROW_ON_ERROR), timeout: 2);
+        $process = new Process($command, env: $environment + ['HATFIELD_SESSION_ID' => false, 'NODE_OPTIONS' => false], input: \is_string($input) ? $input : json_encode($input, \JSON_THROW_ON_ERROR), timeout: 9);
         $process->start();
 
         return $process;
+    }
+
+    private function entry(): string
+    {
+        return self::$pluginDirectory.'/src/hook.mjs';
     }
 
     /** @return array<array-key, mixed> */

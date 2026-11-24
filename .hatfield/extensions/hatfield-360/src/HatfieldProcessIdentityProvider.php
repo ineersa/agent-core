@@ -27,6 +27,6 @@ final class HatfieldProcessIdentityProvider
         // begins at field 3, so field 22 is its zero-based field 19.
         $ticks = explode(' ', substr($stat, $end + 2))[19] ?? '';
 
-        return StatusClient::registerManual('hatfield', self::$instanceId ??= (string) Uuid::v4(), $pid, (string) $namespace, $ticks);
+        return StatusClient::registerManual(self::$instanceId ??= (string) Uuid::v4(), $pid, (string) $namespace, $ticks);
     }
 }
