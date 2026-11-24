@@ -14,6 +14,7 @@ extensions:
         - Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
         - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
+        - Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension
     settings:
         # OM requires observational_memory.librarian.url in user/project settings.
         # Optional librarian.token (literal or env:NAME) is shared by MCP and REST.
