@@ -13,8 +13,6 @@ use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
-use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
-use Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension;
 use Ineersa\CodingAgent\Extension\Exception\ExtensionPackageUninstallException;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
@@ -49,6 +47,7 @@ final class ExtensionsSetupFlow
     private string $class;
     private string $key;
 
+    /** @param array<string, array{label: string, class: class-string<ConfigurableExtensionInterface>}> $builtIns */
     public function __construct(
         private readonly AppConfig $app,
         private readonly AppConfigLoader $loader,
@@ -56,6 +55,7 @@ final class ExtensionsSetupFlow
         private readonly SettingsOverrideWriter $writer,
         private readonly ExtensionPackageInstaller $installer,
         private readonly ExtensionManager $manager,
+        private readonly array $builtIns,
     ) {
     }
 
@@ -64,10 +64,7 @@ final class ExtensionsSetupFlow
     {
         $manifest = json_decode(file_get_contents($this->resources->getAppRoot().'/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
         $installed = $this->installer->packages($this->layer, $this->app->cwd);
-        $rows = [
-            'safe_guard' => ['label' => 'SafeGuard (built in)', 'installed' => true, 'class' => SafeGuardExtension::class],
-            'scheduling' => ['label' => 'Scheduling (built in)', 'installed' => true, 'class' => SchedulingExtension::class],
-        ];
+        $rows = array_map(static fn (array $entry): array => ['label' => $entry['label'], 'installed' => true, 'class' => $entry['class']], $this->builtIns);
         foreach ($manifest['suggest'] ?? [] as $name => $description) {
             if (!str_starts_with($name, 'ineersa/hatfield-ext-')) {
                 continue;
@@ -86,7 +83,7 @@ final class ExtensionsSetupFlow
 
     public function isBuiltIn(string $package): bool
     {
-        return \in_array($package, ['safe_guard', 'scheduling'], true);
+        return isset($this->builtIns[$package]);
     }
 
     public function uninstall(string $package): void

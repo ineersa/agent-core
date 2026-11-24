@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
 use Ineersa\CodingAgent\Extension\ExtensionUpdateService;
 use Ineersa\CodingAgent\Tests\Support\ExtensionUpdateFixture;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowConfiguration;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
@@ -170,9 +171,29 @@ final class ExtensionsSetupFlowTest extends PerMethodIsolatedKernelTestCase
         $this->assertSame([
             'safe_guard' => ['label' => 'SafeGuard (built in)', 'installed' => true, 'class' => SafeGuardExtension::class],
             'scheduling' => ['label' => 'Scheduling (built in)', 'installed' => true, 'class' => SchedulingExtension::class],
+            'hatfield_360' => ['label' => 'Hatfield 360 (built in)', 'installed' => true, 'class' => Hatfield360Extension::class],
             'ineersa/hatfield-ext-task-workflow' => ['label' => 'Task Workflow', 'installed' => false, 'class' => null],
             'ineersa/hatfield-ext-observational-memory' => ['label' => 'Observational Memory', 'installed' => false, 'class' => null],
         ], $flow->packages());
+    }
+
+    public function testBundledHatfield360CanBeEnabledInUserSettings(): void
+    {
+        $flow = self::getContainer()->get(ExtensionsSetupFlow::class);
+        $writer = self::getContainer()->get(SettingsOverrideWriter::class);
+        $flow->layer = SettingsLayerEnum::User;
+        $path = $writer->layerPath($flow->layer, $this->isolatedCwd());
+        $this->assertStringStartsWith($this->isolatedCwd().'/', $path);
+        $this->assertSame(\dirname($path), realpath(\dirname($path)));
+        $this->assertFalse(is_link($path));
+        $this->assertTrue($flow->isBuiltIn('hatfield_360'));
+
+        $flow->select('hatfield_360');
+        $this->assertSame('false', $flow->members['parent']);
+        $this->assertSame([], $flow->nodes);
+        $flow->members['parent'] = 'true';
+        $this->assertTrue($flow->save([]));
+        $this->assertContains(Hatfield360Extension::class, Yaml::parseFile($path)['extensions']['enabled']);
     }
 
     public function testFutureOfficialSuggestionsRemainVisibleWithoutAnUninstallIdentity(): void
@@ -192,6 +213,7 @@ final class ExtensionsSetupFlowTest extends PerMethodIsolatedKernelTestCase
                 $container->get(SettingsOverrideWriter::class),
                 $container->get(ExtensionPackageInstaller::class),
                 $container->get(ExtensionManager::class),
+                [],
             );
             $rows = $flow->packages();
             $this->assertSame(['label' => 'Future Extension', 'installed' => false, 'class' => null], $rows[$package]);

@@ -11,8 +11,8 @@ use Amp\TimeoutCancellation;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
@@ -23,10 +23,12 @@ use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionObserverInterface;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
+use Symfony\Component\Config\Definition\Builder\TreeBuilder;
+use Symfony\Component\Config\Definition\ConfigurationInterface;
 
 use function Amp\async;
 
-final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, TuiBackgroundJobObserverInterface, ExtensionCommandHandlerInterface, LoggerAwareInterface
+final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, TuiBackgroundJobObserverInterface, ExtensionCommandHandlerInterface, LoggerAwareInterface
 {
     use LoggerAwareTrait;
 
@@ -61,6 +63,16 @@ final class Hatfield360Extension implements HatfieldExtensionInterface, TuiSessi
     private array $pending = [];
     /** @var DeferredFuture<bool>|null */
     private ?DeferredFuture $notice = null;
+
+    public function getConfiguration(): ConfigurationInterface
+    {
+        return new class implements ConfigurationInterface {
+            public function getConfigTreeBuilder(): TreeBuilder
+            {
+                return new TreeBuilder('hatfield_360');
+            }
+        };
+    }
 
     public function register(ExtensionApiInterface $api): void
     {

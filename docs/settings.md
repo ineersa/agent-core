@@ -319,8 +319,10 @@ While disabled, neither the main-only `schedule` tool nor the `/schedule` comman
 
 ### Hatfield 360 session reporting
 
-Add `Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension`
-to your existing `extensions.enabled` list. No Composer installation is needed.
+In `hatfield setup`, open **Extensions**, select **Hatfield 360 (built in)**,
+enable it for the parent in the desired scope, and save. Alternatively, add
+`Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension` to your existing
+`extensions.enabled` list. No Composer installation is needed.
 Start Hatfield through an explicit Hatfield 360 agent launch; the launcher
 supplies the Unix socket path and scoped credentials. Do not set them in YAML
 or copy them into a shell profile. Wrappers must preserve the launch-supplied
@@ -331,7 +333,7 @@ approval or question waits observed by the TUI. Linux managed shells can also
 attempt registration using the running Hatfield process identity. Outside a
 managed launch it does nothing. Windows transport is not supported.
 
-The foreground observer does not establish whether child or script work has
-settled, so it does not trigger a successful-completion notification. Delivery
-is best effort: a disconnected app does not block editing, and missed events
-are not replayed.
+Hatfield 360 can show a completion notice once the response is complete, no
+subagents are active, and no input is pending. Background scripts are shown
+separately. Delivery is best effort: a disconnected app does not block editing,
+and missed events are not replayed.

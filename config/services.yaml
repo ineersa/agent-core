@@ -108,6 +108,19 @@ services:
       - '%kernel.project_dir%/src/CodingAgent/Tool/CodeMode/Resources/'
       - '%kernel.project_dir%/src/CodingAgent/Extension/Builtin/Scheduling/'
 
+  Ineersa\CodingAgent\CLI\Extensions\ExtensionsSetupFlow:
+    arguments:
+      $builtIns:
+        safe_guard:
+          label: 'SafeGuard (built in)'
+          class: Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+        scheduling:
+          label: 'Scheduling (built in)'
+          class: Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension
+        hatfield_360:
+          label: 'Hatfield 360 (built in)'
+          class: Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension
+
   Ineersa\CodingAgent\Agent\Diagnostics\PromptCacheDiagnosticsInvocationSubscriber:
     arguments:
       $writeDiagnostics: '%app.write_prompt_cache_diagnostics%'
