@@ -189,16 +189,20 @@ final class ClaudeHookReporter
                     $state['agents'][$id] = true;
                 }
             } else {
-                $registry = self::taskRegistry($hook['background_tasks'] ?? null);
-                if (isset($state['agents'][$id])) {
-                    unset($state['agents'][$id]);
-                } elseif (null === $registry || $registry['subagents'] === ($state['agentsUncertain'] ?? false)) {
+                if (!isset($state['agents'][$id])) {
                     return false;
                 }
-                if (null !== $registry) {
-                    $state['agentsUncertain'] = $registry['subagents'];
-                }
+                unset($state['agents'][$id]);
+                // The lock orders processing, not registry sampling. Even a
+                // matching prompt cannot make a child sample newer than Stop.
+                // Positive evidence may invalidate zero; negative evidence can
+                // never settle unknown membership left by an authoritative Stop.
+                $registry = self::taskRegistry($hook['background_tasks'] ?? null);
+                $state['agentsUncertain'] = ($state['agentsUncertain'] ?? false) || ($registry['subagents'] ?? false);
             }
+            // Child membership is correlated, but its registry's script count
+            // is not. Do not republish an obsolete sample as a current count.
+            $state['scripts'] = null;
         } elseif (isset($hook['agent_id'])) {
             return false;
         } elseif ('SessionEnd' === $event) {
@@ -233,6 +237,7 @@ final class ClaudeHookReporter
                 $state['turn'] = ['id' => $prompt, 'status' => 'working'];
                 $state['waits'] = [];
                 $state['tools'] = [];
+                $state['scripts'] = null;
             } elseif (null === $turn || $prompt !== $turn['id']) {
                 return false;
             } elseif ('working' !== $turn['status']) {

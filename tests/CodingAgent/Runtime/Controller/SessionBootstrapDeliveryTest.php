@@ -18,10 +18,17 @@ use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Ineersa\Tui\Tests\E2E\TuiE2eDatabaseEnv;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Revolt\EventLoop;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
 
 final class SessionBootstrapDeliveryTest extends PerMethodIsolatedKernelTestCase
 {
@@ -37,6 +44,41 @@ final class SessionBootstrapDeliveryTest extends PerMethodIsolatedKernelTestCase
         }
         $this->sockets = [];
         parent::tearDown();
+    }
+
+    #[DataProvider('blockedReadyCancellation')]
+    public function testReadyBackpressureStillServicesCancellationWithoutAReader(string $mode): void
+    {
+        $directory = TestDirectoryIsolation::createProjectTempDir('ready-backpressure');
+        try {
+            TestDirectoryIsolation::createHatfieldTree($directory);
+            $paths = TuiE2eDatabaseEnv::allocateIsolatedPaths(ProjectDir::get(), $directory, 'ready-backpressure');
+            $schema = static::getContainer()->get('doctrine.dbal.default_connection')->getParams()['path'];
+            (new Filesystem())->copy($schema, $paths['appAbsolute']);
+            // A separate owned process contains a blocking-write regression.
+            // The full socket and absent reader are deterministic barriers;
+            // three seconds is only a safety cap, never readiness synchronization.
+            $process = new Process([\PHP_BINARY, __DIR__.'/Support/ReadyBackpressure.php', $mode], $directory, [
+                'HATFIELD_SESSION_ID' => false, 'HATFIELD_CWD' => $directory,
+                'HATFIELD_TEST_DATABASE_PATH' => $paths['appEnv'],
+            ], timeout: 3);
+            try {
+                $process->run();
+            } catch (ProcessTimedOutException $exception) {
+                $this->fail('Ready output blocked cancellation after barrier: '.$process->getOutput().' '.$exception->getMessage());
+            }
+            $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+            $this->assertStringContainsString("buffer-full\ncancel-serviced\nfinished\n", $process->getOutput());
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    /** @return iterable<array{string}> */
+    public static function blockedReadyCancellation(): iterable
+    {
+        yield ['cancel'];
+        yield ['shutdown'];
     }
 
     public function testReadyPublishesOnlyAfterDrainedCutRecheckAndPrecedesLiveOutput(): void
@@ -57,10 +99,20 @@ final class SessionBootstrapDeliveryTest extends PerMethodIsolatedKernelTestCase
                 RunEvent::forAppend($descriptor->runId, 1, 'history_tail_discarded', ['after_turn_no' => 0]),
             ]);
             // Drain the exact pending record. Its callback rechecks the archive,
-            // folds the dropped fence, and synchronously publishes one final ready.
+            // folds the dropped fence, and admits one final ready without yielding.
+            $output->getMethod('flushBootstrap')->invoke($emitter);
+            $this->assertNotNull($reflection->getProperty('descriptor')->getValue($delivery));
+            $this->assertNotNull($reflection->getProperty('timeout')->getValue($delivery));
+            $this->assertFalse($emitter->tryEmit(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, $descriptor->runId, 4)));
+            $pending = $output->getProperty('pending')->getValue($emitter);
+            $this->assertSame(['session.ready', 'turn.started'], array_map(static fn (array $frame): string => JsonlCodec::decodeEvent($frame['line'])->type, $pending));
+            $output->getMethod('flushBootstrap')->invoke($emitter);
+            $this->assertNotNull($reflection->getProperty('descriptor')->getValue($delivery), 'Live output admitted behind ready still owns the drain.');
+            $this->assertFalse(stream_get_meta_data($this->sockets[0])['blocked']);
             $output->getMethod('flushBootstrap')->invoke($emitter);
             $this->assertNull($reflection->getProperty('descriptor')->getValue($delivery));
-            $this->assertTrue($emitter->tryEmit(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, $descriptor->runId, 4)));
+            $this->assertNull($reflection->getProperty('timeout')->getValue($delivery));
+            $this->assertTrue($emitter->tryEmit(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, $descriptor->runId, 5)));
             stream_set_blocking($this->sockets[1], false);
             $lines = array_filter(explode("\n", stream_get_contents($this->sockets[1])));
             $events = array_map(JsonlCodec::decodeEvent(...), $lines);
@@ -69,6 +121,8 @@ final class SessionBootstrapDeliveryTest extends PerMethodIsolatedKernelTestCase
             $this->assertSame(3, $ready[0]->payload['canonical_seq']);
             $this->assertSame(['current_foreground_response_seq' => null, 'pending_foreground_requests' => []], $ready[0]->payload['foreground']);
             $this->assertSame(RuntimeEventTypeEnum::TurnStarted->value, $events[array_key_last($events)]->type);
+            $this->assertSame([4, 5], array_values(array_map(static fn (RuntimeEvent $event): int => $event->seq,
+                array_filter($events, static fn (RuntimeEvent $event): bool => RuntimeEventTypeEnum::TurnStarted->value === $event->type))));
             $this->assertSame([], $output->getProperty('pending')->getValue($emitter));
         } finally {
             $delivery->cancel();

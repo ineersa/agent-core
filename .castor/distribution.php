@@ -1579,11 +1579,11 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
 /**
  * @param list<string> $artifactNames
  */
-function distribution_write_sha256sums(string $distDir, array $artifactNames): string
+function distribution_write_sha256sums(string $distDir, array $artifactNames, string $outputFilename = 'SHA256SUMS'): string
 {
     $lines = [];
     foreach ($artifactNames as $name) {
-        if ('SHA256SUMS' === $name) {
+        if ($outputFilename === $name) {
             continue;
         }
         $path = $distDir.'/'.$name;
@@ -1597,7 +1597,7 @@ function distribution_write_sha256sums(string $distDir, array $artifactNames): s
         $lines[] = $hash.'  '.$name;
     }
     sort($lines);
-    $out = $distDir.'/SHA256SUMS';
+    $out = $distDir.'/'.$outputFilename;
     \CastorTasks\write_file_checked($out, implode("\n", $lines).([] !== $lines ? "\n" : ''));
 
     return $out;
@@ -1855,12 +1855,8 @@ function distribution_claude_plugin(
         \Castor\run(['castor', 'test', '--filter=Hatfield360ReportCommandTest'], context: \Castor\context()->withWorkingDirectory($root)->withEnvironment([
             'H360_TEST_PACKAGED_PLUGIN' => rtrim($extracted.'/'.$prefix, '/'),
         ]));
-        $hash = hash_file('sha256', $archive);
-        if (false === $hash) {
-            throw new RuntimeException('Unable to hash standalone plugin archive.');
-        }
         $filesystem->rename($archive, $dist.'/hatfield-360.zip', true);
-        $filesystem->dumpFile($dist.'/hatfield-360.zip.sha256', $hash."  hatfield-360.zip\n");
+        distribution_write_sha256sums($dist, ['hatfield-360.zip'], 'hatfield-360.zip.sha256');
         echo "Hatfield 360 {$matches[1]}: {$bytes} ZIP bytes, {$total} extracted bytes, {$entries} entries\n";
     } finally {
         $filesystem->remove($stage);

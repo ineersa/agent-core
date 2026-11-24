@@ -23,10 +23,8 @@ final class Hatfield360ReportCommandTest extends TestCase
         $packaged = getenv('H360_TEST_PACKAGED_PLUGIN');
         $plugin = $packaged ?: ProjectDir::get().'/.hatfield/extensions/hatfield-360';
         $node = (new ExecutableFinder())->find('node');
-        if (null === $node || !is_file($plugin.'/node_modules/@anthropic-ai/claude-agent-sdk/core.mjs')) {
-            $this->assertFalse($packaged, 'Required packaged SDK dependencies are missing.');
-            $this->markTestSkipped('Install the standalone Claude plugin Node dependencies to exercise the real SDK.');
-        }
+        $this->assertNotNull($node, 'Required SDK test setup is missing Node.js; run through Castor.');
+        $this->assertFileExists($plugin.'/node_modules/@anthropic-ai/claude-agent-sdk/core.mjs', 'Required locked SDK dependencies are missing; run through Castor.');
 
         $directory = TestDirectoryIsolation::createProjectTempDir();
         try {
@@ -43,24 +41,15 @@ final class Hatfield360ReportCommandTest extends TestCase
             $command = [$node, $plugin.'/bin/session-title.mjs', $id, $cwd];
             $environment = ['CLAUDE_CONFIG_DIR' => $cwd, 'NODE_OPTIONS' => false, 'HATFIELD_SESSION_ID' => false];
             $process = new Process($command, $cwd, $environment, timeout: 2);
-            $run = static function (string $label) use ($process, $packaged): int {
-                $start = hrtime(true);
-                $exit = $process->run();
-                if ($packaged) {
-                    fwrite(\STDERR, \sprintf("SDK lookup %s: %.1f ms\n", $label, (hrtime(true) - $start) / 1e6));
-                }
-
-                return $exit;
-            };
-            $this->assertSame(1, $run('no title'));
+            $this->assertSame(1, $process->run());
             $this->assertSame('', $process->getOutput());
             $this->assertSame('', $process->getErrorOutput());
 
             file_put_contents($transcript, json_encode(['type' => 'ai-title', 'sessionId' => $id, 'aiTitle' => 'Generated title'], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
-            $this->assertSame(0, $run('generated'));
+            $this->assertSame(0, $process->run());
             $this->assertSame('"Generated title"', $process->getOutput());
             file_put_contents($transcript, json_encode(['type' => 'custom-title', 'sessionId' => $id, 'customTitle' => 'Renamed title'], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
-            $this->assertSame(0, $run('renamed'));
+            $this->assertSame(0, $process->run());
             $this->assertSame('"Renamed title"', $process->getOutput());
 
             $socketDirectory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
@@ -225,9 +214,9 @@ final class Hatfield360ReportCommandTest extends TestCase
             $send($first + $start);
             $completed = $send($first + $stop + $registry);
             $this->assertNull($completed['activeSubagents']);
-            $settled = $send($childStop + $unknownChild + $empty);
-            $this->assertSame(0, $settled['activeSubagents']);
-            $this->assertSame($completed['turn'], $settled['turn']);
+            // An old empty sample may arrive after this positive main Stop.
+            // The same prompt ID does not establish registry sampling order.
+            $this->assertQuietHook($environment, $first + $childStop + $unknownChild + $empty + ['session_id' => 'registry-session']);
 
             $boundary = ['prompt_id' => '55555555-5555-4555-8555-555555555552'];
             $send($boundary + ['hook_event_name' => 'SessionEnd', 'reason' => 'resume']);
@@ -246,10 +235,8 @@ final class Hatfield360ReportCommandTest extends TestCase
             $fifth = ['prompt_id' => '55555555-5555-4555-8555-555555555556'];
             $working = $send($fifth + $start);
             $send($child + ['hook_event_name' => 'SubagentStart']);
-            $settling = $send($childStop + $unknownChild + $registry);
-            $this->assertSame(1, $settling['activeSubagents']);
-            $settling = $send($childStop + $unknownChild + $empty);
-            $this->assertSame(1, $settling['activeSubagents']);
+            $this->assertQuietHook($environment, $childStop + $unknownChild + $registry + ['session_id' => 'registry-session']);
+            $this->assertQuietHook($environment, $childStop + $unknownChild + $empty + ['session_id' => 'registry-session']);
             $settling = $send($childStop + $child + $registry);
             $this->assertNull($settling['activeSubagents']);
             $this->assertSame($working['turn'], $settling['turn']);
@@ -257,6 +244,60 @@ final class Hatfield360ReportCommandTest extends TestCase
             $this->assertSame(0, $final['activeSubagents']);
             $this->assertSame($working['turn']['id'], $final['turn']['id']);
             $this->assertSame('completed', $final['turn']['status']);
+        } finally {
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public function testDelayedChildRegistryCannotClearNewerUncertaintyOrPublishStaleScripts(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $server = listen('unix://'.$directory.'/s');
+        $environment = ['H360_STATUS_ENDPOINT' => $directory.'/s', 'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444', 'H360_STATUS_TOKEN' => str_repeat('a', 64)];
+        $session = ['session_id' => 'ordered-registry'];
+        $first = ['prompt_id' => '55555555-5555-4555-8555-555555555551'];
+        $second = ['prompt_id' => '55555555-5555-4555-8555-555555555552'];
+        $send = fn (array $hook): array => $this->exchange($server, $this->launch($environment, $hook + $session));
+        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false];
+        $shell = ['id' => 'shell', 'type' => 'shell', 'status' => 'running'];
+        $unseen = ['id' => 'not-an-agent-id', 'type' => 'subagent', 'status' => 'running'];
+        // This empty sample was captured before either newer authoritative Stop.
+        $oldEmpty = $first + ['hook_event_name' => 'SubagentStop', 'agent_id' => 'untracked', 'background_tasks' => []];
+        try {
+            $send(['hook_event_name' => 'SessionStart', 'source' => 'startup']);
+            $send($first + ['hook_event_name' => 'UserPromptSubmit']);
+            $send(['hook_event_name' => 'SubagentStart', 'agent_id' => 'tracked']);
+            $completed = $send($first + $stop + ['background_tasks' => [$unseen, $shell]]);
+            $this->assertSame(1, $completed['activeSubagents']);
+            $this->assertSame(1, $completed['backgroundScripts']);
+            $this->assertQuietHook($environment, $oldEmpty + $session);
+            $settled = $send($first + ['hook_event_name' => 'SubagentStop', 'agent_id' => 'tracked', 'background_tasks' => []]);
+            $this->assertNull($settled['activeSubagents'], 'Tracked membership cannot settle unseen-positive uncertainty.');
+            $this->assertNull($settled['backgroundScripts'], 'Unordered child samples cannot replace a script count with zero.');
+            $this->assertSame($completed['turn'], $settled['turn']);
+
+            $working = $send($second + ['hook_event_name' => 'UserPromptSubmit']);
+            $this->assertNull($working['backgroundScripts']);
+            $newer = $send($second + $stop + ['background_tasks' => [$unseen, $shell]]);
+            $this->assertNull($newer['activeSubagents']);
+            $this->assertQuietHook($environment, $oldEmpty + $session);
+            $state = json_decode(file_get_contents($directory.'/claude-status-'.$environment['H360_STATUS_LAUNCH_ID'].'.json'), true, flags: \JSON_THROW_ON_ERROR);
+            $this->assertTrue($state['agentsUncertain']);
+            $this->assertSame($newer['sequence'], $state['sequence']);
+            $this->assertSame(1, $state['scripts'], 'Ignored hooks do not mutate newer accepted registry fields.');
+
+            $third = ['prompt_id' => '55555555-5555-4555-8555-555555555553'];
+            $send($third + ['hook_event_name' => 'UserPromptSubmit']);
+            $send(['hook_event_name' => 'SubagentStart', 'agent_id' => 'tracked-next']);
+            $final = $send($third + $stop + ['background_tasks' => [$shell]]);
+            $this->assertSame(1, $final['activeSubagents'], 'A valid main registry cannot erase known child membership.');
+            $this->assertSame(1, $final['backgroundScripts']);
+            $settled = $send(['hook_event_name' => 'SubagentStop', 'agent_id' => 'tracked-next', 'background_tasks' => [$shell, ['id' => 'other-shell', 'type' => 'shell', 'status' => 'running']]]);
+            $this->assertSame(0, $settled['activeSubagents']);
+            $this->assertNull($settled['backgroundScripts'], 'A correlated child stop still lacks freshness for exact script counts.');
+            $this->assertSame($final['turn'], $settled['turn'], 'Script invalidation neither gates nor creates a response completion.');
+            $this->assertQuietHook($environment, $third + $stop + ['background_tasks' => []] + $session);
         } finally {
             $server->close();
             TestDirectoryIsolation::removeDirectory($directory);
@@ -442,8 +483,10 @@ final class Hatfield360ReportCommandTest extends TestCase
         $hook = ['session_id' => 'native-session', 'hook_event_name' => 'SessionStart', 'source' => 'startup'];
         $turn = ['session_id' => 'native-session', 'hook_event_name' => 'UserPromptSubmit', 'prompt_id' => '44444444-4444-4444-8444-555555555555'];
         $root = ProjectDir::get();
+        $packaged = getenv('H360_TEST_PACKAGED_PLUGIN');
+        $plugin = $packaged ?: $root.'/.hatfield/extensions/hatfield-360';
         $reporter = [\PHP_BINARY, '-r', '$_composer_autoload_path = $argv[1]; array_splice($argv, 0, 2); $_SERVER["argv"] = $argv; require $argv[0];', '--',
-            $root.'/vendor/autoload.php', $root.'/.hatfield/extensions/hatfield-360/bin/h360-report', '--claude-hook'];
+            $packaged ? $plugin.'/vendor/autoload.php' : $root.'/vendor/autoload.php', $plugin.'/bin/h360-report', '--claude-hook'];
         $commands = implode(' ', array_map(escapeshellarg(...), $reporter));
         $call = static fn (array $payload): string => 'printf %s '.escapeshellarg(json_encode($payload, \JSON_THROW_ON_ERROR)).' | '.$commands;
         $owner = escapeshellarg($directory.'/claude');

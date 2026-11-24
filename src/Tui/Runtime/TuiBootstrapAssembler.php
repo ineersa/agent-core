@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
 use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
+use Ineersa\CodingAgent\Session\Validation\ForegroundBaselineValidator;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /** Holds only one bounded, unmounted display transfer. The mounted projector is untouched until validation ends. */
@@ -152,6 +153,8 @@ final class TuiBootstrapAssembler
             if ('resume' !== ($record['kind'] ?? null)) {
                 throw new RuntimeTransportException('Bootstrap resume metadata is missing.');
             }
+            ForegroundBaselineValidator::validate(array_intersect_key($record['data'],
+                array_flip(['current_foreground_response_seq', 'pending_foreground_requests'])), $cut->canonicalSeq);
             $this->resume = (new SessionResumeMetadataProjection($record['data']))->toArray();
 
             return;

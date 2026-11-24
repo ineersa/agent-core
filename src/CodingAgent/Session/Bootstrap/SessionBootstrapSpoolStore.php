@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
+use Ineersa\CodingAgent\Session\Validation\ForegroundBaselineValidator;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
@@ -36,6 +37,7 @@ final readonly class SessionBootstrapSpoolStore
         if ($sequence < 1 || $endOffset < 1 || $anchor < 0) {
             throw new \InvalidArgumentException('Bootstrap requires a complete canonical cut.');
         }
+        ForegroundBaselineValidator::validate(array_intersect_key($resume, array_flip(['current_foreground_response_seq', 'pending_foreground_requests'])), $sequence);
         $lock = $this->locks->createLock('session-bootstrap-'.$runId);
         $lock->acquire(true);
         try {
@@ -150,22 +152,9 @@ final readonly class SessionBootstrapSpoolStore
                 throw new ValidationFailedException($record, $errors);
             }
             $data = $record['data'];
-            $errors = $this->validator->validate($data, new Assert\Collection(fields: [
-                'current_foreground_response_seq' => new Assert\Sequentially([new Assert\Type('integer'), new Assert\Positive(), new Assert\LessThanOrEqual($descriptor->canonicalSeq)]),
-                'pending_foreground_requests' => new Assert\Sequentially([new Assert\NotNull(), new Assert\Type('array'), new Assert\Count(max: 2000),
-                    new Assert\All([new Assert\Collection([
-                        'request_id' => [new Assert\NotBlank(), new Assert\Type('string'), new Assert\Length(max: 1024)],
-                        'category' => [new Assert\NotNull(), new Assert\Choice(choices: ['question', 'approval'])],
-                    ])]),
-                ]),
-            ], allowExtraFields: true));
-            if (\count($errors) > 0) {
-                throw new ValidationFailedException($data, $errors);
-            }
-            $projection = new SessionResumeMetadataProjection(array_replace((new SessionResumeMetadataProjection())->toArray(), [
-                'current_foreground_response_seq' => $data['current_foreground_response_seq'],
-                'pending_foreground_requests' => $data['pending_foreground_requests'],
-            ]));
+            $foreground = ForegroundBaselineValidator::validate(array_intersect_key($data,
+                array_flip(['current_foreground_response_seq', 'pending_foreground_requests'])), $descriptor->canonicalSeq);
+            $projection = new SessionResumeMetadataProjection(array_replace((new SessionResumeMetadataProjection())->toArray(), $foreground));
             $this->removeTransfer($this->directory($descriptor->runId));
 
             return $projection;

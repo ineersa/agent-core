@@ -88,6 +88,6 @@ final readonly class SessionBootstrapTransfer
 
         yield new RuntimeEvent(RuntimeEventTypeEnum::SessionReady->value, $descriptor->runId, 0,
             ['bootstrap_id' => $descriptor->bootstrapId, 'view_epoch' => $descriptor->viewEpoch, 'canonical_seq' => $sequence, 'end_offset' => $offset,
-                'foreground' => $resume->foreground()]);
+                'foreground' => $resume->foreground($sequence)]);
     }
 }

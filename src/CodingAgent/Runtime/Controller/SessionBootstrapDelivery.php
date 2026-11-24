@@ -209,11 +209,20 @@ final class SessionBootstrapDelivery
 
             return;
         }
-        $this->cancel(false);
-        $this->emitter->finishBootstrapOutput();
-        // Enter normal live output and publish its first record without yielding.
-        // Later consumer events are no longer filtered while this write drains.
-        $this->emitter->emit($event);
+        // An empty user-space queue does not imply room in the OS pipe. Admit
+        // ready without yielding, then forward live events into the same bounded
+        // nonblocking queue behind it. Keep cancellation and timeout ownership
+        // until all admitted output drains; no canonical event is filtered here.
+        $this->stream = null;
+        $this->emitter->emitTransfer($event);
+        $this->emitter->setBootstrapFilter(null);
+        $this->emitter->whenDrained(function () use ($id): void {
+            if ($this->descriptor?->bootstrapId !== $id) {
+                return;
+            }
+            $this->cancel(false);
+            $this->emitter->finishBootstrapOutput();
+        });
     }
 
     /** Canonical records may exceed an IPC frame, but the pipe never receives an oversized line.

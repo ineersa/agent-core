@@ -83,6 +83,9 @@ function build_sequential_phpunit_command(string $pharEnv): string
 function test(?string $filter = null, ?string $suite = null): void
 {
     \CastorTasks\initialize_standalone_qa_run();
+    if (null === $filter || str_contains($filter, 'Hatfield360') || str_contains($filter, 'SdkTitle')) {
+        prepare_hatfield360_sdk_tests();
+    }
     // Test DB schema readiness (bounded setup; session-reaped on hang).
     @mkdir('var/test', 0755, true);
     $migrate = run_test_db_migrate_bounded(
@@ -190,15 +193,31 @@ function test(?string $filter = null, ?string $suite = null): void
     exit(0);
 }
 
+/** Locked local metadata SDK prerequisite; never installs optional native binaries. */
+function prepare_hatfield360_sdk_tests(int $timeoutSeconds = 40): void
+{
+    // Packaged verification must consume the archive's dependencies, not repair it.
+    if (false !== getenv('H360_TEST_PACKAGED_PLUGIN')) {
+        return;
+    }
+    $plugin = __DIR__.'/../.hatfield/extensions/hatfield-360';
+    $result = run_test_command_bounded('hatfield360-sdk-setup',
+        qa_test_home_shell_prefix().' npm ci --prefix '.escapeshellarg($plugin)
+        .' --omit=optional --ignore-scripts --no-audit --no-fund', $timeoutSeconds);
+    if (0 !== $result['exitCode']) {
+        fail_quality('Required Hatfield 360 SDK test setup failed (Node.js 18.14+ and npm required): '.$result['output']);
+    }
+}
+
 // ─── Check lane ParaTest command builder ───────────────────────
 
 /**
  * Build the ParaTest command for the unit/integration lane in castor check.
  *
  * This is a standalone command builder — it does NOT call phar_ensure()
- * and does NOT wrap in passthru/exit.  It excludes ALL groups that require
- * live LLM, tmux, or external tooling: tui-e2e-replay, llm-real,
- * controller-replay, and phar.  The gate is fully deterministic.
+ * and does NOT wrap in passthru/exit. It excludes groups requiring live LLM,
+ * tmux, or packaged artifacts: tui-e2e-replay, llm-real, controller-replay,
+ * phar and native-artifact. The locked metadata SDK is prepared before lanes.
  */
 function build_check_paratest_command(): string
 {

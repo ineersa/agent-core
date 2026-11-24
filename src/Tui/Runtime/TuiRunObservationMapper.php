@@ -7,7 +7,7 @@ namespace Ineersa\Tui\Runtime;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
+use Ineersa\CodingAgent\Session\Validation\ForegroundBaselineValidator;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiForegroundBaselineDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiForegroundRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
@@ -15,22 +15,17 @@ use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 
 final class TuiRunObservationMapper
 {
-    /** Validate through the same bounded projection used by the sealed owner transfer. */
+    /** Validate through the same boundary as the sealed owner transfer. */
     public static function foregroundBaseline(RuntimeEvent $event): TuiForegroundBaselineDTO
     {
         $foreground = $event->payload['foreground'] ?? null;
         $sequence = $event->payload['canonical_seq'] ?? null;
         if (RuntimeEventTypeEnum::SessionReady->value !== $event->type || 0 !== $event->seq
-            || !\is_int($sequence) || $sequence < 1 || !\is_array($foreground) || 2 !== \count($foreground)
-            || !\array_key_exists('current_foreground_response_seq', $foreground) || !\array_key_exists('pending_foreground_requests', $foreground)) {
+            || !\is_int($sequence) || $sequence < 1) {
             throw new RuntimeTransportException('Session readiness requires a bounded foreground baseline.');
         }
-        $projection = new SessionResumeMetadataProjection(array_replace((new SessionResumeMetadataProjection())->toArray(), $foreground));
-        $data = $projection->foreground();
+        $data = ForegroundBaselineValidator::validate($foreground, $sequence);
         $opening = $data['current_foreground_response_seq'];
-        if (null !== $opening && $opening > $sequence) {
-            throw new RuntimeTransportException('Foreground response opening exceeds the ready cut.');
-        }
 
         return new TuiForegroundBaselineDTO($event->runId, $sequence, $opening,
             array_map(static fn (array $request): TuiForegroundRequestDTO => new TuiForegroundRequestDTO($request['request_id'],

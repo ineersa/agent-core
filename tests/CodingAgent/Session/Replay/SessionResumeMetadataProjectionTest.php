@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
@@ -13,6 +15,7 @@ use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
 
 final class SessionResumeMetadataProjectionTest extends TestCase
 {
@@ -209,9 +212,49 @@ final class SessionResumeMetadataProjectionTest extends TestCase
     {
         $data = (new SessionResumeMetadataProjection())->toArray();
         $data['pending_foreground_requests'] = array_fill(0, 40, ['request_id' => str_repeat('x', 1024), 'category' => 'question']);
-        $this->expectException(\LengthException::class);
+        $projection = new SessionResumeMetadataProjection($data);
+        $this->expectException(ValidationFailedException::class);
         $this->expectExceptionMessage('wire budget');
-        new SessionResumeMetadataProjection($data);
+        $projection->foreground();
+    }
+
+    public function testDuplicateIdsResolveOnlyTheFirstOccurrence(): void
+    {
+        $projection = new SessionResumeMetadataProjection();
+        $this->fold($projection, 1, 'waiting_human', ['question_id' => 'same']);
+        $this->fold($projection, 2, 'waiting_human', ['question_id' => 'same', 'approval_context' => []]);
+        $this->fold($projection, 3, 'agent_command_applied', ['kind' => 'human_response', 'question_id' => 'same']);
+        $this->assertSame([['request_id' => 'same', 'category' => 'approval']], $projection->foreground()['pending_foreground_requests']);
+    }
+
+    public function testOversizedHistoricalIdentityCanResolveAfterRestoreWithoutLeakingIntoMetadata(): void
+    {
+        $projection = new SessionResumeMetadataProjection();
+        $id = str_repeat('x', 100000);
+        $this->fold($projection, 1, 'waiting_human', ['question_id' => $id]);
+        $data = $projection->toArray();
+        $this->assertLessThan(2000, \strlen(json_encode($data, \JSON_THROW_ON_ERROR)));
+        $projection = new SessionResumeMetadataProjection($data);
+        $this->fold($projection, 2, 'agent_command_applied', ['kind' => 'human_response', 'question_id' => $id]);
+        $this->assertSame([], $projection->foreground()['pending_foreground_requests']);
+    }
+
+    public function testUnresolvedOversizedHistoricalIdentityRefusesAtTheReadyBoundary(): void
+    {
+        $projection = new SessionResumeMetadataProjection();
+        $this->fold($projection, 1, 'waiting_human', ['question_id' => str_repeat('x', 1025)]);
+        $projection = new SessionResumeMetadataProjection($projection->toArray());
+        $this->expectException(ValidationFailedException::class);
+        $projection->foreground(1);
+    }
+
+    public function testTypedCurrentOwnerRequestUsesTheSameWireAdmission(): void
+    {
+        $state = RunState::queued('42')->with(['lastSeq' => 1, 'pendingHumanInputRequests' => [
+            PendingHumanInputRequestDTO::modelTurnFromInterruptPayload(['question_id' => str_repeat('x', 1025)]),
+        ]]);
+        $this->expectException(ValidationFailedException::class);
+        (new SessionResumeMetadataProjection())->seedForegroundRequests($state);
     }
 
     /** @param array<string, mixed> $payload */

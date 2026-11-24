@@ -8,6 +8,14 @@ The standalone Claude plugin requires PHP 8.4.1 or later with mbstring and POSIX
 
 The marketplace archive will be available after the first tagged release that publishes `hatfield-360.zip`. For local development, run `castor distribution:claude-plugin --release-version=v0.0.0` from the repository root and pass `var/tmp/dist/hatfield-360.zip` to `claude --plugin-dir` on Claude versions supporting ZIPs, or extract it and pass the plugin directory. Build again to test local changes.
 
+Developer tests require Node.js 18.14+ and npm. The normal Castor test lane,
+`castor test --filter=Hatfield360ReportCommandTest`, and the full gate install
+the locked SDK with `npm ci --omit=optional --ignore-scripts` in the plugin.
+Missing setup is a test failure, not a skipped SDK success test. Packaged tests
+use the archive's reporter, PHP autoloader, and SDK without repairing missing
+dependencies. Hooks never install packages; SDK helper latency measurements
+are not regression pass criteria.
+
 **Hatfield:** Enable the built-in Hatfield 360 extension in `hatfield setup`. A project-level `extensions.enabled` list replaces the global list; if the project defines one, keep `Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension` in that list alongside the other enabled extensions. Preserve existing settings and list entries. Reload Hatfield with `/reload` or restart it after changing enablement.
 
 **Claude Code:** After updating the marketplace plugin, reload it or restart Claude Code to use the downloaded version. Update behavior for the moving release URL has not yet been verified. If the active plugin is missing `vendor/autoload.php`, the hook emits `hook_dependencies_missing` on stderr and exits successfully without reporting status. Hatfield's `/reload` does not affect the Claude plugin.
@@ -90,13 +98,18 @@ authoritative post-hook continuation or interruption signal.
 Subagent start/stop hooks track an approximate active count by agent ID, without
 parent links or execution IDs. Reused IDs and overlapping hooks can make the
 count approximate. Resume starts with an unknown baseline. A validated
-parent-scoped `background_tasks` sample from a matching foreground `Stop` or
-same-session `SubagentStop` can establish zero only when it contains no subagent
+parent-scoped `background_tasks` sample from a current matching foreground `Stop`
+can establish zero only when it contains no subagent
 entries and no observed child is still live. Missing or malformed samples do
 not establish zero. Registry task IDs are not treated as agent IDs; any
-subagent entry prevents zero regardless of its status. `SubagentStop` does not
-complete the main response, and the registry may still include the stopping
-child in that hook's sample.
+subagent entry prevents zero regardless of its status. Untracked `SubagentStop`
+hooks are ignored. A tracked stop removes only that observed membership; its
+registry may add uncertainty but cannot clear an unknown baseline. Neither
+processing under the lock nor a matching prompt establishes sample freshness.
+Unknown membership therefore remains unknown until a later current matching
+foreground Stop supplies valid evidence. Pending-start uncertainty remains
+sticky. `SubagentStop` does not complete the main response, and the registry
+may still include the stopping child in that hook's sample.
 A matching elicitation request/result pair with a server and elicitation ID
 reports external-input attention. Selected built-in tool hooks report only
 names, correlated by tool-use ID, never inputs or results. `AskUserQuestion`
@@ -109,6 +122,11 @@ wait. The plugin never approves or denies a request. Esc and denials without
 matching terminal hooks cannot be recognized immediately.
 
 A matching foreground `Stop` samples running shell tasks from `background_tasks`.
+Accepted child membership changes and new prompts invalidate the old script
+count to `null`: child registry samples have no causal freshness for an exact
+count. Ignored child hooks change neither agents nor scripts. A later accepted
+foreground Stop can supply a fresh count. Scripts never gate completion, and
+invalidating their count does not create a second response completion.
 An explicit empty array reports zero; missing or malformed observations report
 `null`. Only the count is sent, never task IDs, commands, or descriptions. The
 count is the last sample, not a live census. Repeated or superseded Stop hooks

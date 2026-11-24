@@ -58,8 +58,20 @@ acknowledgement removes the spool. The existing canonical suffix traversal folds
 that projection, including history-position and tail-discard fences that have no
 runtime mapping. Controller drain-race passes retain the same projection until
 the current ready cut. Older output drains before the final cut check; readiness
-is published once as the first normal-live record without an intervening yield.
+is enqueued once without an intervening yield, and the bootstrap filter is
+removed at that cut. Ready and following live records use the existing bounded
+nonblocking transfer queue until it drains. An empty user-space queue does not
+prove space in the OS pipe: cancellation and timeout ownership remain active
+through ready delivery, and ordinary blocking output resumes only after drain.
 No second archive scan or execution-state registry exists.
+
+One Symfony foreground validator owns admission at producer, spool, ready and
+TUI input boundaries: request IDs are limited to 1,024 bytes, ordered lists to
+2,000 occurrences, and encoded foreground data to 32 KiB. Historical correlation
+is separate from wire admission: oversized historical IDs retain only a distinct
+nonexportable digest, so later FIFO responses can settle them without storing
+unbounded strings. An unresolved marker refuses publication; sealing replaces
+historical pending identities with typed current requests from `RunState`.
 
 The bootstrap assembler validates the ready baseline before advancing readiness.
 `RuntimeEventPoller` dispatches the optional public foreground baseline observer
@@ -67,7 +79,10 @@ only on that accepted transition, before following live observations. Host mappi
 keeps runtime types out of ExtensionApi. Historical terminal outcomes do not become
 completion observations. Hatfield 360 uses canonical response-opening sequences
 for both live and resumed responses, reconciles foreground attention by request
-identity, and leaves verified child attention and operational counts on their
+identity and FIFO occurrence, and resolves one occurrence per answer. It retains
+the entire admitted baseline, reuses surviving episode IDs on reconciliation,
+and keeps live overflow attention until an authoritative baseline or terminal
+settles it. Verified child attention and operational counts stay on their
 existing sources.
 
 Dependency edges follow [depfile.yaml](../depfile.yaml): TUI can use owning

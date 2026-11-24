@@ -49,8 +49,11 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     private bool $closing = false;
     /** @var array{id: string, status: string}|null */
     private ?array $turn = null;
-    /** @var array<string, array{id: string, reason: string}> */
+    /** @var list<array{request: string, id: string, reason: string}> */
     private array $waits = [];
+    /** Overflow cannot be resolved by uncorrelated input; only an authoritative baseline or terminal clears it.
+     * @var array{id: string, reason: string}|null */
+    private ?array $waitOverflow = null;
     /** @var array<string, array<string, array{id: string, reason: string}>> */
     private array $childWaits = [];
     /** @var array<string, string> */
@@ -130,6 +133,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $this->epoch = ++self::$sequence;
         $this->turn = null;
         $this->waits = [];
+        $this->waitOverflow = null;
         $this->childWaits = [];
         $this->tools = [];
         $this->activeSubagents = null;
@@ -168,17 +172,20 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $turn = null === $baseline->currentResponseOpeningSequence ? null
             : ['id' => (string) $baseline->currentResponseOpeningSequence, 'status' => 'working'];
         $waits = [];
+        $previous = [];
+        foreach ($this->waits as $wait) {
+            $previous[$wait['request']][] = $wait;
+        }
         foreach ($baseline->pendingRequests as $request) {
-            if (\count($waits) >= 16) {
-                break;
-            }
             $key = hash('sha256', $request->requestId);
-            $waits[$key] = $this->waits[$key] ?? ['id' => (string) ++self::$sequence,
+            // Match each surviving occurrence FIFO, not every occurrence to one ID.
+            $waits[] = [] !== ($previous[$key] ?? []) ? array_shift($previous[$key]) : ['request' => $key, 'id' => (string) ++self::$sequence,
                 'reason' => TuiRunObservationTypeEnum::ApprovalRequested === $request->type ? 'permission' : 'question'];
         }
-        if ($turn === $this->turn && $waits === $this->waits) {
+        if ($turn === $this->turn && $waits === $this->waits && null === $this->waitOverflow) {
             return;
         }
+        $this->waitOverflow = null;
         if ($turn !== $this->turn) {
             $this->tools = [];
         }
@@ -208,10 +215,15 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             $this->refreshTitle();
             $this->turn = ['id' => (string) $observation->sequence, 'status' => 'working'];
             $this->waits = [];
+            $this->waitOverflow = null;
             $this->tools = [];
-        } elseif (TuiRunObservationTypeEnum::InputResolved === $type && null !== $observation->requestId
-            && isset($this->waits[hash('sha256', $observation->requestId)])) {
-            unset($this->waits[hash('sha256', $observation->requestId)]);
+        } elseif (TuiRunObservationTypeEnum::InputResolved === $type && null !== $observation->requestId) {
+            foreach ($this->waits as $index => $wait) {
+                if ($wait['request'] === hash('sha256', $observation->requestId)) {
+                    array_splice($this->waits, $index, 1);
+                    break;
+                }
+            }
         } elseif (null !== $this->turn && 'working' === $this->turn['status']) {
             $outcome = match ($type) {
                 TuiRunObservationTypeEnum::TurnCompleted => 'completed',
@@ -226,6 +238,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
                 }
                 $this->turn['status'] = $outcome;
                 $this->waits = [];
+                $this->waitOverflow = null;
                 $this->tools = [];
             } elseif (null !== $observation->requestId) {
                 $key = hash('sha256', $observation->requestId);
@@ -236,10 +249,12 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
                 } elseif (TuiRunObservationTypeEnum::ToolFinished === $type && isset($this->tools[$key])) {
                     unset($this->tools[$key]);
                 } elseif (TuiRunObservationTypeEnum::QuestionRequested === $type || TuiRunObservationTypeEnum::ApprovalRequested === $type) {
-                    if (isset($this->waits[$key]) || \count($this->waits) >= 16) {
-                        return;
+                    $episode = ['id' => (string) (self::$sequence + 1), 'reason' => TuiRunObservationTypeEnum::ApprovalRequested === $type ? 'permission' : 'question'];
+                    if (\count($this->waits) >= 2000 || null !== $this->waitOverflow) {
+                        $this->waitOverflow ??= $episode;
+                    } else {
+                        $this->waits[] = ['request' => $key] + $episode;
                     }
-                    $this->waits[$key] = ['id' => (string) (self::$sequence + 1), 'reason' => TuiRunObservationTypeEnum::ApprovalRequested === $type ? 'permission' : 'question'];
                 } else {
                     return;
                 }
@@ -342,7 +357,8 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     {
         $this->snapshotRetried = $retry;
         // Prefer foreground input, then the oldest observed child episode.
-        $attention = $this->waits[array_key_first($this->waits) ?? ''] ?? null;
+        $first = $this->waits[0] ?? null;
+        $attention = null === $first ? $this->waitOverflow : ['id' => $first['id'], 'reason' => $first['reason']];
         if (null === $attention) {
             foreach ($this->childWaits as $waits) {
                 $candidate = $waits[array_key_first($waits) ?? ''] ?? null;
