@@ -430,7 +430,7 @@ final class PharSmokeTest extends TestCase
             'phar://'.$pharPath.'/src/CodingAgent/Resources/agents',
             $locator->getBuiltinAgentsPath(),
         );
-        foreach (['scout', 'reviewer', 'verifier', 'researcher', 'general-purpose', 'browser'] as $name) {
+        foreach (['scout', 'reviewer', 'auditor', 'verifier', 'researcher', 'general-purpose', 'browser'] as $name) {
             $agentEntry = 'src/CodingAgent/Resources/agents/'.$name.'.md';
             $this->assertTrue(isset($phar[$agentEntry]), 'Missing PHAR entry '.$agentEntry);
             $this->assertFileExists($locator->getBuiltinAgentsPath().'/'.$name.'.md');
@@ -449,8 +449,8 @@ final class PharSmokeTest extends TestCase
         );
         $init->mustRun();
         $initOut = $init->getOutput().$init->getErrorOutput();
-        $this->assertStringContainsString('Installed 6 bundled agent definition(s)', $initOut);
-        foreach (['scout', 'reviewer', 'verifier', 'researcher', 'general-purpose', 'browser'] as $name) {
+        $this->assertStringContainsString('Installed 7 bundled agent definition(s)', $initOut);
+        foreach (['scout', 'reviewer', 'auditor', 'verifier', 'researcher', 'general-purpose', 'browser'] as $name) {
             $installed = $home.'/.hatfield/agents/'.$name.'.md';
             $this->assertFileExists($installed);
             $this->assertFileEquals(

@@ -36,43 +36,50 @@ Implementation children do not orchestrate reviews.
 - Resolve source-attributed finalized requirements and mandatory project rules.
   User focus adds emphasis, not a silent exclusion of other changed contracts.
 
-## Fresh reviewer
+## Fresh reviewer and auditor
 
-Verify `reviewer` and `verifier` exist in the runtime catalog. If missing, explain
+Verify `reviewer`, `auditor` and `verifier` exist in the runtime catalog. If missing, explain
 `hatfield agents:init` installation; do not substitute self-review. Existing custom
 or old agents may differ: inspect the discovered definitions when available and
 report incompatible instructions/tool policy. Never overwrite customized agents.
 
-Launch a NEW `reviewer` subagent with the exact checkout, repository/PR identity,
-pinned comparison SHAs, changed-file inventory, neutral requirements and explicit
-focus. Let it read the full diff and surrounding code, not just a prompt-sized
-excerpt. Do not send implementation history, test-success claims, desired verdict,
-prior approval, candidate bugs invented by main, or main's conversation. Use a
-subagent, not a conversation-inheriting fork.
+Launch a NEW `reviewer` subagent and a NEW `auditor` subagent, each with the exact
+checkout, repository/PR identity, pinned comparison SHAs, changed-file inventory,
+neutral requirements and explicit focus; submit the two calls together so they run
+concurrently. Let each read the full diff and surrounding code, not just a
+prompt-sized excerpt. Send neither implementation history, test-success claims,
+desired verdict, prior approval, candidate bugs invented by main, or main's
+conversation. Use subagents, not conversation-inheriting forks.
 
-The reviewer returns a scope, coverage/limitations, and candidates with stable IDs
-(`R1`, `R2`, ...), category, priority, file/line, trigger, impact/evidence and minimal
-correction. Retrieve omitted artifact output through existing authorized facilities.
-A missing, failed, malformed or materially partial report is NOT an empty review.
+The reviewer returns a scope, coverage/limitations, a trace table, and defect
+candidates with stable IDs (`R1`, `R2`, ...), area, priority, file/line, trigger,
+impact/evidence (including what is uncertain) and minimal correction. The auditor
+returns a scope, coverage, and candidates with stable IDs (`A1`, `A2`, ...) of kind
+`rule_violation`, `reuse`, `docs` or `test_gap`, each with the quoted rule line or
+the named existing facility. A `Notices` list in either report is not candidates:
+carry its items into the final report as unverified concerns. Retrieve omitted
+artifact output through existing authorized facilities. A missing, failed, malformed
+or materially partial report from either is NOT an empty review.
 
 ## Fresh verifier
 
 Before proceeding, recheck checkout cleanliness, pinned revisions and actual PR
 head/base identity. A changed target makes the result stale; retain historical
 observations without approving the current change. Do not write concurrently to
-the reviewed checkout while either stage runs.
+the reviewed checkout while a review stage runs.
 
-Skip verification ONLY for a complete reviewer report with no candidates. Otherwise
+Skip verification ONLY when both reports are complete with no candidates. Otherwise
 use the adapted verification phase below:
 
 <!-- Source: Piebald-AI/claude-code-system-prompts@d545d4147af1ff0a165622ecd55e7fdc0d51a1f6
 (tag v2.1.325), system-prompts/skill-code-review-phase-2-verify-3-state.md.
 Third-party extraction, not Anthropic's published source; upstream block ccVersion 2.1.173.
 Adaptations: one NEW verifier for the entire deduplicated set, not per-candidate
-fan-out; PLAUSIBLE maps to uncertain and is not actionable. License: references/LICENSE.txt. -->
+fan-out; deduplication spans the reviewer's and the auditor's lists; PLAUSIBLE maps
+to uncertain and is not actionable. License: references/LICENSE.txt. -->
 
-Dedup candidates that point at the same line/mechanism, keeping the one with
-the most concrete failure scenario. For the remaining candidates, run **one
+Dedup candidates across both lists that point at the same line/mechanism, keeping
+the one with the most concrete failure scenario. For the remaining candidates, run **one
 verifier** via the `subagent` tool: give it the diff, the relevant
 file(s), and the candidates, and have it return exactly one of CONFIRMED,
 PLAUSIBLE, or REFUTED for each candidate, using the verifier's three-state definitions.
@@ -91,11 +98,12 @@ Pass the same pinned scope/requirements and deduplicated candidate claims. Pass
 the report text or an accessible
 artifact/file reference; opaque child references are not automatically readable by
 another child. Main retrieves and relays evidence when necessary. Do not forward
-the reviewer's reasoning transcript or direct the verifier toward any disposition.
+the reviewer's or the auditor's reasoning transcript, or direct the verifier toward
+any disposition.
 
 Require one `confirmed`, `refuted`, or `uncertain` decision with evidence per candidate.
 Map the upstream labels to these handoff states (PLAUSIBLE → uncertain).
-Check every surviving ID is covered exactly once, including optional suggestions. Missing or
+Check every surviving ID is covered exactly once. Missing or
 contradictory output is incomplete; do not assume confirmation or rejection. The
 verifier may correct severity/remedy. A genuinely new issue is an unverified concern,
 not a verified finding, and does not trigger recursive agents or automatic repairs.
@@ -107,7 +115,7 @@ defect, preserving combined evidence and all dispositions in the stage reports.
 Recheck target freshness at final reporting, including read-only PR identity when
 applicable. Failed freshness checks prevent a current successful-review verdict.
 
-- **Changes requested:** confirmed introduced defects or mandatory rule violations.
+- **Changes requested:** confirmed introduced defects, or confirmed rule violations and reuse findings.
 - **No actionable findings:** complete coverage with no candidates, or all actionable
   candidates refuted after completed verification. This is not proof of correctness.
 - **Inconclusive:** uncertain actionable claims or material coverage gaps; retain any
@@ -116,14 +124,16 @@ applicable. Failed freshness checks prevent a current successful-review verdict.
   partial evidence. Never publish unverified candidates as confirmed findings.
 
 Report scope and SHAs, confirmed findings (exact trigger/impact/minimal correction),
-optional confirmed suggestions, unresolved checks, coverage and validation actually
-inspected. Omit empty sections and generic praise. Keep refutation evidence in the
-available stage reports; summarize it when useful. Tests not run remain unrun.
+unresolved checks, notices carried from either pass, coverage and validation
+actually inspected. Omit empty sections and generic praise. Keep refutation
+evidence in the available stage reports; summarize it when useful. Tests not run
+remain unrun.
 
 Use normal background subagent calls when requested/useful, but these are TWO
-separate stages coordinated by main, not one atomic background operation. Reviewer
-completion is progress, not completion of review. Cancellation stops the active
-stage through existing controls; after cancellation do not launch a verifier.
-Continue on automatic completion notices without polling. Do not resume a prior
-agent to represent a fresh independent review; resume only to clarify its own
-existing report, then accurately describe that clarification.
+stages coordinated by main — reviewer and auditor concurrently, then the verifier
+— not one atomic background operation. Completion of the reviewer or the auditor
+is progress, not completion of review. Cancellation stops the active stage through
+existing controls; after cancellation do not launch a verifier. Continue on
+automatic completion notices without polling. Do not resume a prior agent to
+represent a fresh independent review; resume only to clarify its own existing
+report, then accurately describe that clarification.

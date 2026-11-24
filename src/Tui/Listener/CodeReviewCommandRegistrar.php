@@ -29,7 +29,7 @@ final readonly class CodeReviewCommandRegistrar implements SlashCommandCatalogRe
 
         $catalog->register(new CommandMetadata(
             name: 'code-review',
-            description: 'Review a committed change with independent reviewer and verifier agents',
+            description: 'Review a committed change with independent reviewer, auditor and verifier agents',
             usage: '/code-review [request]',
             acceptsArguments: true,
         ), $this);

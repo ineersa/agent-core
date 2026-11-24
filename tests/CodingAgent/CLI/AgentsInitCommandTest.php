@@ -28,6 +28,11 @@ use Symfony\Component\Filesystem\Filesystem;
 #[CoversClass(AgentsInitCommand::class)]
 final class AgentsInitCommandTest extends TestCase
 {
+    /** Names of every bundled agent definition. */
+    private const BUNDLED_AGENTS = [
+        'scout', 'reviewer', 'auditor', 'verifier', 'researcher', 'general-purpose', 'browser',
+    ];
+
     private string $tmpDir;
     private string $appRoot;
     private string $homeDir;
@@ -43,10 +48,10 @@ final class AgentsInitCommandTest extends TestCase
         TestDirectoryIsolation::ensureDirectory($this->homeDir);
 
         $repoAgents = \dirname(__DIR__, 3).'/src/CodingAgent/Resources/agents';
-        foreach (['scout.md', 'reviewer.md', 'verifier.md', 'researcher.md', 'general-purpose.md', 'browser.md'] as $file) {
-            $source = $repoAgents.'/'.$file;
+        foreach (self::BUNDLED_AGENTS as $name) {
+            $source = $repoAgents.'/'.$name.'.md';
             $this->assertFileExists($source, 'Bundled agent source missing: '.$source);
-            (new Filesystem())->copy($source, $this->sourceDir.'/'.$file, true);
+            (new Filesystem())->copy($source, $this->sourceDir.'/'.$name.'.md', true);
         }
     }
 
@@ -63,13 +68,16 @@ final class AgentsInitCommandTest extends TestCase
 
         $this->assertSame(Command::SUCCESS, $exitCode, $tester->getDisplay());
         $destination = $this->homeDir.'/.hatfield/agents';
-        foreach (['scout', 'reviewer', 'verifier', 'researcher', 'general-purpose', 'browser'] as $name) {
+        foreach (self::BUNDLED_AGENTS as $name) {
             $path = $destination.'/'.$name.'.md';
             $this->assertFileExists($path);
             $this->assertFileEquals($this->sourceDir.'/'.$name.'.md', $path);
         }
 
-        $this->assertStringContainsString('Installed 6 bundled agent definition(s)', $tester->getDisplay());
+        $this->assertStringContainsString(
+            \sprintf('Installed %d bundled agent definition(s)', \count(self::BUNDLED_AGENTS)),
+            $tester->getDisplay(),
+        );
     }
 
     #[Test]
@@ -93,6 +101,7 @@ final class AgentsInitCommandTest extends TestCase
         $this->assertStringContainsString('--force', $display);
         $this->assertSame($staleBefore, (string) file_get_contents($destination.'/scout.md'));
         $this->assertFileDoesNotExist($destination.'/reviewer.md');
+        $this->assertFileDoesNotExist($destination.'/auditor.md');
         $this->assertFileDoesNotExist($destination.'/verifier.md');
         $this->assertFileDoesNotExist($destination.'/researcher.md');
         $this->assertFileDoesNotExist($destination.'/general-purpose.md');
@@ -104,6 +113,7 @@ final class AgentsInitCommandTest extends TestCase
         $this->assertSame(Command::SUCCESS, $forceExit, $forceTester->getDisplay());
         $this->assertFileEquals($this->sourceDir.'/scout.md', $destination.'/scout.md');
         $this->assertFileEquals($this->sourceDir.'/reviewer.md', $destination.'/reviewer.md');
+        $this->assertFileEquals($this->sourceDir.'/auditor.md', $destination.'/auditor.md');
         $this->assertFileEquals($this->sourceDir.'/verifier.md', $destination.'/verifier.md');
         $this->assertFileEquals($this->sourceDir.'/researcher.md', $destination.'/researcher.md');
         $this->assertFileEquals($this->sourceDir.'/general-purpose.md', $destination.'/general-purpose.md');
@@ -115,7 +125,7 @@ final class AgentsInitCommandTest extends TestCase
     public function bundledDefinitionsAreParserValid(): void
     {
         $parser = $this->createParser();
-        foreach (['scout', 'reviewer', 'verifier', 'researcher', 'general-purpose', 'browser'] as $name) {
+        foreach (self::BUNDLED_AGENTS as $name) {
             $path = $this->sourceDir.'/'.$name.'.md';
             $dto = $parser->parseFile($path);
             $this->assertSame($name, $dto->name);
@@ -125,15 +135,24 @@ final class AgentsInitCommandTest extends TestCase
     }
 
     #[Test]
-    public function reviewAgentsUsePinnedModelAndThinkingWithRestrictedInspectionTools(): void
+    public function reviewAgentsUsePinnedModelsWithExplicitInspectionTools(): void
     {
-        foreach (['reviewer', 'verifier'] as $name) {
+        // Only the auditor gets web tools: the defect pass and the verifier stay inside the checkout.
+        $inspection = ['read', 'bash'];
+        $websearch = ['mcp:websearch_search', 'mcp:websearch_open', 'mcp:websearch_find'];
+        $expected = [
+            'reviewer' => ['openai-codex/gpt-6.2-astra', [...$inspection, 'mcp:-']],
+            'auditor' => ['mistral/deepseek-v4-1-flash-1017', [...$inspection, ...$websearch]],
+            'verifier' => ['mistral/zai-glm-5-3-flash', [...$inspection, 'mcp:-']],
+        ];
+
+        foreach ($expected as $name => [$model, $tools]) {
             $agent = $this->createParser()->parseFile($this->sourceDir.'/'.$name.'.md');
 
-            $this->assertSame('mistral/zai-glm-5-3-flash', $agent->model);
-            $this->assertSame('high', $agent->thinking);
-            $this->assertSame(['read', 'bash', 'mcp:-'], $agent->tools);
-            $this->assertTrue($agent->inheritProjectContext);
+            $this->assertSame($model, $agent->model, $name);
+            $this->assertSame('high', $agent->thinking, $name);
+            $this->assertSame($tools, $agent->tools, $name);
+            $this->assertTrue($agent->inheritProjectContext, $name);
         }
     }
 
