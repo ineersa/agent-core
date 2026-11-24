@@ -20,7 +20,7 @@ namespace Ineersa\CodingAgent\Config\Ai;
  * @see \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy Retry budget defaults
  *
  * @param int|null $timeout     Per-request timeout in seconds
- * @param int|null $maxDuration Total request duration budget in seconds
+ * @param int|null $maxDuration Total request duration budget in seconds (0 = no total limit)
  * @param int|null $maxRetries  Application retries after the initial attempt (0 = no retries)
  * @param int|null $baseDelayMs Base retry backoff delay in milliseconds
  * @param int|null $maxDelayMs  Maximum delay for any single retry in ms
@@ -28,7 +28,12 @@ namespace Ineersa\CodingAgent\Config\Ai;
 final readonly class AiHttpConfig
 {
     public const int DEFAULT_TIMEOUT = 30;
-    public const int DEFAULT_MAX_DURATION = 120;
+    /**
+     * No total limit by default: a streaming completion is cut off by a total
+     * budget while it is still producing reasoning or output. Silent streams are
+     * caught by the idle `timeout` instead.
+     */
+    public const int DEFAULT_MAX_DURATION = 0;
 
     public function __construct(
         public ?int $timeout = null,
@@ -38,7 +43,7 @@ final readonly class AiHttpConfig
         public ?int $maxDelayMs = null,
     ) {
         foreach (['timeout' => $timeout, 'max_duration' => $maxDuration, 'max_retries' => $maxRetries, 'base_delay_ms' => $baseDelayMs, 'max_delay_ms' => $maxDelayMs] as $key => $value) {
-            $minimum = \in_array($key, ['timeout', 'max_duration'], true) ? 1 : 0;
+            $minimum = 'timeout' === $key ? 1 : 0;
             if (null !== $value && $value < $minimum) {
                 throw new \InvalidArgumentException(\sprintf('ai.http.%s must be at least %d.', $key, $minimum));
             }

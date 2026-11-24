@@ -14,7 +14,9 @@ final class LlmHttpClientOptionsTest extends TestCase
     {
         $defaults = new LlmHttpClientOptions();
         $this->assertSame(AiHttpConfig::DEFAULT_TIMEOUT, $defaults->timeout);
-        $this->assertSame(AiHttpConfig::DEFAULT_MAX_DURATION, $defaults->maxDuration);
+        $this->assertSame(0, $defaults->maxDuration);
+        $this->assertSame(0, (new LlmHttpClientOptions(maxDuration: 0))->maxDuration);
+        $this->assertSame(['timeout' => AiHttpConfig::DEFAULT_TIMEOUT, 'max_duration' => 0], $defaults->httpClientOptions());
 
         $explicit = new LlmHttpClientOptions(60, 300);
         $this->assertSame(60, $explicit->timeout);
@@ -25,6 +27,12 @@ final class LlmHttpClientOptionsTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
         new LlmHttpClientOptions(timeout: 0);
+    }
+
+    public function testConstructRejectsNegativeMaxDuration(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new LlmHttpClientOptions(maxDuration: -1);
     }
 
     public function testHttpClientOptions(): void

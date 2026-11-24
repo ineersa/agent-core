@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
  *
  * Retry count and backoff live on {@see \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy}.
  * This type only supplies Symfony HttpClient `timeout` (idle between chunks) /
- * `max_duration` (total wall budget). Silent SSE streams fail over at `timeout`.
+ * `max_duration` (total wall budget, 0 = none). Silent SSE streams fail over at `timeout`.
  */
 final class LlmHttpClientOptions
 {
@@ -23,7 +23,7 @@ final class LlmHttpClientOptions
         ?int $maxDuration = null,
     ) {
         $this->timeout = self::validatePositive($timeout, 'timeout') ?? AiHttpConfig::DEFAULT_TIMEOUT;
-        $this->maxDuration = self::validatePositive($maxDuration, 'maxDuration') ?? AiHttpConfig::DEFAULT_MAX_DURATION;
+        $this->maxDuration = self::validateNonNegative($maxDuration, 'maxDuration') ?? AiHttpConfig::DEFAULT_MAX_DURATION;
     }
 
     /** @return array{timeout: int, max_duration: int} */
@@ -39,6 +39,15 @@ final class LlmHttpClientOptions
     {
         if (null !== $value && $value <= 0) {
             throw new \InvalidArgumentException(\sprintf('%s must be a positive integer, got %d', $name, $value));
+        }
+
+        return $value;
+    }
+
+    private static function validateNonNegative(?int $value, string $name): ?int
+    {
+        if (null !== $value && $value < 0) {
+            throw new \InvalidArgumentException(\sprintf('%s must be a non-negative integer, got %d', $name, $value));
         }
 
         return $value;

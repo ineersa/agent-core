@@ -170,12 +170,14 @@ Controls outbound LLM HTTP timeouts and the **application** retry budget for one
 | Key | Default | Meaning |
 |---|---|---|
 | `timeout` | `30` | Idle timeout per HTTP request (seconds) |
-| `max_duration` | `120` | Total request duration budget (seconds) |
+| `max_duration` | `0` | Total request duration budget (seconds); `0` = no total limit |
 | `max_retries` | `5` | Retries after the initial attempt (six attempts total) |
 | `base_delay_ms` | `1000` | Exponential backoff base delay |
 | `max_delay_ms` | `60000` | Cap for a single backoff delay |
 
-`timeout` is the SSE/body idle timeout while waiting for the next chunk after headers; it is not the total wall budget (`max_duration`). A silent HTTP 200 stream therefore fails over through `LlmRequestRetryExecutor` at `timeout`, not only when `max_duration` elapses. User cancel during that wait aborts the in-flight request through the HTTP progress hook instead of waiting for either timer.
+`timeout` is the SSE/body idle timeout while waiting for the next chunk after headers. A silent HTTP 200 stream therefore fails over through `LlmRequestRetryExecutor` at `timeout`. User cancel during that wait aborts the in-flight request through the HTTP progress hook instead of waiting for the timer.
+
+`max_duration` caps the whole request, including a stream that is still producing reasoning or output. It is `0` (off) by default so that long generations are not cut off; set a positive number only to force a total wall budget on every provider.
 
 `LlmRequestRetryExecutor` owns the single bounded budget, including HTTP status errors, idle timeouts, failed stream chunks, and thinking-only recoveries. Outbound LLM HTTP clients apply only `timeout` / `max_duration`; they are not wrapped in Symfony `RetryableHttpClient`. Retry progress is emitted as transient `llm.request_retrying` (seq=`0`) for the TUI working status. User cancellation stops further attempts and backoff. Failed partial streams are discarded before the next attempt; tool side effects are not replayed.
 
