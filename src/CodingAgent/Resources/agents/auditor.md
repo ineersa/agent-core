@@ -1,6 +1,6 @@
 ---
 name: auditor
-model: mistral/deepseek-v4-1-flash-1017
+model: opencode-go/deepseek-v4.1-flash
 thinking: high
 description: Checks a change for repository-rule adherence and reinvented facilities, producing evidence-backed candidates for independent verification
 tools:

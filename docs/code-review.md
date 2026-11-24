@@ -28,7 +28,7 @@ installed starters. Restart Hatfield after updating so its catalog includes all
 three roles and the refreshed instructions.
 
 The `reviewer` uses `openai-codex/gpt-6.2-astra`; the `auditor` uses
-`mistral/deepseek-v4-1-flash-1017` and the `verifier` `mistral/zai-glm-5-3-flash`,
+`opencode-go/deepseek-v4.1-flash` and the `verifier` `opencode-go/deepseek-v4.1-flash`,
 all with `high` thinking. Ordinary [agent frontmatter](agents.md) can override any
 role. All three allow `read` and shell inspection and instruct the models not to
 modify files, run tests, install packages or publish results. The `reviewer` and

@@ -142,8 +142,8 @@ final class AgentsInitCommandTest extends TestCase
         $web = ['read', 'bash', 'mcp:websearch_search', 'mcp:websearch_open', 'mcp:websearch_find'];
         $expected = [
             'reviewer' => ['openai-codex/gpt-6.2-astra', $web],
-            'auditor' => ['mistral/deepseek-v4-1-flash-1017', $web],
-            'verifier' => ['mistral/zai-glm-5-3-flash', $offline],
+            'auditor' => ['opencode-go/deepseek-v4.1-flash', $web],
+            'verifier' => ['opencode-go/deepseek-v4.1-flash', $offline],
         ];
 
         foreach ($expected as $name => [$model, $tools]) {
