@@ -164,7 +164,7 @@ final class ClaudeHookReporter
             }
             $state = [
                 'epoch' => $sequence, 'session' => $session, 'ended' => false, 'switch' => null, 'boundaries' => $previous['boundaries'] ?? [],
-                'turn' => null, 'waits' => [], 'tools' => [], 'scripts' => null, 'agents' => 'resume' === $source ? null : [],
+                'title' => self::sessionTitle($hook['session_title'] ?? null), 'turn' => null, 'waits' => [], 'tools' => [], 'scripts' => null, 'agents' => 'resume' === $source ? null : [],
             ];
         } elseif (($state['session'] ?? null) !== $session || ($state['ended'] ?? true)) {
             return false;
@@ -219,6 +219,7 @@ final class ClaudeHookReporter
                 if ($prompt === ($turn['id'] ?? null)) {
                     return false;
                 }
+                $state['title'] = self::sessionTitle($hook['session_title'] ?? null);
                 $state['turn'] = ['id' => $prompt, 'status' => 'working'];
                 $state['waits'] = [];
                 $state['tools'] = [];
@@ -270,7 +271,7 @@ final class ClaudeHookReporter
             }
         }
         $fields = 'session.snapshot' === $kind ? [
-            'provider' => 'claude', 'turn' => $state['turn'],
+            'provider' => 'claude', 'title' => $state['title'] ?? null, 'turn' => $state['turn'],
             'attention' => $attention,
             'activeSubagents' => null === $state['agents'] ? null : \count($state['agents']),
             'backgroundScripts' => $state['scripts'], 'tool' => $state['tools'][array_key_last($state['tools']) ?? '']['name'] ?? null,
@@ -395,7 +396,12 @@ final class ClaudeHookReporter
             || (\is_string($prompt) && strtolower($prompt) === array_key_last($previous['boundaries']));
     }
 
-    /** @return array{sequence: int, epoch: int, session: string, ended: bool, switch: 'resume'|'clear'|null, boundaries: array<string, true>, turn: array{id: string, status: string}|null, waits: array<string, int>, tools: array<string, array{name: string, fingerprint: ?string, wait: ?int}>, scripts: ?int, agents: array<string, true>|null}|null */
+    private static function sessionTitle(mixed $value): ?string
+    {
+        return \is_string($value) && mb_check_encoding($value, 'UTF-8') && mb_strlen($value, 'UTF-8') <= 1024 ? $value : null;
+    }
+
+    /** @return array{sequence: int, epoch: int, session: string, title?: ?string, ended: bool, switch: 'resume'|'clear'|null, boundaries: array<string, true>, turn: array{id: string, status: string}|null, waits: array<string, int>, tools: array<string, array{name: string, fingerprint: ?string, wait: ?int}>, scripts: ?int, agents: array<string, true>|null}|null */
     private function readState(string $path): ?array
     {
         if (is_link($path) || !is_file($path)) {
@@ -421,7 +427,7 @@ final class ClaudeHookReporter
             || \count($waits) > 16 || !array_all($waits, static fn (mixed $value): bool => \is_int($value) && 0 !== $value)
             || (null !== $agents && (!\is_array($agents) || \count($agents) > 1024 || !array_all($agents, static fn (mixed $value): bool => true === $value)))
             || !EventSchema::accepts('session.snapshot', $state['session'], $state['sequence'], $state['epoch'], [
-                'provider' => 'claude', 'turn' => $state['turn'], 'attention' => null, 'activeSubagents' => null, 'backgroundScripts' => $state['scripts'], 'tool' => null,
+                'provider' => 'claude', 'title' => $state['title'] ?? null, 'turn' => $state['turn'], 'attention' => null, 'activeSubagents' => null, 'backgroundScripts' => $state['scripts'], 'tool' => null,
             ])) {
             return null;
         }

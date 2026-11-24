@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionMetadataContextInterface;
 use Ineersa\Tui\Picker\PickerListLabelFormatter;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\AbstractWidget;
@@ -12,7 +12,7 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
 /**
  * Adapts {@see TuiRuntimeContext} to the public ExtensionApi TUI contract.
  */
-final readonly class BridgeTuiExtensionContext implements TuiExtensionContextInterface
+final readonly class BridgeTuiExtensionContext implements TuiSessionMetadataContextInterface
 {
     public function __construct(
         private TuiRuntimeContext $runtime,
@@ -22,6 +22,11 @@ final readonly class BridgeTuiExtensionContext implements TuiExtensionContextInt
     public function getSessionId(): string
     {
         return $this->runtime->state->sessionId;
+    }
+
+    public function getSessionDisplayTitle(): ?string
+    {
+        return $this->runtime->sessionStore->findDisplayTitle($this->getSessionId());
     }
 
     public function requestRender(bool $force = false): void

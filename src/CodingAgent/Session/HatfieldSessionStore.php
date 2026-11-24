@@ -153,6 +153,13 @@ final class HatfieldSessionStore
         return $this->fetchEntityOrNull($sessionId);
     }
 
+    public function findDisplayTitle(string $sessionId): ?string
+    {
+        $session = $this->findSession($sessionId);
+
+        return null === $session ? null : $this->resolveDisplayTitle($sessionId, $session->name, $this->resolvePromptPreview($session->prompt));
+    }
+
     public function findModelMetadata(string $sessionId): ?SessionModelMetadataDTO
     {
         $id = $this->parsePositiveSessionId($sessionId);

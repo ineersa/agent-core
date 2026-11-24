@@ -22,6 +22,9 @@ final class EventSchema
             return false;
         }
         $allowed = $required + ['at' => 64];
+        if ('session.snapshot' === $kind) {
+            $allowed['title'] = 'session-title';
+        }
         if ([] !== array_diff_key($required, $fields) || [] !== array_diff_key($fields, $allowed)) {
             return false;
         }
@@ -67,6 +70,7 @@ final class EventSchema
             'turn' => self::record($value, 'status', ['working', 'completed', 'failed', 'cancelled', 'unknown']),
             'attention' => self::record($value, 'reason', ['permission', 'question', 'external-input']),
             'count' => null === $value || (\is_int($value) && $value >= 0 && $value <= 1024),
+            'session-title' => null === $value || self::matches($value, 1024),
             'tool' => null === $value || self::matches($value, 128),
             default => false,
         };

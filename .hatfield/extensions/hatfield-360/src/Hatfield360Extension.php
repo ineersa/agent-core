@@ -13,13 +13,15 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundSnapshotObserverInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionMetadataContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionObserverInterface;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
@@ -28,7 +30,7 @@ use Symfony\Component\Config\Definition\ConfigurationInterface;
 
 use function Amp\async;
 
-final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, TuiBackgroundJobObserverInterface, ExtensionCommandHandlerInterface, LoggerAwareInterface
+final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiExtensionInterface, TuiSessionObserverInterface, TuiRunObserverInterface, TuiSessionCloseObserverInterface, TuiBackgroundSnapshotObserverInterface, ExtensionCommandHandlerInterface, LoggerAwareInterface
 {
     use LoggerAwareTrait;
 
@@ -39,6 +41,8 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiS
     private ?StatusClient $client = null;
     private bool $canBootstrap = false;
     private string $sessionId = '';
+    private ?TuiSessionMetadataContextInterface $metadata = null;
+    private ?string $title = null;
     private int $epoch = 0;
     private bool $closing = false;
     /** @var array{id: string, status: string}|null */
@@ -49,14 +53,10 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiS
     private array $childWaits = [];
     /** @var array<string, string> */
     private array $tools = [];
-    /** @var array<string, true>|null */
-    private ?array $scripts = [];
-    /** @var array<string, int>|null */
-    private ?array $actors = [];
+    private ?int $activeSubagents = null;
+    private ?int $backgroundScripts = null;
     /** @var array<string, int> */
     private array $childTerminals = [];
-    /** @var array<string, true> */
-    private array $scriptTerminals = [];
     /** @var Future<void>|null */
     private ?Future $drain = null;
     /** @var list<array{string, string, int, int, array<string, mixed>}> */
@@ -109,6 +109,11 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiS
         $context->notify($accepted ? 'Hatfield 360 accepted the notification.' : 'Hatfield 360 did not confirm the notification.', $accepted ? 'success' : 'warning');
     }
 
+    public function registerTui(TuiExtensionContextInterface $context): void
+    {
+        $this->metadata = $context instanceof TuiSessionMetadataContextInterface ? $context : null;
+    }
+
     public function onTuiSessionSelected(string $sessionId, bool $resumed = false): void
     {
         if ($this->closing || (null === $this->client && !$this->canBootstrap)) {
@@ -116,16 +121,15 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiS
         }
 
         $this->sessionId = $sessionId;
+        $this->refreshTitle();
         $this->epoch = ++self::$sequence;
         $this->turn = null;
         $this->waits = [];
         $this->childWaits = [];
         $this->tools = [];
-        // Attach/resume cannot reconstruct starts that happened before subscription.
-        $this->scripts = $resumed ? null : [];
-        $this->actors = $resumed ? null : [];
+        $this->activeSubagents = null;
+        $this->backgroundScripts = null;
         $this->childTerminals = [];
-        $this->scriptTerminals = [];
         $this->snapshot($this->epoch);
     }
 
@@ -164,6 +168,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiS
             if ('working' === ($this->turn['status'] ?? null)) {
                 return;
             }
+            $this->refreshTitle();
             $this->turn = ['id' => (string) (self::$sequence + 1), 'status' => 'working'];
             $this->waits = [];
             $this->tools = [];
@@ -175,6 +180,10 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiS
                 default => null,
             };
             if (null !== $outcome) {
+                if ('completed' === $outcome && 0 === $this->activeSubagents) {
+                    // A zero sampled before the response finished cannot settle it.
+                    $this->activeSubagents = null;
+                }
                 $this->turn['status'] = $outcome;
                 $this->waits = [];
                 $this->tools = [];
@@ -205,76 +214,53 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiS
         $this->snapshot(++self::$sequence);
     }
 
-    public function onTuiBackgroundJobObserved(TuiBackgroundJobObservationDTO $observation): void
+    public function onTuiBackgroundSnapshot(TuiBackgroundSnapshotDTO $snapshot): void
     {
-        if (!$this->observes($observation->sessionId) || null === $this->scripts) {
+        if (!$this->observes($snapshot->sessionId)) {
             return;
         }
-        $id = hash('sha256', $observation->ownerRunId."\0".$observation->jobId);
-        if (TuiBackgroundJobObservationTypeEnum::Started === $observation->type) {
-            if (isset($this->scripts[$id]) || isset($this->scriptTerminals[$id])) {
-                return;
-            }
-            if (\count($this->scripts) >= 1024) {
-                $this->scripts = null;
-            } else {
-                $this->scripts[$id] = true;
-            }
-        } else {
-            // Bash record and code-mode invocation IDs are one-shot per native
-            // owner, with no shared ordering cursor across reporting workers.
-            if (isset($this->scriptTerminals[$id])) {
-                return;
-            }
-            if (\count($this->scriptTerminals) >= self::MAX_TERMINALS) {
-                $this->scripts = null;
-            } else {
-                $this->scriptTerminals[$id] = true;
-                if (!isset($this->scripts[$id])) {
-                    return;
-                }
-                unset($this->scripts[$id]);
-            }
+        $children = $snapshot->activeSubagents > 1024 ? null : $snapshot->activeSubagents;
+        $scripts = $snapshot->backgroundScripts > 1024 ? null : $snapshot->backgroundScripts;
+        if ($children === $this->activeSubagents && $scripts === $this->backgroundScripts) {
+            return;
         }
+        $this->activeSubagents = $children;
+        $this->backgroundScripts = $scripts;
         $this->snapshot(++self::$sequence);
+    }
+
+    private function refreshTitle(): void
+    {
+        $this->title = null;
+        if ($this->metadata?->getSessionId() !== $this->sessionId) {
+            return;
+        }
+        try {
+            $title = $this->metadata->getSessionDisplayTitle();
+        } catch (\Throwable) {
+            return;
+        }
+        if (null !== $title && mb_check_encoding($title, 'UTF-8')) {
+            $this->title = mb_substr($title, 0, 1024, 'UTF-8');
+        }
     }
 
     private function observeChild(TuiRunObservationDTO $observation, string $id): bool
     {
         $type = $observation->type;
-        $start = $this->actors[$id] ?? null;
         if ($observation->sequence <= ($this->childTerminals[$id] ?? 0)) {
             return false;
         }
-        if (TuiRunObservationTypeEnum::ChildExecutionStarted === $type && null !== $this->actors) {
-            if (null !== $start) {
-                return false;
-            }
-            if (\count($this->actors) >= 1024) {
-                $this->actors = null;
-            } else {
-                $this->actors[$id] = $observation->sequence;
-            }
-
-            return true;
-        }
-        if (null !== $start && $observation->sequence <= $start) {
-            return false;
-        }
         if (TuiRunObservationTypeEnum::ChildExecutionEnded === $type) {
-            $observed = null !== $start || isset($this->childWaits[$id]);
             if (isset($this->childTerminals[$id]) || \count($this->childTerminals) < self::MAX_TERMINALS) {
                 $this->childTerminals[$id] = $observation->sequence;
-            } elseif (null !== $this->actors) {
-                // Do not report known counts after losing ordering evidence.
-                $this->actors = null;
-                $observed = true;
             }
-            unset($this->actors[$id], $this->childWaits[$id]);
+            $changed = isset($this->childWaits[$id]);
+            unset($this->childWaits[$id]);
 
-            return $observed;
+            return $changed;
         }
-        if (null === $observation->requestId || (null === $start && null !== $this->actors)) {
+        if (null === $observation->requestId) {
             return false;
         }
         $key = $observation->requestId;
@@ -316,9 +302,9 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiS
             }
         }
         $this->enqueue('session.snapshot', $sequence, [
-            'provider' => 'hatfield', 'turn' => $this->turn, 'attention' => $attention,
-            'activeSubagents' => null === $this->actors ? null : \count($this->actors),
-            'backgroundScripts' => null === $this->scripts ? null : \count($this->scripts), 'tool' => $this->tools[array_key_last($this->tools) ?? ''] ?? null,
+            'provider' => 'hatfield', 'title' => $this->title, 'turn' => $this->turn, 'attention' => $attention,
+            'activeSubagents' => $this->activeSubagents,
+            'backgroundScripts' => $this->backgroundScripts, 'tool' => $this->tools[array_key_last($this->tools) ?? ''] ?? null,
         ]);
     }
 

@@ -22,6 +22,12 @@ snapshots. Neither adapter replays historical observations, retries in the
 background, or guarantees eventual delivery. `session.ended` requires an already
 live epoch and does not imply process exit.
 
+Snapshots can include a nullable `title` of at most 1,024 Unicode characters.
+Hatfield reads its picker title on selection and at the next foreground turn
+after a rename. Claude Code uses the optional `session_title` supplied by
+`SessionStart` and `UserPromptSubmit`; older versions or unnamed sessions may
+omit it. Neither adapter watches for rename-only updates or scrapes transcripts.
+
 ## Send an additional notification
 
 In Hatfield, enter `/h360-notify Review available | The report is ready.` in the
@@ -54,13 +60,13 @@ applies its normal toast suppression to additional notifications.
 Foreground observations report work, final response, failure or cancellation,
 correlated foreground and child question/approval waits and tool names (not tool inputs or results).
 Tool completion or failure clears the matching progress marker, not the response.
-Native child execution and accepted Bash/code-mode background work contribute
-independent counts, including work routed from nested children. A terminal child
-observation must follow the recorded start. Cancellation requests and synthetic
-parent-side artifact settlement do not count as native exits. Counts are
-best effort; resume/attach does not reconstruct already-running work and sends
-`null` for the unavailable counts. Final interactive quit attempts
-`session.ended`; drafts, switches, reloads and abrupt exits do not send it. Quit
+The existing TUI operational poll reports separate counts of owned nonterminal
+children and Bash/code-mode work. Counts start unknown and reconcile after
+session readiness, including on resume. An unavailable read reports `null`.
+A zero sampled before the foreground response finishes cannot settle it; a
+subsequent poll must confirm zero children. Scripts do not gate completion.
+Final interactive quit attempts `session.ended`; drafts, switches, reloads and
+abrupt exits do not send it. Quit
 never initiates manual Linux bootstrap.
 
 ## Claude Code coverage

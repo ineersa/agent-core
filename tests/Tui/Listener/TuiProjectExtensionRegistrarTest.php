@@ -20,9 +20,8 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum as Event;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
 use Ineersa\Tui\Listener\TuiProjectExtensionRegistrar;
@@ -128,8 +127,8 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertSame($first['sessionEpoch'], $snapshot['sessionEpoch']);
             $this->assertSame('cancelled', $snapshot['turn']['status']);
             $this->assertNull($snapshot['attention']);
-            $this->assertSame(0, $snapshot['activeSubagents']);
-            $this->assertSame(0, $snapshot['backgroundScripts']);
+            $this->assertNull($snapshot['activeSubagents']);
+            $this->assertNull($snapshot['backgroundScripts']);
             $this->assertArrayNotHasKey('child_run_id', $snapshot);
 
             $context->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
@@ -143,13 +142,19 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $this->assertGreaterThan($first['sequence'], $second['sequence']);
             $this->assertSame($second['sequence'], $second['sessionEpoch']);
 
+            $this->assertNull($second['activeSubagents']);
+            $resumed->lifecycle->dispatchBackgroundSnapshot(new TuiBackgroundSnapshotDTO('resumed-session', 1, 0));
+            $reconciled = $this->acceptFrame($server);
+            $this->assertSame(1, $reconciled['activeSubagents']);
+            $this->assertSame($second['sessionEpoch'], $reconciled['sessionEpoch']);
+
             $closing = async(static fn () => $resumed->lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionGracefullyClosing));
             $end = $this->acceptFrame($server);
             $closing->await(new TimeoutCancellation(2));
             $this->assertSame('session.ended', $end['kind']);
             $this->assertSame($second['sessionId'], $end['sessionId']);
             $this->assertSame($second['sessionEpoch'], $end['sessionEpoch']);
-            $this->assertSame($second['sequence'] + 1, $end['sequence']);
+            $this->assertSame($reconciled['sequence'] + 1, $end['sequence']);
         } finally {
             if (isset($server)) {
                 $server->close();
@@ -251,25 +256,32 @@ final class TuiProjectExtensionRegistrarTest extends TestCase
             $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 5, TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: 'child'));
             $cleared = $this->acceptFrame($server);
             $this->assertNull($cleared['attention']);
-            $this->assertSame(0, $cleared['activeSubagents']);
+            $this->assertNull($cleared['activeSubagents']);
 
-            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 12, TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: 'late-child'));
-            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 10, TuiRunObservationTypeEnum::ChildExecutionStarted, childRunId: 'late-child'));
-            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 1, TuiRunObservationTypeEnum::ChildExecutionStarted, childRunId: 'child'));
-            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 6, TuiRunObservationTypeEnum::ChildExecutionStarted, childRunId: 'child'));
-            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 5, TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: 'child'));
-            $this->assertSame(1, $this->acceptFrame($server)['activeSubagents']);
-            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 7, TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: 'child'));
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 1));
             $this->assertSame(0, $this->acceptFrame($server)['activeSubagents']);
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 20, TuiRunObservationTypeEnum::TurnCompleted));
+            $completed = $this->acceptFrame($server);
+            $this->assertSame('completed', $completed['turn']['status']);
+            $this->assertNull($completed['activeSubagents']);
+            $this->assertSame(1, $completed['backgroundScripts']);
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 1, 1));
+            $working = $this->acceptFrame($server);
+            $this->assertSame(1, $working['activeSubagents']);
+            $this->assertSame($completed['turn'], $working['turn']);
 
-            $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('second', 'owner', 'bash:1', TuiBackgroundJobObservationTypeEnum::Ended));
-            $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('second', 'owner', 'bash:1', TuiBackgroundJobObservationTypeEnum::Started));
-            $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('second', 'owner', 'bash:1', TuiBackgroundJobObservationTypeEnum::Started));
-            $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('second', 'owner', 'bash:2', TuiBackgroundJobObservationTypeEnum::Started));
-            $this->assertSame(1, $this->acceptFrame($server)['backgroundScripts']);
-            $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('second', 'owner', 'bash:2', TuiBackgroundJobObservationTypeEnum::Ended));
-            $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('second', 'owner', 'bash:2', TuiBackgroundJobObservationTypeEnum::Started));
-            $this->assertSame(0, $this->acceptFrame($server)['backgroundScripts']);
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 1, 1));
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('first', 0, 0));
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', null, null));
+            $unavailable = $this->acceptFrame($server);
+            $this->assertSame($working['sequence'] + 1, $unavailable['sequence']);
+            $this->assertNull($unavailable['activeSubagents']);
+            $this->assertNull($unavailable['backgroundScripts']);
+            $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 1));
+            $settled = $this->acceptFrame($server);
+            $this->assertSame(0, $settled['activeSubagents']);
+            $this->assertSame(1, $settled['backgroundScripts']);
+            $this->assertSame($completed['turn'], $settled['turn']);
         } finally {
             if (isset($server)) {
                 $server->close();

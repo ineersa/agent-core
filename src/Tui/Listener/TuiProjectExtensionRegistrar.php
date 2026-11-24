@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Extension\ExtensionManager;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundSnapshotObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
@@ -32,6 +34,17 @@ final class TuiProjectExtensionRegistrar implements TuiListenerRegistrar
             }
             if ($extension instanceof TuiBackgroundJobObserverInterface) {
                 $context->sessionServices->parentPoller->observeBackgroundJob($extension);
+            }
+            if ($extension instanceof TuiBackgroundSnapshotObserverInterface) {
+                $context->lifecycle->subscribeBackgroundSnapshot(function (TuiBackgroundSnapshotDTO $snapshot) use ($extension): void {
+                    try {
+                        $extension->onTuiBackgroundSnapshot($snapshot);
+                    } catch (\Throwable $exception) {
+                        $this->logger->warning('extension.tui_background_snapshot_observer_failed', [
+                            'session_id' => $snapshot->sessionId, 'extension' => $extension::class, 'exception_class' => $exception::class,
+                        ]);
+                    }
+                });
             }
             if ($extension instanceof TuiRunObserverInterface) {
                 $context->sessionServices->parentPoller->observeRun($extension);

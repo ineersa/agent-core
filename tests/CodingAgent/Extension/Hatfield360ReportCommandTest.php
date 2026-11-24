@@ -31,7 +31,7 @@ final class Hatfield360ReportCommandTest extends TestCase
         try {
             // This runs the standalone entry point in a fresh process for each
             // event, with the same autoload path a Composer-installed binary gets.
-            $startup = $this->launch($environment, ['session_id' => 'claude-1', 'hook_event_name' => 'SessionStart', 'source' => 'startup']);
+            $startup = $this->launch($environment, ['session_id' => 'claude-1', 'hook_event_name' => 'SessionStart', 'source' => 'startup', 'session_title' => 'Initial title']);
             $first = $this->exchange($server, $startup);
             $switch = '44444444-4444-4444-8444-111111111111';
             $nextSwitch = '44444444-4444-4444-8444-222222222222';
@@ -47,19 +47,23 @@ final class Hatfield360ReportCommandTest extends TestCase
             $second = $this->exchange($server, $this->launch($environment, $incoming));
             $this->assertSame('session.snapshot', $first['kind']);
             $this->assertSame('claude', $first['provider']);
+            $this->assertSame('Initial title', $first['title']);
+            $this->assertNull($second['title']);
             $this->assertSame('claude-2', $second['sessionId']);
             $this->assertGreaterThan($first['sequence'], $second['sequence']);
             $this->assertSame($second['sequence'], $second['sessionEpoch']);
 
             $prompt = '44444444-4444-4444-8444-555555555555';
-            $start = $this->launch($environment, ['session_id' => 'claude-2', 'hook_event_name' => 'UserPromptSubmit', 'prompt_id' => $prompt, 'prompt' => 'private prompt']);
+            $start = $this->launch($environment, ['session_id' => 'claude-2', 'hook_event_name' => 'UserPromptSubmit', 'prompt_id' => $prompt, 'prompt' => 'private prompt', 'session_title' => 'Renamed title']);
             $turn = $this->exchange($server, $start);
             $this->assertSame('session.snapshot', $turn['kind']);
             $this->assertArrayNotHasKey('prompt', $turn);
+            $this->assertSame('Renamed title', $turn['title']);
             $this->assertSame($second['sessionEpoch'], $turn['sessionEpoch']);
             $failure = $this->launch($environment, ['session_id' => 'claude-2', 'hook_event_name' => 'StopFailure', 'prompt_id' => $prompt, 'error' => 'server_error']);
             $end = $this->exchange($server, $failure);
             $this->assertSame(['id' => $prompt, 'status' => 'failed'], $end['turn']);
+            $this->assertSame('Renamed title', $end['title']);
 
             $this->exchange($server, $this->launch($environment, array_replace($outgoing, ['session_id' => 'claude-2', 'prompt_id' => $nextSwitch])));
             $returned = $this->exchange($server, $this->launch($environment, array_replace($incoming, ['session_id' => 'claude-1', 'prompt_id' => $nextSwitch])));

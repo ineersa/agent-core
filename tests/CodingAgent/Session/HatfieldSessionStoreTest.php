@@ -796,6 +796,8 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $row = $this->findRow($list, $sessionId);
         $this->assertSame('Renamed Session', $row['name']);
         $this->assertSame('Renamed Session', $row['displayTitle']);
+        $this->assertSame($row['displayTitle'], $this->store->findDisplayTitle($sessionId));
+        $this->assertNull($this->store->findDisplayTitle('not-a-session-id'));
         $this->assertSame('original prompt', $row['prompt']);
     }
 
