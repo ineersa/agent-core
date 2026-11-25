@@ -177,18 +177,6 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
-     * True when the indexed event stream shows the assistant began or finished a message.
-     */
-    protected function hasAssistantResponseEvidence(array $byType): bool
-    {
-        return isset($byType['assistant.message_started'])
-            || isset($byType['assistant.text_started'])
-            || isset($byType['assistant.text_delta'])
-            || isset($byType['assistant.thinking_started'])
-            || isset($byType['assistant.message_completed']);
-    }
-
-    /**
      * Wall-clock budget for controller subprocess to emit runtime.ready.
      * Under full castor check, ParaTest llm-real defaults to 1 worker (standalone full
      * uses 2); concurrent gate load still competes with other parallel lanes, so 5s
