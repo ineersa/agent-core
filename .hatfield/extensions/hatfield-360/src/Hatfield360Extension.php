@@ -142,8 +142,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $this->epoch = ++self::$sequence;
         // Selection does not establish an active response or settle a previous one.
         $this->turn = null;
-        $this->completionDue = null;
-        $this->completionReleased = false;
+        $this->invalidateCompletion();
         $this->waits = [];
         $this->waitOverflow = null;
         $this->childWaits = [];
@@ -163,7 +162,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             return;
         }
         $this->closing = true;
-        $this->completionDue = null;
+        $this->invalidateCompletion();
         $this->discardPending();
         // Quit must not initiate manual authorization.
         if (null === $this->client) {
@@ -189,11 +188,11 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         if (null !== $observation->childRunId) {
             if (TuiRunObservationTypeEnum::ChildExecutionStarted === $type
                 && $observation->sequence > ($this->childTerminals[$observation->childRunId] ?? 0)) {
-                $this->completionDue = null;
+                $this->invalidateCompletion();
             }
             $attentionChanged = $this->observeChild($observation, $observation->childRunId);
             if ($attentionChanged && (TuiRunObservationTypeEnum::QuestionRequested === $type || TuiRunObservationTypeEnum::ApprovalRequested === $type)) {
-                $this->completionDue = null;
+                $this->invalidateCompletion();
             }
             $deduplicate = !$attentionChanged;
             $refresh = \in_array($type, [TuiRunObservationTypeEnum::ChildExecutionStarted, TuiRunObservationTypeEnum::ChildExecutionEnded], true);
@@ -208,8 +207,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             }
             $this->refreshTitle();
             $this->turn = ['id' => (string) $observation->sequence, 'status' => 'working'];
-            $this->completionDue = null;
-            $this->completionReleased = false;
+            $this->invalidateCompletion();
             $this->waits = [];
             $this->waitOverflow = null;
             $this->tools = [];
@@ -340,6 +338,13 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         return !$this->closing && '' !== $this->sessionId && $sessionId === $this->sessionId;
     }
 
+    private function invalidateCompletion(): void
+    {
+        // A released frame might not have arrived; renewed work requires another quiet window.
+        $this->completionDue = null;
+        $this->completionReleased = false;
+    }
+
     private function snapshot(?TuiBackgroundSnapshotDTO $background = null, bool $selection = false, bool $deduplicate = false, bool $refresh = false): void
     {
         $epoch = $this->epoch;
@@ -352,7 +357,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $mainActive = null;
         if (null !== $context) {
             if ($context->getSessionId() !== $sessionId) {
-                $this->completionDue = null;
+                $this->invalidateCompletion();
 
                 return;
             }
@@ -367,7 +372,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
                 return;
             }
             if ($context->getSessionId() !== $sessionId || $background->sessionId !== $sessionId) {
-                $this->completionDue = null;
+                $this->invalidateCompletion();
 
                 return;
             }
@@ -375,7 +380,6 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         if (true === $mainActive && 'working' !== ($this->turn['status'] ?? null)) {
             // New main work may be active before its canonical opening event arrives.
             $this->turn = null;
-            $this->completionReleased = false;
         }
         $children = $background?->activeSubagents;
         $scripts = $background?->backgroundScripts;
@@ -392,7 +396,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         }
         $completed = 'completed' === ($this->turn['status'] ?? null);
         if (!$completed || false !== $mainActive || 0 !== $children || null !== $attention) {
-            $this->completionDue = null;
+            $this->invalidateCompletion();
         } elseif (!$this->completionReleased) {
             if ($confirm) {
                 $this->completionReleased = true;
@@ -402,7 +406,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             }
         }
         // Desktop completion is inferred from the snapshot itself, not a separate notice.
-        if ($completed && (false !== $mainActive || (0 === $children && (!$this->completionReleased || null !== $attention)))) {
+        if ($completed && (false !== $mainActive || (0 === $children && !$this->completionReleased))) {
             $children = null;
         }
         $fields = [

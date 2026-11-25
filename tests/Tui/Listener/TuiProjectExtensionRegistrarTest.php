@@ -402,9 +402,22 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $this->assertSame($interim['turn'], $afterChild['turn']);
             $this->assertNull($afterChild['activeSubagents']);
 
+            $clock->modify('+5 seconds');
             $sample(0, 2);
             $attempt = $drain->getValue($extension);
-            $this->acceptFrame($server, '{"ok":true,"status":"stale"}');
+            $refusedCompletion = $this->acceptFrame($server, '{"ok":true,"status":"stale"}');
+            $this->assertSame(0, $refusedCompletion['activeSubagents']);
+            $attempt->await(new TimeoutCancellation(2));
+
+            $children = 1;
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 1, TuiRunObservationTypeEnum::ChildExecutionStarted, childRunId: 'resumed-child'));
+            $this->assertSame(1, $this->acceptFrame($server)['activeSubagents']);
+            $children = 0;
+            $extension->onTuiRunObserved(new TuiRunObservationDTO('second', 2, TuiRunObservationTypeEnum::ChildExecutionEnded, childRunId: 'resumed-child'));
+            $attempt = $drain->getValue($extension);
+            $pendingAgain = $this->acceptFrame($server);
+            $this->assertSame($refusedCompletion['turn'], $pendingAgain['turn']);
+            $this->assertNull($pendingAgain['activeSubagents'], 'Child settlement cannot deliver the refused completion before reconfirmation.');
             $attempt->await(new TimeoutCancellation(2));
             $extension->onTuiSessionSelected($selection = 'third');
             $attempt = $drain->getValue($extension);
@@ -412,7 +425,7 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $attempt->await(new TimeoutCancellation(2));
             $clock->modify('+30 seconds');
             $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 2));
-            $this->assertNull($drain->getValue($extension), 'A past selection cannot resurrect a failed report or release a pending completion.');
+            $this->assertNull($drain->getValue($extension), 'A past selection cannot release a pending completion.');
         } finally {
             if (isset($server)) {
                 $server->close();

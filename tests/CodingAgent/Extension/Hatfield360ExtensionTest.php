@@ -193,6 +193,51 @@ final class Hatfield360ExtensionTest extends TestCase
         $this->assertNull($this->snapshot($extension)['turn'], 'A later idle sample cannot resurrect the superseded response.');
     }
 
+    public function testInvalidationAfterReleaseRequiresAnotherQuietWindow(): void
+    {
+        $clock = new MockClock();
+        $extension = $this->extension($clock);
+        $zero = new TuiBackgroundSnapshotDTO('42', 0, 0);
+        $selection = '42';
+        $context = $this->createStub(TuiSessionActivityContextInterface::class);
+        $context->method('getSessionId')->willReturnCallback(static function () use (&$selection): string {
+            return $selection;
+        });
+        $context->method('isMainActive')->willReturn(false);
+        $context->method('getBackgroundSnapshot')->willReturn($zero);
+        $extension->registerTui($context);
+        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::TurnStarted));
+        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::TurnCompleted));
+        $completed = ['id' => '1', 'status' => 'completed'];
+        $clock->modify('+5 seconds');
+        $extension->onTuiBackgroundSnapshot($zero);
+        $this->assertSame(0, $this->snapshot($extension)['activeSubagents']);
+
+        $assertNewWindow = function (string $reason) use ($extension, $clock, $zero, $completed): void {
+            $extension->onTuiBackgroundSnapshot($zero);
+            $this->assertNull($this->snapshot($extension)['activeSubagents'], $reason);
+            $clock->modify('+4 seconds');
+            $extension->onTuiBackgroundSnapshot($zero);
+            $this->assertNull($this->snapshot($extension)['activeSubagents']);
+            $clock->modify('+1 second');
+            $extension->onTuiBackgroundSnapshot($zero);
+            $this->assertSame(0, $this->snapshot($extension)['activeSubagents']);
+            $this->assertSame($completed, $this->snapshot($extension)['turn']);
+        };
+
+        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::ChildExecutionStarted, childRunId: 'child'));
+        $assertNewWindow('Child start invalidates release even if refreshed inventory still says zero.');
+        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', null, 0));
+        $assertNewWindow('Recovering from unknown inventory requires reconfirmation.');
+        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::ApprovalRequested, 'request', 'child'));
+        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 3, Observation::InputResolved, 'request', 'child'));
+        $assertNewWindow('Resolving transient child attention requires reconfirmation.');
+        $selection = 'other';
+        $extension->onTuiBackgroundSnapshot($zero);
+        $selection = '42';
+        $assertNewWindow('A session context mismatch invalidates release.');
+    }
+
     private function extension(?MockClock $clock = null): Hatfield360Extension
     {
         $extension = new Hatfield360Extension($clock ?? new MockClock());
