@@ -52,6 +52,8 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     private bool $closing = false;
     /** @var array{id: string, status: string}|null */
     private ?array $turn = null;
+    private ?\DateTimeImmutable $completionDue = null;
+    private bool $completionReleased = false;
     /** @var list<array{request: string, id: string, reason: string}> */
     private array $waits = [];
     /** Overflow cannot be resolved by uncorrelated input; keep it until the response ends or the selection changes.
@@ -140,6 +142,8 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $this->epoch = ++self::$sequence;
         // Selection does not establish an active response or settle a previous one.
         $this->turn = null;
+        $this->completionDue = null;
+        $this->completionReleased = false;
         $this->waits = [];
         $this->waitOverflow = null;
         $this->childWaits = [];
@@ -159,6 +163,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             return;
         }
         $this->closing = true;
+        $this->completionDue = null;
         $this->discardPending();
         // Quit must not initiate manual authorization.
         if (null === $this->client) {
@@ -182,7 +187,14 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $deduplicate = false;
         $refresh = false;
         if (null !== $observation->childRunId) {
+            if (TuiRunObservationTypeEnum::ChildExecutionStarted === $type
+                && $observation->sequence > ($this->childTerminals[$observation->childRunId] ?? 0)) {
+                $this->completionDue = null;
+            }
             $attentionChanged = $this->observeChild($observation, $observation->childRunId);
+            if ($attentionChanged && (TuiRunObservationTypeEnum::QuestionRequested === $type || TuiRunObservationTypeEnum::ApprovalRequested === $type)) {
+                $this->completionDue = null;
+            }
             $deduplicate = !$attentionChanged;
             $refresh = \in_array($type, [TuiRunObservationTypeEnum::ChildExecutionStarted, TuiRunObservationTypeEnum::ChildExecutionEnded], true);
             if (!$attentionChanged && (!$this->metadata instanceof TuiSessionActivityContextInterface
@@ -196,6 +208,8 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             }
             $this->refreshTitle();
             $this->turn = ['id' => (string) $observation->sequence, 'status' => 'working'];
+            $this->completionDue = null;
+            $this->completionReleased = false;
             $this->waits = [];
             $this->waitOverflow = null;
             $this->tools = [];
@@ -332,21 +346,36 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $sessionId = $this->sessionId;
         $context = $this->metadata instanceof TuiSessionActivityContextInterface ? $this->metadata : null;
         $polled = null !== $background;
+        $due = $this->completionDue;
+        $confirm = $polled && $background?->sessionId === $sessionId && 0 === $background->activeSubagents
+            && null !== $due && $this->clock->now() >= $due;
         $mainActive = null;
         if (null !== $context) {
             if ($context->getSessionId() !== $sessionId) {
+                $this->completionDue = null;
+
                 return;
             }
-            $background ??= $context->getBackgroundSnapshot($selection || $refresh);
+            if ($confirm) {
+                // A cached zero cannot release a completion. Recheck through the selected context.
+                $background = $context->getBackgroundSnapshot(true);
+            } else {
+                $background ??= $context->getBackgroundSnapshot($selection || $refresh);
+            }
             $mainActive = $context->isMainActive();
-            if ($context->getSessionId() !== $sessionId || $background->sessionId !== $sessionId
-                || $this->epoch !== $epoch || !$this->observes($sessionId)) {
+            if ($this->epoch !== $epoch || !$this->observes($sessionId) || ($confirm && $due !== $this->completionDue)) {
+                return;
+            }
+            if ($context->getSessionId() !== $sessionId || $background->sessionId !== $sessionId) {
+                $this->completionDue = null;
+
                 return;
             }
         }
         if (true === $mainActive && 'working' !== ($this->turn['status'] ?? null)) {
             // New main work may be active before its canonical opening event arrives.
             $this->turn = null;
+            $this->completionReleased = false;
         }
         $children = $background?->activeSubagents;
         $scripts = $background?->backgroundScripts;
@@ -361,9 +390,24 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
                 }
             }
         }
+        $completed = 'completed' === ($this->turn['status'] ?? null);
+        if (!$completed || false !== $mainActive || 0 !== $children || null !== $attention) {
+            $this->completionDue = null;
+        } elseif (!$this->completionReleased) {
+            if ($confirm) {
+                $this->completionReleased = true;
+                $this->completionDue = null;
+            } else {
+                $this->completionDue ??= $this->clock->now()->modify('+5 seconds');
+            }
+        }
+        // Desktop completion is inferred from the snapshot itself, not a separate notice.
+        if ($completed && (false !== $mainActive || (0 === $children && (!$this->completionReleased || null !== $attention)))) {
+            $children = null;
+        }
         $fields = [
             'provider' => 'hatfield', 'title' => $this->title, 'turn' => $this->turn, 'attention' => $attention,
-            'activeSubagents' => $children > 1024 || ('completed' === ($this->turn['status'] ?? null) && false !== $mainActive) ? null : $children,
+            'activeSubagents' => $children > 1024 ? null : $children,
             'backgroundScripts' => $scripts > 1024 ? null : $scripts, 'tool' => $this->tools[array_key_last($this->tools) ?? ''] ?? null,
         ];
         $fingerprint = hash('sha256', serialize($fields));

@@ -275,7 +275,7 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $this->assertSame('2', $latest['turn']['id']);
 
             $context = $this->createMock(CommandContextInterface::class);
-            $context->expects($this->exactly(5))->method('notify')->with('Hatfield 360 accepted the notification.', 'success');
+            $context->expects($this->exactly(6))->method('notify')->with('Hatfield 360 accepted the notification.', 'success');
             $assertNoDuplicate = function (?int $children, ?int $scripts) use ($sample, $extension, $context, $server): void {
                 $sample($children, $scripts);
                 // The notice is an ordering barrier: any duplicate would arrive first.
@@ -353,7 +353,14 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $this->assertNull($unavailable['activeSubagents']);
             $this->assertNull($unavailable['backgroundScripts']);
             $sample(0, 1);
+            $pending = $this->acceptFrame($server);
+            $this->assertSame($completed['turn'], $pending['turn']);
+            $this->assertNull($pending['activeSubagents']);
+            $assertNoDuplicate(0, 1);
+            $clock->modify('+5 seconds');
+            $sample(0, 1);
             $unconfirmed = $this->acceptFrame($server, '{"ok":true,"status":"stale"}');
+            $this->assertSame(0, $unconfirmed['activeSubagents']);
             $settlementFailed->getFuture()->await(new TimeoutCancellation(2));
             $this->assertSame(['first', 'second', 'second'], $drops);
             $drain->getValue($extension)?->await(new TimeoutCancellation(2));
@@ -393,7 +400,7 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $sample(0, 1);
             $afterChild = $this->acceptFrame($server);
             $this->assertSame($interim['turn'], $afterChild['turn']);
-            $this->assertSame(0, $afterChild['activeSubagents']);
+            $this->assertNull($afterChild['activeSubagents']);
 
             $sample(0, 2);
             $attempt = $drain->getValue($extension);
@@ -405,7 +412,7 @@ final class TuiProjectExtensionRegistrarTest extends IsolatedKernelTestCase
             $attempt->await(new TimeoutCancellation(2));
             $clock->modify('+30 seconds');
             $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('second', 0, 2));
-            $this->assertNull($drain->getValue($extension), 'A past selection cannot resurrect a failed report.');
+            $this->assertNull($drain->getValue($extension), 'A past selection cannot resurrect a failed report or release a pending completion.');
         } finally {
             if (isset($server)) {
                 $server->close();
