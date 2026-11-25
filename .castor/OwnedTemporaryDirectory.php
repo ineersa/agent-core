@@ -90,7 +90,10 @@ final class OwnedTemporaryDirectory
         }
     }
 
-    /** @param array<array-key, int> $a @param array<array-key, int> $b */
+    /**
+     * @param array<array-key, int> $a
+     * @param array<array-key, int> $b
+     */
     private static function sameDirectory(array $a, array $b): bool
     {
         return 0o040000 === ($a['mode'] & 0o170000) && 0o040000 === ($b['mode'] & 0o170000)

@@ -282,7 +282,6 @@ final class ImagePasteInputVirtualTest extends TestCase
             if (null !== $staged && is_file($staged)) {
                 unlink($staged);
             }
-            TestDirectoryIsolation::removeDirectory($privateDirectory);
         }
     }
 
