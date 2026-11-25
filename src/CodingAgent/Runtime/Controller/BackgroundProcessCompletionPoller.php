@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -298,6 +299,10 @@ final class BackgroundProcessCompletionPoller
                 \Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum::FinishedUnclean => 'unclean exit',
                 default => '?',
             };
+
+        if (null !== $exitCode && BackgroundProcessStatusEnum::FinishedUnclean === $process->status) {
+            $statusLabel .= '; log writer failed';
+        }
 
         $commandPreview = u($process->command)->truncate(200, '...')->toString();
 

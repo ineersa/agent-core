@@ -27,6 +27,7 @@ final readonly class NativeBashObservationDTO
         public bool $backgroundRequested,
         public BackgroundProcessStatusEnum $status,
         public bool $accepted = false,
+        public int $logWriterExitCode = 0,
     ) {
     }
 }

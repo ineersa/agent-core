@@ -119,7 +119,7 @@ final class BashTool implements HatfieldToolProviderInterface
                     }
 
                     if (BackgroundProcessStatusEnum::Running !== $record->status) {
-                        return $this->handleFinished($record, $sessionId, $toolCallId, $retainedOutputPath);
+                        return $this->handleFinished($record, $sessionId, $toolCallId, $retainedOutputPath, $startResult->scoped);
                     }
 
                     if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
@@ -136,6 +136,7 @@ final class BashTool implements HatfieldToolProviderInterface
                             $sessionId,
                             $toolCallId,
                             $retainedOutputPath,
+                            $startResult->scoped,
                         );
                         $this->logger->info('bash_tool.timed_out', [
                             'component' => 'tool.bash',
@@ -251,6 +252,7 @@ final class BashTool implements HatfieldToolProviderInterface
         ?string $runId,
         ?string $toolCallId,
         ?string &$retainedOutputPath,
+        bool $scoped,
     ): string {
         try {
             $result = $this->manager->readLogTailForNativePaths(
@@ -260,10 +262,12 @@ final class BashTool implements HatfieldToolProviderInterface
             );
 
             if ($result->totalBytes >= BashLogWriter::PREFIX) {
+                $path = $scoped ? $logPath : $this->retainNativeLog($logPath, $runId, $toolCallId, $retainedOutputPath);
+
                 return \sprintf(
-                    "[Bash retained log: %d bytes; inspect the native log with read while available.]\n%s\n\n%s",
+                    "[Bash retained log: %d bytes; inspect the retained log with read.]\n%s\n\n%s",
                     $result->totalBytes,
-                    $logPath,
+                    $path,
                     mb_strcut($result->content, -768, null, 'UTF-8'),
                 );
             }
@@ -319,7 +323,7 @@ final class BashTool implements HatfieldToolProviderInterface
                 throw new \RuntimeException('Failed to open Bash log for retention.');
             }
             try {
-                if (false === stream_copy_to_stream($source, $handle, BashLogWriter::PREFIX)) {
+                if (false === stream_copy_to_stream($source, $handle, BashLogWriter::LIMIT)) {
                     throw new \RuntimeException('Failed to retain Bash log bytes.');
                 }
             } finally {
@@ -335,6 +339,7 @@ final class BashTool implements HatfieldToolProviderInterface
         ?string $sessionId,
         ?string $toolCallId,
         ?string &$retainedOutputPath,
+        bool $scoped,
     ): string {
         $output = $this->readOutputForNativePaths(
             $entity->logPath,
@@ -342,6 +347,7 @@ final class BashTool implements HatfieldToolProviderInterface
             $sessionId,
             $toolCallId,
             $retainedOutputPath,
+            $scoped,
         );
         $pid = $entity->pid;
         $exitCode = $entity->exitCode;
@@ -352,6 +358,7 @@ final class BashTool implements HatfieldToolProviderInterface
             'event_type' => 'bash_tool.completed',
             'process_pid' => $pid,
             'exit_code' => $exitCode,
+            'log_writer_exit_code' => $entity->logWriterExitCode,
             'status' => $status,
             'log_path' => $entity->logPath,
             'status_path' => $entity->statusPath,
@@ -359,6 +366,10 @@ final class BashTool implements HatfieldToolProviderInterface
 
         if (BackgroundProcessStatusEnum::Finished === $status && 0 === $exitCode) {
             return $output;
+        }
+
+        if (0 !== $entity->logWriterExitCode) {
+            throw new ToolCallException(\sprintf("Bash log writer failed with exit code %d; workload exited with code %d.\n\nPartial output:\n%s", $entity->logWriterExitCode, $exitCode, $output), retryable: false);
         }
 
         $failure = null !== $exitCode

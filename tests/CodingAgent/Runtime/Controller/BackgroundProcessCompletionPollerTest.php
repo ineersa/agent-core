@@ -254,7 +254,9 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testPollSendsFollowUpAndMarksNotified(): void
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testPollSendsFollowUpAndMarksNotified(bool $writerFailed): void
     {
         $logPath = $this->tmpDir.'/test-poller.log';
         file_put_contents($logPath, "Hello world\n");
@@ -267,7 +269,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             backgroundedAt: $now->modify('-60 seconds'),
             finishedAt: $now,
             exitCode: 0,
-            status: BackgroundProcessStatusEnum::Finished,
+            status: $writerFailed ? BackgroundProcessStatusEnum::FinishedUnclean : BackgroundProcessStatusEnum::Finished,
         );
 
         $store = self::getContainer()->get(ProcessStore::class);
@@ -284,7 +286,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertSame('test-poller-run', $runId);
         $this->assertInstanceOf(DeliverBackgroundCompletionDTO::class, $command);
         $this->assertStringContainsString('[BG_PROCESS_DONE]', $command->text ?? '');
-        $this->assertStringContainsString('PID 10001', $command->text ?? '');
+        $this->assertStringContainsString($writerFailed ? 'PID 10001 finished (exit 0; log writer failed)' : 'PID 10001 finished (exit 0)', $command->text ?? '');
         $this->assertStringContainsString('Hello world', $command->text ?? '');
 
         $entity = $this->findProcess(10001);

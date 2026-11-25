@@ -39,7 +39,8 @@ Bash retains at most **100 MiB** of combined stdout and stderr per command.
 When output exceeds the retention budget, the log keeps the beginning and the
 latest tail and reports how many bytes were discarded. Hatfield continues
 reading the command's output; reaching the limit does not stop the command.
-Near-limit logs are not duplicated into session attachments.
+Near-limit logs are referenced directly when the session owns the log. Nested
+commands save a bounded attachment before their temporary log is removed.
 
 `/bg` asks for confirmation, default No, then requests stop without blocking the
 terminal through termination grace. Its list is a snapshot: reopen to refresh.

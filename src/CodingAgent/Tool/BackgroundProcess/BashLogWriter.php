@@ -24,9 +24,10 @@ final class BashLogWriter
         }
 
         $tail = '';
+        $pending = '';
         $remaining = 0;
         while (!feof($input)) {
-            $chunk = fread($input, self::TAIL);
+            $chunk = fread($input, min(8192, self::TAIL - \strlen($pending)));
             if (false === $chunk) {
                 throw new \RuntimeException('Unable to drain Bash output.');
             }
@@ -34,17 +35,30 @@ final class BashLogWriter
                 continue;
             }
             $remaining += \strlen($chunk);
-            $tail = substr($tail.$chunk, -self::TAIL);
-            $discarded = $remaining - \strlen($tail);
-            $snapshot = $discarded > 0
-                ? "\n".$tail."\n[Bash output retention limit: discarded {$discarded} bytes before the retained tail.]\n"
-                : $tail;
-
-            // Overwrite only the reserved suffix so live inspection sees recent
-            // output without a second spool file or growth beyond the limit.
-            if (0 !== fseek($output, self::PREFIX) || \strlen($snapshot) !== fwrite($output, $snapshot)) {
-                throw new \RuntimeException('Unable to write Bash log tail.');
+            $pending .= $chunk;
+            if (self::TAIL === \strlen($pending)) {
+                $tail = $pending;
+                self::flushTail($output, $tail, $remaining);
+                $pending = '';
             }
+        }
+        if ('' !== $pending) {
+            self::flushTail($output, substr($tail.$pending, -self::TAIL), $remaining);
+        }
+    }
+
+    /** @param resource $output */
+    private static function flushTail($output, string $tail, int $remaining): void
+    {
+        $discarded = $remaining - \strlen($tail);
+        $snapshot = $discarded > 0
+            ? "\n".$tail."\n[Bash output retention limit: discarded {$discarded} bytes before the retained tail.]\n"
+            : $tail;
+
+        // Rewrite at most one tail per tail-sized increment, plus the final
+        // partial increment. Keep bounded live inspection without a spool.
+        if (0 !== fseek($output, self::PREFIX) || \strlen($snapshot) !== fwrite($output, $snapshot)) {
+            throw new \RuntimeException('Unable to write Bash log tail.');
         }
     }
 }

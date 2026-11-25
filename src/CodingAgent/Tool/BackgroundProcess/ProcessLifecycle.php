@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Runtime\Process\DetachedProcessLauncher;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\NativeProcessExitDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Process\ExecutableFinder;
@@ -77,9 +78,11 @@ final class ProcessLifecycle
             ? 'exec </dev/null >/dev/null 2>&1; exec 5> >('.$writer.' >&4 4>&-); WRITER_PID=$!; exec 4>&-; '
             : 'exec </dev/null >&4 2>&1 4>&-; ';
         $childOutput = $boundBashOutput ? ' >&5 2>&1 5>&-' : '';
-        $finishOutput = $boundBashOutput ? 'wait "$WRITER_PID"; ' : '';
+        $finishOutput = $boundBashOutput
+            ? 'wait "$WRITER_PID"; WRITER_RC=$?; echo "$RC $WRITER_RC" > "$STATUS_FILE"; '
+            : 'echo "$RC" > "$STATUS_FILE"; ';
         $shellCode = \sprintf(
-            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || { echo claimed; exit 73; }; set +o noclobber; if ! { exec 4%s %s; }; then echo log-open-failed; exit 74; fi; echo $$ || exit 74; %sbash -c %s%s & CHILD_PID=$!; %sSTATUS_FILE=%s; after_exit() { %s; }; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > "$STATUS_FILE"; after_exit; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; %secho $RC > "$STATUS_FILE"; after_exit; exit $RC',
+            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || { echo claimed; exit 73; }; set +o noclobber; if ! { exec 4%s %s; }; then echo log-open-failed; exit 74; fi; echo $$ || exit 74; %sbash -c %s%s & CHILD_PID=$!; %sSTATUS_FILE=%s; after_exit() { %s; }; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > "$STATUS_FILE"; after_exit; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; %safter_exit; exit $RC',
             escapeshellarg($pidFile),
             $boundBashOutput ? '>' : '>>',
             escapeshellarg($logFile),
@@ -270,6 +273,11 @@ final class ProcessLifecycle
      */
     public function readStatusFile(?string $statusPath): ?int
     {
+        return $this->readNativeExit($statusPath)?->exitCode;
+    }
+
+    public function readNativeExit(?string $statusPath): ?NativeProcessExitDTO
+    {
         if (!\is_string($statusPath) || '' === $statusPath || !is_file($statusPath)) {
             return null;
         }
@@ -291,11 +299,11 @@ final class ProcessLifecycle
         }
 
         $trimmed = trim($exitCodeRaw);
-        if ('' === $trimmed) {
+        if (1 !== preg_match('/^(-?\d+)(?: (\d+))?$/D', $trimmed, $matches)) {
             return null;
         }
 
-        return (int) $trimmed;
+        return new NativeProcessExitDTO((int) $matches[1], (int) ($matches[2] ?? 0));
     }
 
     /**
