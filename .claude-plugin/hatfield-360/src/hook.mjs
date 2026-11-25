@@ -5,7 +5,7 @@ import { launch } from './launch.mjs';
 import { observe, snapshot, text } from './lifecycle.mjs';
 import { send } from './protocol.mjs';
 import { diagnostic, privateDirectory, withState } from './state.mjs';
-import { titleFor } from './title.mjs';
+import { startTitleLookup, titleFor } from './title.mjs';
 
 // Bound the whole invocation, even if optional SDK work remains in flight.
 const hookBudgetMs = 7000;
@@ -43,6 +43,8 @@ async function report() {
         if (notify) process.exitCode = 2;
         return false;
     }
+    const titleStarted = performance.now();
+    const title = notify ? null : startTitleLookup(hook);
     return withState(dirname(endpoint), context, hook.hook_event_name === 'SubagentStart', deadline, async (previous, save, pendingStart) => {
         let state, kind, fields;
         if (notify) {
@@ -55,7 +57,7 @@ async function report() {
             const result = observe(previous, hook, context.secret);
             if (!result) return false;
             ({ state, kind } = result);
-            if (result.refreshTitle) state.title = await titleFor(hook, deadline - (context.managed ? 500 : 250)) ?? state.title;
+            if (result.refreshTitle) state.title = await titleFor(title, titleStarted, deadline - (context.managed ? 500 : 250)) ?? state.title;
             fields = kind === 'session.snapshot' ? snapshot(state) : {};
         }
         // Reserve sequence and commit provider observations before I/O. A lost

@@ -23,15 +23,23 @@ function observeChild(state, hook) {
     if (!id(hook.agent_id) || state.agents === null) return false;
     const key = digest(hook.agent_id);
     if (hook.hook_event_name === 'SubagentStart') {
-        if (Object.hasOwn(state.agents, key)) return false;
-        if (Object.keys(state.agents).length >= 1024) state.agents = null;
+        if (state.agents[key] === true) return false;
+        // A child whose stop another hook blocked starts again.
+        if (state.agents[key] === 'delivering') state.agents[key] = true;
+        else if (Object.keys(state.agents).length >= 1024) state.agents = null;
         else state.agents[key] = true;
     } else {
-        if (!Object.hasOwn(state.agents, key)) return false;
-        delete state.agents[key];
-        // Child samples may add uncertainty, but never clear it; processing
-        // order does not establish the order in which registries were sampled.
-        state.agentsUncertain ||= registry(hook.background_tasks)?.subagents === true;
+        if (state.agents[key] !== true) return false;
+        if (state.turn && state.turn.status !== 'working') {
+            // After the main response stopped, Claude wakes with a new prompt to handle
+            // this child's result: the work continues until that response settles.
+            state.agents[key] = 'delivering';
+        } else {
+            delete state.agents[key];
+            // Child samples may add uncertainty, but never clear it; processing
+            // order does not establish the order in which registries were sampled.
+            state.agentsUncertain ||= registry(hook.background_tasks)?.subagents === true;
+        }
     }
     state.scripts = null;
     return true;
@@ -74,6 +82,8 @@ export function observe(previous, hook, secret) {
         if (prompt === state.turn?.id) return null;
         state.turn = { id: prompt, status: 'working' };
         state.scripts = null;
+        // The new response receives the results the stopped children delivered.
+        if (state.agents) for (const [key, value] of Object.entries(state.agents)) if (value === 'delivering') delete state.agents[key];
         refreshTitle = true;
     } else if (state.turn?.id !== prompt || state.turn.status !== 'working') return null;
     else if (event === 'Stop' && hook.stop_hook_active === false) {

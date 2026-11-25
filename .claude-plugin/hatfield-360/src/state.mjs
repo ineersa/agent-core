@@ -41,7 +41,7 @@ function read(path) {
             !(s.title === null || text(s.title, 1024)) ||
             !entries(s.waits, 16, n => sequence(Math.abs(n)) && typeof n === 'number') ||
             !entries(s.tools, 32, t => object(t) && id(t.name) && (t.wait === null || sequence(t.wait)) && (t.fingerprint === null || hash(t.fingerprint))) ||
-            !(s.agents === null || entries(s.agents, 1024, n => n === true))) throw new Error('invalid state');
+            !(s.agents === null || entries(s.agents, 1024, n => n === true || n === 'delivering'))) throw new Error('invalid state');
         return s;
     } finally { closeSync(fd); }
 }

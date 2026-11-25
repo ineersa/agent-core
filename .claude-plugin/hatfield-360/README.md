@@ -36,11 +36,13 @@ not verified. The title lookup itself does not require those optional binaries.
 
 ## Titles and notices
 
-The reporter prefers the hook’s `session_title`. Otherwise, on selection,
-prompt submission and matched Stop, it asks the official SDK for the exact
-session and uses only `customTitle` (which can include the generated title).
-A failed lookup does not invent a name or replace an already known title in
-the same selection. It never uses prompts or summaries as titles.
+The reporter sends the name Claude shows for the session in `/resume`: the
+hook's `session_title`, else the session's custom or generated title, else its
+latest prompt, read through the official SDK's `getSessionInfo` on startup,
+clear, resume, prompt submission and matched Stop. The name is cut to one line
+of 200 characters. The lookup starts before the state lock and has 1.5 seconds;
+a failed or late lookup logs `hook_title_unavailable` or `hook_title_timeout`
+and keeps the name already known for the same selection.
 
 To send an opt-in notice after the plugin has selected a conversation, run
 this from the same desktop launch context:
@@ -70,8 +72,12 @@ parent-scoped `background_tasks` sample from a current matching foreground `Stop
 can establish zero only when it contains no in-flight `subagent` or `teammate`
 entries and there are no tracked starts left. Missing or malformed samples do
 not establish zero. Registry task IDs are not treated as agent IDs. Untracked
-`SubagentStop` hooks are ignored. A tracked stop removes that agent; its registry
-can add uncertainty but cannot clear it. Another hook can block the stop and
+`SubagentStop` hooks are ignored. A tracked stop while the main response is
+working removes that agent; its registry can add uncertainty but cannot clear it.
+A tracked stop after the main response stopped keeps the agent counted until the
+next prompt, because Claude then wakes with a new prompt to handle the child's
+result (recorded with Claude Code 2.1.331): the session stays working instead of
+settling or going unknown before that response. Another hook can block the stop and
 keep the child working, so this heuristic can report completion early.
 Pending-start uncertainty remains sticky.
 A matching elicitation request/result pair with a server and elicitation ID
