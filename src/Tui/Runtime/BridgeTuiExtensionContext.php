@@ -90,6 +90,7 @@ final class BridgeTuiExtensionContext implements TuiSessionActivityContextInterf
             $sessionId,
             \count(array_filter($snapshot->children, static fn (BackgroundChildStatusDTO $child): bool => !SubagentLiveStatusEnum::fromProgressString($child->status)->isTerminal())),
             \count(array_filter($snapshot->work, static fn (BackgroundWorkDTO $work): bool => !$work->terminal && \in_array($work->kind, ['bash', 'code_mode'], true))),
+            $snapshot->schedules,
         );
     }
 

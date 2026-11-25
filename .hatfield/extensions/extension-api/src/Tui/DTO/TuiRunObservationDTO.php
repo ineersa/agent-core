@@ -15,6 +15,7 @@ final readonly class TuiRunObservationDTO
         public ?string $requestId = null,
         public ?string $childRunId = null,
         public ?string $toolName = null,
+        public ?string $trigger = null,
     ) {
     }
 }

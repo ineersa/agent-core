@@ -42,7 +42,9 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
                 return $this->definitions;
             }
         };
-        $registry->register('source', $source);
+        $this->assertNull($registry->sessionSchedules('owner'));
+        $registry->register('scheduling', $source);
+        $this->assertSame([], $registry->sessionSchedules('owner'));
         $generator = new MessageGenerator($schedule, 'test', $clock);
         $due = static function () use ($generator, $registry): array {
             $messages = [];
@@ -60,6 +62,7 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
         $this->assertSame([], $due());
         $clock->modify('+500 milliseconds');
         $source->definitions = [new RecurringJobDTO('short', 'first', ['short' => true], '5 minutes', $clock->now(), $clock->now()->modify('+60 seconds'))];
+        $this->assertNull($registry->sessionSchedules('owner')[0]->nextRunAt);
         $clock->modify('+500 milliseconds');
         $this->assertSame([], $due(), 'The scheduler does not generate the initial occurrence.');
         $this->assertCount(1, $bus->messages, 'The refresh dispatches immediately even if the lifetime is shorter than the interval.');
@@ -70,6 +73,10 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
         $from = $clock->now();
         $until = $from->modify('+1 hour');
         $source->definitions = [new RecurringJobDTO('stable', 'first', ['value' => 1], '1 minute', $from, $until)];
+        [$view] = $registry->sessionSchedules('owner');
+        $this->assertSame(['id', 'label', 'recurring', 'nextRunAt'], array_keys(get_object_vars($view)));
+        $this->assertSame('Every 1 minute', $view->label);
+        $this->assertEquals($from->modify('+1 minute'), $view->nextRunAt);
         $clock->modify('+1 second');
         $this->assertSame([], $due());
         $this->assertCount(2, $bus->messages);
@@ -88,6 +95,7 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
         $this->assertCount(2, $bus->messages);
         $job = end($installed);
         $this->assertEquals($from->modify('+2 minutes'), $job->getTrigger()->getNextRunDate($clock->now()));
+        $this->assertEquals($from->modify('+2 minutes'), $registry->sessionSchedules('owner')[0]->nextRunAt);
 
         foreach ([
             new RecurringJobDTO('stable', 'first', ['value' => 1], '5 minutes', $from, $until),
@@ -115,6 +123,7 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
             $this->assertCount($dispatched, $bus->messages);
         }
         $source->definitions = [];
+        $this->assertSame([], $registry->sessionSchedules('owner'));
         $registry->refresh(new RefreshExtensionRecurringJobs());
         $this->assertCount(1, $schedule->getRecurringMessages());
         $clock->modify('+2 hours');
@@ -139,6 +148,7 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
         $this->assertSame(['future' => true], $bus->messages[5]->getMessage()->payload);
         $clock->modify('+58 seconds');
         $this->assertSame([], $due());
+        $this->assertSame([], $registry->sessionSchedules('owner'));
         $this->assertCount(6, $bus->messages, 'The replacement expires before its first eligible refresh.');
         $this->assertCount(1, $schedule->getRecurringMessages());
     }

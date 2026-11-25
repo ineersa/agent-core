@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
 use Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiScheduleDTO;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -89,6 +90,30 @@ final class ExtensionRecurringJobRegistry
             $this->schedule()->removeById($messageId);
         }
         $this->registered = $current;
+    }
+
+    /** @return list<TuiScheduleDTO>|null */
+    public function sessionSchedules(string $runId): ?array
+    {
+        $source = $this->sources['scheduling']['source'] ?? null;
+        if (null === $source) {
+            return null;
+        }
+
+        $now = $this->clock->now();
+        $schedules = [];
+        foreach ($source->jobs($runId) as $job) {
+            if (null !== $job->until && $job->until <= $now) {
+                continue;
+            }
+            // Only carry an interval-shaped label, never arbitrary source text.
+            $label = 1 === preg_match('/\A(?:[0-9]+ (?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)|P[0-9YMWDTHS.]+)\z/i', $job->every)
+                ? 'Every '.substr($job->every, 0, 58) : 'Recurring schedule';
+            $recurring = RecurringMessage::every($job->every, new \stdClass(), $job->from, $job->until ?? new \DateTimeImmutable('3000-01-01'));
+            $schedules[] = new TuiScheduleDTO($job->id, $label, true, $recurring->getTrigger()->getNextRunDate($now));
+        }
+
+        return $schedules;
     }
 
     private function schedule(): Schedule

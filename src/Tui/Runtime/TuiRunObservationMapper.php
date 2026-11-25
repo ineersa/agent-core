@@ -60,6 +60,10 @@ final class TuiRunObservationMapper
         };
         $name = TuiRunObservationTypeEnum::ToolStarted === $type ? ($event->payload['tool_name'] ?? null) : null;
 
-        return new TuiRunObservationDTO($event->runId, $event->seq, $type, \is_string($request) && '' !== $request ? $request : null, toolName: \is_string($name) ? $name : null);
+        return new TuiRunObservationDTO(
+            $event->runId, $event->seq, $type, \is_string($request) && '' !== $request ? $request : null,
+            toolName: \is_string($name) ? $name : null,
+            trigger: TuiRunObservationTypeEnum::TurnStarted === $type && 'schedule' === ($event->payload['trigger'] ?? null) ? 'schedule' : null,
+        );
     }
 }
