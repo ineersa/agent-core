@@ -51,8 +51,7 @@ the scoped identity; `sessionId` is a string.
 
 Filters combine before paging: `--since` is inclusive, `--until` is exclusive
 (both require RFC3339 timestamps with timezones), `--query` is a case-insensitive
-literal substring of the picker title or ID, and `--session-cwd` matches the
-normalized absolute recorded directory exactly, not its descendants. Results
+literal substring of the picker title or ID. Results
 sort by last activity, then numeric ID, both descending. The default `--limit`
 is 50 (1–200); `--offset` defaults to zero. Offset pages are not a snapshot:
 deduplicate by scoped identity and reset paging when refreshing.
@@ -61,11 +60,10 @@ On success, `--json` writes one object with `version: 1`, `scope: {cwd}`,
 `sessions` (rows with `sessionId`, `displayTitle`, `cwd`, `createdAt` and
 `updatedAt`), and `nextOffset` (an integer or `null` when exhausted). Times are
 in UTC; `updatedAt` describes persisted activity, not live or closed state.
-An absent store returns an empty page. Bad arguments or an unreadable,
-unsupported or corrupt store return a nonzero status with diagnostics on stderr
-and no JSON. Listing does not create or migrate storage, write session data, or
-load extensions; the normal framework cache can still be compiled outside the
-project, or under an explicitly configured cache directory.
+The command lists the existing catalog; it does not start or resume a session.
+Normal Hatfield CLI initialization still applies, including loading configuration
+and extensions. The selected project needs an initialized session database;
+CLI errors use the normal Hatfield diagnostics and nonzero exit status.
 
 ## History selection
 

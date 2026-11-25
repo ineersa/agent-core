@@ -8,7 +8,6 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
-use Ineersa\CodingAgent\Session\DTO\SessionCatalogFilterDTO;
 use Ineersa\CodingAgent\Session\DTO\SessionModelMetadataDTO;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\SessionDeletedEvent;
@@ -329,23 +328,6 @@ final class HatfieldSessionStore
         return $result;
     }
 
-    /** @return list<array{sessionId: string, displayTitle: string, cwd: string, createdAt: string, updatedAt: string}> */
-    public function listCatalogPage(SessionCatalogFilterDTO $filter): array
-    {
-        $rows = $this->getRepository()->findForCatalogPage(
-            $filter,
-            fn (string $id, string $name, ?string $prompt): string => $this->resolveDisplayTitle($id, $name, $this->resolvePromptPreview($prompt)),
-        );
-
-        return array_map(fn (array $row): array => [
-            'sessionId' => (string) $row['id'],
-            'displayTitle' => $row['display_title'],
-            'cwd' => $row['cwd'],
-            'createdAt' => $this->formatCatalogTimestamp($row['created_at']),
-            'updatedAt' => $this->formatCatalogTimestamp($row['updated_at']),
-        ], $rows);
-    }
-
     /** @return list<array{sessionId: string, displayTitle: string}> */
     public function listCompletionSessions(string $prefix, int $limit): array
     {
@@ -389,16 +371,6 @@ final class HatfieldSessionStore
         @chmod($attachments, 0o700);
 
         return $attachments;
-    }
-
-    private function formatCatalogTimestamp(string $value): string
-    {
-        $at = \DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value);
-        if (false === $at || $at->format('Y-m-d H:i:s') !== $value) {
-            throw new \UnexpectedValueException('Invalid persisted session timestamp.');
-        }
-
-        return $at->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
     }
 
     private function deleteStoredSession(string $sessionId): void

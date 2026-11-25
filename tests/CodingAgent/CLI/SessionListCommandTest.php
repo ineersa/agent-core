@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\CLI;
 
-use Doctrine\DBAL\DriverManager;
 use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\TestWith;
@@ -28,15 +27,7 @@ final class SessionListCommandTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->root);
     }
 
-    public function testMissingStoreDoesNotInitializeProject(): void
-    {
-        $report = $this->report($this->runConsole(['session:list', '--json', '--cwd', 'project'], $this->root));
-        $this->assertSame(['version' => 1, 'scope' => ['cwd' => $this->project], 'sessions' => [], 'nextOffset' => null], $report);
-        $this->assertSame(['.', '..'], scandir($this->project));
-        $this->assertDirectoryDoesNotExist($this->root.'/home/.hatfield');
-    }
-
-    public function testPageContractAndScopedStorageAreReadOnly(): void
+    public function testPageContract(): void
     {
         $db = $this->seedStore($this->project, <<<'SQL'
             (2, '/old/place', '2026-11-20 10:00:00', '2026-11-25 04:00:00', 'RÉNAME 100%_', 'private prompt'),
@@ -55,14 +46,14 @@ final class SessionListCommandTest extends TestCase
         $this->assertNull($second['nextOffset']);
         $filtered = $this->report($this->runConsole([
             'session:list', '--json', '--since=2026-11-24T23:00:00-05:00', '--until=2026-11-25T04:00:00.0001Z',
-            '--query=réname 100%_', '--session-cwd=/old/place/', '--limit=1',
+            '--query=réname 100%_', '--limit=1',
         ]));
         $this->assertSame([[
             'sessionId' => '2', 'displayTitle' => 'RÉNAME 100%_', 'cwd' => '/old/place',
             'createdAt' => '2026-11-20T10:00:00Z', 'updatedAt' => '2026-11-25T04:00:00Z',
         ]], $filtered['sessions']);
         $this->assertNull($filtered['nextOffset']);
-        $literal = $this->report($this->runConsole(['session:list', '--json', '--query=%_', '--session-cwd=/old/place']));
+        $literal = $this->report($this->runConsole(['session:list', '--json', '--query=%_']));
         $this->assertSame(['10', '2'], array_column($literal['sessions'], 'sessionId'));
         foreach (['--offset=100', '--query=private prompt', '--until=2026-11-25T04:00:00Z'] as $option) {
             $empty = $this->report($this->runConsole(['session:list', '--json', $option]));
@@ -91,7 +82,7 @@ final class SessionListCommandTest extends TestCase
         $config = "sessions:\n  path: elsewhere/sessions\n";
         file_put_contents($settings, $config);
         $project = $this->report($this->runConsole(['session:list', '--json', '--query=2']));
-        $external = $this->report($this->runConsole(['session:list', '--json', '--cwd='.$other], $this->project));
+        $external = $this->report($this->runConsole(['session:list', '--json', '--cwd', '../worktree'], $this->project));
         $this->assertSame($this->project, $project['scope']['cwd']);
         $this->assertSame($other, $external['scope']['cwd']);
         $this->assertSame(['Project store'], array_column($project['sessions'], 'displayTitle'));
@@ -125,65 +116,9 @@ final class SessionListCommandTest extends TestCase
     #[TestWith(['--offset=-1'])]
     #[TestWith(['--offset=999999999999999999999999'])]
     #[TestWith(['--offset='])]
-    #[TestWith(['--session-cwd=relative'])]
     public function testInvalidInputHasNoJson(string ...$options): void
     {
         $this->assertProcessFailed($this->runConsole(['session:list', '--json', ...$options]));
-        $this->assertDirectoryDoesNotExist($this->project.'/.hatfield');
-    }
-
-    #[TestWith(['made of broken bytes'])]
-    #[TestWith([''])]
-    public function testCorruptOrUnsupportedStoreFailsWithoutRepair(string $content): void
-    {
-        $db = $this->project.'/.hatfield/state.sqlite';
-        $this->assertTrue(mkdir(\dirname($db)));
-        file_put_contents($db, $content);
-        $this->assertProcessFailed($this->runConsole(['session:list', '--json']));
-        $this->assertSame($content, file_get_contents($db));
-    }
-
-    public function testUnreadableStoreIsNotAnEmptyCatalog(): void
-    {
-        $db = $this->project.'/.hatfield/state.sqlite';
-        $this->assertTrue(mkdir(\dirname($db)));
-        touch($db);
-        $this->assertTrue(chmod($db, 0000));
-        try {
-            clearstatcache(true, $db);
-            if (is_readable($db)) {
-                $this->markTestSkipped('This process can bypass SQLite fixture permissions.');
-            }
-            $this->assertProcessFailed($this->runConsole(['session:list', '--json']));
-        } finally {
-            chmod($db, 0600);
-        }
-    }
-
-    #[TestWith(['WAL'])]
-    #[TestWith(['DELETE'])]
-    public function testReaderWithUncommittedWriter(string $journalMode): void
-    {
-        $db = $this->seedStore($this->project, "(2, '/past', '2026-11-25 04:00:00', '2026-11-25 04:00:00', 'Committed title', NULL)");
-        // Own the writer lock synchronously before starting the reader. The
-        // subprocess cannot race with acquisition or release of the lock.
-        $writer = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $db]);
-        $this->assertSame(strtolower($journalMode), $writer->fetchOne('PRAGMA journal_mode='.$journalMode));
-        $writer->executeStatement('BEGIN EXCLUSIVE');
-        try {
-            $writer->executeStatement("UPDATE hatfield_session SET name = 'UNCOMMITTED CONTENT'");
-            $process = $this->runConsole(['session:list', '--json']);
-            if ('WAL' === $journalMode) {
-                $this->assertSame(['Committed title'], array_column($this->report($process)['sessions'], 'displayTitle'));
-            } else {
-                $this->assertProcessFailed($process);
-                $this->assertSame(1, $process->getExitCode());
-                $this->assertStringNotContainsString('UNCOMMITTED CONTENT', $process->getErrorOutput());
-            }
-        } finally {
-            $writer->executeStatement('ROLLBACK');
-            $writer->close();
-        }
     }
 
     private function seedStore(string $project, string $tuples): string
@@ -210,7 +145,7 @@ final class SessionListCommandTest extends TestCase
             'APP_ENV' => 'prod',
             'APP_DEBUG' => '0',
             'HOME' => $this->root.'/home',
-            'HATFIELD_CACHE_DIR' => 'session:list' === $options[0] ? false : $this->root.'/fixture-cache',
+            'HATFIELD_CACHE_DIR' => $this->root.'/fixture-cache',
             'XDG_CACHE_HOME' => $this->root.'/cache',
         ], timeout: 6);
         $process->run();

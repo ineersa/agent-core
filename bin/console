@@ -4,7 +4,6 @@
 declare(strict_types=1);
 
 use Ineersa\CodingAgent\CLI\ReloadArgvBuilder;
-use Ineersa\CodingAgent\CLI\Session\SessionListCommand;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Runtime\Contract\ProcessReloadState;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -55,7 +54,7 @@ if (Ineersa\CodingAgent\Runtime\Process\DetachedProcessLauncher::FLAG === ($work
     Ineersa\CodingAgent\Runtime\Process\DetachedProcessLauncher::run($workerArgv);
 }
 if (Ineersa\CodingAgent\Tool\BackgroundProcess\BashLogWriter::FLAG === ($workerArgv[1] ?? null)) {
-    Ineersa\CodingAgent\Tool\BackgroundProcess\BashLogWriter::copy(\STDIN, \STDOUT);
+    Ineersa\CodingAgent\Tool\BackgroundProcess\BashLogWriter::copy(STDIN, STDOUT);
     exit(0);
 }
 if (Ineersa\CodingAgent\Tool\CodeMode\CodeModeWakeup::FLAG === ($workerArgv[1] ?? null)) {
@@ -95,10 +94,11 @@ foreach ($args as $i => $arg) {
 }
 if (null !== $cwdValue && null !== $cwdIndex) {
     $resolved = str_starts_with($cwdValue, '/') ? $cwdValue : getcwd().'/'.$cwdValue;
-    if ('' === $cwdValue || !is_dir($resolved) || !@chdir($resolved)) {
+    if (!is_dir($resolved)) {
         fwrite(\STDERR, sprintf("Error: Working directory does not exist: %s\n", $resolved));
         exit(1);
     }
+    chdir($resolved);
     $_SERVER['HATFIELD_CWD'] = $resolved;
     $_ENV['HATFIELD_CWD'] = $resolved;
     putenv('HATFIELD_CWD='.$resolved);
@@ -179,7 +179,7 @@ $createApplication = static function (Kernel $kernel) use ($isPhar): Application
         'log:search' => true,
         'log:tail' => true,
         'session:cache:inspect' => true,
-        SessionListCommand::NAME => true,
+        'session:list' => true,
         'help' => true,
         'list' => true,
         'completion' => true,
@@ -195,14 +195,9 @@ $createApplication = static function (Kernel $kernel) use ($isPhar): Application
     return $application;
 };
 
-$input = new ArgvInput();
-$kernel = new Kernel(
-    $_SERVER['APP_ENV'] ?? 'prod',
-    (bool) ($_SERVER['APP_DEBUG'] ?? false),
-    useGlobalCache: SessionListCommand::NAME === $input->getFirstArgument(),
-);
+$kernel = new Kernel($_SERVER['APP_ENV'] ?? 'prod', (bool) ($_SERVER['APP_DEBUG'] ?? false));
 $application = $createApplication($kernel);
-$exitCode = $application->run($input);
+$exitCode = $application->run(new ArgvInput());
 
 // ── Outer /reload bootstrap loop ────────────────────────────────────────
 // A /reload returns the dedicated exit code after synchronously shutting

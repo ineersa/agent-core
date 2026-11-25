@@ -4,17 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
-use Ineersa\CodingAgent\CLI\Session\SessionListCommand;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\ConsoleEvents;
 use Symfony\Component\Console\Event\ConsoleCommandEvent;
-use Symfony\Component\DependencyInjection\Attribute\AutowireServiceClosure;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
- * Loads Hatfield extensions on console invocations, except read-only catalog discovery.
+ * Loads Hatfield extensions on every console command invocation.
  *
  * Extensions must be loaded in every process — not just the main `agent`
  * command — because Messenger worker processes (messenger:consume) handle
@@ -30,18 +28,10 @@ final class ExtensionLoaderSubscriber implements EventSubscriberInterface
 {
     private bool $loaded = false;
 
-    /**
-     * @param \Closure(): ExtensionManager        $extensionManager
-     * @param \Closure(): ToolFilterRuntimeConfig $toolFilterConfig
-     * @param \Closure(): ToolRegistryInterface   $toolRegistry
-     */
     public function __construct(
-        #[AutowireServiceClosure(ExtensionManager::class)]
-        private readonly \Closure $extensionManager,
-        #[AutowireServiceClosure(ToolFilterRuntimeConfig::class)]
-        private readonly \Closure $toolFilterConfig,
-        #[AutowireServiceClosure(ToolRegistryInterface::class)]
-        private readonly \Closure $toolRegistry,
+        private readonly ExtensionManager $extensionManager,
+        private readonly ToolFilterRuntimeConfig $toolFilterConfig,
+        private readonly ToolRegistryInterface $toolRegistry,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -55,19 +45,18 @@ final class ExtensionLoaderSubscriber implements EventSubscriberInterface
 
     public function onConsoleCommand(ConsoleCommandEvent $event): void
     {
-        if ($this->loaded || SessionListCommand::NAME === $event->getCommand()?->getName()) {
+        if ($this->loaded) {
             return;
         }
         $this->loaded = true;
 
-        $diagnostics = ($this->extensionManager)()->loadExtensions();
+        $diagnostics = $this->extensionManager->loadExtensions();
 
         // Symfony Process propagates the controller process environment
         // (including getenv/default env) on consumer launch/recycle. Controllers
         // also receive the same filters via --tools / --tools-excluded argv.
-        $filter = ($this->toolFilterConfig)();
-        $filter->hydrateFromEnvironment();
-        $filter->applyToRegistry(($this->toolRegistry)());
+        $this->toolFilterConfig->hydrateFromEnvironment();
+        $this->toolFilterConfig->applyToRegistry($this->toolRegistry);
 
         if ([] !== $diagnostics) {
             $this->logger->warning('Extension startup diagnostics', [

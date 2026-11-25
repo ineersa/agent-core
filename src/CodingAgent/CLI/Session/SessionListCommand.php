@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI\Session;
 
-use Doctrine\DBAL\Exception as DbalException;
-use Ineersa\CodingAgent\Session\DTO\SessionCatalogFilterDTO;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -14,17 +12,17 @@ use Symfony\Component\Console\Exception\InvalidArgumentException;
 use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Filesystem\Path;
-use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializationException;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
+use function Symfony\Component\String\u;
+
 #[AsCommand(
-    name: self::NAME,
+    name: 'session:list',
     description: 'List sessions persisted in the selected project store',
     help: <<<'HELP'
-        Read the selected session catalog without starting a session or migrating storage.
+        List the persisted sessions in the selected project.
 
           hatfield session:list --json --cwd /projects/example --limit 5
           hatfield session:list --json --since 2026-11-11T00:00:00Z --limit 20 --offset 5
@@ -33,8 +31,6 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 )]
 final class SessionListCommand
 {
-    public const string NAME = 'session:list';
-
     public function __construct(
         private readonly HatfieldSessionStore $store,
         private readonly ValidatorInterface $validator,
@@ -49,7 +45,6 @@ final class SessionListCommand
         #[Option('Include activity at or after this RFC3339 timestamp')] ?string $since = null,
         #[Option('Include activity before this RFC3339 timestamp')] ?string $until = null,
         #[Option('Match a literal substring of the display title or session ID')] ?string $query = null,
-        #[Option('Match the recorded absolute session directory exactly')] ?string $sessionCwd = null,
         #[Option('Page size (1–200)')] string $limit = '50',
         #[Option('Number of matching rows to skip')] string $offset = '0',
     ): int {
@@ -59,9 +54,6 @@ final class SessionListCommand
             if (false === $scope || (null !== $cwd && ('' === $cwd || realpath($cwd) !== $scope))) {
                 throw new InvalidArgumentException('Invalid project working directory.');
             }
-            if (null !== $sessionCwd && (!Path::isAbsolute($sessionCwd) || !str_starts_with($sessionCwd, '/') || str_contains($sessionCwd, "\0"))) {
-                throw new InvalidArgumentException('--session-cwd must be an absolute directory path.');
-            }
             $lower = $this->parseTime($since, 'since');
             $upper = $this->parseTime($until, 'until');
             if (null !== $lower && null !== $upper && ($lower[0] > $upper[0] || (0 === ($lower[0] <=> $upper[0]) && strcmp($lower[1], $upper[1]) >= 0))) {
@@ -69,46 +61,47 @@ final class SessionListCommand
             }
             $pageSize = $this->parseInteger($limit, 'limit', 1, 200);
             $pageOffset = $this->parseInteger($offset, 'offset', 0, \PHP_INT_MAX - 200);
-            $filter = new SessionCatalogFilterDTO(
-                $this->sqliteBound($lower),
-                $this->sqliteBound($upper),
-                $query,
-                null === $sessionCwd ? null : Path::canonicalize($sessionCwd),
-                $pageSize,
-                $pageOffset,
-            );
         } catch (InvalidArgumentException $e) {
-            $errorOutput->writeln($e->getMessage(), OutputInterface::OUTPUT_RAW);
+            $errorOutput->writeln($e->getMessage(), OutputInterface::OUTPUT_RAW | OutputInterface::VERBOSITY_QUIET);
 
             return Command::INVALID;
         }
 
-        try {
-            $sessions = $this->store->listCatalogPage($filter);
-            $nextOffset = null;
-            if (\count($sessions) > $pageSize) {
-                array_pop($sessions);
-                $nextOffset = $pageOffset + $pageSize;
+        $needle = null === $query ? '' : u($query)->folded(false)->toString();
+        $matched = [];
+        foreach ($this->store->listSessions() as $session) {
+            $updated = new \DateTimeImmutable($session['updated_at']);
+            if ((null !== $lower && $this->compareActivity($updated, $lower) < 0)
+                || (null !== $upper && $this->compareActivity($updated, $upper) >= 0)
+                || ('' !== $needle && !str_contains(u($session['displayTitle'])->folded(false)->toString(), $needle) && !str_contains($session['sessionId'], $needle))
+            ) {
+                continue;
             }
-            if ($json) {
-                $document = $this->serializer->serialize([
-                    'version' => 1,
-                    'scope' => ['cwd' => $scope],
-                    'sessions' => $sessions,
-                    'nextOffset' => $nextOffset,
-                ], 'json');
-                $output->writeln($document, OutputInterface::OUTPUT_RAW);
-            } else {
-                (new Table($output))->setHeaders(['ID', 'Title', 'Session directory', 'Created', 'Last activity'])->setRows($sessions)->render();
-                if (null !== $nextOffset) {
-                    $output->writeln(\sprintf('Next page: --offset %d', $nextOffset));
-                }
-            }
-        } catch (DbalException|SerializationException|\UnexpectedValueException|\TypeError) {
-            // Do not print storage exception details or row contents to integrations.
-            $errorOutput->writeln('Unable to read the session catalog. Check store permissions, integrity, schema, and contention.', OutputInterface::OUTPUT_RAW);
+            $matched[] = $session;
+        }
 
-            return Command::FAILURE;
+        $page = \array_slice($matched, $pageOffset, $pageSize);
+        $utc = new \DateTimeZone('UTC');
+        $sessions = array_map(static fn (array $row): array => [
+            'sessionId' => $row['sessionId'],
+            'displayTitle' => $row['displayTitle'],
+            'cwd' => $row['cwd'],
+            'createdAt' => (new \DateTimeImmutable($row['created_at']))->setTimezone($utc)->format('Y-m-d\TH:i:s\Z'),
+            'updatedAt' => (new \DateTimeImmutable($row['updated_at']))->setTimezone($utc)->format('Y-m-d\TH:i:s\Z'),
+        ], $page);
+        $nextOffset = \count($matched) > $pageOffset + $pageSize ? $pageOffset + $pageSize : null;
+        if ($json) {
+            $output->writeln($this->serializer->serialize([
+                'version' => 1,
+                'scope' => ['cwd' => $scope],
+                'sessions' => $sessions,
+                'nextOffset' => $nextOffset,
+            ], 'json'), OutputInterface::OUTPUT_RAW | OutputInterface::VERBOSITY_QUIET);
+        } else {
+            (new Table($output))->setHeaders(['ID', 'Title', 'Session directory', 'Created', 'Last activity'])->setRows($sessions)->render();
+            if (null !== $nextOffset) {
+                $output->writeln(\sprintf('Next page: --offset %d', $nextOffset));
+            }
         }
 
         return Command::SUCCESS;
@@ -145,19 +138,11 @@ final class SessionListCommand
         return [$at, rtrim($matches[2], '0')];
     }
 
-    /** @param array{\DateTimeImmutable, string}|null $time */
-    private function sqliteBound(?array $time): ?string
+    /** @param array{\DateTimeImmutable, string} $bound */
+    private function compareActivity(\DateTimeImmutable $updated, array $bound): int
     {
-        if (null === $time) {
-            return null;
-        }
-        [$at, $fraction] = $time;
-        // Doctrine persists whole seconds. Both >= and < use the next whole
-        // second when the specified bound lies strictly between stored seconds.
-        if ('' !== $fraction) {
-            $at = $at->add(new \DateInterval('PT1S'));
-        }
+        $seconds = $updated <=> $bound[0];
 
-        return $at->setTimezone(new \DateTimeZone(date_default_timezone_get()))->format('Y-m-d H:i:s');
+        return 0 === $seconds ? strcmp('', $bound[1]) : $seconds;
     }
 }
