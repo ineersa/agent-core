@@ -328,6 +328,9 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         );
 
         $previousTurnNo = $preparedState->turnNo > 0 ? $preparedState->turnNo : null;
+        // Only a single applied command can supply unambiguous turn-opening provenance.
+        $applied = array_values(array_filter($boundaryEventSpecs, static fn (array $spec): bool => RunEventTypeEnum::AgentCommandApplied->value === $spec['type']));
+        $inputMetadata = 1 === \count($applied) ? ($applied[0]['payload']['consumption_metadata'] ?? null) : null;
 
         $eventSpecs = [
             ...$boundaryEventSpecs,
@@ -337,6 +340,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'payload' => [
                     'step_id' => $nextStepId,
                     'turn_no' => $nextTurnNo,
+                    ...(null === $inputMetadata ? [] : ['input_consumption_metadata' => $inputMetadata]),
                     ...($state->status->isTerminal() ? ['resumes_execution' => true] : []),
                     'operation_attempt' => 1,
                     'operation_idempotency_key' => $effect->idempotencyKey(),

@@ -5,15 +5,37 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Amp\Future;
+use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
+use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Contract\CommandConsumptionPolicyInterface;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Command\DTO\CommandConsumptionDecisionDTO;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiScheduleDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum as Observation;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionActivityContextInterface;
 use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
+use Ineersa\Tui\Runtime\TuiRunObservationMapper;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class Hatfield360ExtensionTest extends TestCase
 {
@@ -145,6 +167,62 @@ final class Hatfield360ExtensionTest extends TestCase
         $this->assertSame(['id' => '3', 'status' => 'failed'], $this->snapshot($extension)['turn']);
     }
 
+    public function testScheduleSnapshotsAndAppliedTurnTrigger(): void
+    {
+        $extension = $this->extension();
+        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0));
+        $this->assertArrayNotHasKey('schedules', $this->snapshot($extension));
+        $next = new \DateTimeImmutable('2026-01-01T00:00:00.123Z');
+        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0, [new TuiScheduleDTO('id', 'Every minute', true, $next)]));
+        $this->assertSame([['id' => 'id', 'label' => 'Every minute', 'recurring' => true, 'nextRunAt' => 1767225600123]], $this->snapshot($extension)['schedules']);
+
+        $serializer = AttributeSerializerValidatorTestFactory::serializer();
+        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec($serializer), $serializer);
+        $observe = static function (RunEvent $event) use ($translator, $extension): void {
+            $runtime = $translator->translate($event);
+            self::assertNotNull($runtime);
+            $observation = TuiRunObservationMapper::map($runtime);
+            self::assertNotNull($observation);
+            $extension->onTuiRunObserved($observation);
+        };
+        $seq = 1;
+        foreach ([['schedule:job'], ['user'], ['child-result'], ['schedule:job', 'user']] as $identities) {
+            $store = new InMemoryCommandStore();
+            $policy = $this->createStub(CommandConsumptionPolicyInterface::class);
+            $policy->method('prepare')->willReturnCallback(static fn (RunState $state, PendingCommand $command): ?CommandConsumptionDecisionDTO => 'user' === $command->idempotencyKey ? null : new CommandConsumptionDecisionDTO(metadata: ['background_completion' => ['identity' => $command->idempotencyKey]]));
+            foreach ($identities as $identity) {
+                $store->enqueue(new PendingCommand(
+                    runId: '42',
+                    kind: 'user' === $identity ? CoreCommandKind::FollowUp : CoreCommandKind::AppendMessage,
+                    idempotencyKey: $identity,
+                    payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Input']]]],
+                    options: new CommandCancellationOptions(safe: false),
+                ));
+            }
+            $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(), new CommandMailboxPolicy($store, new CommandRouter([]), [$policy]), new EventFactory());
+            $result = $handler->handle(AdvanceRunMessageBuilder::create('42')->withTurnNo(1)->build(), new RunState('42', RunStatus::Completed, turnNo: 1, lastSeq: $seq));
+            $starts = array_values(array_filter($result->events, static fn (RunEvent $event): bool => RunEventTypeEnum::TurnAdvanced->value === $event->type));
+            $this->assertCount(1, $starts);
+            $start = $starts[0];
+            $observe($start);
+            $trigger = ['schedule:job'] === $identities ? ['trigger' => 'schedule'] : [];
+            $this->assertSame(['id' => (string) $start->seq, 'status' => 'working'] + $trigger, $this->snapshot($extension)['turn']);
+            $seq = $start->seq + 1;
+            $observe(new RunEvent('42', $seq, $start->turnNo, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']));
+            $this->assertSame(['id' => (string) $start->seq, 'status' => 'completed'] + $trigger, $this->snapshot($extension)['turn']);
+            if ([] !== $trigger) {
+                $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0, [new TuiScheduleDTO('id', 'Every minute', true, $next->modify('+1 minute'))]));
+                $this->assertSame([['id' => 'id', 'label' => 'Every minute', 'recurring' => true, 'nextRunAt' => 1767225660123]], $this->snapshot($extension)['schedules']);
+            }
+        }
+
+        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0, []));
+        $this->assertArrayNotHasKey('schedules', $this->snapshot($extension));
+        $overflow = array_map(static fn (int $i): TuiScheduleDTO => new TuiScheduleDTO((string) $i, 'Every minute', true, null), range(1, 17));
+        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0, $overflow));
+        $this->assertArrayNotHasKey('schedules', $this->snapshot($extension));
+    }
+
     public function testExpiryRechecksInventoryAndDiscardsSupersededResponse(): void
     {
         $clock = new MockClock();
@@ -206,9 +284,10 @@ final class Hatfield360ExtensionTest extends TestCase
         $context->method('isMainActive')->willReturn(false);
         $context->method('getBackgroundSnapshot')->willReturn($zero);
         $extension->registerTui($context);
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::TurnStarted));
+        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::TurnStarted, trigger: 'schedule'));
         $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::TurnCompleted));
-        $completed = ['id' => '1', 'status' => 'completed'];
+        $completed = ['id' => '1', 'status' => 'completed', 'trigger' => 'schedule'];
+        $this->assertSame($completed, $this->snapshot($extension)['turn']);
         $clock->modify('+5 seconds');
         $extension->onTuiBackgroundSnapshot($zero);
         $this->assertSame(0, $this->snapshot($extension)['activeSubagents']);

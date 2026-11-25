@@ -99,6 +99,8 @@ Implement `TuiBackgroundSnapshotObserverInterface` to receive
 `TuiBackgroundSnapshotDTO` from the existing host operational poll once the
 session is ready. Each snapshot contains the selected session ID and separate
 current counts of nonterminal owned subagents and background scripts. A zero
-means none; `null` means unavailable. The DTO carries no job identities, prompts,
-commands, or history. Reuse the delivered counts when handling this callback
-instead of querying the same inventory again.
+means none; `null` means unavailable. `schedules` contains the current pending
+schedule list, `[]` when empty, or `null` when unavailable. Each `TuiScheduleDTO`
+contains only its ID, interval label, recurrence flag, and nullable next run time.
+The snapshot does not contain scheduled tools, arguments, prompts, or commands.
+Reuse the delivered snapshot instead of querying the same inventory again.

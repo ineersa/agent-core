@@ -150,12 +150,14 @@ final class RuntimeEventTranslator
     private function onTurnStarted(RunEvent $runEvent): RuntimeEvent
     {
         $p = $runEvent->payload;
+        $identity = $p['input_consumption_metadata']['background_completion']['identity'] ?? null;
+        $scheduled = \is_string($identity) && str_starts_with($identity, 'schedule:');
 
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::TurnStarted->value,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
-            payload: ['turn_no' => (int) ($p['turn_no'] ?? 0)],
+            payload: ['turn_no' => (int) ($p['turn_no'] ?? 0), ...($scheduled ? ['trigger' => 'schedule'] : [])],
         );
     }
 

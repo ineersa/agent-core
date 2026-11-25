@@ -209,7 +209,7 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
                 }
                 $rows[] = ['kind' => $work->kind, 'label' => $this->label($work), 'status' => $work->status];
             }
-            $context->lifecycle->dispatchBackgroundSnapshot(new TuiBackgroundSnapshotDTO($sessionId, $activeChildren, \count($rows)));
+            $context->lifecycle->dispatchBackgroundSnapshot(new TuiBackgroundSnapshotDTO($sessionId, $activeChildren, \count($rows), $snapshot->schedules));
             // Operational children retain canonical batch launch order. The
             // picker catalog's attention/activity sort must not move these rows.
             foreach ($snapshot->children as $operationalChild) {

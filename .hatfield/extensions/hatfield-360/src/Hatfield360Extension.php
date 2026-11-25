@@ -16,6 +16,7 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiScheduleDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundSnapshotObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
@@ -50,8 +51,10 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     private ?string $title = null;
     private int $epoch = 0;
     private bool $closing = false;
-    /** @var array{id: string, status: string}|null */
+    /** @var array{id: string, status: string, trigger?: string}|null */
     private ?array $turn = null;
+    /** @var list<array{id: string, label: string, recurring: bool, nextRunAt: ?int}>|null */
+    private ?array $schedules = null;
     private ?\DateTimeImmutable $completionDue = null;
     private bool $completionReleased = false;
     /** @var list<array{request: string, id: string, reason: string}> */
@@ -140,6 +143,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         $this->sessionId = $sessionId;
         $this->refreshTitle();
         $this->epoch = ++self::$sequence;
+        $this->schedules = null;
         // Selection does not establish an active response or settle a previous one.
         $this->turn = null;
         $this->invalidateCompletion();
@@ -207,6 +211,9 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             }
             $this->refreshTitle();
             $this->turn = ['id' => (string) $observation->sequence, 'status' => 'working'];
+            if ('schedule' === $observation->trigger) {
+                $this->turn['trigger'] = 'schedule';
+            }
             $this->invalidateCompletion();
             $this->waits = [];
             $this->waitOverflow = null;
@@ -381,6 +388,18 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             // New main work may be active before its canonical opening event arrives.
             $this->turn = null;
         }
+        if (null !== $background) {
+            $schedules = $background->schedules;
+            $this->schedules = null === $schedules || \count($schedules) > 16 ? null : array_map(
+                static fn (TuiScheduleDTO $schedule): array => [
+                    'id' => $schedule->id,
+                    'label' => mb_substr($schedule->label, 0, 64, 'UTF-8'),
+                    'recurring' => $schedule->recurring,
+                    'nextRunAt' => null === $schedule->nextRunAt ? null : (int) $schedule->nextRunAt->format('Uv'),
+                ],
+                $schedules,
+            );
+        }
         $children = $background?->activeSubagents;
         $scripts = $background?->backgroundScripts;
         // Prefer foreground input, then the oldest observed child episode.
@@ -411,6 +430,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         }
         $fields = [
             'provider' => 'hatfield', 'title' => $this->title, 'turn' => $this->turn, 'attention' => $attention,
+            ...(null === $this->schedules || [] === $this->schedules ? [] : ['schedules' => $this->schedules]),
             'activeSubagents' => $children > 1024 ? null : $children,
             'backgroundScripts' => $scripts > 1024 ? null : $scripts, 'tool' => $this->tools[array_key_last($this->tools) ?? ''] ?? null,
         ];

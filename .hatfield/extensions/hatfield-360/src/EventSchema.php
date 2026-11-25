@@ -24,6 +24,7 @@ final class EventSchema
         $allowed = $required + ['at' => 64];
         if ('session.snapshot' === $kind) {
             $allowed['title'] = 'session-title';
+            $allowed['schedules'] = 'schedules';
         }
         if ([] !== array_diff_key($required, $fields) || [] !== array_diff_key($fields, $allowed)) {
             return false;
@@ -67,13 +68,58 @@ final class EventSchema
 
         return match ($rule) {
             'id' => self::id($value),
-            'turn' => self::record($value, 'status', ['working', 'completed', 'failed', 'cancelled', 'unknown']),
+            'turn' => self::turn($value),
+            'schedules' => self::schedules($value),
             'attention' => self::record($value, 'reason', ['permission', 'question', 'external-input']),
             'count' => null === $value || (\is_int($value) && $value >= 0 && $value <= 1024),
             'session-title' => null === $value || self::matches($value, 1024),
             'tool' => null === $value || self::matches($value, 128),
             default => false,
         };
+    }
+
+    private static function turn(mixed $value): bool
+    {
+        if ($value instanceof \stdClass) {
+            $value = get_object_vars($value);
+        }
+        if (\is_array($value) && \array_key_exists('trigger', $value)) {
+            if (!\in_array($value['trigger'], ['user', 'schedule'], true)) {
+                return false;
+            }
+            unset($value['trigger']);
+        }
+
+        return self::record($value, 'status', ['working', 'completed', 'failed', 'cancelled', 'unknown']);
+    }
+
+    private static function schedules(mixed $value): bool
+    {
+        if (null === $value) {
+            return true;
+        }
+        if (!\is_array($value) || !array_is_list($value) || \count($value) > 16) {
+            return false;
+        }
+
+        $seen = [];
+        foreach ($value as $entry) {
+            if ($entry instanceof \stdClass) {
+                $entry = get_object_vars($entry);
+            }
+            if (!\is_array($entry) || 4 !== \count($entry) || !self::id($entry['id'] ?? null)
+                || !self::matches($entry['label'] ?? null, 64) || !\is_bool($entry['recurring'] ?? null)
+                || !\array_key_exists('nextRunAt', $entry) || isset($seen[$entry['id']])) {
+                return false;
+            }
+            $next = $entry['nextRunAt'];
+            if (null !== $next && (!\is_int($next) || $next < 0 || $next > 9_007_199_254_740_991)) {
+                return false;
+            }
+            $seen[$entry['id']] = true;
+        }
+
+        return true;
     }
 
     /** @param list<string> $values */

@@ -8,6 +8,7 @@ use DateTimeImmutable as ImmutableDateTime;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundChildStatusDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
@@ -16,8 +17,12 @@ use Ineersa\CodingAgent\Runtime\Contract\DTO\ChildBackgroundCandidateDTO;
 /** Read-only presentation over existing native ownership and operational rows. */
 final readonly class BackgroundWorkSnapshotProvider
 {
-    public function __construct(private DeferredSubagentBatchRepository $batches, private BackgroundProcessRepository $processes, private DeferredToolCompletionRepository $deferred)
-    {
+    public function __construct(
+        private DeferredSubagentBatchRepository $batches,
+        private BackgroundProcessRepository $processes,
+        private DeferredToolCompletionRepository $deferred,
+        private ExtensionRecurringJobRegistry $recurringJobs,
+    ) {
     }
 
     /** @param list<string> $observedChildRunIds */
@@ -60,6 +65,6 @@ final readonly class BackgroundWorkSnapshotProvider
             }
         }
 
-        return new BackgroundWorkSnapshotDTO($children, $work, $candidates);
+        return new BackgroundWorkSnapshotDTO($children, $work, $candidates, $this->recurringJobs->sessionSchedules($rootRunId));
     }
 }
