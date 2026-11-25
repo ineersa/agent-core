@@ -60,7 +60,7 @@ final class Hatfield360ClaudeHookTest extends TestCase
         TestDirectoryIsolation::removeDirectory(self::$pluginDirectory);
     }
 
-    public function testSdkTitlesReachTheSocketWithoutUsingPrompts(): void
+    public function testClaudeDisplayedSessionNameReachesTheSocket(): void
     {
         $directory = TestDirectoryIsolation::createProjectTempDir();
         $socketDirectory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
@@ -76,7 +76,7 @@ final class Hatfield360ClaudeHookTest extends TestCase
             $write = static function (array $row) use ($transcript, $session): void {
                 file_put_contents($transcript, json_encode($row + ['sessionId' => $session], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
             };
-            $write(['type' => 'user', 'cwd' => $directory, 'message' => ['role' => 'user', 'content' => 'Never export this prompt']]);
+            $write(['type' => 'user', 'cwd' => $directory, 'message' => ['role' => 'user', 'content' => "Fix the   failing\n build"]]);
             $endpoint = $socketDirectory.'/s';
             $server = listen('unix://'.$endpoint);
             $environment = [
@@ -87,7 +87,8 @@ final class Hatfield360ClaudeHookTest extends TestCase
             ];
             $base = ['session_id' => $session, 'cwd' => $socketDirectory];
             $send = fn (array $hook): array => $this->exchange($server, $this->launch($environment, $base + $hook));
-            $this->assertNull($send(['hook_event_name' => 'SessionStart', 'source' => 'startup'])['title']);
+            // Untitled, Claude's /resume shows the latest prompt, on one line.
+            $this->assertSame('Fix the failing build', $send(['hook_event_name' => 'SessionStart', 'source' => 'startup'])['title']);
             $write(['type' => 'ai-title', 'aiTitle' => 'Generated title']);
             $prompt = ['hook_event_name' => 'UserPromptSubmit'];
             $this->assertSame('Generated title', $send($prompt + ['prompt_id' => '55555555-5555-4555-8555-555555555555'])['title']);
@@ -227,6 +228,42 @@ final class Hatfield360ClaudeHookTest extends TestCase
         }
     }
 
+    public function testBackgroundChildFinishingAfterTheMainStopKeepsWorkingUntilClaudeHandlesIt(): void
+    {
+        // Hook order recorded from Claude Code 2.1.331 with a background subagent: the main
+        // response stops first, then the child stops, then Claude answers its result.
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $server = listen('unix://'.$directory.'/s');
+        $environment = ['H360_STATUS_ENDPOINT' => $directory.'/s', 'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444', 'H360_STATUS_TOKEN' => str_repeat('a', 64)];
+        $send = fn (array $hook): array => $this->exchange($server, $this->launch($environment, $hook + ['session_id' => 'background-session']));
+        $child = ['agent_id' => 'background-child', 'agent_type' => 'general-purpose'];
+        $running = ['background_tasks' => [['id' => 'background-task', 'type' => 'subagent', 'status' => 'running']]];
+        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false];
+        try {
+            $send(['hook_event_name' => 'SessionStart', 'source' => 'startup']);
+            $launch = ['prompt_id' => '55555555-5555-4555-8555-555555555561'];
+            $send($launch + ['hook_event_name' => 'UserPromptSubmit']);
+            $send($launch + $child + ['hook_event_name' => 'SubagentStart']);
+            $mainStop = $send($launch + $stop + $running);
+            $this->assertSame('completed', $mainStop['turn']['status']);
+            $this->assertSame(1, $mainStop['activeSubagents']);
+
+            $childStop = $send($launch + $child + ['hook_event_name' => 'SubagentStop', 'stop_hook_active' => false] + $running);
+            $this->assertSame(1, $childStop['activeSubagents'], 'Claude has yet to handle the result, so the work is not settled or unknown.');
+
+            $handle = ['prompt_id' => '55555555-5555-4555-8555-555555555562'];
+            $handling = $send($handle + ['hook_event_name' => 'UserPromptSubmit']);
+            $this->assertSame('working', $handling['turn']['status']);
+            $this->assertNull($handling['activeSubagents'], 'The earlier registry listed a running child; only the next Stop sample can establish zero.');
+            $final = $send($handle + $stop + ['background_tasks' => []]);
+            $this->assertSame('completed', $final['turn']['status']);
+            $this->assertSame(0, $final['activeSubagents']);
+        } finally {
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     public function testDelayedChildRegistryCannotClearNewerUncertaintyOrPublishStaleScripts(): void
     {
         $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
@@ -250,7 +287,7 @@ final class Hatfield360ClaudeHookTest extends TestCase
             $this->assertSame(1, $completed['backgroundScripts']);
             $this->assertQuietHook($environment, $oldEmpty + $session);
             $settled = $send($first + ['hook_event_name' => 'SubagentStop', 'agent_id' => 'tracked', 'background_tasks' => []]);
-            $this->assertNull($settled['activeSubagents'], 'Tracked membership cannot settle unseen-positive uncertainty.');
+            $this->assertSame(1, $settled['activeSubagents'], 'Claude has yet to handle the stopped child\'s result.');
             $this->assertNull($settled['backgroundScripts'], 'Unordered child samples cannot replace a script count with zero.');
             $this->assertSame($completed['turn'], $settled['turn']);
 
@@ -271,7 +308,7 @@ final class Hatfield360ClaudeHookTest extends TestCase
             $this->assertSame(1, $final['activeSubagents'], 'A valid main registry cannot erase known child membership.');
             $this->assertSame(1, $final['backgroundScripts']);
             $settled = $send(['hook_event_name' => 'SubagentStop', 'agent_id' => 'tracked-next', 'background_tasks' => [$shell, ['id' => 'other-shell', 'type' => 'shell', 'status' => 'running']]]);
-            $this->assertSame(0, $settled['activeSubagents']);
+            $this->assertSame(1, $settled['activeSubagents'], 'Claude has yet to handle the stopped child\'s result.');
             $this->assertNull($settled['backgroundScripts'], 'A correlated child stop still lacks freshness for exact script counts.');
             $this->assertSame($final['turn'], $settled['turn'], 'Script invalidation neither gates nor creates a response completion.');
             $this->assertQuietHook($environment, $third + $stop + ['background_tasks' => []] + $session);
@@ -367,9 +404,9 @@ final class Hatfield360ClaudeHookTest extends TestCase
             $this->assertSame($child['sequence'] + 1, $end['sequence']);
             $this->assertArrayNotHasKey('last_assistant_message', $end);
             $this->assertSame(1, $end['activeSubagents']);
-            // A tracked stop removes the child; a later start is still observed.
+            // After the main Stop, a stopped child stays counted until Claude handles its result; a later start is still observed.
             $attempt = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStop', 'stop_hook_active' => false, 'background_tasks' => []]));
-            $this->assertSame(0, $attempt['activeSubagents']);
+            $this->assertSame(1, $attempt['activeSubagents']);
             $this->assertSame($end['turn'], $attempt['turn']);
             $continued = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStart']));
             $this->assertSame(1, $continued['activeSubagents']);
