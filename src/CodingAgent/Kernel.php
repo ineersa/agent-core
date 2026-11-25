@@ -21,6 +21,11 @@ class Kernel extends BaseKernel
     private const string HATFIELD_CACHE_DIR = '.hatfield/cache';
     private const string HATFIELD_LOG_DIR = '.hatfield/logs';
 
+    public function __construct(string $environment, bool $debug, private readonly bool $useGlobalCache = false)
+    {
+        parent::__construct($environment, $debug);
+    }
+
     /**
      * @return iterable<\Symfony\Component\HttpKernel\Bundle\BundleInterface>
      */
@@ -90,6 +95,13 @@ class Kernel extends BaseKernel
         // Default root is global XDG/HOME, not project .hatfield/cache.
         if ($this->isPhar()) {
             return $this->resolveInstalledCacheDir();
+        }
+
+        // Catalog discovery must not initialize a project's .hatfield tree.
+        // Resolve the framework cache under the existing global cache root,
+        // with source checkouts isolated from one another and from artifacts.
+        if ($this->useGlobalCache && !getenv('HATFIELD_CACHE_DIR')) {
+            return $this->resolveInstalledCacheRoot().'/source/'.hash('sha256', $this->getProjectDir()).'/'.$this->environment;
         }
 
         // Source checkout: project-local (or explicit HATFIELD_CACHE_DIR root)

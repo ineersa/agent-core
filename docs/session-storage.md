@@ -30,6 +30,43 @@ and caught up. Failed restoration leaves the session unattached; use reload,
 resume, new session or Escape rather than assuming an empty transcript is usable.
 Pending human questions are cancelled on attach, not silently answered.
 
+## List sessions from the CLI
+
+Use `session:list` to discover persisted sessions without starting Hatfield or
+requiring an integration to have observed them running:
+
+```sh
+hatfield session:list --json --cwd /projects/example --limit 5
+hatfield session:list --json --since 2026-11-11T00:00:00Z --limit 20 --offset 5
+hatfield session:list --json --query restoration
+```
+
+`--cwd` defaults to the invocation directory and selects the same store as
+`hatfield --cwd <directory> --resume=<id>`. Only that store is listed; linked
+worktrees are separate scopes when they use separate stores. `sessions.path`
+locates the transcripts, not a second catalog. In JSON, `scope.cwd` is the
+canonical resume context. Each row's `cwd` is the directory recorded in that
+session, which may differ or no longer exist. Use `(scope.cwd, sessionId)` as
+the scoped identity; `sessionId` is a string.
+
+Filters combine before paging: `--since` is inclusive, `--until` is exclusive
+(both require RFC3339 timestamps with timezones), `--query` is a case-insensitive
+literal substring of the picker title or ID, and `--session-cwd` matches the
+normalized absolute recorded directory exactly, not its descendants. Results
+sort by last activity, then numeric ID, both descending. The default `--limit`
+is 50 (1–200); `--offset` defaults to zero. Offset pages are not a snapshot:
+deduplicate by scoped identity and reset paging when refreshing.
+
+On success, `--json` writes one object with `version: 1`, `scope: {cwd}`,
+`sessions` (rows with `sessionId`, `displayTitle`, `cwd`, `createdAt` and
+`updatedAt`), and `nextOffset` (an integer or `null` when exhausted). Times are
+in UTC; `updatedAt` describes persisted activity, not live or closed state.
+An absent store returns an empty page. Bad arguments or an unreadable,
+unsupported or corrupt store return a nonzero status with diagnostics on stderr
+and no JSON. Listing does not create or migrate storage, write session data, or
+load extensions; the normal framework cache can still be compiled outside the
+project, or under an explicitly configured cache directory.
+
 ## History selection
 
 `/history` lists user prompts and final assistant answers, not reasoning or

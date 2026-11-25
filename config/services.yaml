@@ -231,6 +231,9 @@ services:
   # on ambient getcwd(), ensuring all config services use the same canonical
   # runtime working directory (resolved from HATFIELD_CWD or kernel.project_dir).
   Ineersa\CodingAgent\Config\AppConfig:
+    # Read-only commands can receive services that carry AppConfig without
+    # actually needing to initialize the provider catalog.
+    lazy: true
     factory: ['Ineersa\CodingAgent\Config\AppConfig', 'fromContainer']
     arguments:
       $loader: '@Ineersa\CodingAgent\Config\AppConfigLoader'
@@ -338,6 +341,10 @@ services:
     factory: ['Ineersa\CodingAgent\Config\LoggingConfig', 'fromAppConfig']
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  # Avoid eagerly re-entering the lazy AppConfig factory through the catalog logger.
+  Ineersa\CodingAgent\Logging\HatfieldRotatingLogHandler:
+    lazy: true
 
   Ineersa\CodingAgent\Logging\LogReader:
     arguments:
@@ -678,8 +685,15 @@ services:
       - '@hatfield.extension_update.lock_store'
 
   Ineersa\CodingAgent\Extension\ExtensionUpdateService:
+    # The startup subscriber also receives non-agent commands; defer lock creation
+    # until an eligible agent actually checks for updates.
+    lazy: true
     arguments:
       $lockFactory: '@hatfield.extension_update.lock_factory'
+
+  # Console probes signal listeners before dispatching even read-only commands.
+  Ineersa\CodingAgent\Tool\CodeMode\CodeModeStandaloneRepliesService:
+    lazy: true
 
   hatfield.bash.sidecar_lock_store:
     class: Symfony\Component\Lock\Store\FlockStore
