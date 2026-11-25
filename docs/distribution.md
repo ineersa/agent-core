@@ -43,6 +43,15 @@ castor distribution:verify --skip-topology --allow-missing-native
 scripts/build-distribution.sh --version=1.2.3 --commit=$(git rev-parse HEAD)
 ```
 
+Run `castor package:local` to build a fresh PHAR and a host-native binary from
+the current checkout, then install it as `~/.local/bin/hatfield`. Use
+`castor package:local --install-dir=/path/to/bin` to install elsewhere. The task
+uses the same supported hosts, [static build toolchain](static-packaging.md),
+and smoke checks as `distribution:build-static`. After those checks pass, it
+backs up any previous binary to a unique `hatfield-*.bak` in the install
+directory and atomically replaces the executable. Restart Hatfield sessions
+to use the new binary; the task does not stop or restart them.
+
 | Variable | Meaning |
 |---|---|
 | `HATFIELD_DIST_DIR` | Dist directory (default `var/tmp/dist`) |

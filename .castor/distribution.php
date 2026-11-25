@@ -11,6 +11,9 @@ declare(strict_types=1);
 
 use Castor\Attribute\AsOption;
 use Castor\Attribute\AsTask;
+use CastorTasks\OwnedTemporaryDirectory;
+use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
+use Symfony\Component\Filesystem\Filesystem;
 
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
@@ -293,7 +296,7 @@ function distribution_stage_phpmicro_for_spc(string $checkout, string $commit): 
     }
     // Use Symfony Filesystem/Finder (already imported by helpers.php) instead of a
     // hand-rolled RecursiveIterator copy. ignoreVCS skips the durable .git metadata.
-    $filesystem = new Symfony\Component\Filesystem\Filesystem();
+    $filesystem = new Filesystem();
     $filesystem->mkdir($stage);
     $entries = (new Symfony\Component\Finder\Finder())
         ->in($checkout)
@@ -1762,6 +1765,63 @@ function distribution_build_static(
         static fn (string $f): bool => str_starts_with($f, 'hatfield.')
     )));
     echo "Static binary ready: {$out} (phar source={$resolved['source']})\n";
+}
+
+#[AsTask(name: 'package:local', description: 'Build and install the current checkout as a host-native Hatfield binary')]
+function package_local(
+    #[AsOption(description: 'Install directory (default ~/.local/bin)')]
+    ?string $installDir = null,
+): void {
+    $target = distribution_host_target();
+    $destination = PathResolver::resolve($installDir ?? '~/.local/bin', distribution_root()).'/hatfield';
+    $build = OwnedTemporaryDirectory::allocate(distribution_root().'/var/tmp', 'package-local-'.bin2hex(random_bytes(8)));
+    try {
+        distribution_build(output: $build->path);
+        distribution_build_static(target: $target, output: $build->path);
+        $backup = distribution_install_local_binary($build->path.'/'.distribution_artifact_name($target), $destination);
+    } finally {
+        $build->remove();
+    }
+
+    echo "Installed {$destination}. Restart running Hatfield sessions to use the new binary.\n";
+    if (null !== $backup) {
+        echo "Previous binary backed up to {$backup}.\n";
+    }
+}
+
+/** Publish a checked artifact without overwriting the installed inode. */
+function distribution_install_local_binary(string $artifact, string $destination): ?string
+{
+    if (!is_file($artifact) || !is_executable($artifact)) {
+        throw new RuntimeException('Local build did not produce an executable: '.$artifact);
+    }
+
+    $filesystem = new Filesystem();
+    $dir = dirname($destination);
+    $filesystem->mkdir($dir);
+    $staged = $filesystem->tempnam($dir, '.hatfield-', '.tmp');
+    $backup = null;
+    $installed = false;
+    try {
+        $filesystem->copy($artifact, $staged, true);
+        $filesystem->chmod($staged, 0755);
+        if (file_exists($destination) || is_link($destination)) {
+            if (!is_file($destination)) {
+                throw new RuntimeException('Cannot back up non-file install destination: '.$destination);
+            }
+            $backup = $filesystem->tempnam($dir, 'hatfield-', '.bak');
+            $filesystem->copy($destination, $backup, true);
+        }
+        $filesystem->rename($staged, $destination, true);
+        $installed = true;
+
+        return $backup;
+    } finally {
+        $filesystem->remove($staged);
+        if (!$installed && null !== $backup) {
+            $filesystem->remove($backup);
+        }
+    }
 }
 
 #[AsTask(name: 'distribution:checksums', description: 'Generate SHA256SUMS for artifacts in dist dir')]
