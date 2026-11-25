@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\CLI;
 
 use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
@@ -51,6 +52,9 @@ final class ConsoleEntrypointUxTest extends TestCase
         $list = $this->runConsole(['list', '--raw']);
         $this->assertSame(0, $list->getExitCode(), $list->getErrorOutput().$list->getOutput());
         $listOut = $list->getOutput();
+        $humanList = $this->runConsole(['list']);
+        Assert::assertSame(0, $humanList->getExitCode(), $humanList->getErrorOutput());
+        Assert::assertMatchesRegularExpression('/^\s+session:list\s/m', $humanList->getOutput());
 
         foreach ([
             'agent',
@@ -65,6 +69,7 @@ final class ConsoleEntrypointUxTest extends TestCase
             'log:search',
             'log:tail',
             'session:cache:inspect',
+            'session:list',
             'help',
             'list',
             'completion',

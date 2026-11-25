@@ -53,19 +53,30 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
     }
 
     /**
-     * Return all sessions sorted by updated_at DESC for catalog/picker display.
-     *
-     * No sort/order/limit parameters — callers get the full list in a
-     * fixed order.  No DQL injection surface because the sort column and
-     * direction are hard-coded.
+     * Return catalog rows in fixed activity and numeric ID order.
      *
      * @return list<array{id: int, name: string, cwd: string, prompt: ?string, model: ?string, model_provider: ?string, model_name: ?string, reasoning: ?string, created_at: string, updated_at: string}>
      */
-    public function findForCatalog(): array
+    public function findForCatalog(?\DateTimeImmutable $since = null, ?\DateTimeImmutable $until = null, ?int $limit = null, int $offset = 0): array
     {
-        return $this->getEntityManager()->getConnection()->fetchAllAssociative(
-            'SELECT id, name, cwd, prompt, model, model_provider, model_name, reasoning, created_at, updated_at FROM hatfield_session ORDER BY updated_at DESC, id DESC',
-        );
+        $query = $this->getEntityManager()->getConnection()->createQueryBuilder()
+            ->select('id', 'name', 'cwd', 'prompt', 'model', 'model_provider', 'model_name', 'reasoning', 'created_at', 'updated_at')
+            ->from('hatfield_session')
+            ->orderBy('updated_at', 'DESC')
+            ->addOrderBy('id', 'DESC')
+            ->setMaxResults($limit)
+            ->setFirstResult($offset);
+
+        // Doctrine persists activity at second precision in PHP's default timezone.
+        $timezone = new \DateTimeZone(date_default_timezone_get());
+        if (null !== $since) {
+            $query->andWhere('updated_at >= :since')->setParameter('since', $this->formatCatalogBound($since, $timezone));
+        }
+        if (null !== $until) {
+            $query->andWhere('updated_at < :until')->setParameter('until', $this->formatCatalogBound($until, $timezone));
+        }
+
+        return $query->fetchAllAssociative();
     }
 
     public function recordActivity(string $runId, \DateTimeImmutable $at): void
@@ -148,5 +159,15 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
             ->addOrderBy('id', 'DESC')
             ->setMaxResults($limit)
             ->executeQuery()->fetchAllAssociative();
+    }
+
+    private function formatCatalogBound(\DateTimeImmutable $bound, \DateTimeZone $timezone): string
+    {
+        // For whole-second rows, both >= and < use the ceiling of a fractional bound.
+        if ('000000' !== $bound->format('u')) {
+            $bound = $bound->add(new \DateInterval('PT1S'));
+        }
+
+        return $bound->setTimezone($timezone)->format('Y-m-d H:i:s');
     }
 }
