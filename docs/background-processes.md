@@ -31,9 +31,15 @@ Nested `tool()` calls inside code mode cannot background Bash or another script.
 |---|---|
 | `/bg` | Main-view picker for accepted Bash jobs and background PHP scripts, including owned children |
 | `bg_status list` | Accepted Bash jobs for the calling session only |
-| `bg_status log` with `pid` | Bounded Bash log tail and full-log reference |
+| `bg_status log` with `pid` | Bounded Bash log tail and retained-log reference |
 | `bg_status stop` with `pid` | Stop that accepted Bash process group |
 | `/agents-live` or Ctrl+backslash | Child status/live view; agents and forks are not `/bg` entries |
+
+Bash retains at most **100 MiB** of combined stdout and stderr per command.
+When output exceeds the retention budget, the log keeps the beginning and the
+latest tail and reports how many bytes were discarded. Hatfield continues
+reading the command's output; reaching the limit does not stop the command.
+Near-limit logs are not duplicated into session attachments.
 
 `/bg` asks for confirmation, default No, then requests stop without blocking the
 terminal through termination grace. Its list is a snapshot: reopen to refresh.

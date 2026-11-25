@@ -54,21 +54,21 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
 
     protected function replayFixtures(): array
     {
-        $this->databasePath = 'app_test-replay-'.$this->sessionId.'.sqlite';
+        $this->databasePath = $this->tempDir.'/app_test-replay-'.$this->sessionId.'.sqlite';
 
         return [];
     }
 
     protected function replayExtraEnv(): array
     {
-        return ['HATFIELD_TEST_DATABASE_PATH' => $this->databasePath];
+        return ['HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $this->databasePath];
     }
 
     private function queryRuntime(): Process
     {
         $query = new Process([\PHP_BINARY, __DIR__.'/Support/ForegroundBashCandidates.php', $this->projectDir], $this->tempDir, array_merge($this->controllerSubprocessEnv(), [
             'APP_ENV' => 'test', 'APP_DEBUG' => '1', 'HATFIELD_CWD' => $this->tempDir, 'HOME' => $this->tempDir,
-            'HATFIELD_SESSION_ID' => false, 'HATFIELD_TEST_DATABASE_PATH' => $this->databasePath,
+            'HATFIELD_SESSION_ID' => false, 'HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $this->databasePath,
         ]));
         $query->setTimeout(3);
         $query->mustRun();

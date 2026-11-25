@@ -212,7 +212,7 @@ final class BackgroundProcessManager
                         }
                     }
                 } else {
-                    $launched = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
+                    $launched = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile, boundBashOutput: true);
                     $pid = $launched['pid'];
                     $pgid = $launched['pgid'];
                 }

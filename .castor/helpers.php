@@ -440,12 +440,25 @@ function qa_standalone_test_cache_dir(): string
         $segment = sanitize_qa_run_id_segment((string) $runId);
         $resolved = '.hatfield/cache-'.$segment;
     } else {
-        $resolved = '.hatfield/cache-test-pid-'.getmypid();
+        $resolved = '.hatfield/cache-test-pid-'.getmypid().'-'.bin2hex(random_bytes(8));
     }
 
     $path = $projectRoot.'/'.$resolved;
-    if (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
+    $standalone = false === $runId || '' === trim($runId);
+    if ($standalone && realpath($projectRoot.'/.hatfield') !== $projectRoot.'/.hatfield') {
+        throw new \RuntimeException('Standalone test cache requires a project-local .hatfield directory.');
+    }
+    if ($standalone ? !mkdir($path, 0777) : (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path))) {
         throw new \RuntimeException(\sprintf('Unable to create standalone test cache directory "%s".', $path));
+    }
+    if ($standalone) {
+        register_shutdown_function(static function () use ($path): void {
+            try {
+                remove_path_checked($path);
+            } catch (\Throwable $e) {
+                fwrite(\STDERR, 'Standalone test cache cleanup failed: '.$e->getMessage()."\n");
+            }
+        });
     }
 
     putenv('HATFIELD_CACHE_DIR='.$resolved);
@@ -1229,7 +1242,7 @@ function phar_ensure(): string
         echo "PHAR not found. Building.\n";
     }
 
-    phar_build_with_lock($root);
+    phar_build_with_lock($root, force: false);
 
     return $pharPath;
 }
@@ -1240,7 +1253,7 @@ function phar_ensure(): string
  * Serialises concurrent phar_build() callers so parallel test workers
  * do not race on the shared staging directory.
  */
-function phar_build_with_lock(string $root): void
+function phar_build_with_lock(string $root, bool $force): string
 {
     $lockPath = $root.'/'.PHAR_BUILD_LOCK;
     if (!is_dir(\dirname($lockPath)) && !mkdir(\dirname($lockPath), 0755, true) && !is_dir(\dirname($lockPath))) {
@@ -1273,11 +1286,11 @@ function phar_build_with_lock(string $root): void
         // have built it while we were waiting. Uses the same predicate as
         // phar_ensure() so lock-holder and first check cannot diverge.
         $pharPath = hatfield_phar_path();
-        if (!phar_is_stale($root, $pharPath)) {
-            return;
+        if (!$force && !phar_is_stale($root, $pharPath)) {
+            return $pharPath;
         }
 
-        phar_build();
+        return phar_compile($root);
     } finally {
         flock($lockHandle, \LOCK_UN);
         fclose($lockHandle);
@@ -1304,8 +1317,8 @@ function hatfield_phar_session_copies_dir(): string
  * another launch after a rebuild cannot replace a live session's artifact.
  *
  * Same build reuses the immutable copy. A corrupt existing copy fails closed
- * rather than replacing bytes under a live process. Swept by
- * `castor clean:cleanup` (removes the whole var/tmp/phar tree).
+ * rather than replacing bytes under a live process. These copies are not
+ * build staging and must not be removed while a session may still use them.
  *
  * @param string      $pharPath    canonical artifact to copy from
  * @param string|null $sessionsDir override root for session copies (tests)
@@ -1717,12 +1730,12 @@ const HATFIELD_PHAR_AUTOLOADER_SUFFIX = 'HatfieldPharBuild';
  */
 function phar_build(): string
 {
-    $pharPath = hatfield_phar_path();
-    $root = realpath(__DIR__.'/..');
-    if (false === $root) {
-        throw new \RuntimeException('Unable to resolve project root for PHAR build.');
-    }
+    return phar_build_with_lock(project_root_dir(), force: true);
+}
 
+function phar_compile(string $root): string
+{
+    $pharPath = hatfield_phar_path();
     $explicitPharPath = getenv('HATFIELD_PHAR_PATH');
     if ((false === $explicitPharPath || '' === $explicitPharPath) && !str_starts_with($pharPath, $root)) {
         throw new \RuntimeException(\sprintf('PHAR output path %s is not under the project root %s. This indicates a non-worktree-local default. Set HATFIELD_PHAR_PATH explicitly if this is intentional.', $pharPath, $root));
@@ -1753,6 +1766,18 @@ function phar_build(): string
         throw new \RuntimeException('Unable to create staging directory: '.$stagingDir);
     }
 
+    try {
+        return phar_compile_staged($root, $pharPath, $stagingDir, $startTime, $boxBin, $composerBin);
+    } finally {
+        // Staging is disposable and must be removed while holding the build lock.
+        if (false === $explicitStaging || '' === $explicitStaging) {
+            remove_path_checked($stagingDir);
+        }
+    }
+}
+
+function phar_compile_staged(string $root, string $pharPath, string $stagingDir, float $startTime, string $boxBin, string $composerBin): string
+{
     $copyStart = microtime(true);
 
     foreach (['bin', 'src', 'config', 'migrations'] as $dir) {

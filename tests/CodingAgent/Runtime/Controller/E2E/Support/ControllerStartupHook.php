@@ -53,7 +53,7 @@ $container->get('event_dispatcher')->addListener(ControllerSessionStartingEvent:
     // an OS signal while an open, backpressured reader suspends terminal drain.
     EventLoop::queue(static function () use ($container, $proof, $result, $terminalMode): void {
         $tree = OwnedProcessTree::descendants(getmypid());
-        $seed = ControllerReplayBackgroundProcessSeeder::seedAcceptedFinished(getcwd(), getenv('HATFIELD_TEST_DATABASE_PATH'), $_SERVER['HATFIELD_SESSION_ID'], 'terminal-disconnect');
+        $seed = ControllerReplayBackgroundProcessSeeder::seedAcceptedFinished(getcwd(), getenv('HATFIELD_CONTROLLER_TEST_DATABASE_PATH'), $_SERVER['HATFIELD_SESSION_ID'], 'terminal-disconnect');
         $lifecycle = false;
         $container->get('event_dispatcher')->addListener(ControllerSessionShutdownEvent::class, static function () use (&$lifecycle): void { $lifecycle = true; });
         [$writer, $reader] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, \STREAM_IPPROTO_IP);
@@ -101,7 +101,7 @@ $container->get('event_dispatcher')->addListener(ControllerSessionStartingEvent:
         }
         $result += ['tree' => $tree, 'lifecycle' => $lifecycle,
             'signal_observed' => $signalObserved, 'terminal_written' => str_contains($wire, 'fixture broker failure'),
-            'background_retained' => ControllerReplayBackgroundProcessSeeder::recordExists(getcwd(), getenv('HATFIELD_TEST_DATABASE_PATH'), $seed['id']) && file_exists($seed['log']) && file_exists($seed['status']) && file_exists($seed['pid'])];
+            'background_retained' => ControllerReplayBackgroundProcessSeeder::recordExists(getcwd(), getenv('HATFIELD_CONTROLLER_TEST_DATABASE_PATH'), $seed['id']) && file_exists($seed['log']) && file_exists($seed['status']) && file_exists($seed['pid'])];
         file_put_contents($proof, json_encode($result, \JSON_THROW_ON_ERROR));
         fclose($writer);
         EventLoop::getDriver()->stop();

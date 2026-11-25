@@ -28,7 +28,7 @@ final class ControllerReplayChildExecutionTest extends ControllerReplayE2eTestCa
         (new Filesystem())->dumpFile($this->tempDir.'/.agents/scout.md', "---\nname: scout\ndescription: Replay scout\ntools: bash\n---\nProvide a short handoff.\n");
         $seed = new Process([\PHP_BINARY, __DIR__.'/Support/ForegroundBashCandidates.php', $this->projectDir], $this->tempDir,
             array_merge($this->controllerSubprocessEnv(), ['APP_ENV' => 'test', 'APP_DEBUG' => '1', 'HATFIELD_CWD' => $this->tempDir, 'HOME' => $this->tempDir,
-                'HATFIELD_SESSION_ID' => false, 'HATFIELD_TEST_DATABASE_PATH' => 'app_test-replay-'.$this->sessionId.'.sqlite',
+                'HATFIELD_SESSION_ID' => false, 'HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $this->tempDir.'/app_test-replay-'.$this->sessionId.'.sqlite',
             ]));
         $seed->setTimeout(5);
         $seed->mustRun();

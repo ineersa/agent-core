@@ -54,7 +54,7 @@ final class ProcessLifecycle
      *
      * @throws \RuntimeException on launch failure
      */
-    public function launchProcess(string $command, string $pidFile, string $logFile, string $statusFile, ?string $afterExit = null): array
+    public function launchProcess(string $command, string $pidFile, string $logFile, string $statusFile, ?string $afterExit = null, bool $boundBashOutput = false): array
     {
         $bash = (new ExecutableFinder())->find('bash');
         if (null === $bash) {
@@ -70,13 +70,26 @@ final class ProcessLifecycle
         //     to the child, waits for it, writes the status, and exits
         //  5. Waits for the child on the normal path, stores child RC
         //     in a variable before echo so exit reflects child outcome
+        // Bash uses a seekable log (not O_APPEND) and drains its pipe before
+        // publishing status. Code mode keeps its existing direct redirection.
+        $writer = implode(' ', array_map(escapeshellarg(...), [...$this->runtime->executableCommand(), BashLogWriter::FLAG]));
+        $redirect = $boundBashOutput
+            ? 'exec </dev/null >/dev/null 2>&1; exec 5> >('.$writer.' >&4 4>&-); WRITER_PID=$!; exec 4>&-; '
+            : 'exec </dev/null >&4 2>&1 4>&-; ';
+        $childOutput = $boundBashOutput ? ' >&5 2>&1 5>&-' : '';
+        $finishOutput = $boundBashOutput ? 'wait "$WRITER_PID"; ' : '';
         $shellCode = \sprintf(
-            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || { echo claimed; exit 73; }; set +o noclobber; if ! { exec 4>> %s; }; then echo log-open-failed; exit 74; fi; echo $$ || exit 74; exec </dev/null >&4 2>&1 4>&-; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; after_exit() { %s; }; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > "$STATUS_FILE"; after_exit; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > "$STATUS_FILE"; after_exit; exit $RC',
+            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || { echo claimed; exit 73; }; set +o noclobber; if ! { exec 4%s %s; }; then echo log-open-failed; exit 74; fi; echo $$ || exit 74; %sbash -c %s%s & CHILD_PID=$!; %sSTATUS_FILE=%s; after_exit() { %s; }; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > "$STATUS_FILE"; after_exit; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; %secho $RC > "$STATUS_FILE"; after_exit; exit $RC',
             escapeshellarg($pidFile),
+            $boundBashOutput ? '>' : '>>',
             escapeshellarg($logFile),
+            $redirect,
             escapeshellarg($command),
+            $childOutput,
+            $boundBashOutput ? 'exec 5>&-; ' : '',
             escapeshellarg($statusFile),
             $afterExit ?? ':',
+            $finishOutput,
         );
 
         // The fork parent only reports whether it could fork. The detached

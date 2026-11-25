@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Castor;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\Process;
 
 /**
  * Thesis: standalone castor test migrate/filter must use an invocation-scoped
@@ -137,6 +138,35 @@ final class QaStandaloneTestCacheIsolationTest extends TestCase
 
         $this->assertSame($existing, $resolved);
         $this->assertStringContainsString('HATFIELD_CACHE_DIR='.escapeshellarg($existing), $prefix);
+    }
+
+    public function testInvocationExitReclaimsOnlyItsOwnCache(): void
+    {
+        $root = ProjectDir::get();
+        $callerCache = $this->createTemporaryDirectory('caller-cache');
+        $script = <<<'PHP'
+require $argv[1].'/vendor/autoload.php';
+require $argv[1].'/.castor/helpers.php';
+$path = CastorTasks\qa_standalone_test_cache_dir();
+echo $path, "\n", is_dir($path) ? 'exists' : 'missing';
+exit(7);
+PHP;
+        foreach ([false, $callerCache] as $cache) {
+            $process = new Process([\PHP_BINARY, '-r', $script, $root], $root, [
+                'HATFIELD_QA_RUN_ID' => false,
+                'HATFIELD_CACHE_DIR' => $cache,
+            ]);
+            $this->assertSame(7, $process->run());
+            [$path, $state] = explode("\n", $process->getOutput());
+            $this->assertSame('exists', $state);
+            if (false === $cache) {
+                $this->assertStringStartsWith('.hatfield/cache-test-pid-', $path);
+                $this->assertDirectoryDoesNotExist($root.'/'.$path);
+            } else {
+                $this->assertSame($callerCache, $path);
+                $this->assertDirectoryExists($callerCache);
+            }
+        }
     }
 
     private function createTemporaryDirectory(string $prefix): string

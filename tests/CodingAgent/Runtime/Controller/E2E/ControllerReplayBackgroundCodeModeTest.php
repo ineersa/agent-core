@@ -154,7 +154,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
 
     protected function replayFixtures(): array
     {
-        $this->databasePath = 'app_test-replay-'.$this->sessionId.'.sqlite';
+        $this->databasePath = $this->tempDir.'/app_test-replay-'.$this->sessionId.'.sqlite';
         $calls = [];
         foreach (['one', 'two'] as $id) {
             $prefix = var_export($this->tempDir.'/'.$id, true);
@@ -200,7 +200,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
 
     protected function replayExtraEnv(): array
     {
-        return ['HATFIELD_TEST_DATABASE_PATH' => $this->databasePath];
+        return ['HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $this->databasePath];
     }
 
     private function waitForFile(string $name): void

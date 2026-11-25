@@ -69,7 +69,7 @@ final class ControllerReplayHumanWaitCompletionTest extends ControllerReplayE2eT
 
     protected function replayFixtures(): array
     {
-        $this->databasePath = 'app_test-replay-'.$this->sessionId.'.sqlite';
+        $this->databasePath = $this->tempDir.'/app_test-replay-'.$this->sessionId.'.sqlite';
         $args = ['question' => 'Keep waiting?'];
 
         return [
@@ -84,7 +84,7 @@ final class ControllerReplayHumanWaitCompletionTest extends ControllerReplayE2eT
 
     protected function replayExtraEnv(): array
     {
-        return ['HATFIELD_TEST_DATABASE_PATH' => $this->databasePath];
+        return ['HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $this->databasePath];
     }
 
     protected function controllerSubprocessEnv(): array

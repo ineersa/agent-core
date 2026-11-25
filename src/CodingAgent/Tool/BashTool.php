@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\BashLogWriter;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\NativeBashObservationDTO;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeCancellationToken;
 use Psr\Log\LoggerInterface;
@@ -258,6 +259,14 @@ final class BashTool implements HatfieldToolProviderInterface
                 $this->config->logTailChars,
             );
 
+            if ($result->totalBytes >= BashLogWriter::PREFIX) {
+                return \sprintf(
+                    "[Bash retained log: %d bytes; inspect the native log with read while available.]\n%s\n\n%s",
+                    $result->totalBytes,
+                    $logPath,
+                    mb_strcut($result->content, -768, null, 'UTF-8'),
+                );
+            }
             if (!$result->truncated) {
                 return $result->content;
             }
@@ -310,7 +319,7 @@ final class BashTool implements HatfieldToolProviderInterface
                 throw new \RuntimeException('Failed to open Bash log for retention.');
             }
             try {
-                if (false === stream_copy_to_stream($source, $handle)) {
+                if (false === stream_copy_to_stream($source, $handle, BashLogWriter::PREFIX)) {
                     throw new \RuntimeException('Failed to retain Bash log bytes.');
                 }
             } finally {
@@ -358,7 +367,7 @@ final class BashTool implements HatfieldToolProviderInterface
         $logHint = '';
         if (null === $exitCode) {
             $savedPath = null;
-            if ('' !== $entity->logPath && is_file($entity->logPath) && is_readable($entity->logPath)) {
+            if ('' !== $entity->logPath && is_file($entity->logPath) && is_readable($entity->logPath) && filesize($entity->logPath) < BashLogWriter::PREFIX) {
                 $savedPath = $this->retainNativeLog($entity->logPath, $sessionId, $toolCallId, $retainedOutputPath);
             }
             $logHint = null !== $savedPath

@@ -608,6 +608,21 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     /* ── Output capping ── */
 
+    public function testStorageLimitRetainsTailWithoutDuplicatingLog(): void
+    {
+        $this->createManager();
+        $result = $this->withContext($this->sessionId, fn () => ($this->makeBashTool())(
+            new BashArgumentsDTO(command: 'head -c 104858600 /dev/zero; printf end-of-output'),
+        ));
+
+        $this->assertStringContainsString('discarded 1141 bytes', $result);
+        $this->assertStringContainsString('end-of-output', $result);
+        $this->assertStringNotContainsString('Full output saved', $result);
+        $this->assertSame(1, preg_match('/^\[Bash retained log: \d+ bytes;[^\n]*\]\n([^\n]+)/', $result, $matches));
+        $this->assertFileExists($matches[1]);
+        $this->assertLessThanOrEqual(100 * 1024 * 1024, filesize($matches[1]));
+    }
+
     public function testOutputCapping(): void
     {
         // Output capping is now handled centrally by OutputCapToolResultProcessor,
