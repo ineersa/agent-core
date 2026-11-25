@@ -65,7 +65,7 @@ final class SessionListCommand
             return Command::INVALID;
         }
 
-        $page = $this->store->listSessions($this->wholeSecondBound($lower), $this->wholeSecondBound($upper), $query, $pageSize + 1, $pageOffset);
+        $page = $this->store->listSessions($this->catalogBound($lower), $this->catalogBound($upper), $query, $pageSize + 1, $pageOffset);
         $nextOffset = null;
         if (\count($page) > $pageSize) {
             array_pop($page);
@@ -128,9 +128,10 @@ final class SessionListCommand
     }
 
     /** @param array{\DateTimeImmutable, string}|null $bound */
-    private function wholeSecondBound(?array $bound): ?\DateTimeImmutable
+    private function catalogBound(?array $bound): ?\DateTimeImmutable
     {
-        // Both >= and < use the next whole second for a fractional bound.
-        return null === $bound || '' === $bound[1] ? $bound[0] ?? null : $bound[0]->modify('+1 second');
+        // Preserve whether the bound falls between stored seconds, even when
+        // its exact fraction is smaller than DateTimeImmutable can represent.
+        return null === $bound || '' === $bound[1] ? $bound[0] ?? null : $bound[0]->modify('+1 microsecond');
     }
 }

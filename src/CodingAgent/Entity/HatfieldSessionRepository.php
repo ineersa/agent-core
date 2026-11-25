@@ -70,10 +70,10 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
         // Doctrine persists activity at second precision in PHP's default timezone.
         $timezone = new \DateTimeZone(date_default_timezone_get());
         if (null !== $since) {
-            $query->andWhere('updated_at >= :since')->setParameter('since', $since->setTimezone($timezone)->format('Y-m-d H:i:s'));
+            $query->andWhere('updated_at >= :since')->setParameter('since', $this->formatCatalogBound($since, $timezone));
         }
         if (null !== $until) {
-            $query->andWhere('updated_at < :until')->setParameter('until', $until->setTimezone($timezone)->format('Y-m-d H:i:s'));
+            $query->andWhere('updated_at < :until')->setParameter('until', $this->formatCatalogBound($until, $timezone));
         }
 
         return $query->fetchAllAssociative();
@@ -159,5 +159,15 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
             ->addOrderBy('id', 'DESC')
             ->setMaxResults($limit)
             ->executeQuery()->fetchAllAssociative();
+    }
+
+    private function formatCatalogBound(\DateTimeImmutable $bound, \DateTimeZone $timezone): string
+    {
+        // For whole-second rows, both >= and < use the ceiling of a fractional bound.
+        if ('000000' !== $bound->format('u')) {
+            $bound = $bound->add(new \DateInterval('PT1S'));
+        }
+
+        return $bound->setTimezone($timezone)->format('Y-m-d H:i:s');
     }
 }

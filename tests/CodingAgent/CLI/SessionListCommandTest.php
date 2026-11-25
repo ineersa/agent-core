@@ -45,7 +45,7 @@ final class SessionListCommandTest extends TestCase
         $this->assertSame(['3', '2'], array_column($second['sessions'], 'sessionId'));
         $this->assertNull($second['nextOffset']);
         $filtered = $this->report($this->runConsole([
-            'session:list', '--json', '--since=2026-11-24T23:00:00-05:00', '--until=2026-11-25T04:00:00.0001Z',
+            'session:list', '--json', '--since=2026-11-24T23:00:00-05:00', '--until=2026-11-25T04:00:00.0000001Z',
             '--query=réname 100%_', '--limit=1',
         ]));
         $this->assertSame([[
