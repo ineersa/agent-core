@@ -5,6 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { object } from './attention.mjs';
 import { id, uuid } from './protocol.mjs';
 import { text } from './lifecycle.mjs';
+import { validSchedules } from './schedule.mjs';
 
 const maxState = 180_000;
 export const diagnostic = event_type => process.stderr.write(JSON.stringify({ component: 'hatfield-360', event_type }) + '\n');
@@ -33,11 +34,14 @@ function read(path) {
         const bytes = Buffer.alloc(maxState + 1);
         const length = readSync(fd, bytes, 0, bytes.length);
         const s = JSON.parse(bytes.toString('utf8', 0, length));
+        // State written before schedule tracking existed.
+        if (object(s) && !Object.hasOwn(s, 'schedules')) Object.assign(s, { schedules: {}, wakeup: null });
         if (!object(s) || !id(s.session) || !sequence(s.sequence) || !sequence(s.epoch) || s.epoch > s.sequence ||
             typeof s.ended !== 'boolean' || typeof s.agentsUncertain !== 'boolean' || !count(s.scripts) ||
             !Array.isArray(s.boundaries) || s.boundaries.length > 128 || !s.boundaries.every(uuid) ||
             !(s.switch === null || s.ended && s.boundaries.length && ['resume', 'clear'].includes(s.switch)) ||
-            !(s.turn === null || object(s.turn) && uuid(s.turn.id) && ['working', 'completed', 'failed'].includes(s.turn.status)) ||
+            !(s.turn === null || object(s.turn) && uuid(s.turn.id) && ['working', 'completed', 'failed'].includes(s.turn.status) && [undefined, 'schedule'].includes(s.turn.trigger)) ||
+            !validSchedules(s) ||
             !(s.title === null || text(s.title, 1024)) ||
             !entries(s.waits, 16, n => sequence(Math.abs(n)) && typeof n === 'number') ||
             !entries(s.tools, 32, t => object(t) && id(t.name) && (t.wait === null || sequence(t.wait)) && (t.fingerprint === null || hash(t.fingerprint))) ||

@@ -1,5 +1,6 @@
 import { attentionFields, digest, observeAttention } from './attention.mjs';
 import { id, uuid } from './protocol.mjs';
+import { observeScheduleTool, prune, scheduleFields, scheduledRun, settleWakeup } from './schedule.mjs';
 
 const switches = ['clear', 'resume'];
 const boundaries = ['startup', ...switches];
@@ -51,12 +52,15 @@ function select(previous, hook, sequence) {
     if (previous && (!switches.includes(source) || source !== previous.switch ||
         !((source === 'clear' && prompt == null) || (uuid(prompt) && prompt.toLowerCase() === previous.boundaries.at(-1))))) return null;
     return { session, epoch: sequence, boundaries: previous?.boundaries ?? [], ended: false, switch: null,
-        title: null, turn: null, waits: {}, tools: {}, scripts: null, agents: {}, agentsUncertain: source === 'resume' };
+        title: null, turn: null, waits: {}, tools: {}, scripts: null, agents: {}, agentsUncertain: source === 'resume',
+        // Jobs from before a clear or resume reappear after the next CronList.
+        schedules: {}, wakeup: null };
 }
 
 export function observe(previous, hook, secret) {
     const { session_id: session, hook_event_name: event, prompt_id: prompt } = hook;
     const sequence = (previous?.sequence ?? 0) + 1;
+    const now = Date.now();
     if (!id(session) || !Number.isSafeInteger(sequence)) return null;
     let state = previous;
     let kind = 'session.snapshot';
@@ -80,7 +84,7 @@ export function observe(previous, hook, secret) {
     } else if (!uuid(prompt)) return null;
     else if (event === 'UserPromptSubmit') {
         if (prompt === state.turn?.id) return null;
-        state.turn = { id: prompt, status: 'working' };
+        state.turn = { id: prompt, status: 'working', ...(scheduledRun(state, hook, secret, now) ? { trigger: 'schedule' } : {}) };
         state.scripts = null;
         // The new response receives the results the stopped children delivered.
         if (state.agents) for (const [key, value] of Object.entries(state.agents)) if (value === 'delivering') delete state.agents[key];
@@ -92,13 +96,17 @@ export function observe(previous, hook, secret) {
         state.scripts = sample?.scripts ?? null;
         state.agentsUncertain = sample?.subagents ?? true;
         state.turn.status = 'completed';
+        settleWakeup(state);
         refreshTitle = true;
-    } else if (event === 'StopFailure' && typeof hook.error === 'string') state.turn.status = 'failed';
-    else if (!observeAttention(state, hook, sequence, secret)) return null;
+    } else if (event === 'StopFailure' && typeof hook.error === 'string') {
+        state.turn.status = 'failed';
+        settleWakeup(state);
+    } else if (!observeScheduleTool(state, hook, secret, now) && !observeAttention(state, hook, sequence, secret)) return null;
     if (state.ended || event === 'UserPromptSubmit' || state.turn?.status === 'failed' || refreshTitle && event === 'Stop') {
         state.waits = {};
         state.tools = {};
     }
+    prune(state, now);
     state.sequence = sequence;
     return { state, kind, refreshTitle };
 }
@@ -106,5 +114,5 @@ export function observe(previous, hook, secret) {
 export function snapshot(state) {
     const count = state.agents === null ? null : Object.keys(state.agents).length;
     return { provider: 'claude', title: state.title, turn: state.turn, ...attentionFields(state),
-        activeSubagents: count === 0 && state.agentsUncertain ? null : count, backgroundScripts: state.scripts };
+        activeSubagents: count === 0 && state.agentsUncertain ? null : count, backgroundScripts: state.scripts, ...scheduleFields(state) };
 }
