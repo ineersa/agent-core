@@ -165,7 +165,7 @@ final class BuiltinDocsCatalogTest extends TestCase
             );
 
             // Replace in-tree docs/ with a symlink to the external fixture.
-            TestDirectoryIsolation::removeDirectory($this->appRoot.'/docs');
+            $this->assertTrue(rmdir($this->appRoot.'/docs'));
             if (!@symlink($externalRoot.'/docs', $this->appRoot.'/docs')) {
                 $this->markTestSkipped('Unable to create docs-root symlink in test environment');
             }

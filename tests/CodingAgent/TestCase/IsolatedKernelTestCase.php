@@ -52,6 +52,7 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
 {
     /** Class-scoped isolated CWD created once in setUpBeforeClass. */
     private static string $classCwd;
+    private ?string $methodSessionsDir = null;
 
     /** @var string|false Original CWD captured before chdir in setUpBeforeClass. */
     private static string|false $originalCwd = false;
@@ -166,6 +167,7 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         // Ensure env vars are still correct (compiled container bakes
         // some at compile time; in-process mutations of $_ENV/putenv
         // by a prior test must be reverted for the next test).
+        $this->methodSessionsDir = TestDirectoryIsolation::allocateFixtureDirectory(self::$classCwd, '.hatfield/sessions');
         $_ENV['APP_ENV'] = 'test';
         $_ENV['HATFIELD_CWD'] = self::$classCwd;
         putenv('HATFIELD_CWD='.self::$classCwd);
@@ -204,11 +206,9 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         // reuses low AUTOINCREMENT ids. Class-level settings and other
         // fixtures under .hatfield/ stay intact. Failures here fail the
         // current test (no catch): createSession/tests recreate the dir.
-        if (isset(self::$classCwd)) {
-            $sessionsDir = self::$classCwd.'/.hatfield/sessions';
-            if (is_dir($sessionsDir)) {
-                TestDirectoryIsolation::removeDirectory($sessionsDir);
-            }
+        if (null !== $this->methodSessionsDir) {
+            TestDirectoryIsolation::removeDirectory($this->methodSessionsDir);
+            $this->methodSessionsDir = null;
         }
 
         // Do NOT call parent::tearDown() — KernelTestCase::tearDown() calls

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Support;
 
-use Symfony\Component\Filesystem\Filesystem;
+use CastorTasks\OwnedTemporaryDirectory;
 use Symfony\Component\Filesystem\Path;
 
 /**
@@ -19,6 +19,9 @@ use Symfony\Component\Filesystem\Path;
  */
 final class TestDirectoryIsolation
 {
+    /** @var array<string, OwnedTemporaryDirectory> */
+    private static array $owned = [];
+
     /**
      * Create a temporary directory under the project's var/tmp/.
      *
@@ -34,10 +37,8 @@ final class TestDirectoryIsolation
         if (!Path::isBasePath('var/tmp', $temporary)) {
             throw new \InvalidArgumentException('QA temporary root must be project-local.');
         }
-        $dir = $projectDir.'/'.$temporary.'/'.$prefix.'-'.bin2hex(random_bytes(8));
-        mkdir($dir, $permissions, true);
 
-        return $dir;
+        return self::allocate($projectDir.'/'.$temporary, $prefix, $permissions);
     }
 
     /**
@@ -50,10 +51,7 @@ final class TestDirectoryIsolation
      */
     public static function createOsTempDir(string $prefix = 'test', int $permissions = 0o750): string
     {
-        $dir = sys_get_temp_dir().'/'.$prefix.'-'.bin2hex(random_bytes(8));
-        mkdir($dir, $permissions, true);
-
-        return $dir;
+        return self::allocate(sys_get_temp_dir(), $prefix, $permissions);
     }
 
     /**
@@ -142,45 +140,32 @@ YAML
      */
     public static function removeDirectory(string $dir): void
     {
-        if (!is_dir($dir) && !is_link($dir)) {
-            return;
-        }
-
-        // First pass clears the known tree. A concurrent writer (for example a TUI agent
-        // flushing ~/.hatfield/ai-catalog.yaml during tearDown) can recreate entries between
-        // the child walk and the final rmdir. Ownership teardown must stop writers first;
-        // a second immediate pass only absorbs the unlink/rmdir TOCTOU window and must not
-        // replace process ownership. removeDirectoryOnce is a no-op when already gone.
-        self::removeDirectoryOnce($dir);
-        self::removeDirectoryOnce($dir);
+        $owned = self::$owned[$dir] ?? throw new \RuntimeException('Refusing to remove an unallocated test directory: '.$dir);
+        $owned->remove(normalizePermissions: true);
+        unset(self::$owned[$dir]);
     }
 
-    private static function removeDirectoryOnce(string $dir): void
+    /** Allocate an exact cleanup target inside an existing owned fixture. */
+    public static function allocateFixtureDirectory(string $fixture, string $relativePath): string
     {
-        $filesystem = new Filesystem();
-        if (is_link($dir)) {
-            $filesystem->remove($dir);
-
-            return;
+        $owner = self::$owned[$fixture] ?? throw new \RuntimeException('Unallocated fixture: '.$fixture);
+        $owner->assertOwned();
+        $path = $fixture.'/'.$relativePath;
+        if ($path === $fixture || Path::canonicalize($path) !== $path || !Path::isBasePath($fixture, $path)) {
+            throw new \InvalidArgumentException('Fixture directory must be strictly inside its owner.');
         }
-        if (!is_dir($dir)) {
-            return;
-        }
+        $owned = OwnedTemporaryDirectory::allocate(\dirname($path), basename($path));
+        self::$owned[$path] = $owned;
 
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
+        return $path;
+    }
 
-        foreach ($iterator as $file) {
-            $path = $file->getPathname();
-            if (!$file->isLink()) {
-                @chmod($path, $file->isDir() ? 0755 : 0644);
-            }
-            $filesystem->remove($path);
-        }
+    private static function allocate(string $root, string $prefix, int $permissions): string
+    {
+        require_once ProjectDir::get().'/.castor/OwnedTemporaryDirectory.php';
+        $owned = OwnedTemporaryDirectory::allocate($root, $prefix.'-'.bin2hex(random_bytes(8)), $permissions);
+        self::$owned[$owned->path] = $owned;
 
-        @chmod($dir, 0755);
-        $filesystem->remove($dir);
+        return $owned->path;
     }
 }

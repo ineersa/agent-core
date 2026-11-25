@@ -67,7 +67,8 @@ final class ParaTestWorkerIsolationTest extends TestCase
                 file_put_contents($home.'/.hatfield/skills/code-review/SKILL.md', 'owned by this worker');
             }
             // Replacing one worker's built-ins cannot invalidate another worker's iterator/copy.
-            TestDirectoryIsolation::removeDirectory($homes[0].'/.hatfield/skills/code-review');
+            $this->assertTrue(unlink($homes[0].'/.hatfield/skills/code-review/SKILL.md'));
+            $this->assertTrue(rmdir($homes[0].'/.hatfield/skills/code-review'));
             $this->assertSame('owned by this worker', file_get_contents($homes[1].'/.hatfield/skills/code-review/SKILL.md'));
             $this->assertFileExists($template.'/.hatfield/settings.yaml');
         } finally {
