@@ -14,9 +14,12 @@ use Castor\Attribute\AsTask;
 use CastorTasks\OwnedTemporaryDirectory;
 use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
+require_once __DIR__.'/static-runtime.php';
 
 /** Default distribution output directory (worktree-local). */
 const HATFIELD_DIST_DIR_DEFAULT = 'var/tmp/dist';
@@ -27,6 +30,9 @@ const HATFIELD_DIST_ARTIFACTS = [
     'hatfield.linux-amd64',
     'hatfield.linux-arm64',
     'hatfield.darwin-arm64',
+    'runtime-linux-amd64.json',
+    'runtime-linux-arm64.json',
+    'runtime-darwin-arm64.json',
     'SHA256SUMS',
 ];
 
@@ -73,6 +79,7 @@ function distribution_artifact_name(string $target): string
 
 /**
  * @return array{
+ *     runtime_revision: int,
  *     static_php_cli_commit: string,
  *     static_php_cli_repository: string,
  *     php_version: string,
@@ -94,6 +101,10 @@ function distribution_static_pin(): array
     $data = json_decode((string) file_get_contents($path), true);
     if (!is_array($data)) {
         throw new RuntimeException('Invalid tools/static/pin.json');
+    }
+    $revision = $data['runtime_revision'] ?? null;
+    if (!is_int($revision) || $revision < 1) {
+        throw new RuntimeException('tools/static/pin.json runtime_revision must be a positive integer.');
     }
     $commit = $data['static_php_cli_commit'] ?? null;
     $repo = $data['static_php_cli_repository'] ?? null;
@@ -122,6 +133,7 @@ function distribution_static_pin(): array
     }
 
     return [
+        'runtime_revision' => $revision,
         'static_php_cli_commit' => $commit,
         'static_php_cli_repository' => $repo,
         'php_version' => $phpVersion,
@@ -369,15 +381,43 @@ function distribution_assert_php_source_sha256(string $workDir, string $phpVersi
  *
  * @return array{spc: string, micro_sfx: string, work_dir: string}
  */
-function distribution_build_micro_sfx(string $target): array
+function distribution_build_micro_sfx(string $target, bool $requireCachedRuntime = false): array
 {
-    distribution_assert_host_can_build($target);
     $pin = distribution_static_pin();
-    $spcRoot = distribution_ensure_spc_checkout();
-    $workDir = distribution_root().'/var/tmp/static-build/'.$target;
-    if (!is_dir($workDir) && !mkdir($workDir, 0755, true) && !is_dir($workDir)) {
-        throw new RuntimeException('Unable to create static build dir: '.$workDir);
+    $fingerprint = distribution_runtime_fingerprint($target, $pin);
+    $cacheRoot = distribution_root().'/var/tmp/static-runtime';
+    $filesystem = new Filesystem();
+    $filesystem->mkdir($cacheRoot);
+    // Fingerprints share the SPC checkout and disposable phpmicro staging.
+    $lock = (new LockFactory(new FlockStore($cacheRoot)))->createLock($target);
+    $lock->acquire(true);
+    try {
+        $cache = $cacheRoot.'/'.$fingerprint;
+        $spcBin = distribution_prepare_spc_binary();
+        if (distribution_cached_runtime_is_valid($cache, $fingerprint)) {
+            echo "Reusing verified native runtime {$fingerprint}\n";
+
+            return ['spc' => $spcBin, 'micro_sfx' => $cache.'/micro.sfx', 'work_dir' => $cache];
+        }
+
+        if ($requireCachedRuntime) {
+            throw new RuntimeException('Required restored native runtime is incomplete or failed verification: '.$fingerprint);
+        }
+
+        echo "Building native runtime {$fingerprint}\n";
+        $workDir = distribution_root().'/var/tmp/static-build/'.$fingerprint;
+        distribution_compile_runtime($workDir, $spcBin, $pin);
+        distribution_cache_runtime($cache, $workDir.'/buildroot/bin', distribution_runtime_provenance($workDir.'/downloads/.cache.json', $target, $fingerprint, $pin['runtime_revision']));
+
+        return ['spc' => $spcBin, 'micro_sfx' => $cache.'/micro.sfx', 'work_dir' => $cache];
+    } finally {
+        $lock->release();
     }
+}
+
+function distribution_prepare_spc_binary(): string
+{
+    $spcRoot = distribution_ensure_spc_checkout();
 
     // SPC is a Composer project — vendor/ must exist before bin/spc can boot.
     $spcBin = $spcRoot.'/bin/spc';
@@ -396,9 +436,13 @@ function distribution_build_micro_sfx(string $target): array
         throw new RuntimeException('static-php-cli vendor/autoload.php missing after composer install in '.$spcRoot);
     }
 
-    $extensions = implode(',', $pin['extensions']);
-    $libsHint = 'libxml,zlib,openssl,curl,sqlite,bzip2,onig,icu'; // best-effort; spc resolves deps
+    return $spcBin;
+}
 
+/** @param array{php_version: string, php_source_sha256: string, phpmicro_commit: string, phpmicro_patch: string, extensions: list<string>, micro_fake_cli: bool} $pin */
+function distribution_compile_runtime(string $workDir, string $spcBin, array $pin): void
+{
+    (new Filesystem())->mkdir($workDir);
     // Host toolchain preflight — SPC doctor --auto-fix needs root/sudo; in
     // restricted environments that fails and later zlib/configure errors are opaque.
     $missingTools = [];
@@ -432,17 +476,9 @@ function distribution_build_micro_sfx(string $target): array
     // copy so the durable cache under var/tmp/static-php-cli/phpmicro/<commit>
     // survives rebuilds.
     $phpmicroForSpc = distribution_stage_phpmicro_for_spc($phpmicroPath, $pin['phpmicro_commit']);
-    $customLocal = 'php-micro:'.$phpmicroForSpc;
-
-    echo "SPC download extensions={$extensions} php={$pin['php_version']} phpmicro={$pin['phpmicro_commit']} patch={$pin['phpmicro_patch']}...\n";
-    \CastorTasks\run_checked(
-        escapeshellarg($spcBin).' download'
-        .' --for-extensions='.escapeshellarg($extensions)
-        .' --with-php='.escapeshellarg($pin['php_version'])
-        .' --custom-local='.escapeshellarg($customLocal)
-        .' --prefer-binary 2>&1',
-        $workDir
-    );
+    $recipe = distribution_runtime_recipe($pin, $phpmicroForSpc);
+    echo "SPC download php={$pin['php_version']} phpmicro={$pin['phpmicro_commit']} patch={$pin['phpmicro_patch']}...\n";
+    \CastorTasks\run_checked(implode(' ', array_map('escapeshellarg', [$spcBin, ...$recipe['download']])).' 2>&1', $workDir);
     distribution_assert_php_source_sha256($workDir, $pin['php_version'], $pin['php_source_sha256']);
 
     // SPC patches phar.c only for make micro, then restores the backup. An interrupted
@@ -451,35 +487,8 @@ function distribution_build_micro_sfx(string $target): array
     // Restore before every build so release rebuilds do not depend on leftover tree state.
     distribution_restore_interrupted_spc_phar_patch($workDir);
 
-    $buildArgs = escapeshellarg($spcBin).' build '.escapeshellarg($extensions)
-        .' --build-cli --build-micro'
-        // GD only requires PNG by default; the image tool also decodes JPEG/WebP.
-        // nghttp2 enables curl HTTP/2; without it Symfony auto-selects Amp.
-        .' --with-packages=libjpeg,libwebp,nghttp2'
-        .' --dl-with-php='.escapeshellarg($pin['php_version'])
-        .' --dl-custom-local='.escapeshellarg($customLocal);
-    if ($pin['micro_fake_cli']) {
-        $buildArgs .= ' --with-micro-fake-cli';
-    }
-    // ponytail: pinned PHP 8.5 bare micro smoke segfaults on Linux even with marker payload; skip upstream bare micro+Zend smoke only; retain CLI/ext SPC smokes and Hatfield fused artifact version/list/Composer-platform/native topology hard proofs; remove workaround once upstream stabilizes.
-    $buildArgs .= ' --no-smoke-test=micro';
-    $buildArgs .= ' 2>&1';
     echo "SPC build micro...\n";
-    \CastorTasks\run_checked($buildArgs, $workDir);
-
-    \CastorTasks\run_checked(
-        escapeshellarg($workDir.'/buildroot/bin/php').' -r '.escapeshellarg(
-            'if (!(curl_version()["features"] & CURL_VERSION_HTTP2)) { fwrite(STDERR, "Static curl requires HTTP/2 support\n"); exit(1); }'
-        ),
-        $workDir
-    );
-
-    $microSfx = $workDir.'/buildroot/bin/micro.sfx';
-    if (!is_file($microSfx)) {
-        throw new RuntimeException('micro.sfx not found after SPC build under '.$workDir);
-    }
-
-    return ['spc' => $spcBin, 'micro_sfx' => $microSfx, 'work_dir' => $workDir];
+    \CastorTasks\run_checked(implode(' ', array_map('escapeshellarg', [$spcBin, ...$recipe['build']])).' 2>&1', $workDir);
 }
 
 /**
@@ -1725,6 +1734,8 @@ function distribution_build_static(
     ?string $releaseVersion = null,
     #[AsOption(description: 'Commit SHA to embed')]
     ?string $commit = null,
+    #[AsOption(description: 'Require the restored compiled runtime to pass verification instead of rebuilding')]
+    bool $requireCachedRuntime = false,
 ): void {
     $target ??= distribution_host_target();
     distribution_assert_host_can_build($target);
@@ -1750,7 +1761,7 @@ function distribution_build_static(
     $resolved = distribution_resolve_canonical_phar_for_static($dist, $expectedVersion, $expectedCommit);
     $pharDest = $resolved['path'];
 
-    $built = distribution_build_micro_sfx($target);
+    $built = distribution_build_micro_sfx($target, $requireCachedRuntime);
     $out = $dist.'/'.distribution_artifact_name($target);
     distribution_combine_micro($built['spc'], $built['micro_sfx'], $pharDest, $out, $built['work_dir']);
     distribution_smoke_artifact(
@@ -1760,10 +1771,8 @@ function distribution_build_static(
         expectedCommit: $expectedCommit,
     );
     distribution_smoke_native_process_topology($out);
-    distribution_write_sha256sums($dist, array_values(array_filter(
-        ($scan = scandir($dist)) !== false ? $scan : [],
-        static fn (string $f): bool => str_starts_with($f, 'hatfield.')
-    )));
+    (new Filesystem())->copy($built['work_dir'].'/provenance.json', $dist.'/runtime-'.$target.'.json', true);
+    distribution_write_sha256sums($dist, array_values(array_filter(HATFIELD_DIST_ARTIFACTS, static fn (string $name): bool => is_file($dist.'/'.$name))));
     echo "Static binary ready: {$out} (phar source={$resolved['source']})\n";
 }
 
@@ -1833,10 +1842,7 @@ function distribution_checksums(
     if (!is_dir($dist)) {
         throw new RuntimeException('Dist dir missing: '.$dist);
     }
-    $names = array_values(array_filter(
-        ($scan = scandir($dist)) !== false ? $scan : [],
-        static fn (string $f): bool => str_starts_with($f, 'hatfield.')
-    ));
+    $names = array_values(array_filter(HATFIELD_DIST_ARTIFACTS, static fn (string $name): bool => is_file($dist.'/'.$name)));
     $path = distribution_write_sha256sums($dist, $names);
     echo "Wrote {$path}\n";
 }
@@ -1986,10 +1992,12 @@ function distribution_clean(
         \CastorTasks\remove_path_checked($dist);
         echo "Removed {$dist}\n";
     }
-    $staticBuild = distribution_root().'/var/tmp/static-build';
-    if (is_dir($staticBuild)) {
-        \CastorTasks\remove_path_checked($staticBuild);
-        echo "Removed {$staticBuild}\n";
+    foreach (['static-build', 'static-runtime'] as $directory) {
+        $path = distribution_root().'/var/tmp/'.$directory;
+        if (is_dir($path)) {
+            \CastorTasks\remove_path_checked($path);
+            echo "Removed {$path}\n";
+        }
     }
     if ($all) {
         $spc = distribution_root().'/var/tmp/static-php-cli';

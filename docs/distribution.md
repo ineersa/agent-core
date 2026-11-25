@@ -15,7 +15,10 @@ Internals: [phar-packaging.md](phar-packaging.md) · [static-packaging.md](stati
 | `hatfield.linux-amd64` | Fused PHP-micro native (Linux x86_64) |
 | `hatfield.linux-arm64` | Fused PHP-micro native (Linux aarch64) |
 | `hatfield.darwin-arm64` | Fused PHP-micro native (macOS arm64) |
-| `SHA256SUMS` | SHA-256 for every release asset |
+| `runtime-linux-amd64.json` | SPC download provenance (Linux x86_64) |
+| `runtime-linux-arm64.json` | SPC download provenance (Linux aarch64) |
+| `runtime-darwin-arm64.json` | SPC download provenance (macOS arm64) |
+| `SHA256SUMS` | SHA-256 for all seven payload assets above |
 
 Native releases are single-file per target. Amp SQLite workers relaunch the same
 fused binary through `--internal-sqlite-worker`. Foreground and background Bash
@@ -65,6 +68,16 @@ to use the new binary; the task does not stop or restart them.
 3. Local standalone static builds may `phar_ensure` + copy only when dist PHAR is absent.
 4. Bundled resources include defaults, themes, migrations, Extension API package source,
    and selected `builtin: true` docs at canonical paths (no `internal-docs/`, no unmarked docs).
+
+## Release workflow
+
+The workflow checks for all seven payload assets and verifies their checksums before
+publishing. It installs `zstd` 0.19.0 for system PHP with PIE 1.6.0 in a
+separate five-minute step that fails if the pinned extension is not loaded.
+
+Native jobs share a GitHub concurrency group per target to avoid concurrent runtime
+publication for that target. The group allows one running and one pending job;
+with three overlapping runs, a newer job can replace the pending one.
 
 ## Installer
 

@@ -4,15 +4,17 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 # Sole GitHub Actions path that builds PHAR + three native binaries and publishes
-# release assets. Trigger: push of tag v* only. All build/verify logic lives in
-# Castor (distribution:*); this workflow only orchestrates runners and publish.
+# app release assets on v* tags. Manual runs on the default branch prepare
+# verified runtimes only. Castor owns all build and verification logic.
 jobs:
   phar:
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch)
     name: Build canonical PHAR
     runs-on: ubuntu-latest
     steps:
@@ -20,6 +22,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate tag points at exact checked-out commit
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
@@ -30,12 +33,19 @@ jobs:
 
       - name: Setup PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        timeout-minutes: 5
+        env:
+          fail-fast: true
         with:
           # Exact patch from tools/static/pin.json (setup-php accepts patch values).
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip, zstd
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
           coverage: none
-          tools: composer:v2
+          tools: composer:v2, pie:1.6.0@sha256:81041b276f4e23dfdfa6dc941e5745f9adec824a1bcf6141e226181ef43f519e
+
+      - name: Install zstd with PIE
+        timeout-minutes: 5
+        uses: ./.github/actions/setup-zstd
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
@@ -53,7 +63,7 @@ jobs:
           castor distribution:verify --skip-topology --allow-missing-native
 
       - name: Upload hatfield.phar
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: hatfield.phar
           path: var/tmp/dist/hatfield.phar
@@ -62,6 +72,11 @@ jobs:
   static:
     name: Static ${{ matrix.target }}
     needs: [phar]
+    # Serialize target jobs across release and manual refs. This also serializes
+    # different fingerprints on the same target, without a separate coordinator.
+    concurrency:
+      group: static-runtime-${{ matrix.target }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -77,13 +92,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Install static build prerequisites
+        uses: ./.github/actions/static-prerequisites
+
       - name: Setup PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        timeout-minutes: 5
+        env:
+          fail-fast: true
         with:
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip, zstd
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
           coverage: none
-          tools: composer:v2
+          tools: composer:v2, pie:1.6.0@sha256:81041b276f4e23dfdfa6dc941e5745f9adec824a1bcf6141e226181ef43f519e
+
+      - name: Install zstd with PIE
+        timeout-minutes: 5
+        uses: ./.github/actions/setup-zstd
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
@@ -91,20 +116,49 @@ jobs:
       - name: Install Castor
         uses: ./.github/actions/setup-castor
 
-      - name: Cache static-php-cli pin checkout + downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          # Includes SPC checkout, pinned phpmicro checkout (var/tmp/static-php-cli/phpmicro/), and workdir downloads.
-          path: |
-            var/tmp/static-php-cli
-            var/tmp/static-build
-          key: spc-${{ matrix.target }}-${{ hashFiles('tools/static/pin.json', 'composer.lock', '.castor/distribution.php') }}
+      - name: Fingerprint compiled native runtime inputs
+        id: runtime
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          fingerprint="$(castor distribution:runtime-fingerprint --target="${TARGET}")"
+          [[ "$fingerprint" =~ ^[a-f0-9]{64}$ ]]
+          echo "fingerprint=${fingerprint}" >> "$GITHUB_OUTPUT"
 
-      - name: Install static build prerequisites
-        uses: ./.github/actions/static-prerequisites
+      - name: Restore published runtime if present
+        id: restore
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FINGERPRINT: ${{ steps.runtime.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          tag="static-runtime-${FINGERPRINT}"
+          # An exhaustive successful listing is the only evidence of absence.
+          match="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == "'"${tag}"'") | [.draft, .prerelease] | @tsv')"
+          if [[ "$match" == $'true\ttrue' ]]; then
+            # This target's serialized job owns recovery of an interrupted upload.
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
+            match=''
+          fi
+          if [[ -z "$match" ]]; then
+            echo 'hit=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$match" != $'false\ttrue' ]]; then
+            echo "Unexpected release state for ${tag}; inspect before retrying" >&2
+            exit 1
+          fi
+          destination="var/tmp/static-runtime/${FINGERPRINT}"
+          mkdir -p "$destination"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$destination" \
+            --pattern php --pattern micro.sfx --pattern sha256.json --pattern provenance.json
+          chmod +x "$destination/php"
+          echo 'hit=true' >> "$GITHUB_OUTPUT"
 
       - name: Download canonical PHAR handoff from PHAR job
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: hatfield.phar
           path: var/tmp/dist
@@ -113,6 +167,7 @@ jobs:
         env:
           HATFIELD_BUILD_VERSION: ${{ github.ref_name }}
           HATFIELD_BUILD_COMMIT: ${{ github.sha }}
+          RUNTIME_HIT: ${{ steps.restore.outputs.hit }}
           # SPC reads GITHUB_TOKEN for GitHub dependency API/downloads (rate limits).
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -133,21 +188,47 @@ jobs:
           test -s var/tmp/dist/hatfield.phar
           PHAR_SHA="$(hash_file var/tmp/dist/hatfield.phar)"
           echo "PHAR handoff sha256=${PHAR_SHA}"
-          castor distribution:build-static --target=${{ matrix.target }} --release-version="${HATFIELD_BUILD_VERSION}" --commit="${HATFIELD_BUILD_COMMIT}"
+          if [[ "$RUNTIME_HIT" == true ]]; then
+            set -- --require-cached-runtime
+          else
+            set --
+          fi
+          castor distribution:build-static --target=${{ matrix.target }} --release-version="${HATFIELD_BUILD_VERSION}" --commit="${HATFIELD_BUILD_COMMIT}" "$@"
           test -s var/tmp/dist/hatfield.phar
           AFTER_SHA="$(hash_file var/tmp/dist/hatfield.phar)"
           test "${PHAR_SHA}" = "${AFTER_SHA}"
           # Host-native topology is required on each matrix runner.
           castor distribution:verify
 
+      - name: Publish verified runtime prerelease
+        if: steps.restore.outputs.hit == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FINGERPRINT: ${{ steps.runtime.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          tag="static-runtime-${FINGERPRINT}"
+          runtime="var/tmp/static-runtime/${FINGERPRINT}"
+          # Publish only after all assets have uploaded. Never clobber an asset.
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --draft --prerelease --latest=false --title "$tag" \
+            --notes 'Verified native runtime and SPC download inventory for this fingerprint.'
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" \
+            "$runtime/php" "$runtime/micro.sfx" "$runtime/sha256.json" "$runtime/provenance.json"
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
+
       - name: Upload static artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: hatfield.${{ matrix.target }}
-          path: var/tmp/dist/hatfield.${{ matrix.target }}
+          path: |
+            var/tmp/dist/hatfield.${{ matrix.target }}
+            var/tmp/dist/runtime-${{ matrix.target }}.json
           if-no-files-found: error
 
   publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     name: Aggregate, checksum, publish release
     needs: [phar, static]
     runs-on: ubuntu-latest
@@ -164,11 +245,18 @@ jobs:
 
       - name: Setup PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        timeout-minutes: 5
+        env:
+          fail-fast: true
         with:
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip, zstd
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
           coverage: none
-          tools: composer:v2
+          tools: composer:v2, pie:1.6.0@sha256:81041b276f4e23dfdfa6dc941e5745f9adec824a1bcf6141e226181ef43f519e
+
+      - name: Install zstd with PIE
+        timeout-minutes: 5
+        uses: ./.github/actions/setup-zstd
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
@@ -177,7 +265,7 @@ jobs:
         uses: ./.github/actions/setup-castor
 
       - name: Download all release artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: var/tmp/dist
           merge-multiple: true
@@ -215,12 +303,12 @@ jobs:
           castor distribution:checksums
           # Verify checksums + PHAR content; native topology already ran per matrix runner.
           castor distribution:verify --skip-topology
-          # Ensure SHA256SUMS lists exactly the four payloads.
+          # Ensure SHA256SUMS lists exactly the seven payloads.
           test -s var/tmp/dist/SHA256SUMS
-          for name in hatfield.phar hatfield.linux-amd64 hatfield.linux-arm64 hatfield.darwin-arm64; do
+          for name in hatfield.phar hatfield.linux-amd64 hatfield.linux-arm64 hatfield.darwin-arm64 runtime-linux-amd64.json runtime-linux-arm64.json runtime-darwin-arm64.json; do
             grep -E "^[a-f0-9]{64}  ${name}\$" var/tmp/dist/SHA256SUMS
           done
-          test "$(grep -cE '^[a-f0-9]{64}  ' var/tmp/dist/SHA256SUMS)" -eq 4
+          test "$(grep -cE '^[a-f0-9]{64}  ' var/tmp/dist/SHA256SUMS)" -eq 7
 
       - name: Host-compatible version smoke
         run: |
@@ -233,7 +321,7 @@ jobs:
           grep -q 'commit' /tmp/native-version.txt
 
       - name: Create GitHub Release with complete asset set
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ github.ref_name }}
           name: Hatfield ${{ github.ref_name }}
@@ -244,6 +332,9 @@ jobs:
             var/tmp/dist/hatfield.linux-amd64
             var/tmp/dist/hatfield.linux-arm64
             var/tmp/dist/hatfield.darwin-arm64
+            var/tmp/dist/runtime-linux-amd64.json
+            var/tmp/dist/runtime-linux-arm64.json
+            var/tmp/dist/runtime-darwin-arm64.json
             var/tmp/dist/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

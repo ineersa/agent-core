@@ -64,8 +64,13 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process {
             $root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
             require_once $root.'/.castor/helpers.php';
             require_once $root.'/.castor/distribution.php';
-            $spc = $root.'/var/tmp/static-php-cli/'.distribution_static_pin()['static_php_cli_commit'].'/bin/spc';
-            $micro = $root.'/var/tmp/static-build/'.distribution_host_target().'/buildroot/bin/micro.sfx';
+            $pin = distribution_static_pin();
+            $target = distribution_host_target();
+            if (!isset(distribution_targets()[$target])) {
+                $this->markTestSkipped('No native artifact target for this host.');
+            }
+            $spc = $root.'/var/tmp/static-php-cli/'.$pin['static_php_cli_commit'].'/bin/spc';
+            $micro = $root.'/var/tmp/static-runtime/'.distribution_runtime_fingerprint($target, $pin).'/micro.sfx';
             if (!is_file($spc) || !is_file($micro)) {
                 $this->markTestSkipped('Pinned micro engine and SPC checkout required for native override proof.');
             }
