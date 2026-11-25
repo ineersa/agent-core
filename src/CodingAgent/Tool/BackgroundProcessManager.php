@@ -936,7 +936,7 @@ final class BackgroundProcessManager
     {
         $exit = $this->lifecycle->readNativeExit($native->statusPath);
         $exitCode = $exit?->exitCode;
-        $writerExitCode = $exit?->logWriterExitCode ?? 0;
+        $writerExitCode = $exit->logWriterExitCode ?? 0;
         $finished = $this->lifecycle->hasObservedExit($exitCode, $native->pid);
         $stoppedByUser = false;
         $status = BackgroundProcessStatusEnum::Running;

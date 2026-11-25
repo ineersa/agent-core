@@ -296,7 +296,7 @@ final class BackgroundProcessCompletionPoller
         $statusLabel = null !== $exitCode
             ? (string) $exitCode
             : match ($process->status) {
-                \Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum::FinishedUnclean => 'unclean exit',
+                BackgroundProcessStatusEnum::FinishedUnclean => 'unclean exit',
                 default => '?',
             };
 
