@@ -103,6 +103,36 @@ count is the last sample, not a live census. Repeated or superseded Stop hooks
 do not refresh it: the recorded capture does not establish a reliable causal
 marker for background-only refresh.
 
+### Schedules and loops
+
+Session cron jobs (`/loop 5m …`, `CronCreate`) and self-paced loops (`/loop …`
+with no interval, `ScheduleWakeup`) are tracked from their `PostToolUse`
+results, as recorded with Claude Code 2.1.331:
+
+- `CronCreate` adds a job with its `humanSchedule` label (or the cron
+  expression), recurrence, `nextFireAt` and, for recurring jobs, the
+  `maxAgeMs` expiry. `CronDelete` removes it. A `CronList` result replaces
+  the whole list. At most 16 jobs are tracked.
+- `ScheduleWakeup` replaces the pending wakeup, shown as one "Self-paced loop"
+  entry.
+- A run is an ordinary `UserPromptSubmit` whose prompt equals the job's or
+  wakeup's prompt. It counts as a scheduled turn (`turn.trigger: "schedule"`)
+  only when the prompt matches and the run is due (at most 90 seconds before
+  the expected time). The same prompt typed earlier stays a user turn, so a
+  run can't be told from a typed copy within that window.
+- After a recurring run, the next time is the next local-time cron match plus
+  the job's fixed jitter, learned from its first `nextFireAt`. A one-shot job
+  is removed when it runs. A wakeup run that finishes without scheduling
+  another wakeup ends the loop.
+
+Only keyed hashes of prompts are stored, and only the label, recurrence and
+next time are sent; prompts and cron fields stay private. Hooks never see a
+missed run or a recurring job's expiry, so expired jobs and one-shot jobs a day
+overdue are dropped on the next hook. A clear or resume starts an empty list
+until the next `CronList`. Snapshots include `schedules` only while the list is
+non-empty, so sessions without schedules keep working with Hatfield 360 builds
+that predate the field.
+
 A launch lock serializes hooks and associated socket delivery in the private
 socket directory. A competing hook waits up to 650 ms with explicit credentials
 or 350 ms for a managed launch. Input is limited to 1 MiB. Reading stdin and each socket exchange are capped
