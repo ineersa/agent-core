@@ -415,10 +415,6 @@ function qa_test_home_dir(): string
         }
     }
 
-    putenv('HATFIELD_QA_TEST_HOME='.$resolved);
-    $_ENV['HATFIELD_QA_TEST_HOME'] = $resolved;
-    $_SERVER['HATFIELD_QA_TEST_HOME'] = $resolved;
-
     return $resolved;
 }
 
