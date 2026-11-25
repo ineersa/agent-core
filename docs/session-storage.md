@@ -55,6 +55,8 @@ literal substring of the picker title or ID. Results
 sort by last activity, then numeric ID, both descending. The default `--limit`
 is 50 (1–200); `--offset` defaults to zero. Offset pages are not a snapshot:
 deduplicate by scoped identity and reset paging when refreshing.
+Sparse title searches may scan the selected date range in batches to preserve
+the exact picker title and Unicode matching rules.
 
 On success, `--json` writes one object with `version: 1`, `scope: {cwd}`,
 `sessions` (rows with `sessionId`, `displayTitle`, `cwd`, `createdAt` and

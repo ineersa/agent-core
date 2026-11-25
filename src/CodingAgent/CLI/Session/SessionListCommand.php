@@ -16,8 +16,6 @@ use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
-use function Symfony\Component\String\u;
-
 #[AsCommand(
     name: 'session:list',
     description: 'List sessions persisted in the selected project store',
@@ -67,20 +65,12 @@ final class SessionListCommand
             return Command::INVALID;
         }
 
-        $needle = null === $query ? '' : u($query)->folded(false)->toString();
-        $matched = [];
-        foreach ($this->store->listSessions() as $session) {
-            $updated = new \DateTimeImmutable($session['updated_at']);
-            if ((null !== $lower && $this->compareActivity($updated, $lower) < 0)
-                || (null !== $upper && $this->compareActivity($updated, $upper) >= 0)
-                || ('' !== $needle && !str_contains(u($session['displayTitle'])->folded(false)->toString(), $needle) && !str_contains($session['sessionId'], $needle))
-            ) {
-                continue;
-            }
-            $matched[] = $session;
+        $page = $this->store->listSessions($this->wholeSecondBound($lower), $this->wholeSecondBound($upper), $query, $pageSize + 1, $pageOffset);
+        $nextOffset = null;
+        if (\count($page) > $pageSize) {
+            array_pop($page);
+            $nextOffset = $pageOffset + $pageSize;
         }
-
-        $page = \array_slice($matched, $pageOffset, $pageSize);
         $utc = new \DateTimeZone('UTC');
         $sessions = array_map(static fn (array $row): array => [
             'sessionId' => $row['sessionId'],
@@ -89,7 +79,6 @@ final class SessionListCommand
             'createdAt' => (new \DateTimeImmutable($row['created_at']))->setTimezone($utc)->format('Y-m-d\TH:i:s\Z'),
             'updatedAt' => (new \DateTimeImmutable($row['updated_at']))->setTimezone($utc)->format('Y-m-d\TH:i:s\Z'),
         ], $page);
-        $nextOffset = \count($matched) > $pageOffset + $pageSize ? $pageOffset + $pageSize : null;
         if ($json) {
             $output->writeln($this->serializer->serialize([
                 'version' => 1,
@@ -138,11 +127,10 @@ final class SessionListCommand
         return [$at, rtrim($matches[2], '0')];
     }
 
-    /** @param array{\DateTimeImmutable, string} $bound */
-    private function compareActivity(\DateTimeImmutable $updated, array $bound): int
+    /** @param array{\DateTimeImmutable, string}|null $bound */
+    private function wholeSecondBound(?array $bound): ?\DateTimeImmutable
     {
-        $seconds = $updated <=> $bound[0];
-
-        return 0 === $seconds ? strcmp('', $bound[1]) : $seconds;
+        // Both >= and < use the next whole second for a fractional bound.
+        return null === $bound || '' === $bound[1] ? $bound[0] ?? null : $bound[0]->modify('+1 second');
     }
 }

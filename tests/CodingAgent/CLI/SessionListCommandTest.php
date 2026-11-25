@@ -65,6 +65,28 @@ final class SessionListCommandTest extends TestCase
         $this->assertDirectoryDoesNotExist($this->project.'/.hatfield/extensions');
     }
 
+    public function testSparseTitleSearchPagesAcrossCandidateBatches(): void
+    {
+        $tuples = [];
+        for ($id = 1; $id <= 410; ++$id) {
+            $title = 408 === $id ? 'RÉNAME %_' : 'Unrelated';
+            $prompt = \in_array($id, [4, 204], true) ? "'Fallback Réname %_'" : 'NULL';
+            if ('NULL' !== $prompt) {
+                $title = '';
+            }
+            $tuples[] = "({$id}, '/past', '2026-11-20 10:00:00', '2026-11-25 04:00:00', '{$title}', {$prompt})";
+        }
+        $this->seedStore($this->project, implode(', ', $tuples));
+
+        $page = $this->report($this->runConsole(['session:list', '--json', '--query=réname %_', '--limit=1', '--offset=1']));
+        $this->assertSame(['204'], array_column($page['sessions'], 'sessionId'));
+        $this->assertSame(2, $page['nextOffset']);
+
+        $last = $this->report($this->runConsole(['session:list', '--json', '--query=réname %_', '--limit=1', '--offset=2']));
+        $this->assertSame(['4'], array_column($last['sessions'], 'sessionId'));
+        $this->assertNull($last['nextOffset']);
+    }
+
     public function testSeparateScopeAndDoctrinePathOverride(): void
     {
         $other = $this->root.'/worktree';
