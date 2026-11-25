@@ -48,8 +48,8 @@ final class BuildDistributionScriptTest extends TestCase
         }
         $this->assertSame(3, $phpSetups);
         $action = (string) file_get_contents($root.'/.github/actions/setup-zstd/action.yml');
-        $this->assertStringContainsString('kjdev/zstd:0.19.0', $action);
-        $this->assertStringContainsString('phpversion("zstd") !== "0.19.0"', $action);
+        $this->assertStringContainsString('kjdev/zstd:0.19.1', $action);
+        $this->assertStringContainsString('phpversion("zstd") !== "0.19.1"', $action);
     }
 
     public function testStaticPrerequisitesRunBeforePhpZstdAndComposer(): void

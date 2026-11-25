@@ -11,8 +11,8 @@ runs:
         php_bin="$(command -v php)"
         php_config="$(command -v php-config)"
         if [[ "$RUNNER_OS" == Linux ]]; then
-          sudo --non-interactive env "PATH=$PATH" "$pie" install --no-interaction --with-php-config="$php_config" kjdev/zstd:0.19.0
+          sudo --non-interactive env "PATH=$PATH" "$pie" install --no-interaction --with-php-config="$php_config" kjdev/zstd:0.19.1
         else
-          "$pie" install --no-interaction --with-php-config="$php_config" kjdev/zstd:0.19.0
+          "$pie" install --no-interaction --with-php-config="$php_config" kjdev/zstd:0.19.1
         fi
-        "$php_bin" -r 'if (phpversion("zstd") !== "0.19.0") { fwrite(STDERR, "Expected zstd 0.19.0 to be loaded\n"); exit(1); }'
+        "$php_bin" -r 'if (phpversion("zstd") !== "0.19.1") { fwrite(STDERR, "Expected zstd 0.19.1 to be loaded\n"); exit(1); }'

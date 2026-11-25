@@ -75,7 +75,7 @@ run `bin/spc check-update --json` using the pinned SPC executable to compare
 its cached downloads with upstream versions where supported.
 
 Release jobs provision their separate system PHP using setup-php for bundled
-extensions and checksum-pinned PIE 1.6.0 for `kjdev/zstd:0.19.0`. They verify the
+extensions and checksum-pinned PIE 1.6.0 for `kjdev/zstd:0.19.1`. They verify the
 loaded version before Composer. This does not change the native runtime inputs.
 
 ## Runtime
