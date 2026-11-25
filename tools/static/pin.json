@@ -1,4 +1,5 @@
 {
+    "runtime_revision": 1,
     "static_php_cli_commit": "59584de4aa9d8067e4ce30d2ff990e7b9e14db43",
     "static_php_cli_repository": "https://github.com/crazywhalecc/static-php-cli.git",
     "php_version": "8.5.8",
