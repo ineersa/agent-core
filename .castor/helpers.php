@@ -450,17 +450,17 @@ function qa_standalone_test_cache_dir(): string
     if ($standalone && realpath($projectRoot.'/.hatfield') !== $projectRoot.'/.hatfield') {
         throw new \RuntimeException('Standalone test cache requires a project-local .hatfield directory.');
     }
-    if ($standalone ? !mkdir($path, 0777) : (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path))) {
-        throw new \RuntimeException(\sprintf('Unable to create standalone test cache directory "%s".', $path));
-    }
     if ($standalone) {
-        register_shutdown_function(static function () use ($path): void {
+        $owned = OwnedTemporaryDirectory::allocate(\dirname($path), basename($path), 0777);
+        register_shutdown_function(static function () use ($owned): void {
             try {
-                remove_path_checked($path);
+                $owned->remove();
             } catch (\Throwable $e) {
                 fwrite(\STDERR, 'Standalone test cache cleanup failed: '.$e->getMessage()."\n");
             }
         });
+    } elseif (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
+        throw new \RuntimeException(\sprintf('Unable to create standalone test cache directory "%s".', $path));
     }
 
     putenv('HATFIELD_CACHE_DIR='.$resolved);
