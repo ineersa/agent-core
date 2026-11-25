@@ -39,6 +39,14 @@ final class StaticRuntimeCacheTest extends TestCase
             distribution_cache_runtime($cache, $compiled, $provenance);
             $filesystem->dumpFile($cache.'/micro.sfx', 'changed micro');
             $this->assertFalse(distribution_cached_runtime_is_valid($cache, $fingerprint));
+            distribution_cache_runtime($cache, $compiled, $provenance);
+            $filesystem->dumpFile($cache.'/php', "#!/bin/sh\nexit 1\n");
+            $filesystem->chmod($cache.'/php', 0755);
+            $manifest = json_decode((string) file_get_contents($cache.'/sha256.json'), true, flags: \JSON_THROW_ON_ERROR);
+            $manifest['php'] = hash_file('sha256', $cache.'/php');
+            $filesystem->dumpFile($cache.'/sha256.json', json_encode($manifest, \JSON_THROW_ON_ERROR));
+            $this->expectOutputRegex('/Cached native runtime failed CLI verification/');
+            $this->assertFalse(distribution_cached_runtime_is_valid($cache, $fingerprint));
         } finally {
             TestDirectoryIsolation::removeDirectory($work);
         }
@@ -47,7 +55,14 @@ final class StaticRuntimeCacheTest extends TestCase
     public function testAppVersionDoesNotInvalidateRuntimeButBuildFlagsDo(): void
     {
         require_once ProjectDir::get().'/.castor/distribution.php';
-        $target = distribution_host_target();
+        try {
+            $target = distribution_host_target();
+        } catch (\RuntimeException $e) {
+            $this->markTestSkipped($e->getMessage());
+        }
+        if (!isset(distribution_targets()[$target])) {
+            $this->markTestSkipped('No native artifact target for this host.');
+        }
         $pin = distribution_static_pin();
         $original = distribution_runtime_fingerprint($target, $pin);
         $version = getenv('HATFIELD_BUILD_VERSION');
@@ -58,6 +73,16 @@ final class StaticRuntimeCacheTest extends TestCase
             $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['runtime_revision' => $pin['runtime_revision'] + 1] + $pin));
         } finally {
             putenv(false === $version ? 'HATFIELD_BUILD_VERSION' : 'HATFIELD_BUILD_VERSION='.$version);
+        }
+
+        foreach (['SPC_TARGET', 'SPC_TOOLCHAIN', 'SPC_USE_LLVM', 'SPC_MUSL_DYNAMIC'] as $selector) {
+            $originalValue = getenv($selector);
+            try {
+                putenv($selector.'='.$originalValue.'-fingerprint-test');
+                $this->assertNotSame($original, distribution_runtime_fingerprint($target, $pin), $selector);
+            } finally {
+                putenv(false === $originalValue ? $selector : $selector.'='.$originalValue);
+            }
         }
     }
 }

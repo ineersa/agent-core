@@ -29,14 +29,27 @@ final class BuildDistributionScriptTest extends TestCase
         $workflow = \Symfony\Component\Yaml\Yaml::parseFile($root.'/.github/workflows/release.yml');
         $phpSetups = 0;
         foreach ($workflow['jobs'] as $job) {
+            $hasPhpSetup = false;
+            $zstdSetups = 0;
             foreach ($job['steps'] as $step) {
                 if (str_starts_with($step['uses'] ?? '', 'shivammathur/setup-php@')) {
                     ++$phpSetups;
-                    $this->assertContains('zstd', array_map('trim', explode(',', $step['with']['extensions'])));
+                    $hasPhpSetup = true;
+                    $this->assertNotContains('zstd', array_map('trim', explode(',', $step['with']['extensions'])));
+                    $this->assertStringContainsString('pie:1.6.0@sha256:', $step['with']['tools']);
+                }
+                if ('./.github/actions/setup-zstd' === ($step['uses'] ?? null)) {
+                    $this->assertTrue($hasPhpSetup, 'Install zstd after setting up system PHP.');
+                    $this->assertSame(5, $step['timeout-minutes']);
+                    ++$zstdSetups;
                 }
             }
+            $this->assertSame($hasPhpSetup ? 1 : 0, $zstdSetups);
         }
         $this->assertSame(3, $phpSetups);
+        $action = (string) file_get_contents($root.'/.github/actions/setup-zstd/action.yml');
+        $this->assertStringContainsString('kjdev/zstd:0.19.0', $action);
+        $this->assertStringContainsString('phpversion("zstd") !== "0.19.0"', $action);
     }
 
     public function testPharOnlyInvokesCastorWithAllowMissingNativeAndSpaceReleaseVersion(): void

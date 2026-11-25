@@ -298,12 +298,12 @@ jobs:
           castor distribution:checksums
           # Verify checksums + PHAR content; native topology already ran per matrix runner.
           castor distribution:verify --skip-topology
-          # Ensure SHA256SUMS lists exactly the four payloads.
+          # Ensure SHA256SUMS lists exactly the seven payloads.
           test -s var/tmp/dist/SHA256SUMS
-          for name in hatfield.phar hatfield.linux-amd64 hatfield.linux-arm64 hatfield.darwin-arm64; do
+          for name in hatfield.phar hatfield.linux-amd64 hatfield.linux-arm64 hatfield.darwin-arm64 runtime-linux-amd64.json runtime-linux-arm64.json runtime-darwin-arm64.json; do
             grep -E "^[a-f0-9]{64}  ${name}\$" var/tmp/dist/SHA256SUMS
           done
-          test "$(grep -cE '^[a-f0-9]{64}  ' var/tmp/dist/SHA256SUMS)" -eq 4
+          test "$(grep -cE '^[a-f0-9]{64}  ' var/tmp/dist/SHA256SUMS)" -eq 7
 
       - name: Host-compatible version smoke
         run: |

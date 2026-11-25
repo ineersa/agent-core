@@ -102,6 +102,9 @@ PHP;
         $pin = json_decode((string) file_get_contents($pinPath), true);
         $this->assertIsArray($pin);
 
+        $this->assertIsInt($pin['runtime_revision'] ?? null);
+        $this->assertGreaterThan(0, $pin['runtime_revision']);
+
         // Exact committed pins (release reproducibility contract).
         $this->assertSame('8.5.8', $pin['php_version'] ?? null);
         $this->assertSame(
@@ -145,7 +148,7 @@ PHP;
         $this->assertNotEmpty($pin['static_php_cli_repository'] ?? null);
     }
 
-    public function testReleaseArtifactCatalogIncludesFourPayloads(): void
+    public function testReleaseArtifactCatalogIncludesSevenPayloads(): void
     {
         $root = ProjectDir::get();
         require_once $root.'/.castor/helpers.php';
@@ -155,12 +158,13 @@ PHP;
             HATFIELD_DIST_ARTIFACTS,
             static fn (string $name): bool => 'SHA256SUMS' !== $name,
         ));
-        $this->assertCount(4, $payloads);
+        $this->assertCount(7, $payloads);
         $this->assertContains('hatfield.phar', $payloads);
         $targets = ['linux-amd64', 'linux-arm64', 'darwin-arm64'];
         $this->assertSame($targets, array_keys(distribution_targets()));
         foreach ($targets as $target) {
             $this->assertContains('hatfield.'.$target, $payloads);
+            $this->assertContains('runtime-'.$target.'.json', $payloads);
             $this->assertNotContains('hatfield.'.$target.'.php', $payloads);
         }
 
@@ -168,7 +172,7 @@ PHP;
         $definition = Yaml::parse($workflow);
         $this->assertSame($targets, array_column($definition['jobs']['static']['strategy']['matrix']['include'], 'target'));
         $this->assertStringContainsString(
-            'test "$(grep -cE \'^[a-f0-9]{64}  \' var/tmp/dist/SHA256SUMS)" -eq 4',
+            'test "$(grep -cE \'^[a-f0-9]{64}  \' var/tmp/dist/SHA256SUMS)" -eq 7',
             $workflow,
         );
         $this->assertStringNotContainsString('darwin-amd64', $workflow);

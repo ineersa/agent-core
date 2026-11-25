@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Castor\Attribute\AsOption;
 use Castor\Attribute\AsTask;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Process\ExecutableFinder;
+use Symfony\Component\Process\Process;
 
 /**
  * @param array{php_version: string, extensions: list<string>, micro_fake_cli: bool} $pin
@@ -48,17 +50,36 @@ function distribution_runtime_fingerprint(string $target, array $pin): string
     }
 
     $tools = [];
-    foreach (['cc', 'gcc', 'g++', 'clang', 'clang++', 'ld', 'ar', 'ranlib', 'strip', 'make', 'cmake', 'pkg-config', 'autoconf', 'automake', 'libtool', 're2c', 'flex', 'gperf', 'bison'] as $tool) {
-        $path = trim((string) shell_exec('command -v '.escapeshellarg($tool).' 2>/dev/null'));
-        if ('' !== $path && is_file($path)) {
-            $tools[$tool] = [hash_file('sha256', $path), trim((string) shell_exec(escapeshellarg($path).' --version 2>/dev/null'))];
+    $finder = new ExecutableFinder();
+    foreach (['cc', 'gcc', 'g++', 'clang', 'clang++', 'ld', 'ldd', 'ar', 'ranlib', 'strip', 'make', 'cmake', 'pkg-config', 'autoconf', 'automake', 'libtool', 're2c', 'flex', 'gperf', 'bison'] as $tool) {
+        $path = $finder->find($tool);
+        if (null === $path) {
+            continue;
+        }
+        $digest = hash_file('sha256', $path);
+        if (false === $digest) {
+            throw new RuntimeException('Unable to fingerprint native build tool: '.$path);
+        }
+        // Apple ld/ar and other valid tools need not support --version.
+        $tools[$tool] = $digest;
+        if (in_array($tool, ['cc', 'gcc', 'g++', 'clang', 'clang++'], true)) {
+            $tools[$tool] = [$digest, trim((new Process([$path, '--version']))->mustRun()->getOutput())];
         }
     }
-    $platform = str_starts_with($target, 'darwin-')
-        ? CastorTasks\run_checked('xcodebuild -version && xcrun --show-sdk-version && xcrun --show-sdk-build-version && sw_vers')
-        : [(string) @file_get_contents('/etc/os-release'), trim((string) shell_exec('getconf GNU_LIBC_VERSION 2>/dev/null'))];
+    if (str_starts_with($target, 'darwin-')) {
+        // xcrun works with Command Line Tools alone; xcodebuild need not be installed.
+        $platform = array_map(static fn (array $probe): string => trim((new Process($probe))->mustRun()->getOutput()), [
+            ['xcrun', 'clang', '--version'], ['xcrun', '--show-sdk-version'], ['xcrun', '--show-sdk-build-version'], ['sw_vers'],
+        ]);
+    } else {
+        $osRelease = is_file('/etc/os-release') ? '/etc/os-release' : '/usr/lib/os-release';
+        $platform = file_get_contents($osRelease);
+        if (false === $platform) {
+            throw new RuntimeException('Unable to fingerprint native host OS: '.$osRelease);
+        }
+    }
     $env = [];
-    foreach (['CC', 'CXX', 'AR', 'LD', 'RANLIB', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS', 'SDKROOT', 'DEVELOPER_DIR', 'MACOSX_DEPLOYMENT_TARGET', 'CMAKE_PREFIX_PATH', 'PKG_CONFIG_PATH', 'PKG_CONFIG_LIBDIR', 'CPATH', 'LIBRARY_PATH', 'ImageOS', 'ImageVersion', 'SPC_LIBC'] as $variable) {
+    foreach (['CC', 'CXX', 'AR', 'LD', 'RANLIB', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS', 'SDKROOT', 'DEVELOPER_DIR', 'MACOSX_DEPLOYMENT_TARGET', 'CMAKE_PREFIX_PATH', 'PKG_CONFIG_PATH', 'PKG_CONFIG_LIBDIR', 'CPATH', 'LIBRARY_PATH', 'ImageOS', 'ImageVersion', 'SPC_LIBC', 'SPC_TARGET', 'SPC_TOOLCHAIN', 'SPC_USE_LLVM', 'SPC_MUSL_DYNAMIC'] as $variable) {
         $env[$variable] = getenv($variable);
     }
 

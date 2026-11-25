@@ -30,6 +30,9 @@ const HATFIELD_DIST_ARTIFACTS = [
     'hatfield.linux-amd64',
     'hatfield.linux-arm64',
     'hatfield.darwin-arm64',
+    'runtime-linux-amd64.json',
+    'runtime-linux-arm64.json',
+    'runtime-darwin-arm64.json',
     'SHA256SUMS',
 ];
 
@@ -385,7 +388,7 @@ function distribution_build_micro_sfx(string $target, bool $requireCachedRuntime
     $cacheRoot = distribution_root().'/var/tmp/static-runtime';
     $filesystem = new Filesystem();
     $filesystem->mkdir($cacheRoot);
-    // SPC shares the target work directory across fingerprints.
+    // Fingerprints share the SPC checkout and disposable phpmicro staging.
     $lock = (new LockFactory(new FlockStore($cacheRoot)))->createLock($target);
     $lock->acquire(true);
     try {
@@ -1769,10 +1772,7 @@ function distribution_build_static(
     );
     distribution_smoke_native_process_topology($out);
     (new Filesystem())->copy($built['work_dir'].'/provenance.json', $dist.'/runtime-'.$target.'.json', true);
-    distribution_write_sha256sums($dist, array_values(array_filter(
-        ($scan = scandir($dist)) !== false ? $scan : [],
-        static fn (string $f): bool => str_starts_with($f, 'hatfield.')
-    )));
+    distribution_write_sha256sums($dist, array_values(array_filter(HATFIELD_DIST_ARTIFACTS, static fn (string $name): bool => is_file($dist.'/'.$name))));
     echo "Static binary ready: {$out} (phar source={$resolved['source']})\n";
 }
 
@@ -1842,10 +1842,7 @@ function distribution_checksums(
     if (!is_dir($dist)) {
         throw new RuntimeException('Dist dir missing: '.$dist);
     }
-    $names = array_values(array_filter(
-        ($scan = scandir($dist)) !== false ? $scan : [],
-        static fn (string $f): bool => str_starts_with($f, 'hatfield.')
-    ));
+    $names = array_values(array_filter(HATFIELD_DIST_ARTIFACTS, static fn (string $name): bool => is_file($dist.'/'.$name)));
     $path = distribution_write_sha256sums($dist, $names);
     echo "Wrote {$path}\n";
 }
