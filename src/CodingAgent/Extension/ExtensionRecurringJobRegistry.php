@@ -107,7 +107,7 @@ final class ExtensionRecurringJobRegistry
                 continue;
             }
             // Only carry an interval-shaped label, never arbitrary source text.
-            $label = 1 === preg_match('/\A(?:[0-9]+ (?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)|P[0-9YMWDTHS.]+)\z/i', $job->every)
+            $label = 1 === preg_match('/\A[0-9]+ (?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\z/i', $job->every)
                 ? 'Every '.substr($job->every, 0, 58) : 'Recurring schedule';
             $recurring = RecurringMessage::every($job->every, new \stdClass(), $job->from, $job->until ?? new \DateTimeImmutable('3000-01-01'));
             $schedules[] = new TuiScheduleDTO($job->id, $label, true, $recurring->getTrigger()->getNextRunDate($now));

@@ -159,6 +159,8 @@ final class Hatfield360ExtensionTest extends TestCase
     public function testScheduleSnapshotsAndAppliedTurnTrigger(): void
     {
         $extension = $this->extension();
+        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0));
+        $this->assertArrayNotHasKey('schedules', $this->snapshot($extension));
         $next = new \DateTimeImmutable('2026-01-01T00:00:00.123Z');
         $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0, [new TuiScheduleDTO('id', 'Every minute', true, $next)]));
         $this->assertSame([['id' => 'id', 'label' => 'Every minute', 'recurring' => true, 'nextRunAt' => 1767225600123]], $this->snapshot($extension)['schedules']);
@@ -204,10 +206,10 @@ final class Hatfield360ExtensionTest extends TestCase
         }
 
         $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0, []));
-        $this->assertSame([], $this->snapshot($extension)['schedules']);
+        $this->assertArrayNotHasKey('schedules', $this->snapshot($extension));
         $overflow = array_map(static fn (int $i): TuiScheduleDTO => new TuiScheduleDTO((string) $i, 'Every minute', true, null), range(1, 17));
         $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0, $overflow));
-        $this->assertNull($this->snapshot($extension)['schedules']);
+        $this->assertArrayNotHasKey('schedules', $this->snapshot($extension));
     }
 
     private function extension(): Hatfield360Extension

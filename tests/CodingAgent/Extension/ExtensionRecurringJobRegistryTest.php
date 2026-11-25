@@ -62,6 +62,7 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
         $this->assertSame([], $due());
         $clock->modify('+500 milliseconds');
         $source->definitions = [new RecurringJobDTO('short', 'first', ['short' => true], '5 minutes', $clock->now(), $clock->now()->modify('+60 seconds'))];
+        $this->assertSame('Every 5 minutes', $registry->sessionSchedules('owner')[0]->label);
         $this->assertNull($registry->sessionSchedules('owner')[0]->nextRunAt);
         $clock->modify('+500 milliseconds');
         $this->assertSame([], $due(), 'The scheduler does not generate the initial occurrence.');
@@ -72,6 +73,10 @@ final class ExtensionRecurringJobRegistryTest extends IsolatedKernelTestCase
         $this->assertCount(1, $bus->messages);
         $from = $clock->now();
         $until = $from->modify('+1 hour');
+        $source->definitions = [new RecurringJobDTO('iso', 'first', [], 'PT1H', $from, $until->modify('+1 second'))];
+        [$iso] = $registry->sessionSchedules('owner');
+        $this->assertSame('Recurring schedule', $iso->label);
+        $this->assertEquals($until, $iso->nextRunAt);
         $source->definitions = [new RecurringJobDTO('stable', 'first', ['value' => 1], '1 minute', $from, $until)];
         [$view] = $registry->sessionSchedules('owner');
         $this->assertSame(['id', 'label', 'recurring', 'nextRunAt'], array_keys(get_object_vars($view)));

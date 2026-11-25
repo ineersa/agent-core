@@ -382,7 +382,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         }
         $fields = [
             'provider' => 'hatfield', 'title' => $this->title, 'turn' => $this->turn, 'attention' => $attention,
-            'schedules' => $this->schedules,
+            ...(null === $this->schedules || [] === $this->schedules ? [] : ['schedules' => $this->schedules]),
             'activeSubagents' => $children > 1024 || ('completed' === ($this->turn['status'] ?? null) && false !== $mainActive) ? null : $children,
             'backgroundScripts' => $scripts > 1024 ? null : $scripts, 'tool' => $this->tools[array_key_last($this->tools) ?? ''] ?? null,
         ];
