@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "253403cdd04149b00690c9abb7a5d259",
+    "content-hash": "a8a37b37bc59b9cb786ca3aae92bd287",
     "packages": [
         {
             "name": "amphp/amp",
@@ -5646,16 +5646,22 @@
         },
         {
             "name": "symfony/ai-open-responses-platform",
-            "version": "1.0.0-BETA1",
+            "version": "dev-main",
             "source": {
                 "type": "git",
-                "url": "https://github.com/ineersa/ai.git",
+                "url": "https://github.com/symfony/ai-open-responses-platform.git",
                 "reference": "329058c0848808733badac76e7e163da0fea577e"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/symfony/ai-open-responses-platform/zipball/329058c0848808733badac76e7e163da0fea577e",
+                "reference": "329058c0848808733badac76e7e163da0fea577e",
+                "shasum": ""
             },
             "require": {
                 "php": ">=8.2",
                 "symfony/ai-platform": "^1.0",
-                "symfony/http-client": "^7.3|^8.0"
+                "symfony/http-client": "^7.4|^8.0"
             },
             "require-dev": {
                 "phpstan/phpstan": "^2.1",
@@ -5663,11 +5669,12 @@
                 "phpstan/phpstan-strict-rules": "^2.0",
                 "phpunit/phpunit": "^11.5.53"
             },
+            "default-branch": true,
             "type": "symfony-ai-platform",
             "extra": {
                 "thanks": {
-                    "name": "symfony/ai",
-                    "url": "https://github.com/symfony/ai"
+                    "url": "https://github.com/symfony/ai",
+                    "name": "symfony/ai"
                 }
             },
             "autoload": {
@@ -5675,12 +5682,7 @@
                     "Symfony\\AI\\Platform\\Bridge\\OpenResponses\\": ""
                 }
             },
-            "autoload-dev": {
-                "psr-4": {
-                    "Symfony\\AI\\PHPStan\\": "../../../../../.phpstan/",
-                    "Symfony\\AI\\Platform\\Bridge\\OpenResponses\\Tests\\": "Tests/"
-                }
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -5700,11 +5702,33 @@
             ],
             "description": "Open Responses platform bridge for Symfony AI",
             "keywords": [
+                "Bridge",
                 "ai",
-                "bridge",
                 "open-responses",
                 "platform"
-            ]
+            ],
+            "support": {
+                "source": "https://github.com/symfony/ai-open-responses-platform/tree/main"
+            },
+            "funding": [
+                {
+                    "url": "https://symfony.com/sponsor",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/fabpot",
+                    "type": "github"
+                },
+                {
+                    "url": "https://github.com/nicolas-grekas",
+                    "type": "github"
+                },
+                {
+                    "url": "https://tidelift.com/funding/github/packagist/symfony/symfony",
+                    "type": "tidelift"
+                }
+            ],
+            "time": "2026-11-18T23:42:20+00:00"
         },
         {
             "name": "symfony/ai-platform",
@@ -14170,6 +14194,12 @@
             "version": "dev-fix/preserve-client-structured-json",
             "alias": "0.10.0",
             "alias_normalized": "0.10.0.0"
+        },
+        {
+            "package": "symfony/ai-open-responses-platform",
+            "version": "dev-main",
+            "alias": "1.0.0-BETA1",
+            "alias_normalized": "1.0.0.0-beta1"
         }
     ],
     "minimum-stability": "dev",
@@ -14181,7 +14211,7 @@
         "symfony/ai-agent": 10,
         "symfony/ai-generic-platform": 10,
         "symfony/ai-mistral-platform": 10,
-        "symfony/ai-open-responses-platform": 10,
+        "symfony/ai-open-responses-platform": 20,
         "symfony/ai-platform": 10,
         "symfony/config": 20,
         "symfony/console": 20,

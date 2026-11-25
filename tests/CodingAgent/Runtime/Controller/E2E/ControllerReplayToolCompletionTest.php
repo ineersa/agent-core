@@ -16,8 +16,9 @@ use PHPUnit\Framework\Attributes\Group;
  * normal gate contention. Its contracts are covered at their stable seams:
  * active-tool cancellation and terminalization by ApplyCommandHandlerTest and
  * ToolCallResultHandlerTest; cancelled-run follow-up dispatch by
- * ApplyCommandHandlerTest and AdvanceRunHandlerTest; and replay-controller
- * follow-up assistant output by ControllerReplayAutoCompactionLifecycleTest.
+ * ApplyCommandHandlerTest and AdvanceRunHandlerTest. The auto-compaction
+ * controller journey was removed after a runtime-readiness timeout; its
+ * compaction-to-follow-up process integration is no longer covered there.
  * SafeGuardApproval covers outside-CWD write + HITL, not this unguarded
  * completion path. This case restores the deleted ControllerReplaySmokeTest
  * contract with early-exit waits and a fail-loud post-tool fixture so exhaustion
