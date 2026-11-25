@@ -52,6 +52,75 @@ final class BuildDistributionScriptTest extends TestCase
         $this->assertStringContainsString('phpversion("zstd") !== "0.19.0"', $action);
     }
 
+    public function testStaticPrerequisitesRunBeforePhpZstdAndComposer(): void
+    {
+        $workflow = \Symfony\Component\Yaml\Yaml::parseFile(ProjectDir::get().'/.github/workflows/release.yml');
+        $setup = [];
+        foreach ($workflow['jobs']['static']['steps'] as $step) {
+            $uses = $step['uses'] ?? '';
+            if (\in_array($uses, ['./.github/actions/static-prerequisites', './.github/actions/setup-zstd'], true)) {
+                $setup[] = $uses;
+            } elseif (str_starts_with($uses, 'shivammathur/setup-php@')) {
+                $setup[] = 'php';
+            } elseif (str_starts_with($step['run'] ?? '', 'composer install ')) {
+                $setup[] = 'composer';
+            }
+        }
+        $this->assertSame(['./.github/actions/static-prerequisites', 'php', './.github/actions/setup-zstd', 'composer'], $setup);
+    }
+
+    public function testRuntimeRestoreRecoversOnlyAnExactDraftPrerelease(): void
+    {
+        $workflow = \Symfony\Component\Yaml\Yaml::parseFile(ProjectDir::get().'/.github/workflows/release.yml');
+        $steps = array_column($workflow['jobs']['static']['steps'], null, 'name');
+        $restore = $steps['Restore published runtime if present']['run'];
+        $publish = $steps['Publish verified runtime prerelease'];
+        $this->assertSame("steps.restore.outputs.hit == 'false'", $publish['if']);
+        $this->assertStringNotContainsString('--clobber', $publish['run']);
+
+        $fakeGh = <<<'BASH'
+gh() {
+  case "$1" in
+    api) printf '%s' "$RELEASE_STATE"; return "$LOOKUP_STATUS" ;;
+    release)
+      printf '%s\n' "$*"
+      if [[ "$2" == download ]]; then
+        touch "var/tmp/static-runtime/$FINGERPRINT/php"
+      fi
+      ;;
+    *) return 99 ;;
+  esac
+}
+BASH;
+        $work = TestDirectoryIsolation::createProjectTempDir('runtime-restore');
+        $fingerprint = str_repeat('a', 64);
+        $tag = 'static-runtime-'.$fingerprint;
+        try {
+            foreach ([
+                'absent' => ['', 0, 0, 'hit=false', ''],
+                'draft prerelease' => ["true\ttrue", 0, 0, 'hit=false', "release delete $tag --repo test/repo --yes"],
+                'published prerelease' => ["false\ttrue", 0, 0, 'hit=true', "release download $tag --repo test/repo --dir var/tmp/static-runtime/$fingerprint --pattern php --pattern micro.sfx --pattern sha256.json --pattern provenance.json"],
+                'draft non-prerelease' => ["true\tfalse", 0, 1, null, ''],
+                'published non-prerelease' => ["false\tfalse", 0, 1, null, ''],
+                'failed lookup with partial result' => ["true\ttrue", 2, 2, null, ''],
+            ] as $case => [$state, $lookupStatus, $status, $hit, $command]) {
+                $output = $work.'/'.str_replace(' ', '-', $case).'.out';
+                $process = new Process(['bash', '-c', $fakeGh."\n".$restore], $work, [
+                    'RELEASE_STATE' => $state,
+                    'LOOKUP_STATUS' => (string) $lookupStatus,
+                    'FINGERPRINT' => $fingerprint,
+                    'GITHUB_REPOSITORY' => 'test/repo',
+                    'GITHUB_OUTPUT' => $output,
+                ]);
+                $this->assertSame($status, $process->run(), $case.': '.$process->getErrorOutput());
+                $this->assertSame($command, trim($process->getOutput()), $case);
+                $this->assertSame($hit, is_file($output) ? trim((string) file_get_contents($output)) : null, $case);
+            }
+        } finally {
+            TestDirectoryIsolation::removeDirectory($work);
+        }
+    }
+
     public function testPharOnlyInvokesCastorWithAllowMissingNativeAndSpaceReleaseVersion(): void
     {
         $root = ProjectDir::get();

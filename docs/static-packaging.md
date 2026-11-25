@@ -60,10 +60,12 @@ support. It always fuses the canonical PHAR and runs the same fused artifact
 and native topology smoke checks. Only the release workflow caches these
 compiled outputs as `static-runtime-<fingerprint>` prereleases, shared across
 app tags but never marked latest. Run the Release workflow manually on the
-default branch to prepare runtimes without publishing an app release. An
-incomplete runtime release needs operator inspection; it is not a cache miss
-and the workflow never overwrites its assets. Increment `runtime_revision` in
-`tools/static/pin.json` deliberately to rebuild with freshly resolved downloads.
+default branch to prepare runtimes without publishing an app release. If an
+upload was interrupted, the next job for the same fingerprint deletes the draft
+prerelease and rebuilds. Published runtimes are never overwritten; an incomplete
+published runtime or unexpected release state needs operator inspection. Increment
+`runtime_revision` in `tools/static/pin.json` deliberately to rebuild with freshly
+resolved downloads.
 `castor distribution:clean` removes the local runtime cache.
 
 Each runtime and app release includes an SPC download inventory: source and

@@ -92,6 +92,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Install static build prerequisites
+        uses: ./.github/actions/static-prerequisites
+
       - name: Setup PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         timeout-minutes: 5
@@ -112,9 +115,6 @@ jobs:
 
       - name: Install Castor
         uses: ./.github/actions/setup-castor
-
-      - name: Install static build prerequisites
-        uses: ./.github/actions/static-prerequisites
 
       - name: Fingerprint compiled native runtime inputs
         id: runtime
@@ -137,12 +137,17 @@ jobs:
           # An exhaustive successful listing is the only evidence of absence.
           match="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
             --jq '.[] | select(.tag_name == "'"${tag}"'") | [.draft, .prerelease] | @tsv')"
+          if [[ "$match" == $'true\ttrue' ]]; then
+            # This target's serialized job owns recovery of an interrupted upload.
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
+            match=''
+          fi
           if [[ -z "$match" ]]; then
             echo 'hit=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [[ "$match" != $'false\ttrue' ]]; then
-            echo "Expected a published prerelease for ${tag}; inspect incomplete or unexpected release before retrying" >&2
+            echo "Unexpected release state for ${tag}; inspect before retrying" >&2
             exit 1
           fi
           destination="var/tmp/static-runtime/${FINGERPRINT}"
