@@ -333,7 +333,8 @@ approval or question waits observed by the TUI. Linux managed shells can also
 attempt registration using the running Hatfield process identity. Outside a
 managed launch it does nothing. Windows transport is not supported.
 
-Hatfield 360 can show a completion notice once the response is complete, no
-subagents are active, and no input is pending. Background scripts are shown
+Hatfield 360 can show a completion notice after Hatfield confirms that the
+response has been complete for at least five seconds with no active subagents
+or pending input. Background scripts are shown
 separately. Delivery is best effort: a disconnected app does not block editing,
 and missed events are not replayed.

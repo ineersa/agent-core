@@ -264,6 +264,104 @@ final class Hatfield360ClaudeHookTest extends TestCase
         }
     }
 
+    public function testCronJobsAreReportedAndTheirRunsAreScheduledTurns(): void
+    {
+        // Payload shapes recorded from Claude Code 2.1.331 `/loop` hooks.
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $server = listen('unix://'.$directory.'/s');
+        $environment = ['H360_STATUS_ENDPOINT' => $directory.'/s', 'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444', 'H360_STATUS_TOKEN' => str_repeat('a', 64)];
+        $frames = [];
+        $send = function (array $hook) use ($server, $environment, &$frames): array {
+            return $frames[] = $this->exchange($server, $this->launch($environment, $hook + ['session_id' => 'cron-session']));
+        };
+        $now = (int) (microtime(true) * 1000);
+        $turn = static fn (int $n): array => ['prompt_id' => \sprintf('66666666-6666-4666-8666-%012d', $n)];
+        $prompt = static fn (int $n, string $text): array => $turn($n) + ['hook_event_name' => 'UserPromptSubmit', 'prompt' => $text];
+        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'background_tasks' => []];
+        $tool = static fn (int $n, string $name, array $input, array $response): array => $turn($n) + ['hook_event_name' => 'PostToolUse', 'tool_name' => $name, 'tool_use_id' => 'toolu_'.$name, 'tool_input' => $input, 'tool_response' => $response];
+        try {
+            $send(['hook_event_name' => 'SessionStart', 'source' => 'startup']);
+            $typed = $send($prompt(1, '/loop 7m say ping'));
+            $this->assertArrayNotHasKey('trigger', $typed['turn']);
+            $this->assertArrayNotHasKey('schedules', $typed, 'Sessions without schedules keep the original snapshot shape.');
+            $created = $send($tool(1, 'CronCreate', ['cron' => '*/7 * * * *', 'prompt' => 'say ping', 'recurring' => true], ['id' => '26923628', 'humanSchedule' => 'Every 7 minutes', 'recurring' => true, 'durable' => false, 'nextFireAt' => $now + 30_000.3875, 'maxAgeMs' => 2_592_000_000]));
+            $this->assertSame([['id' => '26923628', 'label' => 'Every 7 minutes', 'recurring' => true, 'nextRunAt' => $now + 30_000]], $created['schedules']);
+            $send($tool(1, 'CronCreate', ['cron' => '13 4 1 1 *', 'prompt' => 'say once', 'recurring' => false], ['id' => 'a61706d4', 'humanSchedule' => '13 4 1 1 *', 'recurring' => false, 'durable' => false, 'nextFireAt' => $now + 3_600_000]));
+            $idle = $send($turn(1) + $stop);
+            $this->assertSame(['26923628', 'a61706d4'], array_column($idle['schedules'], 'id'));
+
+            $run = $send($prompt(2, 'say ping'));
+            $this->assertSame('schedule', $run['turn']['trigger']);
+            $this->assertGreaterThan($now + 30_000, $run['schedules'][0]['nextRunAt'], 'A recurring job moves on to its next cron match.');
+            $this->assertSame('schedule', $send($turn(2) + $stop)['turn']['trigger']);
+
+            $early = $send($prompt(3, 'say once'));
+            $this->assertArrayNotHasKey('trigger', $early['turn'], 'A matching prompt typed long before the run is the user\'s own.');
+            $this->assertCount(2, $early['schedules']);
+            $send($turn(3) + $stop);
+
+            $send($prompt(4, 'list them'));
+            $listed = $send($tool(4, 'CronList', [], ['jobs' => [['id' => 'a61706d4', 'cron' => '13 4 1 1 *', 'humanSchedule' => '13 4 1 1 *', 'prompt' => 'say once', 'durable' => false, 'nextFireAt' => $now + 10_000]]]));
+            $this->assertSame([['id' => 'a61706d4', 'label' => '13 4 1 1 *', 'recurring' => false, 'nextRunAt' => $now + 10_000]], $listed['schedules'], 'The listing replaces the whole inventory.');
+            $send($turn(4) + $stop);
+
+            $once = $send($prompt(5, 'say once'));
+            $this->assertSame('schedule', $once['turn']['trigger']);
+            $this->assertArrayNotHasKey('schedules', $once, 'A one-shot job is gone once it runs.');
+            $send($turn(5) + $stop);
+
+            $send($prompt(6, '/loop 5m check'));
+            $send($tool(6, 'CronCreate', ['cron' => '*/5 * * * *', 'prompt' => 'check', 'recurring' => true], ['id' => 'b0000001', 'humanSchedule' => 'Every 5 minutes', 'recurring' => true, 'durable' => false, 'nextFireAt' => $now + 300_000, 'maxAgeMs' => 2_592_000_000]));
+            $deleted = $send($tool(6, 'CronDelete', ['id' => 'b0000001'], ['id' => 'b0000001']));
+            $this->assertArrayNotHasKey('schedules', $deleted);
+
+            foreach ($frames as $frame) {
+                $json = json_encode($frame, \JSON_THROW_ON_ERROR);
+                $this->assertStringNotContainsString('say ping', $json);
+                $this->assertStringNotContainsString('*/7', $json);
+            }
+        } finally {
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public function testSelfPacedLoopWakeupsAreScheduledTurnsUntilTheLoopStops(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $server = listen('unix://'.$directory.'/s');
+        $environment = ['H360_STATUS_ENDPOINT' => $directory.'/s', 'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444', 'H360_STATUS_TOKEN' => str_repeat('a', 64)];
+        $send = fn (array $hook): array => $this->exchange($server, $this->launch($environment, $hook + ['session_id' => 'wakeup-session']));
+        $now = (int) (microtime(true) * 1000);
+        $loop = '/loop reply with only the word ping, then wait about a minute before the next check';
+        $turn = static fn (int $n): array => ['prompt_id' => \sprintf('77777777-7777-4777-8777-%012d', $n)];
+        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'background_tasks' => []];
+        $wakeup = static fn (int $n, int $at): array => $turn($n) + ['hook_event_name' => 'PostToolUse', 'tool_name' => 'ScheduleWakeup', 'tool_use_id' => 'toolu_wake', 'tool_input' => ['delaySeconds' => 60, 'reason' => 'User asked for about a minute between checks.', 'prompt' => $loop, 'noop' => false], 'tool_response' => ['scheduledFor' => $at, 'clampedDelaySeconds' => 60]];
+        $expected = static fn (?int $at): array => [['id' => 'wakeup', 'label' => 'Self-paced loop', 'recurring' => true, 'nextRunAt' => $at]];
+        try {
+            $send(['hook_event_name' => 'SessionStart', 'source' => 'startup']);
+            $this->assertArrayNotHasKey('trigger', $send($turn(1) + ['hook_event_name' => 'UserPromptSubmit', 'prompt' => $loop])['turn']);
+            $this->assertSame($expected($now + 20_000), $send($wakeup(1, $now + 20_000))['schedules']);
+            $this->assertSame($expected($now + 20_000), $send($turn(1) + $stop)['schedules']);
+
+            $woken = $send($turn(2) + ['hook_event_name' => 'UserPromptSubmit', 'prompt' => $loop]);
+            $this->assertSame('schedule', $woken['turn']['trigger']);
+            $this->assertSame($expected(null), $woken['schedules'], 'The loop stays visible while its run decides on the next wakeup.');
+            $send($wakeup(2, $now + 80_000));
+            $this->assertSame($expected($now + 80_000), $send($turn(2) + $stop)['schedules']);
+
+            $last = $send($turn(3) + ['hook_event_name' => 'UserPromptSubmit', 'prompt' => $loop]);
+            $this->assertSame('schedule', $last['turn']['trigger']);
+            $ended = $send($turn(3) + $stop);
+            $this->assertSame('completed', $ended['turn']['status']);
+            $this->assertArrayNotHasKey('schedules', $ended, 'A run that schedules no further wakeup ends the loop.');
+            $this->assertArrayNotHasKey('trigger', $send($turn(4) + ['hook_event_name' => 'UserPromptSubmit', 'prompt' => $loop])['turn']);
+        } finally {
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     public function testDelayedChildRegistryCannotClearNewerUncertaintyOrPublishStaleScripts(): void
     {
         $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);

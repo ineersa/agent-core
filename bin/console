@@ -179,6 +179,7 @@ $createApplication = static function (Kernel $kernel) use ($isPhar): Application
         'log:search' => true,
         'log:tail' => true,
         'session:cache:inspect' => true,
+        'session:list' => true,
         'help' => true,
         'list' => true,
         'completion' => true,

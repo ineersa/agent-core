@@ -37,10 +37,18 @@ prompt is not an equivalent inventory of attention occurrences.
 The extension reads main activity and owned nonterminal children and Bash/code-mode
 work through the selected-session context, reusing the bottom panel's inventory
 sample for ordinary observations and refreshing it on selection, main completion,
-and child or job lifecycle changes. An unavailable read reports `null`. A successful main
-terminal event and a current zero-child count are required for completion;
-later child lifecycle events refresh the inventory. Scripts do not gate
-completion, and selecting a session does not replay past completions.
+and child or job lifecycle changes. An unavailable read reports `null`. After a
+successful main terminal event, completion waits for at least five seconds of
+known inactive main, zero unsettled children, and no observed attention request.
+During that delay the snapshot withholds the zero-child count; on the first
+eligible operational poll at or after the deadline, Hatfield refreshes activity
+and child inventory before reporting completion. Observed new work, attention,
+or unknown activity or child inventory invalidates the delay. Scripts remain
+informational, and selecting a session does not replay past completions.
+
+The extension API does not expose queued handoffs or steering intent. The delay
+covers handoffs that become observable during the window, but a handoff taking
+longer than five seconds to become observable can still follow a completion report.
 Final interactive quit attempts `session.ended`; drafts, switches, reloads and
 abrupt exits do not send it. Quit
 never initiates manual Linux bootstrap.

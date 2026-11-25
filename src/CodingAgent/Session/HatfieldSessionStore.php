@@ -298,32 +298,57 @@ final class HatfieldSessionStore
      *     updated_at: string,
      * }>
      */
-    public function listSessions(): array
+    public function listSessions(?\DateTimeImmutable $since = null, ?\DateTimeImmutable $until = null, ?string $query = null, ?int $limit = null, int $offset = 0): array
     {
-        $sessions = $this->getRepository()->findForCatalog();
+        if (0 === $limit) {
+            return [];
+        }
+        $needle = null === $query ? '' : u($query)->folded(false)->toString();
+        $searching = '' !== $needle;
+        $batchSize = $searching ? 200 : $limit;
+        $candidateOffset = $searching ? 0 : $offset;
+        $repository = $this->getRepository();
         $result = [];
 
-        foreach ($sessions as $session) {
-            $id = (string) $session['id'];
-            $name = $session['name'];
-            $promptPreview = $this->resolvePromptPreview($session['prompt']);
-            $displayTitle = $this->resolveDisplayTitle($id, $name, $promptPreview);
+        // SQLite cannot fold and truncate the picker title exactly. Apply the
+        // match and its offset after resolving titles, in bounded SQL batches.
+        do {
+            $sessions = $repository->findForCatalog($since, $until, $batchSize, $candidateOffset);
+            foreach ($sessions as $session) {
+                $id = (string) $session['id'];
+                $name = $session['name'];
+                $promptPreview = $this->resolvePromptPreview($session['prompt']);
+                $displayTitle = $this->resolveDisplayTitle($id, $name, $promptPreview);
 
-            $result[] = [
-                'sessionId' => $id,
-                'name' => $name,
-                'displayTitle' => $displayTitle,
-                'cwd' => $session['cwd'],
-                'prompt' => $session['prompt'],
-                'promptPreview' => $promptPreview,
-                'model' => $session['model'],
-                'model_provider' => $session['model_provider'],
-                'model_name' => $session['model_name'],
-                'reasoning' => $session['reasoning'],
-                'created_at' => (new \DateTimeImmutable($session['created_at']))->format(\DateTimeInterface::ATOM),
-                'updated_at' => (new \DateTimeImmutable($session['updated_at']))->format(\DateTimeInterface::ATOM),
-            ];
-        }
+                if ($searching && !str_contains(u($displayTitle)->folded(false)->toString(), $needle) && !str_contains($id, $needle)) {
+                    continue;
+                }
+                if ($searching && $offset > 0) {
+                    --$offset;
+                    continue;
+                }
+
+                $result[] = [
+                    'sessionId' => $id,
+                    'name' => $name,
+                    'displayTitle' => $displayTitle,
+                    'cwd' => $session['cwd'],
+                    'prompt' => $session['prompt'],
+                    'promptPreview' => $promptPreview,
+                    'model' => $session['model'],
+                    'model_provider' => $session['model_provider'],
+                    'model_name' => $session['model_name'],
+                    'reasoning' => $session['reasoning'],
+                    'created_at' => (new \DateTimeImmutable($session['created_at']))->format(\DateTimeInterface::ATOM),
+                    'updated_at' => (new \DateTimeImmutable($session['updated_at']))->format(\DateTimeInterface::ATOM),
+                ];
+                if (null !== $limit && \count($result) === $limit) {
+                    return $result;
+                }
+            }
+
+            $candidateOffset += \count($sessions);
+        } while ($searching && \count($sessions) === $batchSize);
 
         return $result;
     }
