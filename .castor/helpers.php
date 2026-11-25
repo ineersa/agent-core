@@ -15,6 +15,8 @@ use Symfony\Component\Process\Process;
 
 use function Castor\run;
 
+require_once __DIR__.'/OwnedTemporaryDirectory.php';
+
 const REPORTS_DIR = __DIR__.'/../var/reports';
 
 /**
@@ -413,10 +415,6 @@ function qa_test_home_dir(): string
         }
     }
 
-    putenv('HATFIELD_QA_TEST_HOME='.$resolved);
-    $_ENV['HATFIELD_QA_TEST_HOME'] = $resolved;
-    $_SERVER['HATFIELD_QA_TEST_HOME'] = $resolved;
-
     return $resolved;
 }
 
@@ -440,11 +438,24 @@ function qa_standalone_test_cache_dir(): string
         $segment = sanitize_qa_run_id_segment((string) $runId);
         $resolved = '.hatfield/cache-'.$segment;
     } else {
-        $resolved = '.hatfield/cache-test-pid-'.getmypid();
+        $resolved = '.hatfield/cache-test-pid-'.getmypid().'-'.bin2hex(random_bytes(8));
     }
 
     $path = $projectRoot.'/'.$resolved;
-    if (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
+    $standalone = false === $runId || '' === trim($runId);
+    if ($standalone && realpath($projectRoot.'/.hatfield') !== $projectRoot.'/.hatfield') {
+        throw new \RuntimeException('Standalone test cache requires a project-local .hatfield directory.');
+    }
+    if ($standalone) {
+        $owned = OwnedTemporaryDirectory::allocate(\dirname($path), basename($path), 0777);
+        register_shutdown_function(static function () use ($owned): void {
+            try {
+                $owned->remove();
+            } catch (\Throwable $e) {
+                fwrite(\STDERR, 'Standalone test cache cleanup failed: '.$e->getMessage()."\n");
+            }
+        });
+    } elseif (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
         throw new \RuntimeException(\sprintf('Unable to create standalone test cache directory "%s".', $path));
     }
 
@@ -477,7 +488,7 @@ function qa_test_home_shell_prefix(): string
 }
 
 // ─── PHAR packaging constants ──────────────────────────────────────────
-// Centralised so output paths, staging directories, and tooling references
+// Centralised so output paths, staging roots, and tooling references
 // have a single source of truth.  Every function that needs the PHAR path
 // calls hatfield_phar_path() instead of hard-coding a path.
 //
@@ -488,7 +499,7 @@ function qa_test_home_shell_prefix(): string
 //   HATFIELD_PHAR_PATH        — Override the PHAR output file path
 //                                (absolute, or project-root-relative).
 //   HATFIELD_PHAR_STAGING_DIR — Override the production Composer staging
-//                                dir (absolute path).
+//                                parent (absolute path).
 //   HATFIELD_PHAR_BOX_BIN     — Override the Box binary (defaults to
 //                                tools/phar/vendor/bin/box when the isolated
 //                                toolchain is present).
@@ -497,7 +508,7 @@ function qa_test_home_shell_prefix(): string
 const HATFIELD_PHAR_PATH_DEFAULT = 'var/tmp/phar/hatfield.phar';
 
 /** Default project-root-relative staging directory. */
-const HATFIELD_PHAR_STAGING_DIR_DEFAULT = 'var/tmp/phar-build/source';
+const HATFIELD_PHAR_STAGING_DIR_DEFAULT = 'var/tmp/phar-build';
 
 /** Default project-root-relative directory for session-owned PHAR copies. */
 const HATFIELD_PHAR_SESSION_COPIES_DIR_DEFAULT = 'var/tmp/phar/sessions';
@@ -535,29 +546,12 @@ function hatfield_phar_path(): string
     return HATFIELD_PHAR_PATH_DEFAULT; // last-resort fallback
 }
 
-/**
- * Resolve the PHAR staging directory.
- *
- * Respects HATFIELD_PHAR_STAGING_DIR if set; otherwise returns a
- * worktree-local path (var/tmp/phar-build/source under the project root).
- *
- * Worktree-local default prevents concurrent builds in sibling worktrees
- * from clobbering each other's staging area.
- */
-function hatfield_phar_staging_dir(): string
+/** Allocate a disposable child; the configured parent is never cleanup authority. */
+function allocate_phar_staging(string $root, ?string $override): OwnedTemporaryDirectory
 {
-    $override = getenv('HATFIELD_PHAR_STAGING_DIR');
+    $parent = null !== $override && '' !== $override ? $override : $root.'/'.HATFIELD_PHAR_STAGING_DIR_DEFAULT;
 
-    if (false !== $override && '' !== $override) {
-        return $override;
-    }
-
-    $root = realpath(__DIR__.'/..');
-    if (false !== $root) {
-        return $root.'/'.HATFIELD_PHAR_STAGING_DIR_DEFAULT;
-    }
-
-    return HATFIELD_PHAR_STAGING_DIR_DEFAULT; // last-resort fallback
+    return OwnedTemporaryDirectory::allocate($parent, 'source-'.bin2hex(random_bytes(8)));
 }
 
 /**
@@ -1229,7 +1223,7 @@ function phar_ensure(): string
         echo "PHAR not found. Building.\n";
     }
 
-    phar_build_with_lock($root);
+    phar_build_with_lock($root, force: false);
 
     return $pharPath;
 }
@@ -1240,7 +1234,7 @@ function phar_ensure(): string
  * Serialises concurrent phar_build() callers so parallel test workers
  * do not race on the shared staging directory.
  */
-function phar_build_with_lock(string $root): void
+function phar_build_with_lock(string $root, bool $force): string
 {
     $lockPath = $root.'/'.PHAR_BUILD_LOCK;
     if (!is_dir(\dirname($lockPath)) && !mkdir(\dirname($lockPath), 0755, true) && !is_dir(\dirname($lockPath))) {
@@ -1273,11 +1267,11 @@ function phar_build_with_lock(string $root): void
         // have built it while we were waiting. Uses the same predicate as
         // phar_ensure() so lock-holder and first check cannot diverge.
         $pharPath = hatfield_phar_path();
-        if (!phar_is_stale($root, $pharPath)) {
-            return;
+        if (!$force && !phar_is_stale($root, $pharPath)) {
+            return $pharPath;
         }
 
-        phar_build();
+        return phar_compile($root);
     } finally {
         flock($lockHandle, \LOCK_UN);
         fclose($lockHandle);
@@ -1304,8 +1298,8 @@ function hatfield_phar_session_copies_dir(): string
  * another launch after a rebuild cannot replace a live session's artifact.
  *
  * Same build reuses the immutable copy. A corrupt existing copy fails closed
- * rather than replacing bytes under a live process. Swept by
- * `castor clean:cleanup` (removes the whole var/tmp/phar tree).
+ * rather than replacing bytes under a live process. These copies are not
+ * build staging and must not be removed while a session may still use them.
  *
  * @param string      $pharPath    canonical artifact to copy from
  * @param string|null $sessionsDir override root for session copies (tests)
@@ -1717,21 +1711,15 @@ const HATFIELD_PHAR_AUTOLOADER_SUFFIX = 'HatfieldPharBuild';
  */
 function phar_build(): string
 {
-    $pharPath = hatfield_phar_path();
-    $root = realpath(__DIR__.'/..');
-    if (false === $root) {
-        throw new \RuntimeException('Unable to resolve project root for PHAR build.');
-    }
+    return phar_build_with_lock(project_root_dir(), force: true);
+}
 
+function phar_compile(string $root): string
+{
+    $pharPath = hatfield_phar_path();
     $explicitPharPath = getenv('HATFIELD_PHAR_PATH');
     if ((false === $explicitPharPath || '' === $explicitPharPath) && !str_starts_with($pharPath, $root)) {
         throw new \RuntimeException(\sprintf('PHAR output path %s is not under the project root %s. This indicates a non-worktree-local default. Set HATFIELD_PHAR_PATH explicitly if this is intentional.', $pharPath, $root));
-    }
-
-    $stagingDir = hatfield_phar_staging_dir();
-    $explicitStaging = getenv('HATFIELD_PHAR_STAGING_DIR');
-    if ((false === $explicitStaging || '' === $explicitStaging) && !str_starts_with($stagingDir, $root)) {
-        throw new \RuntimeException(\sprintf('Staging directory %s is not under the project root %s. This indicates a non-worktree-local default. Set HATFIELD_PHAR_STAGING_DIR explicitly if this is intentional.', $stagingDir, $root));
     }
 
     $startTime = microtime(true);
@@ -1742,17 +1730,21 @@ function phar_build(): string
         throw new \RuntimeException('Unable to create PHAR output directory: '.\dirname($pharPath));
     }
 
-    // Delete any previous artifact + freshness marker before compile so a
-    // failed build cannot leave a stale successful-looking PHAR in place.
-    phar_remove_artifact_and_marker($pharPath);
+    $override = getenv('HATFIELD_PHAR_STAGING_DIR');
+    $staging = allocate_phar_staging($root, false === $override ? null : $override);
+    try {
+        // An unsuccessful compile must not leave a stale successful-looking PHAR.
+        phar_remove_artifact_and_marker($pharPath);
 
-    if (is_dir($stagingDir)) {
-        remove_path_checked($stagingDir);
+        return phar_compile_staged($root, $pharPath, $staging->path, $startTime, $boxBin, $composerBin);
+    } finally {
+        // Reclaim only the child allocated by this build, while holding the lock.
+        $staging->remove();
     }
-    if (!mkdir($stagingDir, 0755, true) && !is_dir($stagingDir)) {
-        throw new \RuntimeException('Unable to create staging directory: '.$stagingDir);
-    }
+}
 
+function phar_compile_staged(string $root, string $pharPath, string $stagingDir, float $startTime, string $boxBin, string $composerBin): string
+{
     $copyStart = microtime(true);
 
     foreach (['bin', 'src', 'config', 'migrations'] as $dir) {

@@ -186,7 +186,7 @@ final class ExactQaRunCacheCleanupTest extends TestCase
             $process->wait();
             if (null !== $id) {
                 \CastorTasks\complete_qa_run($id, $root);
-                TestDirectoryIsolation::removeDirectory($root.'/var/reports/'.$id);
+                // The subprocess owns this report; completed-report retention reclaims it.
             }
         }
     }

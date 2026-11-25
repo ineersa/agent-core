@@ -181,7 +181,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             // migrations run fresh (the parent PHPUnit migrated the
             // shared test DB already).  The path is relative to
             // %kernel.project_dir%/var/test/ per config/packages/test/doctrine.yaml.
-            'HATFIELD_TEST_DATABASE_PATH' => 'app_test-replay-'.$this->sessionId.'.sqlite',
+            'HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $this->tempDir.'/app_test-replay-'.$this->sessionId.'.sqlite',
             // The test wrapper sets $_SERVER identity without tagging signal-owned PIDs.
             'HATFIELD_REPLAY_SESSION_ID' => $this->sessionId,
             ...\Ineersa\CodingAgent\Tests\Support\SessionSqliteQueueTestEnv::forSession(

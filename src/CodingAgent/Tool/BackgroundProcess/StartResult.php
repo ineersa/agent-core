@@ -17,6 +17,7 @@ final readonly class StartResult
         public string $statusPath,
         public ?int $deadlineNanoseconds = null,
         public bool $accepted = false,
+        public bool $scoped = false,
     ) {
     }
 }

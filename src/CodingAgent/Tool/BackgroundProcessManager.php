@@ -212,7 +212,7 @@ final class BackgroundProcessManager
                         }
                     }
                 } else {
-                    $launched = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
+                    $launched = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile, boundBashOutput: true);
                     $pid = $launched['pid'];
                     $pgid = $launched['pgid'];
                 }
@@ -273,7 +273,7 @@ final class BackgroundProcessManager
                     $foregroundDeadline = min($foregroundDeadline, $native->deadlineNanoseconds);
                 }
 
-                return new StartResult($pid, $logFile, $statusFile, $foregroundDeadline, $accepted);
+                return new StartResult($pid, $logFile, $statusFile, $foregroundDeadline, $accepted, $scoped);
             });
         } catch (\Throwable $error) {
             if ($ownsInvocation) {
@@ -644,7 +644,7 @@ final class BackgroundProcessManager
         $sessionId = $native->sessionId;
         $pid = $native->pid;
         $this->releaseNativeLaunch($statusPath);
-        if ('' !== $sessionId && null !== $native->toolCallId) {
+        if ('' !== $sessionId && null !== $native->toolCallId && '' !== $native->toolCallId) {
             return;
         }
         $deleted = $this->lifecycle->withSidecarLock($statusPath, function () use ($logPath, $statusPath): bool {
@@ -934,7 +934,9 @@ final class BackgroundProcessManager
 
     private function observeNative(NativeBashLaunchDTO $native): NativeBashObservationDTO
     {
-        $exitCode = $this->lifecycle->readStatusFile($native->statusPath);
+        $exit = $this->lifecycle->readNativeExit($native->statusPath);
+        $exitCode = $exit?->exitCode;
+        $writerExitCode = $exit->logWriterExitCode ?? 0;
         $finished = $this->lifecycle->hasObservedExit($exitCode, $native->pid);
         $stoppedByUser = false;
         $status = BackgroundProcessStatusEnum::Running;
@@ -953,7 +955,7 @@ final class BackgroundProcessManager
             if (-1 === $exitCode) {
                 $status = BackgroundProcessStatusEnum::Stopped;
                 $stoppedByUser = true;
-            } elseif (null !== $exitCode) {
+            } elseif (null !== $exitCode && 0 === $writerExitCode) {
                 $status = BackgroundProcessStatusEnum::Finished;
             } else {
                 $status = BackgroundProcessStatusEnum::FinishedUnclean;
@@ -975,6 +977,7 @@ final class BackgroundProcessManager
             backgroundRequested: $backgroundRequested,
             status: $status,
             accepted: $accepted,
+            logWriterExitCode: $writerExitCode,
         );
     }
 
@@ -985,7 +988,8 @@ final class BackgroundProcessManager
 
             return;
         }
-        $exitCode = $this->lifecycle->readStatusFile($record->statusPath);
+        $exit = $this->lifecycle->readNativeExit($record->statusPath);
+        $exitCode = $exit?->exitCode;
         if (null === $record->pid || null === $record->startedAt) {
             return;
         }
@@ -995,7 +999,7 @@ final class BackgroundProcessManager
         }
         $status = -1 === $exitCode
             ? BackgroundProcessStatusEnum::Stopped
-            : (null !== $exitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean);
+            : (null !== $exit && 0 === $exit->logWriterExitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean);
         // Timeout/stop intents mark Stopped before native exit evidence arrives.
         // Preserve that classification when the sidecar later reports completion,
         // matching ProcessStore::decide()'s settle path.

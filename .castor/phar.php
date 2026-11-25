@@ -39,9 +39,9 @@ function phar_ensure(): void
 }
 
 /**
- * Remove the worktree-local hatfield.phar, staging, and lock files.
+ * Remove the worktree-local hatfield.phar and lock files.
  */
-#[AsTask(name: 'phar:clean', description: 'Remove worktree-local hatfield.phar, staging, and locks')]
+#[AsTask(name: 'phar:clean', description: 'Remove worktree-local hatfield.phar and locks')]
 function phar_clean(): void
 {
     $path = \CastorTasks\hatfield_phar_path();
@@ -50,12 +50,6 @@ function phar_clean(): void
         echo "Removed {$path} (+ freshness marker)\n";
     } else {
         echo "No PHAR at {$path}\n";
-    }
-
-    $staging = \CastorTasks\hatfield_phar_staging_dir();
-    if (is_dir($staging)) {
-        \CastorTasks\remove_path_checked($staging);
-        echo "Removed staging {$staging}\n";
     }
 
     $lock = \CastorTasks\project_root_dir().'/'.\CastorTasks\PHAR_BUILD_LOCK;

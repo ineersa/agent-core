@@ -147,7 +147,7 @@ abstract class ControllerE2eTestCase extends TestCase
         // Reuse the Castor QA run cache when present. Overriding to a per-temp
         // path forces a cold Symfony compile for every controller spawn and can
         // starve broker/DB creation under full-gate contention before runtime.ready.
-        // Session/transport isolation still comes from HOME, HATFIELD_TEST_DATABASE_PATH,
+        // Session/transport isolation still comes from HOME, HATFIELD_CONTROLLER_TEST_DATABASE_PATH,
         // and the session-owned sqlite-queue paths.
         $qaCacheDir = getenv('HATFIELD_CACHE_DIR');
         if (false !== $qaCacheDir && '' !== trim($qaCacheDir)) {
@@ -210,7 +210,7 @@ abstract class ControllerE2eTestCase extends TestCase
             // Hermetic home: skill materialization and user settings must not touch
             // the real developer HOME (proc_open env arrays do not inherit).
             'HOME' => $this->tempDir,
-            'HATFIELD_TEST_DATABASE_PATH' => 'app_test-live-'.$this->sessionId.'.sqlite',
+            'HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $this->tempDir.'/app_test-live-'.$this->sessionId.'.sqlite',
             'HATFIELD_SESSION_ID' => $this->sessionId,
             'LLAMA_CPP_SMOKE_TEST' => '1',
             ...\Ineersa\CodingAgent\Tests\Support\SessionSqliteQueueTestEnv::forSession(

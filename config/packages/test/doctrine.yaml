@@ -12,6 +12,7 @@
 # PHPUnit execution.
 parameters:
     test.db.filename: 'app_test.sqlite'
+    test.db.path: '%kernel.project_dir%/var/test/%env(default:test.db.filename:string:HATFIELD_TEST_DATABASE_PATH)%'
 
 doctrine:
     dbal:
@@ -19,6 +20,7 @@ doctrine:
         connections:
             default:
                 driver: pdo_sqlite
-                path: '%kernel.project_dir%/var/test/%env(default:test.db.filename:string:HATFIELD_TEST_DATABASE_PATH)%'
+                # Controller subprocesses own the database and its sidecars in their fixture tree.
+                path: '%env(default:test.db.path:string:HATFIELD_CONTROLLER_TEST_DATABASE_PATH)%'
                 options:
                     2: 5

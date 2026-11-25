@@ -29,7 +29,7 @@ castor docs:validate
 | Variable | Meaning |
 |---|---|
 | `HATFIELD_PHAR_PATH` | Override PHAR output path |
-| `HATFIELD_PHAR_STAGING_DIR` | Override staging dir |
+| `HATFIELD_PHAR_STAGING_DIR` | Absolute, symlink-free parent for a unique temporary staging directory; the parent and existing entries are preserved |
 | `HATFIELD_PHAR_BOX_BIN` | Override Box binary |
 | `HATFIELD_BUILD_VERSION` / `HATFIELD_BUILD_COMMIT` | Embedded build identity |
 | `HATFIELD_BINARY_PATH` | Runtime/test executable override |

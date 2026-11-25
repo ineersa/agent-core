@@ -53,6 +53,10 @@ if (Ineersa\CodingAgent\Runtime\Messenger\InternalSqliteWorkerBootstrap::matches
 if (Ineersa\CodingAgent\Runtime\Process\DetachedProcessLauncher::FLAG === ($workerArgv[1] ?? null)) {
     Ineersa\CodingAgent\Runtime\Process\DetachedProcessLauncher::run($workerArgv);
 }
+if (Ineersa\CodingAgent\Tool\BackgroundProcess\BashLogWriter::FLAG === ($workerArgv[1] ?? null)) {
+    Ineersa\CodingAgent\Tool\BackgroundProcess\BashLogWriter::copy(STDIN, STDOUT);
+    exit(0);
+}
 if (Ineersa\CodingAgent\Tool\CodeMode\CodeModeWakeup::FLAG === ($workerArgv[1] ?? null)) {
     Ineersa\CodingAgent\Tool\CodeMode\CodeModeWakeup::send($workerArgv[2], $workerArgv[3], (string) getenv('HATFIELD_SQLITE_QUEUE_ENDPOINT'));
     exit(0);

@@ -40,7 +40,7 @@ final class ControllerReplayBootstrapDeliveryTest extends ControllerReplayE2eTes
         // real pipe proof does not also compile a second cold kernel under QA load.
         $seed = new Process([\PHP_BINARY, __DIR__.'/Support/BootstrapSessionSeed.php', $this->projectDir], $this->tempDir,
             array_merge($this->controllerSubprocessEnv(), ['APP_ENV' => 'test', 'APP_DEBUG' => '1', 'HATFIELD_CWD' => $this->tempDir, 'HOME' => $this->tempDir,
-                'HATFIELD_SESSION_ID' => false, 'HATFIELD_TEST_DATABASE_PATH' => 'app_test-replay-'.$this->sessionId.'.sqlite',
+                'HATFIELD_SESSION_ID' => false, 'HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $this->tempDir.'/app_test-replay-'.$this->sessionId.'.sqlite',
             ]));
         $seed->setTimeout(5);
         $seed->mustRun();

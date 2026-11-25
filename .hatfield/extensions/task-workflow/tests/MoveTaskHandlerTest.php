@@ -6,13 +6,13 @@ namespace Ineersa\HatfieldExt\TaskWorkflow\Tests;
 
 use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Tests\Support\TransitionFixture;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorkspaceStateStore;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 
 final class MoveTaskHandlerTest extends TestCase
 {
@@ -174,7 +174,7 @@ final class MoveTaskHandlerTest extends TestCase
     {
         $this->move('IN-PROGRESS');
         $path = $this->fixture->record()['worktree'];
-        TestDirectoryIsolation::removeDirectory($path);
+        (new Filesystem())->rename($path, $this->fixture->workspace->directory.'/original-worktree');
         $this->fixture->workspace->git->gitOk(['init', '--initial-branch=task/issue-7', $path], $this->fixture->workspace->root);
 
         $this->refused(fn () => $this->move('CODE-REVIEW'));

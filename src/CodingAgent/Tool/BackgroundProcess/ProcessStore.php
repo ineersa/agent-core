@@ -170,13 +170,14 @@ final class ProcessStore
             if (null !== $row['finished_at'] || null !== $row['backgrounded_at']) {
                 return false;
             }
-            $exitCode = $lifecycle->readStatusFile((string) $row['status_path']);
+            $exit = $lifecycle->readNativeExit((string) $row['status_path']);
+            $exitCode = $exit?->exitCode;
             $pid = $this->resolveObservedPid($row, $lifecycle);
             // Missing PID evidence means not-yet-known, never finished/dead.
             if (null !== $exitCode || (null !== $pid && !$lifecycle->isAlive($pid))) {
                 $status = BackgroundProcessStatusEnum::Stopped->value === $row['status']
                     ? BackgroundProcessStatusEnum::Stopped
-                    : (null !== $exitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean);
+                    : (null !== $exit && 0 === $exit->logWriterExitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean);
                 $now = Clock::get()->now()->format('Y-m-d H:i:s');
                 $connection->executeStatement('UPDATE background_process SET finished_at = ?, exit_code = ?, status = ?, updated_at = ? WHERE id = ?', [$now, $exitCode, $status->value, $now, $request->recordId]);
 
@@ -321,7 +322,8 @@ final class ProcessStore
             $signalRequired = false;
             $pid = $this->resolveObservedPid($row, $lifecycle);
             if (!$finished) {
-                $exitCode = $lifecycle->readStatusFile((string) $row['status_path']);
+                $exit = $lifecycle->readNativeExit((string) $row['status_path']);
+                $exitCode = $exit?->exitCode;
                 $nativeExit = $lifecycle->hasObservedExit($exitCode, $pid);
                 $accepted = null !== $row['backgrounded_at'];
                 $settledForegroundStop = !$accepted && ((BashProcessActionEnum::SettleStop === $action && (bool) $row['stopped_by_user'])
@@ -330,7 +332,7 @@ final class ProcessStore
                     $observedExit = $accepted && $nativeExit;
                     $finished = true;
                     if (BackgroundProcessStatusEnum::Stopped !== $status) {
-                        $status = null !== $exitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean;
+                        $status = null !== $exit && 0 === $exit->logWriterExitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean;
                     }
                     $connection->executeStatement('UPDATE background_process SET finished_at = ?, exit_code = ?, status = ?, updated_at = ? WHERE id = ?', [$now, $exitCode, $status->value, $now, $recordId]);
                 } elseif (-1 !== $exitCode && BashProcessActionEnum::Timeout === $action && null !== $row['backgrounded_at'] && null !== $row['deadline_nanoseconds'] && hrtime(true) >= (int) $row['deadline_nanoseconds'] && !(bool) $row['stopped_by_user']) {

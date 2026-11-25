@@ -34,9 +34,12 @@ use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
+use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
+use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
@@ -608,6 +611,44 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     /* ── Output capping ── */
 
+    public function testStorageLimitRetainsTailWithoutDuplicatingLog(): void
+    {
+        $this->createManager();
+        $result = $this->withContext($this->sessionId, fn () => ($this->makeBashTool())(
+            new BashArgumentsDTO(command: 'head -c 104858600 /dev/zero; printf end-of-output'),
+        ));
+
+        $this->assertStringContainsString('discarded 1141 bytes', $result);
+        $this->assertStringContainsString('end-of-output', $result);
+        $this->assertStringNotContainsString('Full output saved', $result);
+        $this->assertSame(1, preg_match('/^\[Bash retained log: \d+ bytes;[^\n]*\]\n([^\n]+)/', $result, $matches));
+        $this->assertFileExists($matches[1]);
+        $this->assertSame($this->tmpDir, \dirname($matches[1]));
+        $this->assertLessThanOrEqual(100 * 1024 * 1024, filesize($matches[1]));
+    }
+
+    public function testWriterFailureDoesNotReportSuccessfulWorkloadAsToolSuccess(): void
+    {
+        $this->assertSame($this->tmpDir, realpath($this->tmpDir));
+        $shim = $this->tmpDir.'/writer-shim.php';
+        $source = TestProcessRuntime::source();
+        file_put_contents($shim, '<?php if (($argv[1] ?? null) === "--internal-bash-log-writer") { exit(42); } require '.var_export($source->executablePath(), true).';');
+        $locator = $this->createStub(AppExecutableLocator::class);
+        $locator->method('command')->willReturn([\PHP_BINARY, $shim]);
+        $this->createManager(new RuntimeProcessConfig($locator, $source->runtimeCwd()));
+
+        try {
+            $this->withContext($this->sessionId, fn () => ($this->makeBashTool())(new BashArgumentsDTO(command: 'exit 0')));
+            $this->fail('Expected the tool to report the writer failure.');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('Bash log writer failed with exit code 42; workload exited with code 0.', $exception->getMessage());
+        }
+        $records = $this->recordsForSession($this->sessionId);
+        $this->assertCount(1, $records);
+        $this->assertSame(BackgroundProcessStatusEnum::FinishedUnclean, $records[0]->status);
+        $this->assertSame(0, $records[0]->exitCode);
+    }
+
     public function testOutputCapping(): void
     {
         // Output capping is now handled centrally by OutputCapToolResultProcessor,
@@ -1008,21 +1049,28 @@ final class BashToolTest extends IsolatedKernelTestCase
         }
     }
 
-    #[TestWith([false], 'inline output')]
-    #[TestWith([true], 'retained output')]
-    public function testNestedBashRemovesUnpersistedSidecarsAfterCompletion(bool $largeOutput): void
+    #[TestWith([0], 'inline output')]
+    #[TestWith([30000], 'retained output')]
+    #[TestWith([104858600], 'disk capped output')]
+    public function testNestedBashRemovesUnpersistedSidecarsAfterCompletion(int $outputBytes): void
     {
         $this->createManager();
         $outer = new ToolContext($this->sessionId, 1, 'tc_code_mode', 'code_mode', $this->createStub(CancellationTokenInterface::class), 30, stepId: 'outer-step');
         $inner = new ToolContext($this->sessionId, 1, 'tc_nested_bash', 'bash', $this->createStub(CancellationTokenInterface::class), 30, stepId: 'nested-step');
         $before = glob($this->tmpDir.'/*.{log,status,pid}', \GLOB_BRACE) ?: [];
-        $command = $largeOutput ? "php -r 'echo str_repeat(\"N\", 30000);'" : 'printf nested-clean';
+        $command = 0 === $outputBytes ? 'printf nested-clean' : "head -c {$outputBytes} /dev/zero; printf end-of-output";
         $result = $this->contextAccessor->with($outer, fn () => $this->contextAccessor->with($inner, fn () => ($this->makeBashTool())(new BashArgumentsDTO(command: $command))));
-        if ($largeOutput) {
+        if ($outputBytes > 100 * 1024 * 1024) {
+            $this->assertSame(1, preg_match('/^\[Bash retained log: \d+ bytes;[^\n]*\]\n([^\n]+)/', $result, $matches));
+            $this->assertFileExists($matches[1]);
+            $this->assertLessThanOrEqual(100 * 1024 * 1024, filesize($matches[1]));
+            $tail = file_get_contents($matches[1], offset: -128);
+            $this->assertStringContainsString("end-of-output\n[Bash output retention limit: discarded 1141 bytes", $tail);
+        } elseif ($outputBytes > 0) {
             $this->assertSame(1, preg_match('/Full output saved for inspection:\n(.+)/', $result, $matches));
             $attachment = trim($matches[1]);
             $this->assertFileExists($attachment);
-            $this->assertSame(30000, filesize($attachment));
+            $this->assertSame($outputBytes + \strlen('end-of-output'), filesize($attachment));
         } else {
             $this->assertSame('nested-clean', $result);
         }
@@ -1104,7 +1152,7 @@ final class BashToolTest extends IsolatedKernelTestCase
      * ProcessStore comes from the Symfony test container.
      * ProcessLifecycle and BackgroundProcessManager use test-specific temp dirs.
      */
-    private function createManager(): void
+    private function createManager(?RuntimeProcessConfig $runtime = null): void
     {
         if ($this->managerCreated) {
             return;
@@ -1112,7 +1160,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         /** @var ProcessStore $store */
         $store = self::getContainer()->get(ProcessStore::class);
-        $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger(), new LockFactory(new FlockStore()), TestProcessRuntime::source());
+        $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger(), new LockFactory(new FlockStore()), $runtime ?? TestProcessRuntime::source());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->bgConfig, new NullLogger());
         $this->managerCreated = true;
     }

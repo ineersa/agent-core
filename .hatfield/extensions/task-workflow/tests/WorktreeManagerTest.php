@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\TaskWorkflow\Tests;
 
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\DTO\WorkspaceBindingDTO;
@@ -12,6 +11,7 @@ use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Tests\Support\WorkspaceFixture;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 
 final class WorktreeManagerTest extends TestCase
 {
@@ -46,7 +46,7 @@ final class WorktreeManagerTest extends TestCase
     public function testRegisteredMissingDirectoryIsRemovedFromRegistry(): void
     {
         $binding = $this->manager->create($this->fixture->root, 'task/missing', $this->fixture->directory.'/missing', 'main');
-        TestDirectoryIsolation::removeDirectory($binding->worktree);
+        (new Filesystem())->rename($binding->worktree, $this->fixture->directory.'/moved-worktree');
         $this->assertFalse($this->manager->verifyRemoved($this->fixture->root, $binding->worktree));
         $this->manager->remove($this->fixture->root, $binding);
         $this->assertTrue($this->manager->verifyRemoved($this->fixture->root, $binding->worktree));

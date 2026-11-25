@@ -114,14 +114,14 @@ final class ControllerReplayBackgroundProcessSeeder
             'APP_SECRET' => getenv('APP_SECRET'),
             'HATFIELD_CWD' => getenv('HATFIELD_CWD'),
             'HOME' => getenv('HOME'),
-            'HATFIELD_TEST_DATABASE_PATH' => getenv('HATFIELD_TEST_DATABASE_PATH'),
+            'HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => getenv('HATFIELD_CONTROLLER_TEST_DATABASE_PATH'),
             'env' => [
                 'APP_ENV' => $_ENV['APP_ENV'] ?? null,
                 'APP_DEBUG' => $_ENV['APP_DEBUG'] ?? null,
                 'APP_SECRET' => $_ENV['APP_SECRET'] ?? null,
                 'HATFIELD_CWD' => $_ENV['HATFIELD_CWD'] ?? null,
                 'HOME' => $_ENV['HOME'] ?? null,
-                'HATFIELD_TEST_DATABASE_PATH' => $_ENV['HATFIELD_TEST_DATABASE_PATH'] ?? null,
+                'HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $_ENV['HATFIELD_CONTROLLER_TEST_DATABASE_PATH'] ?? null,
             ],
             'server' => [
                 'APP_ENV' => $_SERVER['APP_ENV'] ?? null,
@@ -129,7 +129,7 @@ final class ControllerReplayBackgroundProcessSeeder
                 'APP_SECRET' => $_SERVER['APP_SECRET'] ?? null,
                 'HATFIELD_CWD' => $_SERVER['HATFIELD_CWD'] ?? null,
                 'HOME' => $_SERVER['HOME'] ?? null,
-                'HATFIELD_TEST_DATABASE_PATH' => $_SERVER['HATFIELD_TEST_DATABASE_PATH'] ?? null,
+                'HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $_SERVER['HATFIELD_CONTROLLER_TEST_DATABASE_PATH'] ?? null,
             ],
         ];
 
@@ -151,7 +151,7 @@ final class ControllerReplayBackgroundProcessSeeder
             self::put('HATFIELD_CWD', $isolatedProjectDir);
             // Settings also search HOME/.hatfield; pin it to the isolated tree like the controller subprocess.
             self::put('HOME', $isolatedProjectDir);
-            self::put('HATFIELD_TEST_DATABASE_PATH', $appDbEnvPath);
+            self::put('HATFIELD_CONTROLLER_TEST_DATABASE_PATH', $appDbEnvPath);
 
             $kernel = new Kernel('test', false);
             $kernel->boot();
@@ -181,7 +181,7 @@ final class ControllerReplayBackgroundProcessSeeder
             self::restore('APP_SECRET', $saved['APP_SECRET'], $saved['env']['APP_SECRET'], $saved['server']['APP_SECRET']);
             self::restore('HATFIELD_CWD', $saved['HATFIELD_CWD'], $saved['env']['HATFIELD_CWD'], $saved['server']['HATFIELD_CWD']);
             self::restore('HOME', $saved['HOME'], $saved['env']['HOME'], $saved['server']['HOME']);
-            self::restore('HATFIELD_TEST_DATABASE_PATH', $saved['HATFIELD_TEST_DATABASE_PATH'], $saved['env']['HATFIELD_TEST_DATABASE_PATH'], $saved['server']['HATFIELD_TEST_DATABASE_PATH']);
+            self::restore('HATFIELD_CONTROLLER_TEST_DATABASE_PATH', $saved['HATFIELD_CONTROLLER_TEST_DATABASE_PATH'], $saved['env']['HATFIELD_CONTROLLER_TEST_DATABASE_PATH'], $saved['server']['HATFIELD_CONTROLLER_TEST_DATABASE_PATH']);
         }
     }
 

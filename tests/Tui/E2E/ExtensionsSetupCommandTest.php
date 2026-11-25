@@ -25,6 +25,7 @@ final class ExtensionsSetupCommandTest extends TestCase
     public function testFixtureIsRetainedUntilShutdownSucceeds(): void
     {
         $temporary = TestDirectoryIsolation::createProjectTempDir('extension-setup-retention');
+        $removed = false;
         try {
             file_put_contents($temporary.'/stderr.log', 'synthetic shutdown evidence');
             $this->removeFixtureAfterShutdown($temporary, new \RuntimeException('synthetic shutdown refusal'));
@@ -32,9 +33,12 @@ final class ExtensionsSetupCommandTest extends TestCase
             $this->assertSame('synthetic shutdown evidence', file_get_contents($temporary.'/stderr.log'));
 
             $this->removeFixtureAfterShutdown($temporary, null);
+            $removed = true;
             $this->assertDirectoryDoesNotExist($temporary);
         } finally {
-            TestDirectoryIsolation::removeDirectory($temporary);
+            if (!$removed) {
+                TestDirectoryIsolation::removeDirectory($temporary);
+            }
         }
     }
 
