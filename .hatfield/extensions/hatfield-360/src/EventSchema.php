@@ -89,12 +89,6 @@ final class EventSchema
             }
             unset($value['trigger']);
         }
-        if (\is_array($value) && \array_key_exists('response', $value)) {
-            if (!self::matches($value['response'], 2000)) {
-                return false;
-            }
-            unset($value['response']);
-        }
 
         return self::record($value, 'status', ['working', 'completed', 'failed', 'cancelled', 'unknown']);
     }

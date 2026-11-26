@@ -11,8 +11,7 @@ use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 
 final class TuiRunObservationMapper
 {
-    /** @param ?string $response final assistant text, attached only to terminal turn observations */
-    public static function map(RuntimeEvent $event, ?string $response = null): ?TuiRunObservationDTO
+    public static function map(RuntimeEvent $event): ?TuiRunObservationDTO
     {
         if (0 === $event->seq && \in_array($event->type, [RuntimeEventTypeEnum::ChildExecutionStarted->value, RuntimeEventTypeEnum::ChildExecutionEnded->value, RuntimeEventTypeEnum::ChildInputObserved->value], true)) {
             $child = $event->payload['child_run_id'] ?? null;
@@ -65,24 +64,6 @@ final class TuiRunObservationMapper
             $event->runId, $event->seq, $type, \is_string($request) && '' !== $request ? $request : null,
             toolName: \is_string($name) ? $name : null,
             trigger: TuiRunObservationTypeEnum::TurnStarted === $type && 'schedule' === ($event->payload['trigger'] ?? null) ? 'schedule' : null,
-            response: \in_array($type, [TuiRunObservationTypeEnum::TurnCompleted, TuiRunObservationTypeEnum::TurnFailed, TuiRunObservationTypeEnum::TurnCancelled], true) ? $response : null,
         );
-    }
-
-    /** Visible text of a completed assistant message, or null when it has none (for example tool calls only). */
-    public static function assistantText(RuntimeEvent $event): ?string
-    {
-        $content = $event->payload['content'] ?? null;
-        if (\is_array($content)) {
-            // Separate text blocks render as separate transcript blocks.
-            $text = implode("\n\n", array_map(
-                static fn (array $part): string => (string) $part['text'],
-                array_filter($content, static fn (mixed $part): bool => \is_array($part) && 'text' === ($part['type'] ?? null) && \is_string($part['text'] ?? null) && '' !== $part['text']),
-            ));
-        } else {
-            $text = $event->payload['text'] ?? null;
-        }
-
-        return \is_string($text) && '' !== trim($text) ? $text : null;
     }
 }

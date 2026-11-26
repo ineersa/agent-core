@@ -18,7 +18,6 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Psr\Log\LoggerInterface;
 
@@ -52,9 +51,6 @@ final class RuntimeEventPoller
     private array $runObservers = [];
     /** @var list<TuiBackgroundJobObserverInterface> */
     private array $backgroundJobObservers = [];
-    /** Latest assistant text of the current turn, reported with its terminal run observation.
-     * @var array{string, ?string}|null run ID and text */
-    private ?array $assistantResponse = null;
 
     /**
      * Scalar boundaries from events that finished apply in the latest poll.
@@ -573,21 +569,8 @@ final class RuntimeEventPoller
 
     private function notifyRunObservers(RuntimeEvent $event): void
     {
-        if ([] === $this->runObservers) {
+        if ([] === $this->runObservers || null === ($observation = TuiRunObservationMapper::map($event))) {
             return;
-        }
-        if (RuntimeEventTypeEnum::AssistantMessageCompleted->value === $event->type && 0 !== $event->seq) {
-            // Each message replaces the previous one, so a final tool-only message reports no text.
-            $this->assistantResponse = [$event->runId, TuiRunObservationMapper::assistantText($event)];
-
-            return;
-        }
-        $response = $event->runId === ($this->assistantResponse[0] ?? null) ? $this->assistantResponse[1] : null;
-        if (null === ($observation = TuiRunObservationMapper::map($event, $response))) {
-            return;
-        }
-        if (\in_array($observation->type, [TuiRunObservationTypeEnum::TurnStarted, TuiRunObservationTypeEnum::TurnCompleted, TuiRunObservationTypeEnum::TurnFailed, TuiRunObservationTypeEnum::TurnCancelled], true)) {
-            $this->assistantResponse = null;
         }
 
         foreach ($this->runObservers as $observer) {

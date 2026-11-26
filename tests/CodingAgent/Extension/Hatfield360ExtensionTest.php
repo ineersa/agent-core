@@ -31,7 +31,6 @@ use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiScheduleDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum as Observation;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionActivityContextInterface;
-use Ineersa\HatfieldExt\Hatfield360\EventSchema;
 use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
 use Ineersa\Tui\Runtime\TuiRunObservationMapper;
 use PHPUnit\Framework\TestCase;
@@ -133,32 +132,6 @@ final class Hatfield360ExtensionTest extends TestCase
         $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0));
         $this->assertSame(0, $this->snapshot($extension)['activeSubagents']);
         $this->assertSame([false, false, true, true, true, true, true, false, true, true, true], $reads);
-    }
-
-    public function testCompletedTurnCarriesTheTruncatedFinalResponseUntilTheNextTurn(): void
-    {
-        $extension = $this->extension();
-        $response = static fn (array $snapshot): ?string => $snapshot['turn']['response'] ?? null;
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::TurnStarted));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::TurnCompleted, response: "Reviewed 3 files.\nAll checks pass."));
-        $this->assertSame(['id' => '1', 'status' => 'completed', 'response' => "Reviewed 3 files.\nAll checks pass."], $this->snapshot($extension)['turn']);
-        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0));
-        $this->assertSame("Reviewed 3 files.\nAll checks pass.", $response($this->snapshot($extension)), 'Settling snapshots resend the response.');
-
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 3, Observation::TurnStarted));
-        $this->assertSame(['id' => '3', 'status' => 'working'], $this->snapshot($extension)['turn']);
-        $long = 'x'.str_repeat('🐕', 999).'end';
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 4, Observation::TurnCompleted, response: $long));
-        $truncated = $response($this->snapshot($extension));
-        $this->assertSame('…'.str_repeat('🐕', 996).'end', $truncated);
-        $this->assertSame(1000, mb_strlen((string) $truncated, 'UTF-8'));
-        $this->assertTrue(EventSchema::accepts('session.snapshot', '42', 5, 1, $this->snapshot($extension)));
-
-        foreach ([[Observation::TurnCompleted, " \n"], [Observation::TurnCompleted, null], [Observation::TurnFailed, 'Partial.'], [Observation::TurnCancelled, 'Partial.']] as $i => [$type, $text]) {
-            $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 10 + 2 * $i, Observation::TurnStarted));
-            $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 11 + 2 * $i, $type, response: $text));
-            $this->assertArrayNotHasKey('response', $this->snapshot($extension)['turn']);
-        }
     }
 
     public function testUnknownStateAndMainReactivationCannotSettleOldCompletion(): void

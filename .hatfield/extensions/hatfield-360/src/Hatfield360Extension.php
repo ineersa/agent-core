@@ -41,7 +41,6 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     use LoggerAwareTrait;
 
     private const int MAX_TERMINALS = 1024;
-    private const int MAX_RESPONSE = 1000;
 
     // /reload replaces the extension instance, not the explicit launch.
     private static int $sequence = 0;
@@ -52,7 +51,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
     private ?string $title = null;
     private int $epoch = 0;
     private bool $closing = false;
-    /** @var array{id: string, status: string, trigger?: string, response?: string}|null */
+    /** @var array{id: string, status: string, trigger?: string}|null */
     private ?array $turn = null;
     /** @var list<array{id: string, label: string, recurring: bool, nextRunAt: ?int}>|null */
     private ?array $schedules = null;
@@ -236,9 +235,6 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
             if (null !== $outcome) {
                 $refresh = 'completed' === $outcome;
                 $this->turn['status'] = $outcome;
-                if ('completed' === $outcome && null !== ($response = self::response($observation->response))) {
-                    $this->turn['response'] = $response;
-                }
                 $this->waits = [];
                 $this->waitOverflow = null;
                 $this->tools = [];
@@ -303,16 +299,6 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, TuiE
         if (null !== $title && mb_check_encoding($title, 'UTF-8')) {
             $this->title = mb_substr($title, 0, 1024, 'UTF-8');
         }
-    }
-
-    /** Keeps the end of the final message, where the answer usually is. */
-    private static function response(?string $text): ?string
-    {
-        if (null === $text || !mb_check_encoding($text, 'UTF-8') || '' === trim($text)) {
-            return null;
-        }
-
-        return mb_strlen($text, 'UTF-8') <= self::MAX_RESPONSE ? $text : '…'.mb_substr($text, 1 - self::MAX_RESPONSE, null, 'UTF-8');
     }
 
     private function observeChild(TuiRunObservationDTO $observation, string $id): bool
