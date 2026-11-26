@@ -11,8 +11,16 @@ runs:
         php_bin="$(command -v php)"
         php_config="$(command -v php-config)"
         if [[ "$RUNNER_OS" == Linux ]]; then
+          # Disable the distro INI before PIE enables its rebuilt module once.
+          ver="$("$php_bin" -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
+          sudo --non-interactive phpdismod -v "$ver" -s ALL zstd
           sudo --non-interactive env "PATH=$PATH" "$pie" install --no-interaction --with-php-config="$php_config" kjdev/zstd:0.19.1
         else
           "$pie" install --no-interaction --with-php-config="$php_config" kjdev/zstd:0.19.1
+        fi
+        if ! startup_output="$("$php_bin" -r '' 2>&1)" || [[ -n "$startup_output" ]]; then
+          printf '%s\n' "$startup_output" >&2
+          "$php_bin" --ini
+          exit 1
         fi
         "$php_bin" -r 'if (phpversion("zstd") !== "0.19.1") { fwrite(STDERR, "Expected zstd 0.19.1 to be loaded\n"); exit(1); }'

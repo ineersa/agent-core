@@ -1122,6 +1122,7 @@ function distribution_smoke_code_mode($listener, array $pipes, string $tmp): voi
     $stdout = '';
     $runId = '';
     $returned = false;
+    $foregroundResult = 'no foreground completion event';
     $accepted = false;
     $stopping = null;
     $probeSent = false;
@@ -1134,6 +1135,8 @@ function distribution_smoke_code_mode($listener, array $pipes, string $tmp): voi
             $payload = $event['payload'] ?? [];
             if ('tool_execution.completed' === ($event['type'] ?? null) && 'call_code_mode_smoke' === ($payload['tool_call_id'] ?? null)) {
                 $returned = '1' === ($payload['result'] ?? null);
+                // Only the isolated smoke's own result, bounded for CI diagnostics.
+                $foregroundResult = substr(json_encode(['is_error' => $payload['is_error'] ?? null, 'result' => $payload['result'] ?? null], \JSON_THROW_ON_ERROR | \JSON_INVALID_UTF8_SUBSTITUTE), 0, 2000);
             }
             if ('tool_call.acknowledged' === ($event['type'] ?? null) && 'call_code_mode_hold' === ($payload['tool_call_id'] ?? null)) {
                 $accepted = true === ($payload['backgrounded'] ?? false);
@@ -1160,7 +1163,7 @@ function distribution_smoke_code_mode($listener, array $pipes, string $tmp): voi
         }
         usleep(50_000);
     } while (microtime(true) < $deadline);
-    throw new RuntimeException(sprintf('Packaged code-mode smoke incomplete (returned=%d, accepted=%d, stop=%d, group gone=%d). %s', $returned, $accepted, null !== $stopping, $probeSent, stream_get_contents($pipes[2])));
+    throw new RuntimeException(sprintf('Packaged code-mode smoke incomplete (returned=%d, accepted=%d, stop=%d, group gone=%d). Foreground: %s. %s', $returned, $accepted, null !== $stopping, $probeSent, $foregroundResult, stream_get_contents($pipes[2])));
 }
 
 /**

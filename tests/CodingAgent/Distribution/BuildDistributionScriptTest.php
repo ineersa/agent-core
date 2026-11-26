@@ -50,6 +50,9 @@ final class BuildDistributionScriptTest extends TestCase
         $action = (string) file_get_contents($root.'/.github/actions/setup-zstd/action.yml');
         $this->assertStringContainsString('kjdev/zstd:0.19.1', $action);
         $this->assertStringContainsString('phpversion("zstd") !== "0.19.1"', $action);
+        $this->assertStringContainsString('phpdismod -v "$ver" -s ALL zstd', $action);
+        $this->assertLessThan(strpos($action, '"$pie" install'), strpos($action, 'phpdismod'));
+        $this->assertStringContainsString('if ! startup_output="$("$php_bin" -r \'\' 2>&1)" || [[ -n "$startup_output" ]]', $action);
     }
 
     public function testStaticPrerequisitesRunBeforePhpZstdAndComposer(): void
