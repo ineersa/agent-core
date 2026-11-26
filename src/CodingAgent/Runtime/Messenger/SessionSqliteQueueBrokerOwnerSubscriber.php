@@ -53,10 +53,6 @@ final class SessionSqliteQueueBrokerOwnerSubscriber implements EventSubscriberIn
             return;
         }
 
-        if (!\function_exists('posix_setsid') || !\function_exists('posix_getpgid') || !\function_exists('posix_getpid')) {
-            throw new \RuntimeException('Session sqlite-queue broker requires posix_setsid to isolate the Amp SQLite driver process group.');
-        }
-
         $pid = posix_getpid();
         $pgid = posix_getpgid($pid);
         if (false !== $pgid && $pgid === $pid) {
@@ -111,10 +107,6 @@ final class SessionSqliteQueueBrokerOwnerSubscriber implements EventSubscriberIn
 
     private static function requestOwnedShutdown(): void
     {
-        if (!\function_exists('posix_kill') || !\function_exists('posix_getpid')) {
-            return;
-        }
-
         @posix_kill(posix_getpid(), \SIGTERM);
     }
 }

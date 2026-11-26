@@ -154,7 +154,9 @@ final class ProcessLifecycle
             }
             throw new \RuntimeException('Refusing to signal a process without its owned native group.');
         }
-        @exec(\sprintf('kill -TERM -%d 2>/dev/null', $ownedGroup));
+        if (!posix_kill(-$ownedGroup, \SIGTERM)) {
+            $this->logPosixFailure('signal_failed', $pid, ['process_pgid' => $ownedGroup, 'signal' => \SIGTERM]);
+        }
     }
 
     /** Caller holds the exact sidecar lock through native validation and signal. */
@@ -167,7 +169,9 @@ final class ProcessLifecycle
             }
             throw new \RuntimeException('Refusing to signal a process without its owned native group.');
         }
-        @exec(\sprintf('kill -KILL -%d 2>/dev/null', $ownedGroup));
+        if (!posix_kill(-$ownedGroup, \SIGKILL)) {
+            $this->logPosixFailure('signal_failed', $pid, ['process_pgid' => $ownedGroup, 'signal' => \SIGKILL]);
+        }
     }
 
     /** Validate the live session wrapper, not merely a reusable PID or SQL row. */
@@ -233,11 +237,11 @@ final class ProcessLifecycle
      * hit does not keep a dead PID "alive". Treats zombie (state Z)
      * entries as not alive — they still occupy /proc until reaped.
      *
-     * Falls back to kill -0 when /proc is unavailable.
+     * Falls back to a POSIX signal-zero probe when /proc is unavailable.
      */
     public function isAlive(int $pid): bool
     {
-        if ($pid <= 0) {
+        if ($pid <= 0 || $pid > 0x7FFFFFFF) {
             return false;
         }
 
@@ -267,10 +271,7 @@ final class ProcessLifecycle
             return 'Z' !== $state;
         }
 
-        // Fallback: kill -0
-        @exec('kill -0 '.$pid.' 2>/dev/null', $_, $exitCode);
-
-        return 0 === $exitCode;
+        return posix_kill($pid, 0);
     }
 
     /**
@@ -400,27 +401,23 @@ final class ProcessLifecycle
     /**
      * Resolve the process group ID for a given PID.
      *
-     * Retries briefly to close a startup race: after exec() returns
-     * the PID, the process may not yet be visible to ps.
+     * The detached launcher calls setsid() before exec; the wrapper only
+     * publishes its PID after exec. No isolation retry is needed after readiness.
      */
     public function resolvePgid(int $pid): ?int
     {
-        for ($attempt = 0; $attempt < 5; ++$attempt) {
-            $process = Process::start(['ps', '-o', 'pgid=', '-p', (string) $pid]);
-            $pgidStr = buffer($process->getStdout());
-            $process->join();
-            if ('' !== trim($pgidStr)) {
-                $pgid = (int) trim($pgidStr);
-                if ($pgid > 0) {
-                    return $pgid;
-                }
-            }
-            if ($attempt < 4) {
-                delay(0.05);
-            }
+        if ($pid <= 0 || $pid > 0x7FFFFFFF) {
+            return null;
         }
 
-        return null;
+        $pgid = posix_getpgid($pid);
+        if (false === $pgid) {
+            $this->logPosixFailure('pgid_lookup_failed', $pid);
+
+            return null;
+        }
+
+        return $pgid > 0 ? $pgid : null;
     }
 
     // ─── Log file reading ────────────────────────────────────────────
@@ -611,6 +608,22 @@ final class ProcessLifecycle
         }
 
         return true;
+    }
+
+    /** @param array<string, int> $context */
+    private function logPosixFailure(string $event, int $pid, array $context = []): void
+    {
+        $errno = posix_get_last_error();
+        $eventType = 'background_process.'.$event;
+        $this->logger->warning($eventType, [
+            'component' => 'tool.background_process',
+            'event_type' => $eventType,
+            'process_pid' => $pid,
+            'errno' => $errno,
+            'run_id' => null,
+            'session_id' => null,
+            ...$context,
+        ]);
     }
 
     private function incompleteSuffixLength(string $content): int
