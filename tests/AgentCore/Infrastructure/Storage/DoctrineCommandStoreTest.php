@@ -51,8 +51,10 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $store->enqueue($command);
         // Reconstruct the former native DTO shape inside the Messenger envelope.
         $serialized = serialize($command);
+        $optionsClass = CommandCancellationOptions::class;
+        $options = \sprintf('O:%d:"%s":1:{s:4:"safe";b:1;}', \strlen($optionsClass), $optionsClass);
         $legacy = str_replace(':4:{', ':5:{', substr($serialized, 0, -1))
-            .serialize('options').serialize(new CommandCancellationOptions(safe: true)).'}';
+            .serialize('options').$options.'}';
         $payload = addslashes(str_replace($serialized, $legacy, serialize(new Envelope($command))));
         self::getContainer()->get(Connection::class)->executeStatement(
             'UPDATE run_command SET payload = ?, payload_hash = ? WHERE run_id = ?',

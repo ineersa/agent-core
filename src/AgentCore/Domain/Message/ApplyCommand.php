@@ -28,7 +28,7 @@ final readonly class ApplyCommand extends AbstractAgentBusMessage
     {
         // Native run-control deliveries can still carry an obsolete options field.
         $prefix = "\0".AbstractAgentBusMessage::class."\0";
-        // @phpstan-ignore constructor.call (Native deserialization allocates a fresh instance with uninitialized readonly fields.)
+        // Native deserialization allocates a fresh instance with uninitialized readonly fields.
         parent::__construct(
             $data[$prefix.'runId'],
             $data[$prefix.'turnNo'],
