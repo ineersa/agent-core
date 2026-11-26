@@ -109,8 +109,6 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
                     $context->lifecycle->subscribe(static function (TuiSessionLifecycleEventTypeEnum $type) use (&$ended): void {
                         if (TuiSessionLifecycleEventTypeEnum::SessionEnded === $type) {
                             $ended[] = 'ended';
-                        } elseif (TuiSessionLifecycleEventTypeEnum::SessionGracefullyClosing === $type) {
-                            $ended[] = 'closing';
                         }
                     });
                     $context->ticks->add(function () use ($tui, $context): ?bool {
@@ -137,7 +135,7 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
             );
 
             $this->assertSame(0, $exit);
-            $this->assertSame($selected ? ['closing', 'ended'] : ['ended'], $ended);
+            $this->assertSame(['ended'], $ended);
             $this->assertSame([false], $initialPreviewState);
             $this->assertGreaterThanOrEqual(2, $calls, 'Mount and shutdown checkpoints must still be attempted');
         } finally {
@@ -162,9 +160,6 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
                 {
                     $tui = $context->tui;
                     $switch = $context->sessionServices->switch;
-                    $context->lifecycle->subscribe(static function (TuiSessionLifecycleEventTypeEnum $type): void {
-                        TestCase::assertNotSame(TuiSessionLifecycleEventTypeEnum::SessionGracefullyClosing, $type);
-                    });
                     $displayState = $context->state->transcriptDisplayState;
                     $this->initialPreviewStates[] = $displayState->previewableBlocksExpanded;
                     $displayState->previewableBlocksExpanded = false;
@@ -213,9 +208,6 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
                 {
                     $tui = $context->tui;
                     $switch = $context->sessionServices->switch;
-                    $context->lifecycle->subscribe(static function (TuiSessionLifecycleEventTypeEnum $type): void {
-                        TestCase::assertNotSame(TuiSessionLifecycleEventTypeEnum::SessionGracefullyClosing, $type);
-                    });
                     $sessionId = $context->state->sessionId = 'reloading';
                     $context->ticks->add(static function () use ($tui, $switch, $sessionId): ?bool {
                         $switch->requestReload('' !== $sessionId ? $sessionId : 'draft-reload');

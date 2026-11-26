@@ -40,7 +40,8 @@ function read(path) {
             typeof s.ended !== 'boolean' || typeof s.agentsUncertain !== 'boolean' || !count(s.scripts) ||
             !Array.isArray(s.boundaries) || s.boundaries.length > 128 || !s.boundaries.every(uuid) ||
             !(s.switch === null || s.ended && s.boundaries.length && ['resume', 'clear'].includes(s.switch)) ||
-            !(s.turn === null || object(s.turn) && uuid(s.turn.id) && ['working', 'completed', 'failed'].includes(s.turn.status) && [undefined, 'schedule'].includes(s.turn.trigger)) ||
+            !(s.turn === null || object(s.turn) && uuid(s.turn.id) && ['working', 'completed', 'failed'].includes(s.turn.status) && [undefined, 'schedule'].includes(s.turn.trigger) &&
+                (s.turn.response === undefined || text(s.turn.response, 1000))) ||
             !validSchedules(s) ||
             !(s.title === null || text(s.title, 1024)) ||
             !entries(s.waits, 16, n => sequence(Math.abs(n)) && typeof n === 'number') ||

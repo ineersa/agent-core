@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
@@ -129,6 +130,7 @@ final class ControllerReplayBootstrapDeliveryTest extends ControllerReplayE2eTes
                 ),
                 $container->get(ChildInvocationBackgroundService::class),
                 $container->get(BackgroundWorkSnapshotProvider::class),
+                $container->get(ExtensionSessionEventPublisher::class),
             );
         } finally {
             $kernel->shutdown();

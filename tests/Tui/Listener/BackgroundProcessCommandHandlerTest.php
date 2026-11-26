@@ -268,16 +268,8 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
             new BackgroundChildStatusDTO('cancelled-run', 'cancelled-artifact', 'fork', 'CANCELLED_TASK', 'provider/model', 'low', 'cancelled', true),
         ]);
         $this->mount(JsonlProcessAgentSessionClient::class, $snapshot);
-        $reported = [];
-        $this->context->lifecycle->subscribeBackgroundSnapshot(static function ($snapshot) use (&$reported): void {
-            $reported[] = $snapshot;
-        });
         $this->context->state->sessionReady = true;
         $this->context->ticks->dispatch(new TickEvent());
-        $this->assertCount(1, $reported);
-        $this->assertSame($this->context->state->sessionId, $reported[0]->sessionId);
-        $this->assertSame(2, $reported[0]->activeSubagents);
-        $this->assertSame(2, $reported[0]->backgroundScripts);
         foreach ([80, 120] as $width) {
             $this->harness->terminal()->simulateResize($width, 30);
             $rendered = $this->harness->plainScreenText();

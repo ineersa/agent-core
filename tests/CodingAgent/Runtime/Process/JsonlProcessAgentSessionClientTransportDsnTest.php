@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -120,6 +121,7 @@ PHP);
             sessionStore: self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
+            extensionEvents: self::getContainer()->get(ExtensionSessionEventPublisher::class),
         );
 
         $client->start(new StartRunRequest(
@@ -326,6 +328,7 @@ PHP);
             sessionStore: self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
+            extensionEvents: self::getContainer()->get(ExtensionSessionEventPublisher::class),
         );
     }
 

@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Screen;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
@@ -94,6 +95,7 @@ final class TuiHistoryProcessVirtualTest extends PerMethodIsolatedKernelTestCase
             $container->get(BackgroundProcessManager::class),
             $container->get(ChildInvocationBackgroundService::class),
             $container->get(BackgroundWorkSnapshotProvider::class),
+            $container->get(ExtensionSessionEventPublisher::class),
         );
         try {
             $harness = new VirtualTuiHarness(sessionId: $run);

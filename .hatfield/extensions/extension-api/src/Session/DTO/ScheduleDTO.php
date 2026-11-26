@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Hatfield\ExtensionApi\Tui\DTO;
+namespace Ineersa\Hatfield\ExtensionApi\Session\DTO;
 
-final readonly class TuiScheduleDTO
+final readonly class ScheduleDTO
 {
     public function __construct(
         public string $id,

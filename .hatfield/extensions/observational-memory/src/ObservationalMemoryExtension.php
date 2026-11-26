@@ -7,8 +7,6 @@ namespace Ineersa\HatfieldExt\ObservationalMemory;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Command\OmViewCommandHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeCompactionHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Librarian\LibrarianProjectPolicy;
@@ -26,16 +24,13 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
 /** Thin client registration: async boundary signals, projection, remote retrieval and /om-view. */
-final class ObservationalMemoryExtension implements ConfigurableExtensionInterface, TuiExtensionInterface, LoggerAwareInterface
+final class ObservationalMemoryExtension implements ConfigurableExtensionInterface, LoggerAwareInterface
 {
     private LoggerInterface $logger;
-
-    private OmSessionContext $sessionContext;
 
     public function __construct()
     {
         $this->logger = new NullLogger();
-        $this->sessionContext = new OmSessionContext();
     }
 
     public function setLogger(LoggerInterface $logger): void
@@ -92,7 +87,7 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
                 usage: '/om-view',
                 acceptsArguments: false,
             ),
-            new OmViewCommandHandler($query, $this->sessionContext, $this->logger),
+            new OmViewCommandHandler($query, new OmSessionContext($api->session()), $this->logger),
         );
 
         $api->registerTool(OmToolRegistrationFactory::search($query));
@@ -103,11 +98,5 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
             'event_type' => 'om.extension.registered',
             'handler_id' => ObserveBoundaryTerminalHook::HANDLER_ID,
         ]);
-    }
-
-    public function registerTui(TuiExtensionContextInterface $context): void
-    {
-        // Keep the live public context; resolve session id lazily on each command.
-        $this->sessionContext->bindTui($context);
     }
 }

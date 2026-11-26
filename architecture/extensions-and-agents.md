@@ -67,6 +67,25 @@ classes. Packages use public contracts. The host owns adapters and runtime execu
 registration and subscriber attachment, records the failure and continues loading
 other extensions. Partial registrations are not rolled back.
 
+## Live session events
+
+Public `Session\Event` classes reach subscribers only in the interactive process.
+`JsonlProcessAgentSessionClient` decodes the controller stream in one place and
+passes each event of the selected session's main run to
+`ExtensionSessionEventPublisher`, which maps it with `ExtensionSessionEventMapper`
+and dispatches it on the host dispatcher before the TUI reads the batch. The
+client selects the session on `start()`, `attach()` and a first shell command, and
+clears it on `shutdown()`. `AgentCommand` publishes the close after the interactive
+loop returns; reload and switch already cleared the selection through `shutdown()`.
+
+An attach publishes nothing until its `session.ready`, so bootstrap frames and the
+catch-up suffix are not replayed; a recovery bootstrap suspends publishing again.
+Canonical events below the published sequence are skipped after a controller
+restart. The TUI does not dispatch extension events. Extensions keep its context
+for UI only and read the selected session through `ExtensionSessionContext`.
+The in-process transport, which the controller also uses internally, publishes
+nothing.
+
 ## Subagent, resume, and fork entry points
 
 ```mermaid

@@ -26,7 +26,7 @@ That is part of the public API. Do **not** depend on in-repo `Ineersa\Tui\*` cla
 - `insertOverlayAfterEditor` / `removeOverlay` — overlay widgets below the editor
 - `setFocus` — focus an overlay widget
 - `onTick` — idle-safe tick callbacks (host discards return values; self-throttle)
-- `requestRender` / `getSessionId`
+- `requestRender`
 - `formatMuted` / `formatRolePrefix` — themed text helpers for pickers
 - `turnRowsInDisplayOrder($sessionId)` — **read-only** retained user-prompt rows
   (`turnNo`, `title`, `displayRole`) for session-history pickers
@@ -34,41 +34,9 @@ That is part of the public API. Do **not** depend on in-repo `Ineersa\Tui\*` cla
 There is no footer-segment API and no API to retain/write transcript rows from this context.
 Extensions must not mutate core transcript widgets directly.
 
-## Session selection
-
-Implement `TuiSessionObserverInterface` alongside `HatfieldExtensionInterface`
-to receive `onTuiSessionSelected($sessionId)` from the interactive process.
-The callback runs for a fresh established session, a selected resume target,
-or when a draft obtains a real session ID. An empty draft does not notify.
-This is a selection signal, not confirmation that restore or a turn succeeded.
-Repeat selections can have the same ID. The callback receives no prompt or
-transcript and must not block the UI. Headless workers do not call it.
-
-Implement `TuiRunObserverInterface` to receive typed, content-free foreground
-observations after live TUI application of canonical events. It exposes the
-session ID, canonical sequence, observation type and an optional request ID.
-Match `InputResolved` to either `QuestionRequested` or `ApprovalRequested`
-by session and request ID; both kinds can be answered through the same route.
-Child execution also produces live `ChildExecutionStarted` and
-`ChildExecutionEnded` observations. `sessionId` is the root session,
-and `childRunId` and `sequence` identify
-the child and its canonical event, not the parent cursor. Bootstrap history
-and streaming deltas do not dispatch this hook. Turn start
-can reflect an internal model step; a foreground terminal event alone does not
-prove background work has settled. The callback must not block the UI.
-
-Implement `TuiSessionCloseObserverInterface` to receive
-`onTuiSessionClosing($sessionId)` before teardown on final graceful interactive
-quit. It does not fire for drafts, session switches, settings reloads, or abrupt
-process exits. Keep any best-effort shutdown work bounded.
-
-Implement `TuiBackgroundJobObserverInterface` for live, best-effort background
-job start and end observations, including while the selected session is idle.
-The DTO contains only the selected root session ID, the native owner run ID
-(which can be a child run), an opaque job ID, and the transition type. Native
-Bash and code-mode jobs are routed by their recorded ownership. Observations
-are not replayed on attach or selection, and other sessions are not attributed
-to the selection.
+This context is UI only. The selected session and its live events come from
+`ExtensionApiInterface::session()` and the `Session\Event` classes; see
+[extension-api-runtime.md](extension-api-runtime.md).
 
 ## UX guidelines
 
@@ -80,27 +48,3 @@ to the selection.
 
 - Overview: [extension-api.md](extension-api.md)
 - Runtime hooks: [extension-api-runtime.md](extension-api-runtime.md)
-
-## Selected session metadata and current background work
-
-Check whether the host context implements `TuiSessionMetadataContextInterface`
-before calling `getSessionDisplayTitle()`. It returns the canonical picker title
-for the current persisted selection, or `null` when unavailable.
-
-When the host implements `TuiSessionActivityContextInterface`, `isMainActive()`
-reports the selected session's live main activity, or `null` when unavailable.
-An inactive main run does not imply successful completion; use the terminal
-run observation for the outcome. `getBackgroundAgents()` and
-`getBackgroundJobs()` return current counts. Use `getBackgroundSnapshot()` when
-you need both in one inventory read. Pass `false` to reuse the latest host
-sample without an inventory query; counts remain `null` until a sample is available.
-
-Implement `TuiBackgroundSnapshotObserverInterface` to receive
-`TuiBackgroundSnapshotDTO` from the existing host operational poll once the
-session is ready. Each snapshot contains the selected session ID and separate
-current counts of nonterminal owned subagents and background scripts. A zero
-means none; `null` means unavailable. `schedules` contains the current pending
-schedule list, `[]` when empty, or `null` when unavailable. Each `TuiScheduleDTO`
-contains only its ID, interval label, recurrence flag, and nullable next run time.
-The snapshot does not contain scheduled tools, arguments, prompts, or commands.
-Reuse the delivered snapshot instead of querying the same inventory again.

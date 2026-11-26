@@ -7,7 +7,6 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
@@ -15,7 +14,6 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Picker\PickerOverlay;
-use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Utility\ThrowableMessage;
 use Ineersa\Tui\Widget\SelectListKeybindings;
@@ -191,16 +189,9 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
             return;
         }
         $this->lastStatusPoll = microtime(true);
-        $sessionId = $context->state->sessionId;
         try {
             $observedChildren = $context->state->subagentLiveCatalog->activeRunIds();
             $snapshot = $context->client->backgroundWork($runId, $this->requested?->processId, $observedChildren);
-            $activeChildren = 0;
-            foreach ($snapshot->children as $child) {
-                if (!SubagentLiveStatusEnum::fromProgressString($child->status)->isTerminal()) {
-                    ++$activeChildren;
-                }
-            }
             $context->state->subagentLiveCatalog->synchronizeOperationalStatus($snapshot->children);
             $rows = [];
             foreach ($snapshot->work as $work) {
@@ -209,7 +200,6 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
                 }
                 $rows[] = ['kind' => $work->kind, 'label' => $this->label($work), 'status' => $work->status];
             }
-            $context->lifecycle->dispatchBackgroundSnapshot(new TuiBackgroundSnapshotDTO($sessionId, $activeChildren, \count($rows), $snapshot->schedules));
             // Operational children retain canonical batch launch order. The
             // picker catalog's attention/activity sort must not move these rows.
             foreach ($snapshot->children as $operationalChild) {
@@ -242,7 +232,6 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
                 $context->screen->requestRender();
             }
         } catch (\Throwable $e) {
-            $context->lifecycle->dispatchBackgroundSnapshot(new TuiBackgroundSnapshotDTO($sessionId, null, null));
             $hadRequest = null !== $this->requested;
             $this->requested = null;
             if ($hadRequest) {

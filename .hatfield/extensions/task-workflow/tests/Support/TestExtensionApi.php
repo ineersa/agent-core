@@ -16,6 +16,7 @@ use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionDeletedHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
@@ -147,6 +148,11 @@ final class TestExtensionApi implements ExtensionApiInterface
     }
 
     public function sessionEvents(): SessionEventReaderInterface
+    {
+        throw new \LogicException('unused');
+    }
+
+    public function session(): SessionContextInterface
     {
         throw new \LogicException('unused');
     }

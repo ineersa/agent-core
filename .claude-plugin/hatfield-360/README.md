@@ -65,6 +65,12 @@ matching `Stop` with `stop_hook_active: false` as completed, and a matching
 `StopFailure` as failed. The Stop flag does not guarantee that another hook
 will not block the stop and continue the response. This integration has no
 authoritative post-hook continuation or interruption signal.
+A completed turn carries the `Stop` hook's `last_assistant_message` as
+`turn.response`: plain text, cut to its last 1,000 Unicode characters behind a
+leading `…`. Later snapshots for the same turn, such as background subagents
+settling, resend it; a new prompt starts without one. It is left out when the
+message is empty or missing (older Claude Code versions), and never sent for
+working or failed turns.
 Subagent start/stop hooks track an approximate active count by agent ID, without
 parent links or execution IDs. Reused IDs and overlapping hooks can make the
 count approximate. Resume starts with an unknown baseline. A validated

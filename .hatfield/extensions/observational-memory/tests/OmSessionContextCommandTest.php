@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Command\OmViewCommandHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmSessionContext;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
@@ -16,10 +16,9 @@ final class OmSessionContextCommandTest extends OmTestCase
 {
     public function testViewResolvesLiveSessionOnEveryInvocation(): void
     {
-        $tui = $this->createMock(TuiExtensionContextInterface::class);
-        $tui->expects($this->exactly(2))->method('getSessionId')->willReturnOnConsecutiveCalls('first', 'second');
-        $session = new OmSessionContext();
-        $session->bindTui($tui);
+        $selected = $this->createMock(SessionContextInterface::class);
+        $selected->expects($this->exactly(2))->method('getSessionId')->willReturnOnConsecutiveCalls('first', 'second');
+        $session = new OmSessionContext($selected);
         $urls = [];
         $http = new MockHttpClient(static function (string $method, string $url) use (&$urls): MockResponse {
             $urls[] = $url;
@@ -36,7 +35,7 @@ final class OmSessionContextCommandTest extends OmTestCase
 
     public function testMissingSessionShowsSafeError(): void
     {
-        $handler = new OmViewCommandHandler($this->query($this->api()), new OmSessionContext());
+        $handler = new OmViewCommandHandler($this->query($this->api()), new OmSessionContext($this->createStub(SessionContextInterface::class)));
         $context = $this->createMock(CommandContextInterface::class);
         $context->expects($this->once())->method('notify')->with('OM view unavailable.', 'error');
         $handler->handle('', $context);

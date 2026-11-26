@@ -646,6 +646,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             commandBus: $this->createStub(\Symfony\Component\Messenger\MessageBusInterface::class),
             runRelationships: $runRelationships ?? $this->createStub(RunRelationshipReaderInterface::class),
             sessions: $this->emptySessionRepository(),
+            sessionContext: $this->createStub(\Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface::class),
         );
     }
 

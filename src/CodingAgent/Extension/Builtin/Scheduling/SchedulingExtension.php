@@ -111,7 +111,7 @@ final class SchedulingExtension implements ConfigurableExtensionInterface, TuiEx
     {
         $path = $api->getCwd().'/.hatfield/cache';
         $this->schedules = new SessionScheduleRepository(new FilesystemAdapter('session-schedules', 0, $path), new LockFactory(new FlockStore()));
-        $this->picker = new SchedulePicker($this->schedules);
+        $this->picker = new SchedulePicker($this->schedules, $api->session());
         $api->registerTool(new ToolRegistrationDTO(
             name: 'schedule',
             description: 'Schedule recurring Bash commands or code-mode scripts in the current session, or list and cancel schedules. Results arrive automatically. Schedules end when Hatfield closes.',

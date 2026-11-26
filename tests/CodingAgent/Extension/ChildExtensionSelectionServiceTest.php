@@ -228,6 +228,11 @@ final class ChildExtensionSelectionServiceTest extends TestCase
                     throw new \LogicException('unused');
                 }
 
+                public function session(): \Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface
+                {
+                    throw new \LogicException('unused');
+                }
+
                 public function registerExtensionAgentJobHandler(string $handlerId, \Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface $handler): void
                 {
                 }

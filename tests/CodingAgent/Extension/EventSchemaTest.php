@@ -32,5 +32,9 @@ final class EventSchemaTest extends TestCase
             $this->assertFalse(EventSchema::accepts('session.snapshot', 's', 1, 1, ['turn' => ['trigger' => $trigger] + $snapshot['turn']] + $snapshot));
         }
         $this->assertFalse(EventSchema::accepts('session.snapshot', 's', 1, 1, ['turn' => $snapshot['turn'] + ['identity' => 'abc']] + $snapshot));
+        $this->assertTrue(EventSchema::accepts('session.snapshot', 's', 1, 1, ['turn' => $snapshot['turn'] + ['response' => str_repeat('🦊', 2000)]] + $snapshot));
+        foreach ([str_repeat('a', 2001), 1, null] as $response) {
+            $this->assertFalse(EventSchema::accepts('session.snapshot', 's', 1, 1, ['turn' => $snapshot['turn'] + ['response' => $response]] + $snapshot));
+        }
     }
 }

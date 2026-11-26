@@ -1004,6 +1004,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             static::getContainer()->get(\Ineersa\CodingAgent\Tool\BackgroundProcessManager::class),
             static::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService::class),
             static::getContainer()->get(\Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider::class),
+            static::getContainer()->get(\Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher::class),
         );
 
         return [$client, $directory];

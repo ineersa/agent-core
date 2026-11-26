@@ -65,6 +65,44 @@ when it is dispatched. Parent-side fork snapshot hooks carry the parent's run ID
 `sessionEvents()` returns a `SessionEventReaderInterface` for canonical session events.
 Treat access as recovery/read-only analytics, not a substitute for missing public APIs.
 
+## Selected session and live events
+
+`session()` returns a `SessionContextInterface` for the session selected in the
+interactive process: `getSessionId()` (empty when none is selected),
+`getSessionDisplayTitle()` (canonical picker title or `null`), and
+`getBackgroundSnapshot()`. The snapshot has separate counts of nonterminal owned
+subagents and background scripts, and the pending schedules (`ScheduleDTO`: ID,
+interval label, recurrence flag and nullable next run time; no tools, arguments,
+prompts or commands). A zero count means none; `null` counts or schedules mean
+inventory is unavailable. Each call reads storage, so do not call it in a loop.
+Other processes have no selected session.
+
+To observe the selected session, implement Symfony's `EventSubscriberInterface`
+on the extension class and subscribe to the data-only classes in
+`Session\Event`. The host attaches the subscriber when it loads the extension.
+CodingAgent dispatches these events only in the interactive process, from the
+live event stream of the selected session's main run:
+
+| Event | When |
+|---|---|
+| `SessionSelectedEvent` | A new or resumed session is selected, or a draft obtains its session ID. A new run in the selected session does not select again. |
+| `SessionClosingEvent` | Final graceful interactive quit of the selected session. Not for drafts, switches, reloads or abrupt exits. |
+| `TurnStartedEvent` | A main turn started; internal model or tool steps of one response also start turns. `trigger` is `schedule` for scheduled work. |
+| `TurnCompletedEvent` / `TurnFailedEvent` / `TurnCancelledEvent` | The main run completed, or a main turn or run failed or was cancelled. |
+| `AssistantMessageCompletedEvent` | A main assistant message completed. `text` is its full visible text, with separate text blocks joined by a blank line; empty for tool-only messages. |
+| `ToolStartedEvent` / `ToolFinishedEvent` | A main tool execution started, or completed, failed, was cancelled or acknowledged. Tool inputs and results are not included. |
+| `InputRequestedEvent` / `InputResolvedEvent` | A question or approval of the main run, or of the child named by `childRunId`, is pending or resolved. Match them by `requestId`. |
+| `ChildExecutionStartedEvent` / `ChildExecutionEndedEvent` | A child run owned by the session started or ended. `sequence` is the child-local order. |
+| `BackgroundJobStartedEvent` / `BackgroundJobEndedEvent` | A background job owned by the session (native owner `ownerRunId`) started or ended, also while the session is idle. |
+
+Each event carries the session ID; main-run events also carry the canonical
+sequence. Bootstrap history, streaming deltas and other sessions are never
+dispatched. A terminal main event does not prove that background work settled.
+
+Listeners run synchronously on the interactive event loop: only record state,
+and move I/O or slow work into an `Amp\async()` fiber or an event-loop timer.
+A listener exception is logged and does not stop delivery of that event to other listeners or of later events.
+
 ## Compaction hooks
 
 `registerBeforeCompactionHook()` can contribute notes or influence compaction input via

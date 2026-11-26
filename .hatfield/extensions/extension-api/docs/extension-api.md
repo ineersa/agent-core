@@ -59,6 +59,7 @@ final class ExampleExtension implements HatfieldExtensionInterface
 | `registerSessionDeletedHook` | Permanent local deletion completed (captured target identity) |
 | `registerBeforeCompactionHook` | Compaction contribution/trim |
 | `sessionEvents` | Read canonical session events |
+| `session` + `Session\Event` subscribers | Selected interactive session and its live events |
 | `isChildRun` | Host-owned session/native-child identity: child vs main run; unknown identity throws |
 | `agent` / extension-agent jobs | Isolated agent calls + async jobs |
 

@@ -264,6 +264,41 @@ final class Hatfield360ClaudeHookTest extends TestCase
         }
     }
 
+    public function testCompletedTurnReportsTheTruncatedFinalMessageUntilTheNextPrompt(): void
+    {
+        // Stop payload shape recorded from Claude Code 2.1.331.
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $server = listen('unix://'.$directory.'/s');
+        $environment = ['H360_STATUS_ENDPOINT' => $directory.'/s', 'H360_STATUS_LAUNCH_ID' => '44444444-4444-4444-8444-444444444444', 'H360_STATUS_TOKEN' => str_repeat('a', 64)];
+        $send = fn (array $hook): array => $this->exchange($server, $this->launch($environment, $hook + ['session_id' => 'response-session']));
+        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'background_tasks' => []];
+        $prompt = static fn (int $i): array => ['prompt_id' => \sprintf('55555555-5555-4555-8555-%012d', $i)];
+        try {
+            $send(['hook_event_name' => 'SessionStart', 'source' => 'startup']);
+            $send($prompt(1) + ['hook_event_name' => 'UserPromptSubmit']);
+            $done = $send($prompt(1) + $stop + ['last_assistant_message' => "Reviewed 3 files.\nAll checks pass."]);
+            $this->assertSame("Reviewed 3 files.\nAll checks pass.", $done['turn']['response']);
+            $settled = $send(['agent_id' => 'late-child', 'hook_event_name' => 'SubagentStart']);
+            $this->assertSame($done['turn'], $settled['turn'], 'Settling snapshots resend the response.');
+
+            $working = $send($prompt(2) + ['hook_event_name' => 'UserPromptSubmit']);
+            $this->assertArrayNotHasKey('response', $working['turn']);
+            $long = $send($prompt(2) + $stop + ['last_assistant_message' => 'x'.str_repeat('🐕', 999).'end']);
+            $this->assertSame('…'.str_repeat('🐕', 996).'end', $long['turn']['response']);
+
+            foreach ([3 => ['last_assistant_message' => " \n"], 4 => []] as $i => $message) {
+                $send($prompt($i) + ['hook_event_name' => 'UserPromptSubmit']);
+                $this->assertArrayNotHasKey('response', $send($prompt($i) + $stop + $message)['turn']);
+            }
+            $send($prompt(5) + ['hook_event_name' => 'UserPromptSubmit']);
+            $failed = $send($prompt(5) + ['hook_event_name' => 'StopFailure', 'error' => 'rate_limit', 'last_assistant_message' => 'Partial.']);
+            $this->assertSame(['id' => $prompt(5)['prompt_id'], 'status' => 'failed'], $failed['turn']);
+        } finally {
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     public function testCronJobsAreReportedAndTheirRunsAreScheduledTurns(): void
     {
         // Payload shapes recorded from Claude Code 2.1.331 `/loop` hooks.
@@ -467,7 +502,7 @@ final class Hatfield360ClaudeHookTest extends TestCase
         $prompt = $session + ['prompt_id' => '44444444-4444-4444-8444-555555555555'];
         $tool = ['hook_event_name' => 'PreToolUse', 'tool_name' => 'mcp__private__tool', 'tool_use_id' => 'tool-1', 'tool_input' => ['private' => true]];
         $wait = ['mcp_server_name' => 'mcp-private', 'elicitation_id' => 'request-1'];
-        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'last_assistant_message' => 'private', 'background_tasks' => []];
+        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false, 'last_assistant_message' => 'Done.', 'background_tasks' => []];
         try {
             $start = $this->exchange($server, $this->launch($environment, $session + ['hook_event_name' => 'SessionStart', 'source' => 'startup']));
             $this->assertNull($start['backgroundScripts']);
@@ -499,6 +534,7 @@ final class Hatfield360ClaudeHookTest extends TestCase
             $this->assertQuietHook($environment, $agent + ['hook_event_name' => 'SubagentStart']);
             $end = $this->exchange($server, $this->launch($environment, $prompt + $stop));
             $this->assertSame('completed', $end['turn']['status']);
+            $this->assertSame('Done.', $end['turn']['response'], 'Only the final message is reported, and only in the turn.');
             $this->assertSame($child['sequence'] + 1, $end['sequence']);
             $this->assertArrayNotHasKey('last_assistant_message', $end);
             $this->assertSame(1, $end['activeSubagents']);

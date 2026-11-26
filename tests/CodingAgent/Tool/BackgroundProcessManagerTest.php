@@ -62,6 +62,9 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             $this->assertTrue($this->manager->cleanupFinishedRecord($record->id, $this->runId));
         }
         $this->manager->cleanupSessionSidecars([$this->runId]);
+        // The class shares one kernel while the database rolls back, so the next case reuses
+        // this run ID. Discard the end observations this cleanup published to the shared sink.
+        iterator_to_array(self::getContainer()->get(InMemoryRuntimeEventSink::class)->drain($this->runId));
         TestDirectoryIsolation::removeDirectory($this->directory);
         parent::tearDown();
     }
