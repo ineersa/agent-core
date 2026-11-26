@@ -37,7 +37,7 @@ jobs:
         env:
           fail-fast: true
         with:
-          # Exact patch from tools/static/pin.json (setup-php accepts patch values).
+          # setup-php selects the minor series; the startup check enforces the pin.
           php-version: "8.5.13"
           extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
           coverage: none
@@ -51,6 +51,14 @@ jobs:
             php --ini
             exit 1
           fi
+          php -r '
+            $pin = json_decode(file_get_contents("tools/static/pin.json"), true, 512, JSON_THROW_ON_ERROR);
+            $expected = $pin["php_version"] ?? null;
+            if (PHP_VERSION !== $expected) {
+                fwrite(STDERR, "Release PHP version mismatch: expected " . var_export($expected, true) . ", got " . PHP_VERSION . "\n");
+                exit(1);
+            }
+          '
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
@@ -119,6 +127,14 @@ jobs:
             php --ini
             exit 1
           fi
+          php -r '
+            $pin = json_decode(file_get_contents("tools/static/pin.json"), true, 512, JSON_THROW_ON_ERROR);
+            $expected = $pin["php_version"] ?? null;
+            if (PHP_VERSION !== $expected) {
+                fwrite(STDERR, "Release PHP version mismatch: expected " . var_export($expected, true) . ", got " . PHP_VERSION . "\n");
+                exit(1);
+            }
+          '
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
@@ -274,6 +290,14 @@ jobs:
             php --ini
             exit 1
           fi
+          php -r '
+            $pin = json_decode(file_get_contents("tools/static/pin.json"), true, 512, JSON_THROW_ON_ERROR);
+            $expected = $pin["php_version"] ?? null;
+            if (PHP_VERSION !== $expected) {
+                fwrite(STDERR, "Release PHP version mismatch: expected " . var_export($expected, true) . ", got " . PHP_VERSION . "\n");
+                exit(1);
+            }
+          '
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist

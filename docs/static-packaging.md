@@ -77,8 +77,11 @@ run `bin/spc check-update --json` using the pinned SPC executable to compare
 its cached downloads with upstream versions where supported.
 
 Release jobs provision their separate system PHP using setup-php for bundled
-extensions and check for clean PHP startup before Composer. This does not
-change the native runtime inputs.
+extensions. The pinned setup-php action selects the minor series, not the
+exact patch. Before Composer, every release job checks for clean PHP startup
+and requires `PHP_VERSION` to match `tools/static/pin.json` exactly. A mismatch
+fails the release; reconcile the pin and the available host runtime before
+retrying. This check does not change the native runtime inputs.
 
 ## Runtime
 
