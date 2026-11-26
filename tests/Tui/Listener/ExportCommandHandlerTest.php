@@ -21,6 +21,9 @@ use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 #[CoversClass(ExportCommandHandler::class)]
 final class ExportCommandHandlerTest extends TestCase
@@ -525,7 +528,7 @@ final class ExportCommandHandlerTest extends TestCase
         );
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->never())->method('find');
-        $sessionStore = new HatfieldSessionStore($appConfig, $entityManager, new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+        $sessionStore = new HatfieldSessionStore($appConfig, $entityManager, new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
 
         $handler = new ExportCommandHandler(
             new TuiSessionState($sessionId),
@@ -1454,7 +1457,7 @@ You are a helpful assistant.
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
 
         return new ExportCommandHandler($state, $sessionStore, SessionEventsExportServiceFactory::create($toolbox));
     }

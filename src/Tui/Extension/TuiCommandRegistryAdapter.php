@@ -9,6 +9,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandCatalog;
+use Ineersa\Tui\Command\SlashCommandRegistry;
 
 /**
  * TUI-layer adapter that bridges extension-registered slash commands
@@ -21,7 +22,7 @@ use Ineersa\Tui\Command\SlashCommandCatalog;
  *
  * Extension handler objects are process-owned, so they are registered
  * on the shared catalog as default handlers; every per-session
- * {@see \Ineersa\Tui\Command\SlashCommandRegistry} resolves them at
+ * {@see SlashCommandRegistry} resolves them at
  * execute time, keeping dynamic registrations immediately visible.
  */
 final readonly class TuiCommandRegistryAdapter implements CommandRegistryInterface

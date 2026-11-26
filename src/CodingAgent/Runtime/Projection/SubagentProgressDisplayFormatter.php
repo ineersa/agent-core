@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Projection;
 
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
+use Ineersa\Tui\Transcript\SubagentResultRenderer;
 
 use function Symfony\Component\String\u;
 
@@ -13,7 +14,7 @@ use function Symfony\Component\String\u;
  * Builds compact inline transcript text for structured subagent progress snapshots.
  *
  * ToolResult blocks retain the full progress text, including recent tools and
- * the assistant excerpt. {@see \Ineersa\Tui\Transcript\SubagentResultRenderer}
+ * the assistant excerpt. {@see SubagentResultRenderer}
  * renders a smaller, height-stable card and directs users to /agents-live for details.
  *
  * Accepts typed snapshots only. Wire arrays are denormalized once at the

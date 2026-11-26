@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool\ImageProcessing;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Symfony\AI\Platform\Message\MessageBag;
 
@@ -66,9 +67,9 @@ final readonly class ImageGatingConvertHook implements ConvertToLlmHookInterface
      * method replaces each image_ref part with a text summary so the model
      * can still reason about the tool result without receiving image bytes.
      *
-     * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $messages
+     * @param list<AgentMessage> $messages
      *
-     * @return list<\Ineersa\AgentCore\Domain\Message\AgentMessage>
+     * @return list<AgentMessage>
      */
     private function stripImageRefParts(array $messages): array
     {
@@ -113,7 +114,7 @@ final readonly class ImageGatingConvertHook implements ConvertToLlmHookInterface
             }
 
             if ($hasImageRef) {
-                $stripped[] = new \Ineersa\AgentCore\Domain\Message\AgentMessage(
+                $stripped[] = new AgentMessage(
                     role: $message->role,
                     content: $newContent,
                     timestamp: $message->timestamp,

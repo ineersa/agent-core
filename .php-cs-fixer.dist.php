@@ -1,16 +1,20 @@
 <?php
 
 declare(strict_types=1);
+use PhpCsFixer\Config;
+use PhpCsFixer\Finder;
+use PhpCsFixer\Runner\Parallel\ParallelConfigFactory;
 
-return (new PhpCsFixer\Config())
+return (new Config())
     // @see https://github.com/PHP-CS-Fixer/PHP-CS-Fixer/pull/7777
-    ->setParallelConfig(PhpCsFixer\Runner\Parallel\ParallelConfigFactory::detect())
+    ->setParallelConfig(ParallelConfigFactory::detect())
     ->setRules([
         '@Symfony' => true,
         '@Symfony:risky' => true,
         'fopen_flags' => ['b_mode' => true],
         'protected_to_private' => false,
         'declare_strict_types' => true,
+        'fully_qualified_strict_types' => ['import_symbols' => true],
         'php_unit_test_case_static_method_calls' => ['call_type' => 'this'],
         'ordered_class_elements' => [
             'order' => [
@@ -34,7 +38,7 @@ return (new PhpCsFixer\Config())
     ])
     ->setRiskyAllowed(true)
     ->setFinder(
-        (new PhpCsFixer\Finder())
+        (new Finder())
             ->in([__DIR__.'/src', __DIR__.'/tools/phpstan', __DIR__.'/.castor', __DIR__.'/.hatfield/extensions', __DIR__.'/tests'])
             ->append([__FILE__, __DIR__.'/castor.php'])
             ->exclude('var')

@@ -24,6 +24,8 @@ use Ineersa\SqliteQueue\ValueObject\QueueName;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
+use Symfony\Component\Process\InputStream;
+use Symfony\Component\Process\Process;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor
@@ -206,7 +208,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $this->assertNotSame([], $driverPids, 'Amp SQLite driver child must exist after ready');
 
             $ownerInput = (new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'ownerInput'))->getValue($first);
-            $this->assertInstanceOf(\Symfony\Component\Process\InputStream::class, $ownerInput);
+            $this->assertInstanceOf(InputStream::class, $ownerInput);
             // Hard controller death closes the owner write end without graceful shutdown.
             $ownerInput->close();
 
@@ -382,14 +384,14 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $property = new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'process');
         $process = $property->getValue($supervisor);
 
-        return $process instanceof \Symfony\Component\Process\Process && $process->isRunning();
+        return $process instanceof Process && $process->isRunning();
     }
 
-    private function brokerProcess(SessionSqliteQueueBrokerSupervisor $supervisor): \Symfony\Component\Process\Process
+    private function brokerProcess(SessionSqliteQueueBrokerSupervisor $supervisor): Process
     {
         $property = new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'process');
         $process = $property->getValue($supervisor);
-        $this->assertInstanceOf(\Symfony\Component\Process\Process::class, $process);
+        $this->assertInstanceOf(Process::class, $process);
 
         return $process;
     }

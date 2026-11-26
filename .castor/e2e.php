@@ -5,6 +5,7 @@ declare(strict_types=1);
 /** Offline controller process and TUI E2E tasks. */
 
 use Castor\Attribute\AsTask;
+use ParaTest\ParaTestCommand;
 
 use function CastorTasks\check_lane_paratest_processes;
 use function CastorTasks\ensure_standalone_tui_qa_run_id;
@@ -48,7 +49,7 @@ function build_test_tui_phpunit_command(?string $filter = null): string
         $filterArg = ' --group=tui-e2e-replay';
     }
 
-    if (null === $filter && class_exists(ParaTest\ParaTestCommand::class)) {
+    if (null === $filter && class_exists(ParaTestCommand::class)) {
         $bootstrap = paratest_bootstrap_path();
         $processes = check_lane_paratest_processes('tui', 2, 4);
         $legacy = getenv('HATFIELD_TUI_PARATEST_PROCESSES');
@@ -82,7 +83,7 @@ function test_tui(?string $filter = null): void
     $tuiQaRunId = ensure_standalone_tui_qa_run_id();
 
     // ParaTest bootstrap migrates per-worker DBs; sequential full group still needs default DB.
-    if (null !== $filter || !class_exists(ParaTest\ParaTestCommand::class)) {
+    if (null !== $filter || !class_exists(ParaTestCommand::class)) {
         @mkdir('var/test', 0755, true);
         $migrate = run_test_db_migrate_bounded(
             qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'

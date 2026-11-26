@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\Tui\Completion\CompletionState;
+use Ineersa\Tui\Completion\CompletionSuggestion;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -125,7 +126,7 @@ final class CompletionMenu
     }
 
     /**
-     * @param list<\Ineersa\Tui\Completion\CompletionSuggestion> $suggestions
+     * @param list<CompletionSuggestion> $suggestions
      *
      * @return list<array{value: string, label: string, description?: string}>
      */

@@ -21,6 +21,7 @@ declare(strict_types=1);
  */
 
 use Castor\Attribute\AsTask;
+use ParaTest\ParaTestCommand;
 
 use function CastorTasks\check_lane_paratest_processes;
 use function CastorTasks\phar_ensure;
@@ -141,7 +142,7 @@ function test(?string $filter = null, ?string $suite = null): void
 
     // Default: ParaTest parallel acceleration for unit/integration suites.
     // Falls back to sequential PHPUnit when ParaTest is not installed.
-    if (!class_exists(ParaTest\ParaTestCommand::class)) {
+    if (!class_exists(ParaTestCommand::class)) {
         echo "ParaTest not installed — falling back to sequential PHPUnit.\n";
         $cmd = build_sequential_phpunit_command($pharEnv);
         $result = run_test_command_bounded('unit-sequential', $cmd, castor_test_runner_max_seconds());

@@ -6,6 +6,8 @@ namespace Ineersa\Tui\Tests\Application;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -15,6 +17,8 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 final class SessionInitializerTest extends TestCase
 {
@@ -24,7 +28,7 @@ final class SessionInitializerTest extends TestCase
     protected function setUp(): void
     {
         $this->projectDir = TestDirectoryIsolation::createProjectTempDir('session-initializer');
-        $store = new HatfieldSessionStore(new AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $this->projectDir), $this->createStub(EntityManagerInterface::class), new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+        $store = new HatfieldSessionStore(new AppConfig(new TuiConfig(theme: 'default'), new LoggingConfig(), cwd: $this->projectDir), $this->createStub(EntityManagerInterface::class), new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $this->sessionInit = new SessionInitializer($store, new TranscriptBlockFactory());
     }
 

@@ -7,11 +7,13 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
+use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ResumeHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -26,14 +28,14 @@ final class ResumeHandlerTest extends IsolatedKernelTestCase
 {
     protected function tearDown(): void
     {
-        self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery::class)->cancel();
+        self::getContainer()->get(SessionBootstrapDelivery::class)->cancel();
         parent::tearDown();
     }
 
     public function testResumeJsonlCommandCallsAttachAndEmitsRunResumed(): void
     {
         $spy = new AttachSpySessionClient();
-        $handler = new ResumeHandler($spy, self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery::class));
+        $handler = new ResumeHandler($spy, self::getContainer()->get(SessionBootstrapDelivery::class));
 
         $emitted = [];
         $emit = static function (RuntimeEvent $event) use (&$emitted): void {
@@ -58,7 +60,7 @@ final class ResumeHandlerTest extends IsolatedKernelTestCase
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
     {
         $spy = new AttachSpySessionClient();
-        $handler = new ResumeHandler($spy, self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery::class));
+        $handler = new ResumeHandler($spy, self::getContainer()->get(SessionBootstrapDelivery::class));
 
         $emitted = [];
         $emit = static function (RuntimeEvent $event) use (&$emitted): void {
@@ -163,9 +165,9 @@ final class AttachSpySessionClient implements AgentSessionClient
         throw new \RuntimeException('Unexpected shellExecute()');
     }
 
-    public function repair(string $runId, bool $apply = true): \Ineersa\CodingAgent\Runtime\Contract\RepairResult
+    public function repair(string $runId, bool $apply = true): RepairResult
     {
-        return new \Ineersa\CodingAgent\Runtime\Contract\RepairResult(false, false, 'No repairable corruption detected.');
+        return new RepairResult(false, false, 'No repairable corruption detected.');
     }
 
     public function compact(string $runId, ?string $customInstructions = null): void

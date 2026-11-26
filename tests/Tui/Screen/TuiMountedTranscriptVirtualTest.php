@@ -4,12 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -125,16 +131,16 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
 
     public function testExhaustedProviderErrorReachesRenderedTranscript(): void
     {
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
-        $executor = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor(
-            policy: new \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy(maxRetries: 1, baseDelayMs: 0),
+        $logger = new TestLogger();
+        $executor = new LlmRequestRetryExecutor(
+            policy: new LlmRequestRetryPolicy(maxRetries: 1, baseDelayMs: 0),
             clock: new MockClock(),
             logger: $logger,
         );
         $result = $executor->execute(
-            invoke: static fn () => new \Ineersa\AgentCore\Domain\Model\PlatformInvocationResult(
+            invoke: static fn () => new PlatformInvocationResult(
                 assistantMessage: null,
-                error: (new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier())->classify([
+                error: (new LlmProviderErrorClassifier())->classify([
                     'message' => 'Unexpected response code 402: {"error":"Grok Build usage balance exhausted"}',
                     'http_status_code' => 402,
                 ]),
@@ -151,7 +157,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $transcript = new TranscriptMountedWidget(theme: new DefaultTheme(new ThemePalette('errors', [])));
         $tui->add($transcript);
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscriber());
+        $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
         $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
         $projector->accept(new RuntimeEvent('run.failed', self::SESSION_ID, 1, ['error' => $result->error['user_message']]));
         $transcript->applyChangeSet($projector->drainChanges());

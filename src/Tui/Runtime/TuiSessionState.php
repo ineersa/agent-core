@@ -11,6 +11,8 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\Tui\ImagePaste\PastedImagePendingDTO;
+use Ineersa\Tui\Listener\PreviewExpansionInputListener;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 
 /**
@@ -165,7 +167,7 @@ final class TuiSessionState
      * Live/session-only mutable display state for the transcript.
      *
      * Initialized from TuiTranscriptConfig.previews->expandedByDefault
-     * at TUI startup. Ctrl+O ({@see \Ineersa\Tui\Listener\PreviewExpansionInputListener}) toggles
+     * at TUI startup. Ctrl+O ({@see PreviewExpansionInputListener}) toggles
      * previewableBlocksExpanded at runtime for this session only.
      * Not persisted to settings or session metadata.
      */
@@ -179,7 +181,7 @@ final class TuiSessionState
      * Staged pasted images keyed by placeholder index ([Image #N]).
      * Promoted into .hatfield/sessions/<id>/attachments/ on submit (issue #119).
      *
-     * @var array<int, \Ineersa\Tui\ImagePaste\PastedImagePendingDTO>
+     * @var array<int, PastedImagePendingDTO>
      */
     public array $pastedImagePendingByIndex = [];
 

@@ -27,6 +27,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler;
 use Ineersa\CodingAgent\Compaction\BeforeCompactionHookInterface;
 use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
@@ -51,8 +52,12 @@ use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
 /**
@@ -150,7 +155,7 @@ final class CompactRunHandlerTest extends TestCase
         );
         $guard = $this->createStub(PreLlmCompactionGuardInterface::class);
         $guard->method('shouldCompactBeforeLlmStep')->willReturn(true);
-        $advance = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
+        $advance = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             new CommandMailboxPolicy(new InMemoryCommandStore(), new CommandRouter([])),
             new EventFactory(),
             preLlmCompactionGuard: $guard,
@@ -822,8 +827,8 @@ final class CompactRunHandlerTest extends TestCase
                 public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
                 {
                     return new PlatformInvocationResult(
-                        assistantMessage: new \Symfony\AI\Platform\Message\AssistantMessage(
-                            new \Symfony\AI\Platform\Message\Content\Text($this->summaryText),
+                        assistantMessage: new AssistantMessage(
+                            new Text($this->summaryText),
                         ),
                     );
                 }
@@ -1339,11 +1344,11 @@ final class CompactRunHandlerTest extends TestCase
             ) {
             }
 
-            public function beforeCompaction(\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO $context): \Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO
+            public function beforeCompaction(BeforeCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
             {
                 $this->captured = $context;
 
-                return \Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO::replaceSummary($this->replacementText);
+                return BeforeCompactionHookResultDTO::replaceSummary($this->replacementText);
             }
         };
 
@@ -1369,7 +1374,7 @@ final class CompactRunHandlerTest extends TestCase
             $state,
         );
 
-        $this->assertInstanceOf(\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO::class, $captured);
+        $this->assertInstanceOf(BeforeCompactionHookContextDTO::class, $captured);
         $this->assertSame(1, $captured->requiredStartSeq);
         $this->assertSame(20, $captured->requiredEndSeq);
         $this->assertSame(RunEventTypeEnum::ContextCompactionStarted->value, $result->events[0]->type);

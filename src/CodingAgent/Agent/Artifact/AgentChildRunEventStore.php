@@ -6,14 +6,17 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\History\RunPresentationProjectorFactory;
 use Ineersa\CodingAgent\Session\JsonlPhysicalReadObservation;
 use Ineersa\CodingAgent\Session\JsonlRunEventLog;
+use Ineersa\CodingAgent\Session\RunHistorySourceDTO;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
@@ -25,7 +28,7 @@ use Symfony\Component\Lock\LockFactory;
  *
  *   .hatfield/sessions/<parentRunId>/artifacts/agents/<artifactId>/events.jsonl
  *
- * Sequence allocation uses {@see \Ineersa\CodingAgent\Session\FileRunSequenceAllocator::COUNTER_BASENAME} next to that log.
+ * Sequence allocation uses {@see FileRunSequenceAllocator::COUNTER_BASENAME} next to that log.
  * Uses Symfony Lock via the injected {@see LockFactory} (typically flock-backed) keyed by the child agentRunId to
  * protect concurrent appends.  Reuses EventPayloadNormalizer for
  * canonical event serialization.
@@ -45,7 +48,7 @@ use Symfony\Component\Lock\LockFactory;
  * bound-run validation, child artifact path, streaming reads, and child-specific
  * diagnostics.
  */
-final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface
+final class AgentChildRunEventStore implements PreparedTransitionEventStoreInterface
 {
     private readonly JsonlRunEventLog $eventLog;
 
@@ -166,9 +169,9 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
         $this->eventLog->assertTransitionReady($this->eventsPath(), $runId);
     }
 
-    public function historySource(): \Ineersa\CodingAgent\Session\RunHistorySourceDTO
+    public function historySource(): RunHistorySourceDTO
     {
-        return new \Ineersa\CodingAgent\Session\RunHistorySourceDTO($this->eventLog, $this->eventsPath());
+        return new RunHistorySourceDTO($this->eventLog, $this->eventsPath());
     }
 
     public function latestSequenceFor(string $runId): ?int

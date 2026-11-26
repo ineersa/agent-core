@@ -8,9 +8,12 @@ use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
 use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
+use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Psr\Log\LoggerInterface;
@@ -58,7 +61,7 @@ final class AutoCompactionHookSubscriber implements EssentialAfterTurnHookInterf
     {
         // A failed execution cannot be revived by automatic model work.
         // Other after-turn subscribers still receive the failure for cleanup.
-        if (\Ineersa\AgentCore\Domain\Run\RunStatus::Failed === $context->runState->status) {
+        if (RunStatus::Failed === $context->runState->status) {
             return [];
         }
         $runId = $context->runId;
@@ -246,7 +249,7 @@ final class AutoCompactionHookSubscriber implements EssentialAfterTurnHookInterf
         // The same settled model generation prepares the same compaction request.
         $stepId = 'compact-auto-'.hash('sha256', $runId.'|'.$runState->turnNo.'|'.$runState->activeStepId.'|'.$runState->lastAppliedAdvanceKey);
 
-        return [new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new CompactRun(
+        return [new DispatchCoordinationMessageDTO(new CompactRun(
             runId: $runId, turnNo: $runState->turnNo, stepId: $stepId, attempt: 1,
             idempotencyKey: hash('sha256', $runId.'|'.$stepId), trigger: CompactionTriggerEnum::Auto->value,
         ))];
@@ -258,7 +261,7 @@ final class AutoCompactionHookSubscriber implements EssentialAfterTurnHookInterf
      * only prior compaction handoff summaries, not original
      * conversation content.
      *
-     * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $messages
+     * @param list<AgentMessage> $messages
      */
     private function isSummaryOnlyPartition(array $messages): bool
     {

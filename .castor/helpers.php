@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace CastorTasks;
 
 use Castor\Context;
+use Ineersa\CodingAgent\Build\ApplicationBuildIdentity;
+use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Filesystem\Path;
 use Symfony\Component\Finder\Finder;
@@ -968,8 +970,8 @@ function phar_packaged_inputs(string $root): array
     // Selected built-in docs are fingerprinted as individual files (not the whole
     // docs/ tree). Discovery uses the same BuiltinDocsCatalog roots/marker as runtime.
     $selectedDocs = [];
-    if (class_exists(\Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::class)) {
-        $selectedDocs = (new \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog())->selectedAbsolutePaths($root);
+    if (class_exists(BuiltinDocsCatalog::class)) {
+        $selectedDocs = (new BuiltinDocsCatalog())->selectedAbsolutePaths($root);
     }
 
     // Extension API package source is fingerprinted without its docs/ subtree so
@@ -1780,7 +1782,7 @@ function phar_compile_staged(string $root, string $pharPath, string $stagingDir,
 
     // Stage only marked built-in docs at their canonical paths as regular files.
     // Unmarked repository docs and any legacy internal-docs projection are omitted.
-    $selectedDocs = (new \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog())->discover($root);
+    $selectedDocs = (new BuiltinDocsCatalog())->discover($root);
     foreach ($selectedDocs as $entry) {
         $dest = $stagingDir.'/'.$entry['relativePath'];
         $destDir = \dirname($dest);
@@ -1800,7 +1802,7 @@ function phar_compile_staged(string $root, string $pharPath, string $stagingDir,
 
     $identity = resolve_build_identity_for_packaging($root);
     $generatedRelative = 'src/CodingAgent/Build/build-identity.generated.php';
-    $generatedSource = \Ineersa\CodingAgent\Build\ApplicationBuildIdentity::generatePhpSource(
+    $generatedSource = ApplicationBuildIdentity::generatePhpSource(
         $identity['version'],
         $identity['commit'],
     );

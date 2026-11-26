@@ -4,19 +4,28 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
+use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
+use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
+use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Pipeline\RunCommit;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
@@ -26,18 +35,31 @@ use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
+use Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 /** Slice B: non-terminal tool-call human-input via existing ToolCallResult. */
 final class ToolCallHumanInputSuspensionTest extends TestCase
@@ -61,11 +83,11 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             }
         };
         $store = new ToolExecutionResultStore();
-        $envelope = (new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+        $envelope = (new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(),
             new ToolExecutor('parallel', 2, $store, toolbox: $toolbox),
             new InMemoryDeferredToolCompletionRepository(),
             $store,
-            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            new NullRunOperationalStatusReader(),
         ))(new ExecuteToolCall('run-susp', 2, 'turn-2-tools-1', 1, 'idemp', 'call-susp', 'bash', ['command' => 'env'], 0));
 
         $this->assertInstanceOf(ToolCallResult::class, $envelope);
@@ -81,10 +103,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             $this->call('run-b', 'step-b', 'call-1', 0),
             $this->call('run-b', 'step-b', 'call-2', 1),
         ]);
-        $this->assertSame('call-2', \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $store, 'run-b', 1, 'step-b', 'call-1', 'q-1')[0]->toolCallId);
-        $this->assertSame([], \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $store, 'run-b', 1, 'step-b', 'call-1', 'q-1'));
+        $this->assertSame('call-2', TestToolBatchCoordination::suspend($collector, $store, 'run-b', 1, 'step-b', 'call-1', 'q-1')[0]->toolCallId);
+        $this->assertSame([], TestToolBatchCoordination::suspend($collector, $store, 'run-b', 1, 'step-b', 'call-1', 'q-1'));
         $this->expectException(\LogicException::class);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $store, 'run-b', 1, 'step-b', 'call-1', 'q-other');
+        TestToolBatchCoordination::suspend($collector, $store, 'run-b', 1, 'step-b', 'call-1', 'q-other');
     }
 
     public function testHandlerAdmitsWaitingHumanAndReplayReconstructsToolCallRequest(): void
@@ -211,29 +233,29 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 1);
         $call = $this->call('run-r', 'step-r', 'call-r', 0, 1);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-r', 1, 'step-r', [$call]);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-r', 1, 'step-r', 'call-r', 'q-r');
+        TestToolBatchCoordination::suspend($collector, $batchStore, 'run-r', 1, 'step-r', 'call-r', 'q-r');
 
-        $answer = new \Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO(
+        $answer = new ToolCallHumanInputAnswerDTO(
             questionId: 'q-r',
             answer: '✅ Allow',
             continuationRef: ['run_id' => 'run-r', 'turn_no' => 1, 'step_id' => 'step-r', 'tool_call_id' => 'call-r'],
             requestPayload: ['question_id' => 'q-r', 'prompt' => 'Allow?'],
         );
-        $effects = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::resume($collector, $batchStore, 'run-r', 1, 'step-r', 'call-r', 'q-r', $answer);
+        $effects = TestToolBatchCoordination::resume($collector, $batchStore, 'run-r', 1, 'step-r', 'call-r', 'q-r', $answer);
         $this->assertCount(1, $effects);
         $this->assertSame('call-r', $effects[0]->toolCallId);
         $this->assertSame($call->args, $effects[0]->args);
         $this->assertNotNull($effects[0]->humanInputAnswer);
 
-        $store = new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore();
-        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter([]);
+        $store = new InMemoryCommandStore();
+        $router = new CommandRouter([]);
         $collector2 = new ToolBatchCollector($batchStore2 = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector2, $batchStore2, 'run-h2', 2, 'step-h2', [$this->call('run-h2', 'step-h2', 'call-h2', 0, 2)]);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector2, $batchStore2, 'run-h2', 2, 'step-h2', 'call-h2', 'q-h2');
-        $handler2 = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
+        TestToolBatchCoordination::suspend($collector2, $batchStore2, 'run-h2', 2, 'step-h2', 'call-h2', 'q-h2');
+        $handler2 = new ApplyCommandHandler(
             commandStore: $store,
             commandRouter: $router,
-            commandMailboxPolicy: new \Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy($store, $router),
+            commandMailboxPolicy: new CommandMailboxPolicy($store, $router),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -258,13 +280,13 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 RunOperationalToolCallStatusEnum::WaitingHuman,
                 1,
             )]]);
-        $result = $handler2->handle(new \Ineersa\AgentCore\Domain\Message\ApplyCommand(
+        $result = $handler2->handle(new ApplyCommand(
             runId: 'run-h2',
             turnNo: 2,
             stepId: 'human-step',
             attempt: 1,
             idempotencyKey: 'human-q-h2',
-            kind: \Ineersa\AgentCore\Domain\Command\CoreCommandKind::HumanResponse,
+            kind: CoreCommandKind::HumanResponse,
             payload: ['question_id' => 'q-h2', 'answer' => '✅ Allow'],
         ), $state);
 
@@ -279,17 +301,17 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertNotEmpty($result->postCommitActions, 'markApplied must wait for post-commit after effects');
         $this->assertFalse($store->has('run-h2', 'human-q-h2'));
         foreach ($result->postCommitActions as $callback) {
-            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, null, collector: $collector2, store: $store, batches: $batchStore2);
+            CoordinationActionTestRunner::run($callback, null, collector: $collector2, store: $store, batches: $batchStore2);
         }
         $this->assertFalse($store->has('run-h2', 'human-q-h2'));
 
         // Identical resume while already inFlight returns the same effect (CAS retry safety).
-        $same = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::resume($collector2, $batchStore2, 'run-h2',
+        $same = TestToolBatchCoordination::resume($collector2, $batchStore2, 'run-h2',
             2,
             'step-h2',
             'call-h2',
             'q-h2',
-            new \Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO(
+            new ToolCallHumanInputAnswerDTO(
                 questionId: 'q-h2',
                 answer: '✅ Allow',
                 continuationRef: ['run_id' => 'run-h2', 'turn_no' => 2, 'step_id' => 'step-h2', 'tool_call_id' => 'call-h2'],
@@ -300,7 +322,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertSame('call-h2', $same[0]->toolCallId);
 
         // Durable redrive by question_id + answer after state already advanced.
-        $redrive = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::redrive($collector2, $batchStore2, 'run-h2', 2, 'step-h2', 'q-h2', '✅ Allow');
+        $redrive = TestToolBatchCoordination::redrive($collector2, $batchStore2, 'run-h2', 2, 'step-h2', 'q-h2', '✅ Allow');
         $this->assertCount(1, $redrive);
         $this->assertSame('call-h2', $redrive[0]->toolCallId);
     }
@@ -316,15 +338,15 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
     public function testCrossCorrelatedToolCallAnswerIsRejected(): void
     {
-        $store = new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore();
-        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter([]);
+        $store = new InMemoryCommandStore();
+        $router = new CommandRouter([]);
         $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $batchStore, 'run-x', 1, 'step-x', [$this->call('run-x', 'step-x', 'call-x', 0)]);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-x', 1, 'step-x', 'call-x', 'q-x');
-        $handler = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
+        TestToolBatchCoordination::suspend($collector, $batchStore, 'run-x', 1, 'step-x', 'call-x', 'q-x');
+        $handler = new ApplyCommandHandler(
             commandStore: $store,
             commandRouter: $router,
-            commandMailboxPolicy: new \Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy($store, $router),
+            commandMailboxPolicy: new CommandMailboxPolicy($store, $router),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -343,13 +365,13 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 ),
             ])
             ->build();
-        $result = $handler->handle(new \Ineersa\AgentCore\Domain\Message\ApplyCommand(
+        $result = $handler->handle(new ApplyCommand(
             runId: 'run-x',
             turnNo: 1,
             stepId: 'human-step',
             attempt: 1,
             idempotencyKey: 'human-q-x',
-            kind: \Ineersa\AgentCore\Domain\Command\CoreCommandKind::HumanResponse,
+            kind: CoreCommandKind::HumanResponse,
             payload: ['question_id' => 'q-x', 'answer' => '✅ Allow'],
         ), $state);
         $this->assertSame(RunStatus::WaitingHuman, $result->nextState?->status);
@@ -359,8 +381,8 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
     public function testSuspensionThenTerminalToolCallResultsBothCommitDespiteSharedExecuteKey(): void
     {
-        $activeRunContext = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
-        $eventStore = new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore();
+        $activeRunContext = new TestActiveRunContext();
+        $eventStore = new InMemoryEventStore();
         $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
         $execute = $this->call('run-seq', 'step-seq', 'call-seq', 0);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-seq', 1, 'step-seq', [$execute]);
@@ -375,16 +397,16 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $activeRunContext->loadRecovered($running);
 
         $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer());
-        $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
+        $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
-            runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+            runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
+            runCommit: new RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
-                logger: new \Psr\Log\NullLogger(),
-                finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()), batches: $batchStore),
+                logger: new NullLogger(),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher()), batches: $batchStore),
             ),
-            commands: new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(),
+            commands: new InMemoryCommandStore(),
             handlers: [$handler],
         );
 
@@ -398,7 +420,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         );
         $terminal = ToolCallResultFactory::fromExecuteToolCallAndToolResult(
             $execute,
-            new \Ineersa\AgentCore\Domain\Tool\ToolResult('call-seq', 'write', [['type' => 'text', 'text' => 'ok']], isError: false),
+            new ToolResult('call-seq', 'write', [['type' => 'text', 'text' => 'ok']], isError: false),
         );
 
         // Both outcomes retain the authorized invocation identity for this call.

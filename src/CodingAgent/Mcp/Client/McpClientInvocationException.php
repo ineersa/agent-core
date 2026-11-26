@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp\Client;
 
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolResult;
+use Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker;
+
 /**
  * Client-layer exception for MCP tool invocation failures.
  *
@@ -11,10 +15,10 @@ namespace Ineersa\CodingAgent\Mcp\Client;
  * tool call, or by {@see McpConnectionManager::callTool()} when no live
  * client is available after reconnect. Other call failures propagate
  * unchanged. Callers in the tool
- * layer ({@see \Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker})
- * translate this to an AgentCore {@see \Ineersa\AgentCore\Contract\Tool\ToolCallException}
+ * layer ({@see McpToolInvoker})
+ * translate this to an AgentCore {@see ToolCallException}
  * so the existing ToolExecutor pipeline can produce a failed
- * {@see \Ineersa\AgentCore\Contract\Tool\ToolResult}.
+ * {@see ToolResult}.
  *
  * The tool layer owns retryability and the AgentCore tool-error mapping.
  */

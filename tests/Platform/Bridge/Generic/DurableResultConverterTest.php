@@ -26,8 +26,11 @@ use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
+use Symfony\AI\Platform\Result\Stream\HttpStreamInterface;
 use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\AI\Platform\TokenUsage\StreamListener;
+use Symfony\AI\Platform\TokenUsage\TokenUsage;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
@@ -675,7 +678,7 @@ final class DurableResultConverterTest extends TestCase
                 'usage' => ['prompt_tokens' => 100, 'completion_tokens' => 10]],
         ]), ['stream' => true]);
         $this->assertInstanceOf(StreamResult::class, $result);
-        $result->addListener(new \Symfony\AI\Platform\TokenUsage\StreamListener());
+        $result->addListener(new StreamListener());
 
         $this->expectException(IncompleteStreamException::class);
         try {
@@ -986,7 +989,7 @@ final class DurableResultConverterTest extends TestCase
 
         return new RawHttpResult(
             $response,
-            new class($chunks) implements \Symfony\AI\Platform\Result\Stream\HttpStreamInterface {
+            new class($chunks) implements HttpStreamInterface {
                 /** @param list<array<string, mixed>> $chunks */
                 public function __construct(private readonly array $chunks)
                 {
@@ -1047,7 +1050,7 @@ final class DurableResultConverterTest extends TestCase
         // Return chunked data simulating SSE -> getDataStream().
         return new RawHttpResult(
             $response,
-            new class($chunks) implements \Symfony\AI\Platform\Result\Stream\HttpStreamInterface {
+            new class($chunks) implements HttpStreamInterface {
                 /** @param list<array<string, mixed>> $chunks */
                 public function __construct(private readonly array $chunks)
                 {
@@ -1078,10 +1081,10 @@ final class DurableResultConverterTest extends TestCase
     /**
      * @param list<object> $deltas
      */
-    private function lastTokenUsageDelta(array $deltas): \Symfony\AI\Platform\TokenUsage\TokenUsage
+    private function lastTokenUsageDelta(array $deltas): TokenUsage
     {
         for ($i = \count($deltas) - 1; $i >= 0; --$i) {
-            if ($deltas[$i] instanceof \Symfony\AI\Platform\TokenUsage\TokenUsage) {
+            if ($deltas[$i] instanceof TokenUsage) {
                 return $deltas[$i];
             }
         }

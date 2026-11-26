@@ -8,12 +8,14 @@ use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Exception;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
@@ -25,8 +27,11 @@ use Ineersa\CodingAgent\Session\JsonlRunEventLog;
 use Ineersa\CodingAgent\Session\RunHistoryIndex;
 use Ineersa\CodingAgent\Session\RunHistorySourceDTO;
 use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
+use Ineersa\CodingAgent\Tests\Support\HistoryReferenceProjector;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Process\Process;
@@ -90,7 +95,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         // a corrupt index and would hide whether bootstrap used separate commits.
         try {
             try {
-                $this->expectException(\Doctrine\DBAL\Exception::class);
+                $this->expectException(Exception::class);
                 (new \ReflectionMethod(RunHistoryIndex::class, 'createSchema'))->invoke($index, $db);
             } finally {
                 $this->assertFalse($db->isTransactionActive());
@@ -139,7 +144,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
 
     public function testColdAnswerIndexExcludesToolAndCommentaryResponsesAndRetainsForwardAnswersUntilDiscard(): void
     {
-        $comment = \Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem::toText(['id' => 'comment', 'type' => 'message', 'role' => 'assistant', 'phase' => 'commentary', 'content' => [['type' => 'output_text', 'text' => 'Checking']]]);
+        $comment = MessageItem::toText(['id' => 'comment', 'type' => 'message', 'role' => 'assistant', 'phase' => 'commentary', 'content' => [['type' => 'output_text', 'text' => 'Checking']]]);
         $responses = [
             ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Tool commentary']], 'tool_calls' => [['id' => 'call']]],
             ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Checking', 'text_signature' => $comment->getSignature()]]],
@@ -281,7 +286,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         }
         $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
         $page = $index->entryPage($this->log, $this->path, 'indexed', after: 0);
-        $reference = (new \Ineersa\CodingAgent\Tests\Support\HistoryReferenceProjector())->build($events);
+        $reference = (new HistoryReferenceProjector())->build($events);
         $this->assertSame(array_keys($reference->promptsByTurnNo), array_column($page['rows'], 'turn_no'));
         $this->assertSame([3, 31], array_column($page['rows'], 'anchor'));
         $this->assertSame(RunHistoryIndex::PREVIEW_BYTES, \strlen($page['rows'][1]['preview']));
@@ -614,7 +619,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $this->assertSame([], $this->log->latestCommandSequences($this->path, 'indexed', [], 404));
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('summaryTerminals')]
+    #[DataProvider('summaryTerminals')]
     public function testFirstSummaryAndOrdinaryPublicationUseOnlyBoundedPhysicalWork(string $reason, string $advanceReason): void
     {
         $this->path = \dirname($this->path).'/artifacts/agents/long-child/events.jsonl';
@@ -634,7 +639,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $this->assertSame(1, $this->readLines('index_boundary_validation'));
         $this->assertSame(17, $first->messageCount);
         $this->assertSame(20, $first->eventCount);
-        $this->assertSame('failed' === $reason ? \Ineersa\AgentCore\Domain\Run\RunStatus::Failed : \Ineersa\AgentCore\Domain\Run\RunStatus::Cancelled, $first->status);
+        $this->assertSame('failed' === $reason ? RunStatus::Failed : RunStatus::Cancelled, $first->status);
         $this->assertSummaryParity($reader);
         $this->logger->records = [];
         $suffixRecords = 0;

@@ -11,6 +11,9 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Input;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Agent\Toolbox\ToolResult;
+use Symfony\AI\Platform\Message\MessageBag;
+use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
 
@@ -41,7 +44,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
             ));
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag());
+        $input = new Input('test-model', new MessageBag());
 
         $processor->processInput($input, new ModelInvocationInput(
             runId: 'abc',
@@ -67,7 +70,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
             ->willReturn(new ActiveToolSet(toolNames: [], allowListNames: []));
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag());
+        $input = new Input('test-model', new MessageBag());
 
         $processor->processInput($input, new ModelInvocationInput(
             runId: 'session-stable-uuid',
@@ -91,7 +94,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
             ->willReturn(new ActiveToolSet(toolNames: ['bash'], allowListNames: ['bash']));
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag());
+        $input = new Input('test-model', new MessageBag());
 
         $processor->processInput($input, new ModelInvocationInput(
             runId: 'x',
@@ -112,7 +115,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
     public function testWithoutResolverUsesAllToolboxTools(): void
     {
         $processor = new DynamicToolDescriptionProcessor($this->toolbox);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), []);
+        $input = new Input('test-model', new MessageBag(), []);
 
         $processor->processInput($input);
 
@@ -130,7 +133,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $resolver->expects($this->never())->method('resolve');
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), []);
+        $input = new Input('test-model', new MessageBag(), []);
 
         $processor->processInput($input);
 
@@ -147,7 +150,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
 
         // Passing tools as flat string array without tools_ref — should fall
         // through to existing filtering logic and not invoke resolver.
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
+        $input = new Input('test-model', new MessageBag(), [
             'tools' => ['bash'],
         ]);
 
@@ -166,7 +169,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
             ->willReturn(new ActiveToolSet(toolNames: ['read', 'bash'], allowListNames: ['read', 'bash']));
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
+        $input = new Input('test-model', new MessageBag(), [
             'tools' => ['all_tools_from_toolbox'], // overridden by resolver
             'tool_descriptions' => ['read' => 'Custom read description'],
         ]);
@@ -199,7 +202,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
             ->willReturn(new ActiveToolSet(toolNames: ['read'], allowListNames: ['read']));
 
         $processor = new DynamicToolDescriptionProcessor(toolbox: null, toolSetResolver: $resolver);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag());
+        $input = new Input('test-model', new MessageBag());
 
         $processor->processInput($input, new ModelInvocationInput(toolsRef: 'ref'));
 
@@ -219,7 +222,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
             ->willReturn(new ActiveToolSet(toolNames: ['write', 'bash'], allowListNames: ['write', 'bash']));
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag());
+        $input = new Input('test-model', new MessageBag());
 
         $processor->processInput($input, new ModelInvocationInput(toolsRef: 'ref'));
 
@@ -241,7 +244,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
     public function testEmptyToolsArrayRemovesBothToolsAndToolDescriptions(): void
     {
         $processor = new DynamicToolDescriptionProcessor($this->toolbox);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
+        $input = new Input('test-model', new MessageBag(), [
             'tools' => [],
             'tool_descriptions' => ['read' => 'should be removed'],
         ]);
@@ -261,7 +264,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
     public function testEmptyToolsWithoutToolboxRemovesToolsOption(): void
     {
         $processor = new DynamicToolDescriptionProcessor(toolbox: null);
-        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
+        $input = new Input('test-model', new MessageBag(), [
             'tools' => [],
         ]);
 
@@ -290,7 +293,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
                 return $this->tools;
             }
 
-            public function execute(\Symfony\AI\Platform\Result\ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
+            public function execute(ToolCall $toolCall): ToolResult
             {
                 throw new \RuntimeException('Not implemented in tests');
             }

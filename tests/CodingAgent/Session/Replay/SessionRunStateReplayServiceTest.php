@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
@@ -431,7 +432,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertSame('tool', $messages[1]->role);
         $this->assertSame('call_00_Zm7aROqgBCMbqsuWtGpr0544', $messages[1]->toolCallId);
 
-        $validator = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator();
+        $validator = new AgentMessageToolCallSequenceValidator();
         $validator->validate($messages);
     }
 

@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
+use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage;
 use Ineersa\CodingAgent\Application\Message\ConsumeSubagentProgressDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-final readonly class SubagentProgressCoordinationHandler implements \Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface
+final readonly class SubagentProgressCoordinationHandler implements CoordinationActionValidatorInterface
 {
     public function __construct(private DeferredSubagentBatchRepository $batchRepository, private MessageBusInterface $commandBus)
     {

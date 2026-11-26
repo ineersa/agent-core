@@ -7,15 +7,22 @@ namespace Ineersa\CodingAgent\Tests\Config;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\PropertyAccess\PropertyAccess;
+use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Validation;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Tests AppConfig hydration via the production fromContainer() factory
@@ -44,7 +51,7 @@ class AppConfigTest extends TestCase
         // Home settings with no AI section — defaults file drives testing.
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
-        $pathResolver = new \Ineersa\CodingAgent\Config\SettingsPathResolver(
+        $pathResolver = new SettingsPathResolver(
             appRoot: '/app',
             homeDir: $this->homeDir,
         );
@@ -364,7 +371,7 @@ class AppConfigTest extends TestCase
         yield 'forks.model wrong type' => [['forks' => ['model' => 5]], 'Invalid value for forks.model'];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('malformedTargetSectionCases')]
+    #[DataProvider('malformedTargetSectionCases')]
     public function testTargetSectionMalformedInputFails(array $overrides, string $messageFragment): void
     {
         $this->defaultsWith($overrides);
@@ -386,7 +393,7 @@ class AppConfigTest extends TestCase
     {
         file_put_contents(
             $this->defaultsDir.'/hatfield.defaults.yaml',
-            \Symfony\Component\Yaml\Yaml::dump($data),
+            Yaml::dump($data),
         );
     }
 
@@ -445,21 +452,21 @@ class AppConfigTest extends TestCase
 
     private function createSerializer(): SerializerInterface
     {
-        $reflectionExtractor = new \Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor();
+        $reflectionExtractor = new ReflectionExtractor();
         $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
 
         $denormalizers = [
             // ObjectNormalizer with ClassMetadataFactory + MetadataAwareNameConverter
             // reads #[SerializedName] attributes from config DTOs.
-            new \Symfony\Component\Serializer\Normalizer\ObjectNormalizer(
+            new ObjectNormalizer(
                 classMetadataFactory: $classMetadataFactory,
                 nameConverter: new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter()),
-                propertyAccessor: \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
+                propertyAccessor: PropertyAccess::createPropertyAccessor(),
                 propertyTypeExtractor: $reflectionExtractor,
             ),
         ];
 
-        return new \Symfony\Component\Serializer\Serializer(
+        return new Serializer(
             normalizers: $denormalizers,
             encoders: [],
         );

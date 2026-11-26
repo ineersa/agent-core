@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
+
 /**
  * Locates bundled application resources (defaults, built-in themes, etc.).
  *
@@ -16,7 +18,7 @@ namespace Ineersa\CodingAgent\Config;
  * resolved from the active project cwd supplied at resolution time, not
  * from the app resource root.
  *
- * Built-in documentation roots and selection live in {@see \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog}
+ * Built-in documentation roots and selection live in {@see BuiltinDocsCatalog}
  * (use {@see getAppRoot()} + catalog constants/discovery; no docs path helpers here).
  */
 final readonly class AppResourceLocator

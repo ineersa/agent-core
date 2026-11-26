@@ -15,19 +15,30 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\ProviderErrorMapper;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\ResultConverter;
 use Symfony\AI\Platform\Exception\ServerException;
+use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Result\DeferredResult;
 use Symfony\AI\Platform\Result\RawHttpResult;
+use Symfony\AI\Platform\Result\RawResultInterface;
+use Symfony\AI\Platform\Result\ResultInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\DeltaInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\Result\StreamResult;
+use Symfony\AI\Platform\ResultConverterInterface;
+use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\Exception\TimeoutException;
 use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Contracts\HttpClient\ResponseInterface;
@@ -401,7 +412,7 @@ final class LlmPlatformAdapterTest extends TestCase
 
         $logger = new TestLogger();
         $adapter = new LlmPlatformAdapter(
-            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            statusReader: new NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $this->createStub(SymfonyPlatformInterface::class),
@@ -410,7 +421,7 @@ final class LlmPlatformAdapterTest extends TestCase
             streamObserver: $observer,
             costCalculator: null,
             logger: $logger,
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $reflection = new \ReflectionClass(LlmPlatformAdapter::class);
@@ -514,10 +525,10 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertStringNotContainsString($secret, $encoded, 'Sensitive exception/header/body text must never reach diagnostic logs.');
     }
 
-    private function createAdapter(SymfonyPlatformInterface $platform, int $maxRetries = 0, ?\Psr\Log\LoggerInterface $logger = null): LlmPlatformAdapter
+    private function createAdapter(SymfonyPlatformInterface $platform, int $maxRetries = 0, ?LoggerInterface $logger = null): LlmPlatformAdapter
     {
         return new LlmPlatformAdapter(
-            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            statusReader: new NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -526,21 +537,21 @@ final class LlmPlatformAdapterTest extends TestCase
             streamObserver: null,
             costCalculator: null,
             logger: $logger ?? new NullLogger(),
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-            requestRetryPolicy: new \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy(
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            requestRetryPolicy: new LlmRequestRetryPolicy(
                 maxRetries: $maxRetries,
                 baseDelayMs: 0,
             ),
-            clock: new \Symfony\Component\Clock\MockClock(),
+            clock: new MockClock(),
         );
     }
 
     /**
      * @param \Closure(): \Generator $stream
      */
-    private static function deferredStream(\Closure $stream, ?\Symfony\AI\Platform\Result\RawResultInterface $raw = null): DeferredResult
+    private static function deferredStream(\Closure $stream, ?RawResultInterface $raw = null): DeferredResult
     {
-        $raw ??= new class implements \Symfony\AI\Platform\Result\RawResultInterface {
+        $raw ??= new class implements RawResultInterface {
             public function getData(): array
             {
                 return [];
@@ -558,7 +569,7 @@ final class LlmPlatformAdapterTest extends TestCase
         };
 
         return new DeferredResult(
-            new class($stream) implements \Symfony\AI\Platform\ResultConverterInterface {
+            new class($stream) implements ResultConverterInterface {
                 /**
                  * @param \Closure(): \Generator $stream
                  */
@@ -566,19 +577,19 @@ final class LlmPlatformAdapterTest extends TestCase
                 {
                 }
 
-                public function supports(\Symfony\AI\Platform\Model $model): bool
+                public function supports(Model $model): bool
                 {
                     return true;
                 }
 
-                public function convert(\Symfony\AI\Platform\Result\RawResultInterface $result, array $options = []): \Symfony\AI\Platform\Result\ResultInterface
+                public function convert(RawResultInterface $result, array $options = []): ResultInterface
                 {
                     unset($result, $options);
 
-                    return new \Symfony\AI\Platform\Result\StreamResult(($this->stream)());
+                    return new StreamResult(($this->stream)());
                 }
 
-                public function getTokenUsageExtractor(): ?\Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface
+                public function getTokenUsageExtractor(): ?TokenUsageExtractorInterface
                 {
                     return null;
                 }

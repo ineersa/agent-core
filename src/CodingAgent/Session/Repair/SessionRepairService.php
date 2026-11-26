@@ -38,6 +38,7 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -62,7 +63,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private ToolBatchStoreInterface $toolBatchStore,
         private NormalizerInterface&DenormalizerInterface $serializer,
         private RunCommit $runCommit,
-        private \Ineersa\CodingAgent\Session\History\HistoryReplayFilter $historyReplayFilter,
+        private HistoryReplayFilter $historyReplayFilter,
         private DeferredSubagentBatchRepository $deferredBatches,
         private DeferredToolCompletionRepository $deferred,
         private ToolPayloadStoreInterface $payloads,

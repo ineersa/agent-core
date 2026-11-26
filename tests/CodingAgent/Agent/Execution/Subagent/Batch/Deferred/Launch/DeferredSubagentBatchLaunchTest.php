@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -16,22 +17,44 @@ use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
+use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
+use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
+use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchService;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchPreparationService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
+use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
+use Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver;
 use Ineersa\CodingAgent\Config\AgentsConfig;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Repository\RunRelationshipReader;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
+use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
@@ -265,7 +288,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $this->assertNotNull($row);
         $repo->persistInterruptionIntent(
             $lifecycleId,
-            \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum::ParentCancelled,
+            DeferredSubagentInterruptionKindEnum::ParentCancelled,
             new \DateTimeImmutable(),
             $row->projectionVersion,
         );
@@ -288,7 +311,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $this->assertNotNull($batch);
         $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $batch->children[0]->launchStatus);
         $this->assertSame(
-            \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum::ParentCancelled,
+            DeferredSubagentInterruptionKindEnum::ParentCancelled,
             $batch->interruptionKind,
         );
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $batch->launchStatus);
@@ -388,52 +411,52 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         ?AgentsConfig $agentsConfig = null,
     ): DeferredSubagentBatchLaunchService {
         $logger ??= new TestLogger();
-        $artifactLifecycle = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
-        $definitionPolicy = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService(
+        $artifactLifecycle = self::getContainer()->get(ChildRunArtifactLifecycleService::class);
+        $definitionPolicy = new SubagentLaunchDefinitionPolicyService(
             new AgentDefinitionCatalog($definitions),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunRelationshipReader::class),
+            self::getContainer()->get(AgentDepthGuard::class),
+            self::getContainer()->get(AgentToolPolicyResolver::class),
+            self::getContainer()->get(RunRelationshipReader::class),
         );
-        $appConfig = self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class);
-        $launchInputFactory = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory(
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Skills\SkillsContextBuilder::class),
+        $appConfig = self::getContainer()->get(AppConfig::class);
+        $launchInputFactory = new SubagentChildLaunchInputFactory(
+            self::getContainer()->get(AgentPromptBuilder::class),
+            self::getContainer()->get(SkillsContextBuilder::class),
             $appConfig,
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Tool\ToolRegistryInterface::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
+            self::getContainer()->get(ChildExtensionSelectionService::class),
+            self::getContainer()->get(ToolRegistryInterface::class),
+            self::getContainer()->get(RunStartedMetadataReader::class),
+            self::getContainer()->get(ModelResolver::class),
         );
         $launchPreparation = new SubagentLaunchPreparationService(
             $definitionPolicy,
             $artifactLifecycle,
             $launchInputFactory,
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver::class),
+            self::getContainer()->get(ForkChildLaunchInputBuilder::class),
+            self::getContainer()->get(ForkToolPolicyResolver::class),
         );
-        $lifecyclePolicyFactory = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO::class);
-        $batchLaunchService = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchService(
+        $lifecyclePolicyFactory = self::getContainer()->get(ChildRunBatchLifecyclePolicyDTO::class);
+        $batchLaunchService = new ChildRunBatchLaunchService(
             $agentRunner,
             $artifactLifecycle,
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
+            self::getContainer()->get(SubagentChildRunBatchLifecycleListener::class),
             $logger,
         );
         $identityFactory = new DeferredSubagentBatchIdentityFactory();
-        $runtimeStart = new \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService(
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class),
+        $runtimeStart = new DeferredSubagentBatchRuntimeStartService(
+            self::getContainer()->get(RunOperationalStatusReaderInterface::class),
             $agentRunner,
             $batchLaunchService,
             $lifecyclePolicyFactory,
             $logger,
         );
-        $batchPreparation = new \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchPreparationService(
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class),
+        $batchPreparation = new DeferredSubagentBatchPreparationService(
+            self::getContainer()->get(RunOperationalStatusReaderInterface::class),
             $launchPreparation,
             $identityFactory,
             $artifactLifecycle,
             $launchInputFactory,
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder::class),
+            self::getContainer()->get(ForkChildLaunchInputBuilder::class),
         );
 
         return new DeferredSubagentBatchLaunchService(
@@ -458,14 +481,14 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
 
     private function prepareLaunch(DeferredSubagentBatchLaunchService $service, string $parentRunId, string $toolCallId, string $agentName, string $task, string $toolName = 'subagent'): void
     {
-        self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(
             new RunState($parentRunId, RunStatus::Running),
         );
     }
 
     private function withToolContext(string $parentRunId, string $toolCallId, callable $callback): mixed
     {
-        self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(
             new RunState($parentRunId, RunStatus::Running),
         );
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);

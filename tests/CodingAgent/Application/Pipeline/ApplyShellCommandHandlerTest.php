@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
+use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
@@ -19,8 +23,10 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\CodingAgent\Application\Pipeline\ApplyShellCommandHandler;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
@@ -241,7 +247,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $reducer = new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), $codec);
         $prefix = [];
         if ($attached) {
-            $ordinaryResult = \Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder::success($runId)
+            $ordinaryResult = ToolCallResultBuilder::success($runId)
                 ->withTurnNo(1)->withStepId('ordinary-step')->withToolCallId('ordinary-done')->build();
             $prefix = [
                 new RunEvent($runId, 1, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1, 'step_id' => 'ordinary-step']),
@@ -269,13 +275,13 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame($start->nextState->pendingShellToolCalls, $replayedStart->pendingShellToolCalls);
         $this->assertEquals($start->nextState->currentToolCalls, $replayedStart->currentToolCalls);
         $shellId = 'sh_'.hash('sha256', 'shell-parity');
-        $completion = \Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder::success($runId)
+        $completion = ToolCallResultBuilder::success($runId)
             ->withTurnNo($start->nextState->turnNo)->withStepId('shell-step')->withToolCallId($shellId)
             ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'shell']]])->build();
-        $resultHandler = new \Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler(
-            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\TestToolBatchStore()),
-            eventFactory: new EventFactory(), toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
-            messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
+        $resultHandler = new ToolCallResultHandler(
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            eventFactory: new EventFactory(), toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
         $end = $resultHandler->handle($completion, $start->nextState);

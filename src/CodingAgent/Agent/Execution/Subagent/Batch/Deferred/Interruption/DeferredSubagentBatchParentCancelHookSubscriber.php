@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
+use Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 
 /**
@@ -29,7 +30,7 @@ final readonly class DeferredSubagentBatchParentCancelHookSubscriber implements 
 
         $actions = [];
         foreach ($this->batchRepository->findUnfinishedHeadersByParentRunId($context->runId) as $batch) {
-            $actions[] = new \Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO(
+            $actions[] = new DeferredAfterTurnCoordinationDTO(
                 $context->runId, $predecessorSequence,
                 new InterruptDeferredSubagentBatchMessage($batch->lifecycleId, DeferredSubagentInterruptionKindEnum::ParentCancelled),
             );

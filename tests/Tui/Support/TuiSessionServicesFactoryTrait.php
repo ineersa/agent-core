@@ -46,9 +46,12 @@ use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
+use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Tui\Tui;
@@ -86,7 +89,7 @@ trait TuiSessionServicesFactoryTrait
         ?SubmissionRouter $submissionRouter = null,
         ?PromptHistory $promptHistory = null,
     ): TuiSessionServices {
-        \assert($this instanceof \PHPUnit\Framework\TestCase,
+        \assert($this instanceof TestCase,
             'TuiSessionServicesFactoryTrait can only be used in PHPUnit TestCase classes');
 
         $tui ??= new Tui();
@@ -110,7 +113,7 @@ trait TuiSessionServicesFactoryTrait
         $sessionStore = new HatfieldSessionStore(
             $appConfig,
             $this->createStub(EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $modelService = new ModelSelectionService(
             $appConfig,
             new ModelResolver($appConfig, $sessionStore, new NullLogger()),

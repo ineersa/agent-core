@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
+use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -1338,7 +1339,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
                 ?string $activeModel = null,
-            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+            ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
@@ -1369,7 +1370,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
                 ?string $activeModel = null,
-            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+            ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
@@ -1425,7 +1426,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
                 ?string $activeModel = null,
-            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+            ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
         };

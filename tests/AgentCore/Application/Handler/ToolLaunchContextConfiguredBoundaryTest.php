@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -17,6 +19,8 @@ use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
@@ -44,7 +48,7 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
         \assert($hatfield instanceof HatfieldSessionStore);
         $runId = $hatfield->createSession('tool-launch-context-boundary');
 
-        $inputStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
+        $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $launchContext = $inputStore->publish(
             kind: ToolLaunchContextDTO::KIND_FORK,
             runId: $runId,
@@ -132,8 +136,8 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
 
         /** @var ToolBatchStoreInterface $store */
         $store = self::getContainer()->get(ToolBatchStoreInterface::class);
-        $collector = self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\ToolBatchCollector::class);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::register(
+        $collector = self::getContainer()->get(ToolBatchCollector::class);
+        TestToolBatchRegistration::register(
             $collector,
             $store,
             $runId,
@@ -142,7 +146,7 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
             [$forkCall, $ordinary],
         );
         // Preserve the HITL wait marker on the durable schedule for this boundary.
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend(
+        TestToolBatchCoordination::suspend(
             $collector,
             $store,
             $runId,

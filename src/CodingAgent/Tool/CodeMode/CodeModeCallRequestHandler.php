@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tool\CodeMode;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
@@ -96,7 +97,7 @@ final readonly class CodeModeCallRequestHandler
                     || isset($this->processes->invocation($runId, $rootId)['interruption'])
                     || ($this->processes->deadline($runId, $rootId, $backgrounded) ?? \PHP_INT_MAX) <= hrtime(true);
                 $token = null !== $call ? new CodeModeCancellationToken($parent, $this->deferred, $rootId, $unavailable)
-                    : new class($parent, $unavailable) implements \Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface {
+                    : new class($parent, $unavailable) implements CancellationTokenInterface {
                         public function __construct(private RunCancellationToken $parent, private \Closure $unavailable)
                         {
                         }

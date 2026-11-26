@@ -8,6 +8,7 @@ namespace {
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Process {
     use Ineersa\CodingAgent\Runtime\Process\ConfigExecutableLocator;
+    use Ineersa\CodingAgent\Tests\Support\ProjectDir;
     use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
     use PHPUnit\Framework\Attributes\Group;
     use PHPUnit\Framework\TestCase;
@@ -61,7 +62,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process {
         #[Group('native-artifact')]
         public function testOtherNativeOverrideWithEmptyPhpBinary(): void
         {
-            $root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+            $root = ProjectDir::get();
             require_once $root.'/.castor/helpers.php';
             require_once $root.'/.castor/distribution.php';
             $pin = distribution_static_pin();

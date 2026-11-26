@@ -5,15 +5,25 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Lifecycle;
 
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
+use Ineersa\AgentCore\Application\Pipeline\RunCommit;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -21,20 +31,29 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\CommitSubagentProgress;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
@@ -55,6 +74,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\Obse
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressDeliveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressSnapshotFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
@@ -63,24 +83,35 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRu
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
+use Ineersa\CodingAgent\Application\Message\ConsumeSubagentProgressDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkChildBackgroundedDTO;
 use Ineersa\CodingAgent\Application\Pipeline\BackgroundChildInvocationHandler;
 use Ineersa\CodingAgent\Application\Pipeline\ChildBackgroundCoordinationHandler;
+use Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler;
+use Ineersa\CodingAgent\Application\Pipeline\SubagentProgressCoordinationHandler;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\RunPresentationReader;
+use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Messenger\Handler\HandlersLocator;
+use Symfony\Component\Messenger\MessageBus;
+use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
+use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
 #[Group('db')]
 final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
@@ -106,8 +137,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
-            self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
+            self::getContainer()->get(DeferredSubagentChildRepository::class),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -254,7 +285,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $inputStore->publish('fork', $parent, 2, 'turn-2-tools-1', $tool, 'deepseek/deepseek-v4-flash', '', [new AgentMessage('user', [['type' => 'text', 'text' => 'frozen launch']])]);
-        $paths = self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class);
+        $paths = self::getContainer()->get(ToolBatchRunStoragePathsInterface::class);
         $inputPath = \dirname($paths->resolveToolBatchesDirectory($parent)).'/tool-launch-inputs/'.hash('sha256', $tool).'.jsonl';
         $this->assertFileExists($inputPath);
         $c1 = $factory->childIdentity($parent, $tool, 1);
@@ -284,8 +315,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $observeBus = new TestMessageBus();
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
-            self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
+            self::getContainer()->get(DeferredSubagentChildRepository::class),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             $observeBus,
         );
@@ -319,14 +350,14 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         // Production owner terminal commits release finished children after verified
         // finalization. Drive that path, then prove later delivery from durable products.
-        $childStore = new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore();
-        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+        $childStore = new InMemoryEventStore();
+        $commit = new RunCommit(
             activeRunContext: $active,
             eventStore: $childStore,
             logger: new TestLogger(),
-            finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create(
+            finalizer: TestTransitionFinalizerFactory::create(
                 $childStore,
-                new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
+                new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher()),
             ),
         );
         $commit->commit(
@@ -468,8 +499,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
-            self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
+            self::getContainer()->get(DeferredSubagentChildRepository::class),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -548,7 +579,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $lifecycleDelivery,
             $agentRunner,
             self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO::class),
+            self::getContainer()->get(ChildRunBatchLifecyclePolicyDTO::class),
             $commandBus,
             new TestLogger(),
             $mockClock,
@@ -744,7 +775,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $batch = $repo->findByLifecycleId($lifecycle);
         $this->assertNotNull($batch);
-        $this->assertSame(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum::Reserved, $batch->children[0]->launchStatus);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $batch->children[0]->launchStatus);
 
         $cancelCalls = [];
         $agentRunner = new class($cancelCalls) implements AgentRunnerInterface {
@@ -799,7 +830,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $this->buildLifecycleDelivery($commandBus),
             $agentRunner,
             self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO::class),
+            self::getContainer()->get(ChildRunBatchLifecyclePolicyDTO::class),
             $commandBus,
             new TestLogger(),
             new MockClock(new \DateTimeImmutable()),
@@ -814,7 +845,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $batch = $repo->findByLifecycleId($lifecycle);
         $this->assertSame(DeferredSubagentInterruptionKindEnum::ParentCancelled, $batch->interruptionKind);
-        $this->assertSame(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum::Reserved, $batch->children[0]->launchStatus);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $batch->children[0]->launchStatus);
 
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
         $this->registerCorrelation(new DeferredToolCompletionCorrelation(
@@ -861,11 +892,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $c1 = $factory->childIdentity($parent, $tool, 1);
         $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $reference = $inputStore->publish('fork', $parent, 2, 'turn-2-tools-1', $tool, 'deepseek/deepseek-v4-flash', '', [new AgentMessage('user', [['type' => 'text', 'text' => 'Fork task']])]);
-        $original = new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall($parent, 2, 'turn-2-tools-1', 1, 'idem-fork-once', $tool, 'fork', ['task' => 'Fork task'], 0, parentModel: 'deepseek/deepseek-v4-flash', launchContext: $reference);
+        $original = new ExecuteToolCall($parent, 2, 'turn-2-tools-1', 1, 'idem-fork-once', $tool, 'fork', ['task' => 'Fork task'], 0, parentModel: 'deepseek/deepseek-v4-flash', launchContext: $reference);
         $batchStore = self::getContainer()->get(ToolBatchStoreInterface::class);
-        TestToolBatchRegistration::register(new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore), $batchStore, $parent, 2, 'turn-2-tools-1', [$original]);
+        TestToolBatchRegistration::register(new ToolBatchCollector($batchStore), $batchStore, $parent, 2, 'turn-2-tools-1', [$original]);
         $original = $batchStore->load($parent, 2, 'turn-2-tools-1')->calls[$tool];
-        $paths = self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class);
+        $paths = self::getContainer()->get(ToolBatchRunStoragePathsInterface::class);
         $inputPath = \dirname($paths->resolveToolBatchesDirectory($parent)).'/tool-launch-inputs/'.hash('sha256', $tool).'.jsonl';
         $repo->reserveBatch(
             lifecycleId: $lifecycle,
@@ -887,8 +918,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
-            self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
+            self::getContainer()->get(DeferredSubagentChildRepository::class),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -907,13 +938,13 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $cleanupStore->expects($this->once())->method('delete')->willThrowException(new \RuntimeException('SECRET PATH AND INPUT CONTENT'));
         }
         $delivery = $this->buildLifecycleDelivery($commandBus, launchInputStore: $cleanupStore, completionLogger: $logger);
-        self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(new RunState($parent, RunStatus::Running, model: 'deepseek/deepseek-v4-flash'));
-        $executor = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface::class);
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(new RunState($parent, RunStatus::Running, model: 'deepseek/deepseek-v4-flash'));
+        $executor = $this->createMock(ToolExecutorInterface::class);
         $executor->expects($this->never())->method('execute');
         $launchInputs = $this->createMock(ToolLaunchInputStoreInterface::class);
         $launchInputs->expects($this->never())->method('read');
         $notifications = 0;
-        $events = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $events = new EventDispatcher();
         $events->addListener(DeferredToolCompletionRegisteredEvent::class, static function () use (&$notifications): void { ++$notifications; });
         $workerBus = new TestMessageBus();
         $worker = new ExecuteToolCallWorker(
@@ -922,7 +953,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $executor,
             $deferred,
             new ToolExecutionResultStore(),
-            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            new NullRunOperationalStatusReader(),
             eventDispatcher: $events,
             launchInputStore: $launchInputs,
         );
@@ -952,7 +983,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $worker($original);
         $this->assertSame(2, $notifications, 'Pending redelivery re-emits registration without reading input.');
         $terminalBus = new TestMessageBus();
-        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $batchStore, new TestLogger()))($complete);
+        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, self::getContainer()->get(RunLockManager::class), $batchStore, new TestLogger()))($complete);
         $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $deferred->status($lifecycle));
         $this->assertCount(1, $terminalBus->messages);
         $worker($original);
@@ -986,8 +1017,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
-            self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
+            self::getContainer()->get(DeferredSubagentChildRepository::class),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -1025,7 +1056,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $completionHandler = new CompleteDeferredToolCallHandler(
             $deferred,
             $resultBus,
-            self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            self::getContainer()->get(RunLockManager::class),
             self::getContainer()->get(ToolBatchStoreInterface::class),
             new TestLogger(),
         );
@@ -1052,7 +1083,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactKind: AgentArtifactKindEnum::Subagent,
             batchIndex: 1,
         );
-        $events = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
+        $events = self::getContainer()->get(EventStoreInterface::class);
         PreparedEventStoreSeeder::append($events, RunEvent::forAppend($identity->childRunId, 0, 'run_started', ['payload' => ['messages' => [['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'partial']]]]]]));
         PreparedEventStoreSeeder::append($events, RunEvent::forAppend($identity->childRunId, 0, 'agent_end', ['reason' => 'failed']));
 
@@ -1086,9 +1117,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactKind: AgentArtifactKindEnum::Subagent,
             batchIndex: 1,
         );
-        $events = $this->createMock(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
+        $events = $this->createMock(EventStoreInterface::class);
         $events->expects($this->once())->method('latestSequenceFor')->willThrowException(new \RuntimeException('SECRET canonical read failed'));
-        $reader = new RunPresentationReader($events, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec::class), sources: self::getContainer()->get(RunHistorySourceProviderInterface::class));
+        $reader = new RunPresentationReader($events, self::getContainer()->get(RunLockManager::class), self::getContainer()->get(ReplayAssistantMessageFactory::class), self::getContainer()->get(ToolExecutionEndPayloadCodec::class), sources: self::getContainer()->get(RunHistorySourceProviderInterface::class));
         $logger = new TestLogger();
 
         $outcome = $this->createOutcomeFactory($reader, $logger)->buildNaturalArtifactOutcome(
@@ -1122,8 +1153,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable());
         $this->ensureArtifactReserved($parent, $child['childRunId'], $child['artifactId'], 'scout', 'task');
         $observer = new ObserveDeferredSubagentBatchChildTurnHandler($repo,
-            self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())), new TestLogger(), new TestMessageBus());
+            self::getContainer()->get(DeferredSubagentChildRepository::class),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())), new TestLogger(), new TestMessageBus());
         $observer(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $child['childRunId'], null === $kind ? RunStatus::Completed : RunStatus::Running, 1, [
             new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'done']]]]),
         ]));
@@ -1137,7 +1168,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         ));
         $inputs = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $inputs->publish('subagent', $parent, 2, 'step', $tool, 'model', '', []);
-        $paths = self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class);
+        $paths = self::getContainer()->get(ToolBatchRunStoragePathsInterface::class);
         $inputPath = \dirname($paths->resolveToolBatchesDirectory($parent)).'/tool-launch-inputs/'.hash('sha256', $tool).'.jsonl';
         $queued = new TestMessageBus();
         $appender = new SubagentProgressEventAppender($queued, SubagentProgressSerializerTestSupport::normalizer(), SubagentProgressSerializerTestSupport::validator(),
@@ -1156,7 +1187,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertFileExists($inputPath);
         // A retry may queue the same command; only owner consumption commits it.
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
-        $active->loadRecovered(\Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parent)->withTurnNo(2)->withPendingToolCalls([$tool => false])->build());
+        $active->loadRecovered(RunStateBuilder::running($parent)->withTurnNo(2)->withPendingToolCalls([$tool => false])->build());
         if ($superseded) {
             if (null !== $kind) {
                 // Cancellation has finished; a follow-up turn owns the context
@@ -1168,11 +1199,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             }
         }
         $bus = self::getContainer()->get('agent.command.bus');
-        $bus->dispatch($queued->messages[0], [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('run_control')]);
-        $bus->dispatch($queued->messages[1], [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('run_control')]);
+        $bus->dispatch($queued->messages[0], [new ReceivedStamp('run_control')]);
+        $bus->dispatch($queued->messages[1], [new ReceivedStamp('run_control')]);
         $this->assertSame($superseded ? 0 : 1, $active->requireLoaded($parent)->lastSeq);
         if ($superseded) {
-            $this->assertNull(self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class)->latestSequenceFor($parent));
+            $this->assertNull(self::getContainer()->get(EventStoreInterface::class)->latestSequenceFor($parent));
         }
         $after = $repo->findByLifecycleId($lifecycle);
         if (null === $kind) {
@@ -1275,14 +1306,14 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     private function createSpyProgressAppender(array &$appended): SubagentProgressEventAppender
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
-        $store = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        $lock = self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class);
+        $store = self::getContainer()->get(EventStoreInterface::class);
+        $lock = self::getContainer()->get(RunLockManager::class);
 
         return new class($repo, $store, $lock, $appended) extends SubagentProgressEventAppender {
             public function __construct(
                 private DeferredSubagentBatchRepository $repo,
-                private \Ineersa\AgentCore\Contract\EventStoreInterface $store,
-                private \Ineersa\AgentCore\Application\Handler\RunLockManager $lock,
+                private EventStoreInterface $store,
+                private RunLockManager $lock,
                 private array &$appended,
             ) {
             }
@@ -1296,27 +1327,27 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 $normalized = SubagentProgressSerializerTestSupport::normalizer()->normalize($progress);
                 $this->appended[] = $normalized;
                 $bus = new TestMessageBus();
-                $handler = new \Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler($this->repo);
-                $active = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
-                $active->loadRecovered(\Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parentRunId)
+                $handler = new CommitSubagentProgressHandler($this->repo);
+                $active = new TestActiveRunContext();
+                $active->loadRecovered(RunStateBuilder::running($parentRunId)
                     ->withTurnNo($parentTurnNo)->withLastSeq($this->store->latestSequenceFor($parentRunId) ?? 0)->withPendingToolCalls([$parentToolCallId => false])->build());
-                $coordination = new \Ineersa\CodingAgent\Application\Pipeline\SubagentProgressCoordinationHandler($this->repo, $bus);
-                $coordinationBus = new \Symfony\Component\Messenger\MessageBus([
-                    new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
-                        \Ineersa\CodingAgent\Application\Message\ConsumeSubagentProgressDTO::class => [$coordination(...)],
+                $coordination = new SubagentProgressCoordinationHandler($this->repo, $bus);
+                $coordinationBus = new MessageBus([
+                    new HandleMessageMiddleware(new HandlersLocator([
+                        ConsumeSubagentProgressDTO::class => [$coordination(...)],
                         DeliverDeferredSubagentBatchLifecycleMessage::class => [$bus->dispatch(...)],
                     ])),
                 ]);
-                $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $coordinationBus, new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
-                $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                $dispatcher = new StepDispatcher($coordinationBus, $coordinationBus, new TestLogger(), events: new EventDispatcher());
+                $commit = new RunCommit(
                     activeRunContext: $active,
                     eventStore: $this->store,
                     logger: new TestLogger(),
-                    finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($this->store, $dispatcher),
-                    actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$coordination]),
+                    finalizer: TestTransitionFinalizerFactory::create($this->store, $dispatcher),
+                    actionValidator: new CoordinationActionValidator([$coordination]),
                 );
-                $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active, $this->lock, $commit, [$handler], new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore());
-                $processor->process('command.subagent_progress', new \Ineersa\AgentCore\Domain\Message\CommitSubagentProgress(
+                $processor = new RunMessageProcessor($active, $this->lock, $commit, [$handler], new InMemoryCommandStore());
+                $processor->process('command.subagent_progress', new CommitSubagentProgress(
                     $parentRunId, $parentTurnNo, $lifecycleId, $parentToolCallId, $parentOrderIndex, $revision, $normalized, $interruptionKind,
                 ));
 

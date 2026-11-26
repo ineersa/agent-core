@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
+use Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\UnusedBackgroundProcessManagerFactory;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use PHPUnit\Framework\Attributes\Group;
@@ -123,7 +124,7 @@ final class ControllerReplayBootstrapDeliveryTest extends ControllerReplayE2eTes
                 new PromptTemplatesRuntimeConfig(),
                 new ToolFilterRuntimeConfig(),
                 new TestLogger(),
-                \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tempDir),
+                ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tempDir),
                 UnusedBackgroundProcessManagerFactory::create(
                     $this->createStub(EntityManagerInterface::class),
                     $this->createStub(ManagerRegistry::class),

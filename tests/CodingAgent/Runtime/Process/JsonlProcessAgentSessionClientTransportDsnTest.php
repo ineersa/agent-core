@@ -13,16 +13,20 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
 /**
  * Controller subprocess env must publish session-owned sqlite-queue broker paths and DSNs.
  *
  * @covers \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient
  */
-final class JsonlProcessAgentSessionClientTransportDsnTest extends \Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase
+final class JsonlProcessAgentSessionClientTransportDsnTest extends IsolatedKernelTestCase
 {
     private string $tmpDir;
 
@@ -118,7 +122,7 @@ PHP);
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
-            sessionStore: self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class),
+            sessionStore: self::getContainer()->get(HatfieldSessionStore::class),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
             extensionEvents: self::getContainer()->get(ExtensionSessionEventPublisher::class),
@@ -167,11 +171,11 @@ PHP);
     // DAMA rolls back at the next in-process TestStarted event. Keep this DB
     // writer isolated so a following separate-process TUI test cannot inherit
     // the parent's still-open write transaction and block on the shared QA DB.
-    #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
-    #[\PHPUnit\Framework\Attributes\PreserveGlobalState(false)]
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function testAnonymousStartsAllocateDistinctCanonicalQueuesAndRecoverTheSameIdentity(): void
     {
-        $store = self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class);
+        $store = self::getContainer()->get(HatfieldSessionStore::class);
         $firstDump = $this->tmpDir.'/anonymous-first.json';
         $secondDump = $this->tmpDir.'/anonymous-second.json';
         $first = $this->createClientWithEnvDump($firstDump);
@@ -325,7 +329,7 @@ PHP);
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
-            sessionStore: self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class),
+            sessionStore: self::getContainer()->get(HatfieldSessionStore::class),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
             extensionEvents: self::getContainer()->get(ExtensionSessionEventPublisher::class),

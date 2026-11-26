@@ -38,9 +38,11 @@ use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
 use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
+use Symfony\AI\Agent\Toolbox\Exception\ToolConfigurationException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Contract\Normalizer\ToolNormalizer;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -369,7 +371,7 @@ final class RegistryBackedToolboxTest extends TestCase
             promptLine: 'view_image: View',
         );
 
-        $this->expectException(\Symfony\AI\Agent\Toolbox\Exception\ToolConfigurationException::class);
+        $this->expectException(ToolConfigurationException::class);
         $this->expectExceptionMessage('Invalid #[MapToolArguments] usage');
         $this->createToolbox($registry)->getTools();
     }
@@ -1402,7 +1404,7 @@ final class RegistryBackedToolboxTest extends TestCase
         ToolRegistry $registry,
         ?EventDispatcher $dispatcher = null,
         ?ExtensionHookRegistry $rewriteHookProvider = null,
-        ?\Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface $resolver = null,
+        ?ToolCallArgumentResolverInterface $resolver = null,
     ): RegistryBackedToolbox {
         return new RegistryBackedToolbox(
             registry: $registry,

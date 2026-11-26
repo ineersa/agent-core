@@ -50,6 +50,7 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
+use Ineersa\Tui\Transcript\TranscriptMountedWidget;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -61,7 +62,7 @@ use Symfony\Component\Tui\Ansi\AnsiUtils;
 
 /**
  * Virtual product proof that {@see ChatScreen} → mounted
- * {@see \Ineersa\Tui\Transcript\TranscriptMountedWidget} renders transcript blocks
+ * {@see TranscriptMountedWidget} renders transcript blocks
  * with correct glyph/prefix language through the live Symfony TUI tree.
  *
  * Test thesis: when ChatScreen receives transcript blocks of normal kinds

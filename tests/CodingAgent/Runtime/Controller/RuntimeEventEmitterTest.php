@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -94,7 +95,7 @@ final class RuntimeEventEmitterTest extends TestCase
             try {
                 $emitter->emitTransfer($frame);
                 $this->fail('A second frame cannot exceed the 64 KiB pending budget.');
-            } catch (\Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException $exception) {
+            } catch (RuntimeTransportException $exception) {
                 $this->assertStringContainsString('bounded pending budget', $exception->getMessage());
             }
             $this->assertLessThanOrEqual(65536, $reflection->getProperty('pendingBytes')->getValue($emitter));

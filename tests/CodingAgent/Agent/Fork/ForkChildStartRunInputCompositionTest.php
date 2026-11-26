@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -12,6 +16,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
 use Ineersa\CodingAgent\Agent\Fork\ForkLaunchTaskDTO;
+use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer;
 use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -50,7 +55,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             'mcp' => ['mode' => 'inherit', 'tools' => []],
         ];
 
-        $sanitizer = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer::class);
+        $sanitizer = self::getContainer()->get(ForkSnapshotSanitizer::class);
         $inherited = $sanitizer->sanitize($parentMessages);
         $prepared = $builder->buildPrepared(
             $identity,
@@ -139,7 +144,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             artifactKind: AgentArtifactKindEnum::Fork,
         );
         $policy = ['tools' => ['read'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
-        $sanitizer = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer::class);
+        $sanitizer = self::getContainer()->get(ForkSnapshotSanitizer::class);
         $inherited = $sanitizer->sanitize($parentMessages);
         $prepared = $builder->buildPrepared(
             $identity,
@@ -183,7 +188,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             artifactKind: AgentArtifactKindEnum::Fork,
         );
         $policy = ['tools' => ['read'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
-        $sanitizer = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer::class);
+        $sanitizer = self::getContainer()->get(ForkSnapshotSanitizer::class);
         $inherited = $sanitizer->sanitize($parentMessages);
         $prepared = $builder->buildPrepared(
             $identity,
@@ -225,13 +230,13 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         $this->assertNotContains('fork', $allowed);
         $this->assertNotContains('subagent', $allowed);
 
-        $toolSetResolver = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface::class);
-        $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        PreparedEventStoreSeeder::append($eventStore, new \Ineersa\AgentCore\Domain\Event\RunEvent(
+        $toolSetResolver = self::getContainer()->get(ToolSetResolverInterface::class);
+        $eventStore = self::getContainer()->get(EventStoreInterface::class);
+        PreparedEventStoreSeeder::append($eventStore, new RunEvent(
             runId: $identity->childRunId,
             seq: 1,
             turnNo: 0,
-            type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::RunStarted->value,
+            type: RunEventTypeEnum::RunStarted->value,
             payload: [
                 'step_id' => 'start-1',
                 'payload' => [

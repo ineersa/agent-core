@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
@@ -17,6 +18,7 @@ use Ineersa\CodingAgent\Session\Goal\SessionGoalService;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
+use Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
 use Ineersa\CodingAgent\Tool\AskHumanTool;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -27,6 +29,7 @@ use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Validator\ValidatorBuilder;
 
 /**
@@ -41,7 +44,7 @@ final class AskHumanToolTest extends IsolatedKernelTestCase
 
     private Serializer $serializer;
 
-    private \Symfony\Component\Validator\Validator\ValidatorInterface $validator;
+    private ValidatorInterface $validator;
 
     protected function setUp(): void
     {
@@ -139,7 +142,7 @@ final class AskHumanToolTest extends IsolatedKernelTestCase
         $args = $schema['properties'];
 
         $this->assertSame('ask_human', $definition->name);
-        $this->assertSame(\Ineersa\AgentCore\Domain\Tool\ToolExecutionMode::Interrupt, $definition->executionMode);
+        $this->assertSame(ToolExecutionMode::Interrupt, $definition->executionMode);
         $this->assertNull($definition->parametersJsonSchema);
         $this->assertSame('object', $schema['type']);
         $this->assertArrayHasKey('question', $args);
@@ -386,8 +389,8 @@ final class AskHumanToolTest extends IsolatedKernelTestCase
     private function invoke(array $arguments): array
     {
         try {
-            /** @var \Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO $dto */
-            $dto = $this->serializer->denormalize($arguments, \Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO::class);
+            /** @var AskHumanArgumentsDTO $dto */
+            $dto = $this->serializer->denormalize($arguments, AskHumanArgumentsDTO::class);
         } catch (\Throwable $e) {
             throw new ToolCallException('Invalid ask_human arguments: '.$e->getMessage(), retryable: false);
         }

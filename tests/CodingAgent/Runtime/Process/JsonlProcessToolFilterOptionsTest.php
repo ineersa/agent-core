@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Support\UnusedBackgroundProcessManagerFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -197,7 +198,7 @@ PHP);
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: $toolFilter,
             logger: new TestLogger(),
-            sessionStore: \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tmpDir),
+            sessionStore: ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tmpDir),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
             extensionEvents: self::getContainer()->get(ExtensionSessionEventPublisher::class),

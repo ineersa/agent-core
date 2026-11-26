@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
@@ -167,7 +168,7 @@ final class CompactionConfigTest extends TestCase
                     new ObjectNormalizer(
                         classMetadataFactory: $classMetadataFactory,
                         nameConverter: $nameConverter,
-                        propertyAccessor: \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
+                        propertyAccessor: PropertyAccess::createPropertyAccessor(),
                         propertyTypeExtractor: $reflectionExtractor,
                     ),
                 ],

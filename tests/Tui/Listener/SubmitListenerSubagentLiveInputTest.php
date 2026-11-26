@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ImageToolConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -19,6 +25,8 @@ use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
+use Ineersa\Tui\ImagePaste\PastedImageValidationService;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
@@ -33,6 +41,7 @@ use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Tui\Event\SubmitEvent;
@@ -43,7 +52,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
     use TuiRuntimeContextBuilderTrait;
 
     private TuiSessionState $state;
-    /** @var AgentSessionClient&\PHPUnit\Framework\MockObject\MockObject */
+    /** @var AgentSessionClient&MockObject */
     private AgentSessionClient $client;
     private SlashCommandCatalog $catalog;
     private SubmissionRouter $router;
@@ -248,17 +257,17 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
             blockFactory: new TranscriptBlockFactory(),
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
-            pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
-                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
+            pastedImageSubmissionService: new PastedImageSubmissionService(
+                new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
                 $context->sessionStore,
-                new \Ineersa\CodingAgent\Config\AppConfig(
-                    tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                    logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                    sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                new AppConfig(
+                    tui: new TuiConfig(theme: 'default'),
+                    logging: new LoggingConfig(),
+                    sessions: new SessionsConfig(),
                     cwd: getcwd() ?: '/tmp',
                 ),
                 new TranscriptBlockFactory(),
-                new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+                new TestLogger(),
             ),
         );
         $listener->register($context);

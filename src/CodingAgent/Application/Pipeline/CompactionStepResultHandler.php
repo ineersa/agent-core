@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Application\Pipeline\RunMessageHandlerLogComponentInterfac
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -424,9 +425,9 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
     }
 
     /**
-     * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
-     * @param bool                                           $clearActiveStepId when true, set activeStepId to null (terminal outcome)
-     * @param RunStatus|null                                 $status            null = preserve current; non-null = override
+     * @param list<RunEvent> $events
+     * @param bool           $clearActiveStepId when true, set activeStepId to null (terminal outcome)
+     * @param RunStatus|null $status            null = preserve current; non-null = override
      *
      * NOTE: this uses a boolean clear flag (false=preserve, true=clear),
      * which inverts CompactRunHandler::incrementState()'s nullable-string

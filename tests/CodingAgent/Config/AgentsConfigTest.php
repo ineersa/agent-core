@@ -6,8 +6,10 @@ namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
+use Ineersa\CodingAgent\Config\ForksConfigDTO;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -52,7 +54,7 @@ final class AgentsConfigTest extends TestCase
         yield 'extensions unknown key' => [['extensions' => ['bogus' => 1]], 'Invalid key for agents.extensions: "bogus" is not supported'];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('malformedRawCases')]
+    #[DataProvider('malformedRawCases')]
     public function testFromRawRejectsMalformedRaw(mixed $raw, string $messageFragment): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -183,7 +185,7 @@ final class AgentsConfigTest extends TestCase
         yield 'associative map' => [['settings' => true]];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('malformedSubagentExcludedToolsCases')]
+    #[DataProvider('malformedSubagentExcludedToolsCases')]
     public function testFromRawRejectsMalformedSubagentExcludedTools(mixed $value): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -236,7 +238,7 @@ final class AgentsConfigTest extends TestCase
 
     public function testForksFromRawParsesExtensionsLists(): void
     {
-        $forks = \Ineersa\CodingAgent\Config\ForksConfigDTO::fromRaw([
+        $forks = ForksConfigDTO::fromRaw([
             'extensions' => [
                 'always_on' => ['A\\Safe'],
                 'enabled' => ['B\\Castor'],
@@ -252,7 +254,7 @@ final class AgentsConfigTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('forks.extensions.enabled');
 
-        \Ineersa\CodingAgent\Config\ForksConfigDTO::fromRaw([
+        ForksConfigDTO::fromRaw([
             'extensions' => [
                 'enabled' => ['x' => 'B\\Castor'],
             ],

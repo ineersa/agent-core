@@ -6,7 +6,12 @@ namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
 use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
+use Ineersa\AgentCore\Application\Pipeline\RunCommit;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -15,21 +20,35 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Application\Message\RepairSession;
+use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
+use Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler;
 use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
+use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
+use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\HistorySelectionService;
+use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
 use Ineersa\CodingAgent\Session\RunHistoryIndex;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
@@ -42,8 +61,13 @@ use Ineersa\CodingAgent\Tool\BashBackgroundRequestService;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
+use Symfony\Component\Messenger\Exception\HandlerFailedException;
+use Symfony\Component\Messenger\Handler\HandlersLocator;
+use Symfony\Component\Messenger\MessageBus;
+use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
 
 /**
  * Thesis: an in-process history selection emits the transient position event
@@ -91,11 +115,11 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             lockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             logger: new NullLogger(),
             historyIndex: self::getContainer()->get(RunHistoryIndex::class),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+            runCommit: new RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 logger: new NullLogger(),
-                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
             ),
         );
         $sink = new InMemoryRuntimeEventSink();
@@ -124,8 +148,8 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
 
     public function testSynchronousRepairReturnsHandledResultAndEmitsRefusalWithoutExceptionDetails(): void
     {
-        $repair = $this->createMock(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class);
-        $result = new \Ineersa\CodingAgent\Runtime\Contract\RepairResult(true, false, 'refused', \Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum::ActiveStreaming);
+        $repair = $this->createMock(SessionRepairServiceInterface::class);
+        $result = new RepairResult(true, false, 'refused', SessionRepairRefusalReasonEnum::ActiveStreaming);
         $repair->expects($this->once())->method('repair')->with(self::RUN_ID, false)->willReturn($result);
         $sink = new InMemoryRuntimeEventSink();
         $registry = new TestActiveRunContext();
@@ -143,7 +167,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
 
     public function testOwnerRepairFailureEmitsSanitizedReplyAndPropagatesToSynchronousCaller(): void
     {
-        $repair = $this->createMock(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class);
+        $repair = $this->createMock(SessionRepairServiceInterface::class);
         $repair->expects($this->once())->method('repair')->willThrowException(new \RuntimeException('private detail'));
         $sink = new InMemoryRuntimeEventSink();
         $registry = new TestActiveRunContext();
@@ -152,7 +176,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
         try {
             $client->repair(self::RUN_ID);
             $this->fail('Owner repair failure must propagate.');
-        } catch (\Symfony\Component\Messenger\Exception\HandlerFailedException $exception) {
+        } catch (HandlerFailedException $exception) {
             $this->assertSame('private detail', $exception->getPrevious()->getMessage());
         }
         $events = iterator_to_array($sink->drain(self::RUN_ID));
@@ -186,18 +210,18 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
     }
 
     private function client(
-        \Ineersa\AgentCore\Contract\EventStoreInterface $eventStore,
+        EventStoreInterface $eventStore,
         HistorySelectionServiceInterface $historySelectionService,
         InMemoryRuntimeEventSink $sink,
         TestActiveRunContext $activeRunContext,
-        ?\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface $repair = null,
+        ?SessionRepairServiceInterface $repair = null,
     ): InProcessAgentSessionClient {
         $container = self::getContainer();
 
-        $handler = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler($historySelectionService, $repair ?? $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class), $sink, $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class), false, new NullLogger(), $activeRunContext, $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class), $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class), $container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer::class), $container->get(RunLockManager::class));
-        $bus = new \Symfony\Component\Messenger\MessageBus([new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
-            \Ineersa\CodingAgent\Application\Message\SelectHistoryEntry::class => [[$handler, 'select']],
-            \Ineersa\CodingAgent\Application\Message\RepairSession::class => [[$handler, 'repair']],
+        $handler = new SessionMaintenanceHandler($historySelectionService, $repair ?? $this->createStub(SessionRepairServiceInterface::class), $sink, $container->get(StdoutRuntimeEventSink::class), false, new NullLogger(), $activeRunContext, $container->get(RunMessageProcessor::class), $container->get(OwnerRunInitializationMiddleware::class), $container->get(PendingTransitionRecovery::class), $container->get(DeferredSubagentBatchRepository::class), $container->get(SessionBootstrapProducer::class), $container->get(RunLockManager::class));
+        $bus = new MessageBus([new HandleMessageMiddleware(new HandlersLocator([
+            SelectHistoryEntry::class => [[$handler, 'select']],
+            RepairSession::class => [[$handler, 'repair']],
         ]))]);
 
         return new InProcessAgentSessionClient(
@@ -217,8 +241,8 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             backgroundProcesses: self::getContainer()->get(BackgroundProcessManager::class),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
-            bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
-            bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
+            bootstrapSpools: self::getContainer()->get(SessionBootstrapSpoolStore::class),
+            bootstrapTransfer: self::getContainer()->get(SessionBootstrapTransfer::class),
             transientSink: $sink,
         );
     }

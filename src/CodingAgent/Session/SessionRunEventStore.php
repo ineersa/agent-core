@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
@@ -33,7 +34,7 @@ use Symfony\Component\Lock\LockFactory;
  * this process, and retaining every decoded body after resume kept obsolete
  * pre-compaction payloads hot for the TUI lifetime.
  */
-final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface
+final class SessionRunEventStore implements PreparedTransitionEventStoreInterface
 {
     private readonly string $sessionsBasePath;
     private readonly JsonlRunEventLog $eventLog;

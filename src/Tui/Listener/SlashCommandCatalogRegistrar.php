@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\Tui\Command\SlashCommandCatalog;
+use Ineersa\Tui\Command\SlashCommandRegistry;
 
 /**
  * Contract for command registrars that seed the process-scoped
  * {@see SlashCommandCatalog} once per process.
  *
  * Command metadata/aliases/help data is registered exactly once here;
- * the per-session {@see \Ineersa\Tui\Command\SlashCommandRegistry} then
+ * the per-session {@see SlashCommandRegistry} then
  * binds only the current session's handlers in
  * {@see TuiListenerRegistrar::register()}.
  *

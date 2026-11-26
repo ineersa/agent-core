@@ -9,7 +9,9 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -21,6 +23,7 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * Piece 3B1: AfterTurnCommit hook summaries must use allocated persisted seq, not input seq 0.
@@ -37,7 +40,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
         $context->loadRecovered($state);
         $events = new InMemoryEventStore();
         $commit = new RunCommit($context, $events, new TestLogger(), TestTransitionFinalizerFactory::create($events,
-            new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())), new HookDispatcher([$subscriber]));
+            new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())), new HookDispatcher([$subscriber]));
         $commit->commit($state, $state, [new RunEvent('discard', 0, 1, 'history_tail_discarded', [])], dispatchAfterTurnHooks: false);
     }
 
@@ -67,7 +70,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             eventStore: $eventStore,
             logger: new TestLogger(),
             hookDispatcher: new HookDispatcher([$subscriber]),
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
         );
 
         $next = new RunState(
@@ -119,7 +122,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             logger: new TestLogger(),
             finalizer: TestTransitionFinalizerFactory::create(
                 $eventStore,
-                new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
+                new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher()),
             ),
         );
 
@@ -152,7 +155,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             logger: new TestLogger(),
             finalizer: TestTransitionFinalizerFactory::create(
                 $eventStore,
-                new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
+                new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher()),
             ),
         );
 
@@ -200,12 +203,12 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             parentRunId: 'parent-run-1',
         );
         $activeRunContext->loadRecovered($previous);
-        $store = $this->createMock(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
         $store->expects($this->atLeastOnce())->method('assertTransitionReady');
         $store->expects($this->once())->method('appendTransition')->willReturnCallback(static function (array $events, array $work): array {
             return [new RunEvent($work['run_id'], 1, 1, $events[0]->type, $events[0]->payload)];
         });
-        $store->expects($this->atLeastOnce())->method('verifiedPendingTransition')->willReturn(new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+        $store->expects($this->atLeastOnce())->method('verifiedPendingTransition')->willReturn(new VerifiedTransitionDTO(
             'identity',
             ['run_id' => 'child-run-1', 'predecessor_seq' => 0, 'effects' => [], 'post_commit_effects' => [], 'actions' => [], 'after_turn_actions' => []],
             [1],
@@ -218,7 +221,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             logger: new TestLogger(),
             finalizer: TestTransitionFinalizerFactory::create(
                 $store,
-                new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
+                new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher()),
             ),
         );
 

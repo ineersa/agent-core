@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -121,7 +122,7 @@ final class TuiArtifactBootE2eTest extends TestCase
      */
     private function resolvePackagedArtifactPath(): ?string
     {
-        $root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+        $root = ProjectDir::get();
         $candidates = [];
 
         foreach (['HATFIELD_BINARY_PATH', 'HATFIELD_ARTIFACT_PATH', 'HATFIELD_NATIVE_BINARY_PATH'] as $envName) {

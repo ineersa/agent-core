@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tool\CodeMode;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
+use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Symfony\Component\Filesystem\Filesystem;
@@ -71,7 +72,7 @@ final readonly class CodeModeProcessOwner
         $limit = $process['policy']['explicitTimeout'];
         $launcherTimeout = $process['policy']['callerTimeout'];
         if (!$backgrounded) {
-            $limit ??= \Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS;
+            $limit ??= CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS;
             if (null !== $launcherTimeout && $launcherTimeout > 0) {
                 $limit = min($limit, $launcherTimeout);
             }

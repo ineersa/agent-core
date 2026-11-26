@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
@@ -34,7 +35,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         $this->assertSame($responseText, $assistantMsg->asText(), 'AssistantMessage::asText() precondition');
 
         $fakePlatform = $this->createFakePlatform($responseText, model: 'openai/gpt-4.1-mini', captureRequest: true);
-        $worker = new ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $fakePlatform);
+        $worker = new ExecuteCompactionStepWorker(new TestMessageBus(), $fakePlatform);
         $result = $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
@@ -73,7 +74,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
     public function testExplicitModelPassedInResult(): void
     {
         $fakePlatform = $this->createFakePlatform('ok', model: 'llama_cpp/flash');
-        $worker = new ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $fakePlatform);
+        $worker = new ExecuteCompactionStepWorker(new TestMessageBus(), $fakePlatform);
         $result = $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
@@ -98,7 +99,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
     {
         $errorPayload = ['type' => 'RuntimeException', 'message' => 'Simulated failure'];
         $fakePlatform = $this->createFakePlatformWithError($errorPayload);
-        $worker = new ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $fakePlatform);
+        $worker = new ExecuteCompactionStepWorker(new TestMessageBus(), $fakePlatform);
         $result = $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
@@ -124,7 +125,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
     public function testPlatformExceptionReturnsErrorResult(): void
     {
         $fakePlatform = $this->createFakePlatformThatThrows(new \RuntimeException('Boom'));
-        $worker = new ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $fakePlatform);
+        $worker = new ExecuteCompactionStepWorker(new TestMessageBus(), $fakePlatform);
         $result = $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,

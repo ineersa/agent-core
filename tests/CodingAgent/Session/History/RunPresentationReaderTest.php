@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -19,6 +20,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\RunPresentationReader;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 final class RunPresentationReaderTest extends IsolatedKernelTestCase
 {
@@ -75,7 +77,7 @@ final class RunPresentationReaderTest extends IsolatedKernelTestCase
         $this->assertSame(RunStatus::Running, $product->status);
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('terminalEvents')]
+    #[DataProvider('terminalEvents')]
     public function testTerminalPresentationPreservesExecutionReplayAccumulators(string $type, array $payload, RunStatus $status): void
     {
         $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('terminal presentation');
@@ -91,7 +93,7 @@ final class RunPresentationReaderTest extends IsolatedKernelTestCase
         $this->assertNotNull($before);
         $this->assertSame(1, $before->pendingToolCallCount);
         PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, $type, $payload));
-        $execution = self::getContainer()->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($run), $run)->rebuiltState;
+        $execution = self::getContainer()->get(RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($run), $run)->rebuiltState;
         $this->assertNotNull($execution);
         $this->assertSame(['pending_call' => true], $execution->pendingToolCalls);
         $this->assertCount(1, $execution->messages);
@@ -113,7 +115,7 @@ final class RunPresentationReaderTest extends IsolatedKernelTestCase
         PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 1, 'llm_step_completed', ['assistant_message' => $next]));
         PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 1, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult($run, 1, 'new-step', 1, 'new-result', 'new_call', 0, ['tool_name' => 'read', 'output' => 'new result']))));
         PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 1, 'tool_batch_committed'));
-        $resumedExecution = self::getContainer()->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($run), $run)->rebuiltState;
+        $resumedExecution = self::getContainer()->get(RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($run), $run)->rebuiltState;
         $this->assertNotNull($resumedExecution);
         $this->assertCount(5, $resumedExecution->messages);
         $this->assertSame([], $resumedExecution->pendingToolCalls);

@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Auth\GrokOAuthConfig;
 use Ineersa\CodingAgent\Auth\GrokTokenRefresher;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -65,7 +66,7 @@ final class GrokAuthStorageTest extends TestCase
     {
         $path = $this->tmpDir.'/'.GrokOAuthConfig::AUTH_FILE;
         $legacy = ['openai-codex' => ['access' => 'legacy-sentinel']];
-        (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($path, json_encode($legacy, \JSON_THROW_ON_ERROR));
+        (new Filesystem())->dumpFile($path, json_encode($legacy, \JSON_THROW_ON_ERROR));
         $this->storage->saveCredentials(new GrokAuthRecord('grok-one', 'grok-refresh', time() + 3600));
         $this->assertSame($legacy['openai-codex'], json_decode(file_get_contents($path), true, flags: \JSON_THROW_ON_ERROR)['openai-codex']);
         $this->assertSame('grok-one', $this->storage->loadCredentialsRaw()?->access);

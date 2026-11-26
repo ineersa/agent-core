@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
+use Ineersa\CodingAgent\Mcp\Message\McpRefreshCatalogCommand;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -15,7 +16,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 /**
  * Handles JSONL mcp_refresh commands from the parent TUI/controller process.
  *
- * Dispatches {@see \Ineersa\CodingAgent\Mcp\Message\McpRefreshCatalogCommand}
+ * Dispatches {@see McpRefreshCatalogCommand}
  * onto agent.command.bus so the mcp consumer reconnects and rewrites the
  * session catalog. Does not wait for discovery to finish.
  */

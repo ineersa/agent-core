@@ -6,7 +6,9 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 
@@ -34,7 +36,7 @@ final class ActiveRunContext implements ActiveRunContextInterface
             throw new \RuntimeException('Run already exists; explicit recovery required: '.$runId);
         }
         $operational = $this->projectionRepository->findOperationalStatus($runId);
-        if ((null !== $operational && (0 !== $operational->lastEventSequence || \Ineersa\AgentCore\Domain\Run\RunStatus::Queued !== $operational->status))
+        if ((null !== $operational && (0 !== $operational->lastEventSequence || RunStatus::Queued !== $operational->status))
             || (null !== $child && AgentArtifactStatusEnum::Pending !== $child->status)
         ) {
             throw new \RuntimeException('Reserved run has prior execution evidence but no canonical history: '.$runId);
@@ -54,7 +56,7 @@ final class ActiveRunContext implements ActiveRunContextInterface
 
     public function requireLoaded(string $runId): RunState
     {
-        return $this->states[$runId] ?? throw new \Ineersa\AgentCore\Contract\RunContextNotLoadedException('Run is not loaded; owner recovery required: '.$runId);
+        return $this->states[$runId] ?? throw new RunContextNotLoadedException('Run is not loaded; owner recovery required: '.$runId);
     }
 
     public function replaceCurrent(RunState $state): void

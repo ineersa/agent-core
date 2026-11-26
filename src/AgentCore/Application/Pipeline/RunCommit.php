@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
@@ -23,7 +24,7 @@ final readonly class RunCommit
         private TransitionFinalizer $finalizer,
         private ?HookDispatcher $hookDispatcher = null,
         private ?RunTracer $tracer = null,
-        private \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator $actionValidator = new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
+        private CoordinationActionValidator $actionValidator = new CoordinationActionValidator(),
     ) {
     }
 

@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -25,7 +26,7 @@ final class ThemeRegistryTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->projectRoot = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+        $this->projectRoot = ProjectDir::get();
         $this->tempDir = TestDirectoryIsolation::createProjectTempDir('theme-registry-test');
     }
 

@@ -17,26 +17,39 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
+use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
+use Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver;
 use Ineersa\CodingAgent\Config\AgentsConfig;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PipelineCapturingAgentRunner;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\ProviderBoundaryCaptureSupport;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
+use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 
 /**
  * GF-05 RED: bare project-root AGENTS.md must appear in effective parent + inheriting child context.
@@ -72,7 +85,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
         PromptContractTestSupport::assertSentinelCountInAgentsContext($parentCanonical, $sentinel, 1);
         PromptContractTestSupport::assertSentinelCountInAgentsContext($parentRunStartedMessages, $sentinel, 1);
 
-        $parentCapture = ProviderBoundaryCaptureSupport::create(self::getContainer()->get(\Symfony\AI\Agent\Toolbox\ToolboxInterface::class));
+        $parentCapture = ProviderBoundaryCaptureSupport::create(self::getContainer()->get(ToolboxInterface::class));
         $parentCapture->captureForRun($parentRunId, $parentCanonical);
         PromptContractTestSupport::assertProviderUserMessagesContainSentinelOnce($parentCapture->capturedProviderMessages(), $sentinel);
 
@@ -150,7 +163,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
         $this->assertContains('user-context:agents_context', $keys);
 
         $childCapture = ProviderBoundaryCaptureSupport::create(
-            self::getContainer()->get(\Symfony\AI\Agent\Toolbox\ToolboxInterface::class),
+            self::getContainer()->get(ToolboxInterface::class),
             ProviderBoundaryCaptureSupport::fixedToolSetResolver(['read']),
         );
         $childCapture->captureForRun($childRunId, $childCanonical);
@@ -177,25 +190,25 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             ]),
             'policyResolver' => $policy,
             'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            'skillsContextBuilder' => self::getContainer()->get(\Ineersa\CodingAgent\Skills\SkillsContextBuilder::class),
-            'artifactRegistry' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class),
+            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
+            'artifactRegistry' => self::getContainer()->get(AgentArtifactRegistry::class),
             'agentRunner' => $childRunner,
             'runStateRebuilder' => $this->rebuildParentState($parentState),
             'eventStore' => $childEventStore,
             'metadataReader' => new RunStartedMetadataReader($childEventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
-            'relationshipReader' => \Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader::topLevel($parentState->runId),
-            'childRunDirectory' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
+            'relationshipReader' => StubRunRelationshipReader::topLevel($parentState->runId),
+            'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(subagentToolTimeoutSeconds: 2),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
-            'appConfig' => self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
-            'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
-            'batchRepository' => self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
-            'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
-            'forkLaunchInputBuilder' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder::class),
-            'forkToolPolicyResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver::class),
-            'childExtensionSelection' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
+            'appConfig' => self::getContainer()->get(AppConfig::class),
+            'modelResolver' => self::getContainer()->get(ModelResolver::class),
+            'batchRepository' => self::getContainer()->get(DeferredSubagentBatchRepository::class),
+            'lifecycleListener' => self::getContainer()->get(SubagentChildRunBatchLifecycleListener::class),
+            'forkLaunchInputBuilder' => self::getContainer()->get(ForkChildLaunchInputBuilder::class),
+            'forkToolPolicyResolver' => self::getContainer()->get(ForkToolPolicyResolver::class),
+            'childExtensionSelection' => self::getContainer()->get(ChildExtensionSelectionService::class),
             'toolRegistry' => self::getContainer()->get(ToolRegistryInterface::class),
         ], $prepare);
     }
@@ -230,7 +243,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
 
     private function emptyMcpToolsResolver(): AgentMcpToolsResolver
     {
-        $catalogStore = $this->createStub(\Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface::class);
+        $catalogStore = $this->createStub(McpToolCatalogStoreInterface::class);
         $catalogStore->method('read')->willReturn(null);
 
         return new AgentMcpToolsResolver($catalogStore, TestMcpConfigLoaderFactory::loaderForServers([]));

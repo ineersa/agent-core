@@ -15,9 +15,28 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
+use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
+use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionDeletedHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -139,30 +158,30 @@ final class ChildExtensionSelectionServiceTest extends TestCase
         $manager = new ExtensionManager(
             $appConfig,
             new class implements ExtensionApiInterface {
-                public function tools(): \Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface
+                public function tools(): RegisteredToolInvokerInterface
                 {
                     throw new \LogicException('Unused fixture capability.');
                 }
 
-                public function notifyOwner(\Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO $notification): void
+                public function notifyOwner(OwnerNotificationDTO $notification): void
                 {
                     throw new \LogicException('Unused fixture capability.');
                 }
 
-                public function registerRecurringJobSource(string $sourceId, \Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface $source): void
+                public function registerRecurringJobSource(string $sourceId, RecurringJobSourceInterface $source): void
                 {
                     throw new \LogicException('Unused fixture capability.');
                 }
 
-                public function registerTool(\Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO $tool): void
+                public function registerTool(ToolRegistrationDTO $tool): void
                 {
                 }
 
-                public function registerToolCallHook(\Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface $hook): void
+                public function registerToolCallHook(ToolCallHookInterface $hook): void
                 {
                 }
 
-                public function registerToolResultHook(\Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface $hook): void
+                public function registerToolResultHook(ToolResultHookInterface $hook): void
                 {
                 }
 
@@ -176,12 +195,12 @@ final class ChildExtensionSelectionServiceTest extends TestCase
                     return '/tmp';
                 }
 
-                public function exec(): \Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface
+                public function exec(): ExecInterface
                 {
                     throw new \LogicException('unused');
                 }
 
-                public function registerPromptContributor(\Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface $contributor): void
+                public function registerPromptContributor(PromptContributorInterface $contributor): void
                 {
                 }
 
@@ -189,15 +208,15 @@ final class ChildExtensionSelectionServiceTest extends TestCase
                 {
                 }
 
-                public function registerCommand(\Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO $definition, \Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface $handler): void
+                public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
                 {
                 }
 
-                public function registerToolCallRewriteHook(string $toolName, \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface $hook): void
+                public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
                 {
                 }
 
-                public function registerAfterTurnCommitHook(\Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface $hook): void
+                public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
                 {
                 }
 
@@ -205,11 +224,11 @@ final class ChildExtensionSelectionServiceTest extends TestCase
                 {
                 }
 
-                public function registerSessionStartHook(\Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface $hook): void
+                public function registerSessionStartHook(AfterSessionStartHookInterface $hook): void
                 {
                 }
 
-                public function registerBeforeCompactionHook(\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface $hook): void
+                public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
                 {
                 }
 
@@ -218,26 +237,26 @@ final class ChildExtensionSelectionServiceTest extends TestCase
                     return false;
                 }
 
-                public function agent(): \Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface
+                public function agent(): AgentRunnerInterface
                 {
                     throw new \LogicException('unused');
                 }
 
-                public function sessionEvents(): \Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface
+                public function sessionEvents(): SessionEventReaderInterface
                 {
                     throw new \LogicException('unused');
                 }
 
-                public function session(): \Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface
+                public function session(): SessionContextInterface
                 {
                     throw new \LogicException('unused');
                 }
 
-                public function registerExtensionAgentJobHandler(string $handlerId, \Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface $handler): void
+                public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
                 {
                 }
 
-                public function dispatchExtensionAgentJob(\Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO $request): void
+                public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
                 {
                 }
             },

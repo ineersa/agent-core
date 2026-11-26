@@ -22,6 +22,7 @@ use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
+use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -151,7 +152,7 @@ final class PickerOverlayTest extends TestCase
     }
 
     /**
-     * @return list<\Symfony\Component\Tui\Widget\AbstractWidget>
+     * @return list<AbstractWidget>
      */
     private function rootChildren(Tui $tui): array
     {

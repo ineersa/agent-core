@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\DTO\FinalizeCommandMetadataDTO;
+use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -16,7 +17,7 @@ final class CommandMailboxCoordinationFactory
 {
     public static function isMailboxAction(object $action): bool
     {
-        return $action instanceof \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO || $action instanceof MarkCommandAppliedDTO || $action instanceof RejectCommandDTO;
+        return $action instanceof EnqueueCommandDTO || $action instanceof MarkCommandAppliedDTO || $action instanceof RejectCommandDTO;
     }
 
     public static function finalize(HandlerResult $result): HandlerResult

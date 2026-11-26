@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
+use Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
@@ -38,6 +39,8 @@ use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -49,6 +52,9 @@ use Symfony\AI\Platform\Bridge\OpenResponses\Contract\OpenResponsesContract;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResultConverter as OpenResponsesResultConverter;
 use Symfony\AI\Platform\Exception\MaxOutputTokensException;
+use Symfony\AI\Platform\Message\Content\Text;
+use Symfony\AI\Platform\Message\Message;
+use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
 use Symfony\AI\Platform\ModelClientInterface;
@@ -106,11 +112,11 @@ final class PlatformIntegrationTest extends TestCase
             {
             }
 
-            public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null, string $modelName = ''): \Symfony\AI\Platform\Message\MessageBag
+            public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null, string $modelName = ''): MessageBag
             {
                 $this->calls[] = 'convert_to_llm';
 
-                return new \Symfony\AI\Platform\Message\MessageBag(\Symfony\AI\Platform\Message\Message::ofUser('converted'));
+                return new MessageBag(Message::ofUser('converted'));
             }
         };
 
@@ -278,7 +284,7 @@ final class PlatformIntegrationTest extends TestCase
 
         $result = $platform->invoke(
             'llama_cpp/flash',
-            new \Symfony\AI\Platform\Message\MessageBag(\Symfony\AI\Platform\Message\Message::ofUser('Hello')),
+            new MessageBag(Message::ofUser('Hello')),
         );
 
         $stream = $result->getResult();
@@ -389,7 +395,7 @@ final class PlatformIntegrationTest extends TestCase
 
     public function testImageRefSurvivesAdapterConvertWhenRequestCarriesActualVisionModel(): void
     {
-        $tmpDir = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createOsTempDir('platform-image-gate');
+        $tmpDir = TestDirectoryIsolation::createOsTempDir('platform-image-gate');
         try {
             $imagePath = $tmpDir.'/vision-gate.png';
             $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
@@ -415,10 +421,10 @@ final class PlatformIntegrationTest extends TestCase
                 ),
             ];
 
-            $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
+            $checker = $this->createStub(ImageCapabilityCheckerInterface::class);
             $checker->method('supportsImages')->willReturn(true);
 
-            $imageGatingHook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook(
+            $imageGatingHook = new ImageGatingConvertHook(
                 $checker,
                 new AgentMessageConverter(),
             );
@@ -463,7 +469,7 @@ final class PlatformIntegrationTest extends TestCase
             $this->assertIsString($serialized);
             $this->assertStringNotContainsString('does not support images', $serialized, 'Convert hooks must receive the actual request model, not an empty sentinel.');
         } finally {
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($tmpDir);
+            TestDirectoryIsolation::removeDirectory($tmpDir);
         }
     }
 
@@ -1646,7 +1652,7 @@ final class PlatformIntegrationTest extends TestCase
                 new class implements ToolboxInterface {
                     public function execute(ToolCall $toolCall): ToolResult
                     {
-                        return new ToolResult($toolCall, new \Symfony\AI\Platform\Message\Content\Text(''));
+                        return new ToolResult($toolCall, new Text(''));
                     }
 
                     public function getToolIterator(): \Traversable

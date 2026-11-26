@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
@@ -92,7 +93,7 @@ final class ExactQaRunCacheCleanupTest extends TestCase
     {
         require_once ProjectDir::get().'/.castor/helpers.php';
         $work = TestDirectoryIsolation::createProjectTempDir('qa-retention');
-        $filesystem = new \Symfony\Component\Filesystem\Filesystem();
+        $filesystem = new Filesystem();
         try {
             foreach (range(1, 12) as $number) {
                 $id = 'qa-20260101-000000-'.$number.'-deadbeef';
@@ -125,7 +126,7 @@ final class ExactQaRunCacheCleanupTest extends TestCase
         require_once ProjectDir::get().'/.castor/shared.php';
         require_once ProjectDir::get().'/.castor/qa_tmux.php';
         $root = ProjectDir::get();
-        $filesystem = new \Symfony\Component\Filesystem\Filesystem();
+        $filesystem = new Filesystem();
         $input = new InputStream();
         $process = new Process([
             \CastorTasks\castor_cli_executable(), '--castor-file='.$root.'/tests/CodingAgent/Fixtures/CastorPreflightFailure.php',

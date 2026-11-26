@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Ineersa\CodingAgent\Mcp\Client\McpSdkClientFactory;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Mcp\Client\Exception\ConnectionException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -170,7 +171,7 @@ class McpConnectionManagerTest extends TestCase
             $this->manager->callTool('test-run', 'fixture', 'echo');
             $this->fail('Expected the connection exception to propagate.');
         } catch (McpClientConnectionException $error) {
-            $this->assertInstanceOf(\Mcp\Client\Exception\ConnectionException::class, $error->getPrevious());
+            $this->assertInstanceOf(ConnectionException::class, $error->getPrevious());
             $this->assertSame($error->getPrevious()->getMessage(), $error->getMessage());
         }
     }

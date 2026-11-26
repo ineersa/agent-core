@@ -17,10 +17,11 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
 #[Group('gf-05-prompt-contract')]
-final class Gf05ChildAppendStructuralPermanentSubsetContractTest extends \PHPUnit\Framework\TestCase
+final class Gf05ChildAppendStructuralPermanentSubsetContractTest extends TestCase
 {
     private string $tmpDir;
 

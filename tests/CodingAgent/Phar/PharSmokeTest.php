@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Phar;
 
+use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
 use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
@@ -318,7 +320,7 @@ final class PharSmokeTest extends TestCase
         $phar = new \Phar($pharPath);
 
         $projectRoot = \dirname(__DIR__, 3);
-        $catalog = (new \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog())->discover($projectRoot);
+        $catalog = (new BuiltinDocsCatalog())->discover($projectRoot);
         $this->assertNotSame([], $catalog, 'catalog must discover selected built-in docs');
 
         $expected = [];
@@ -341,8 +343,8 @@ final class PharSmokeTest extends TestCase
         // Only the monorepo-canonical roots are asserted (not vendor/ path-package copies).
         $found = [];
         $canonicalPrefixes = [
-            \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::CORE_DOCS_RELATIVE.'/',
-            \Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE.'/',
+            BuiltinDocsCatalog::CORE_DOCS_RELATIVE.'/',
+            BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE.'/',
         ];
         /** @var \PharFileInfo $file */
         foreach (new \RecursiveIteratorIterator($phar) as $file) {
@@ -404,11 +406,11 @@ final class PharSmokeTest extends TestCase
             );
         }
 
-        $locator = new \Ineersa\CodingAgent\Config\AppResourceLocator('phar://'.$pharPath);
-        $settingsPath = $locator->getAppRoot().'/'.\Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::CORE_DOCS_RELATIVE.'/settings.md';
+        $locator = new AppResourceLocator('phar://'.$pharPath);
+        $settingsPath = $locator->getAppRoot().'/'.BuiltinDocsCatalog::CORE_DOCS_RELATIVE.'/settings.md';
         $this->assertFileExists($settingsPath);
         $this->assertStringContainsString('Hatfield Settings', (string) file_get_contents($settingsPath));
-        $this->assertDirectoryExists($locator->getAppRoot().'/'.\Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE);
+        $this->assertDirectoryExists($locator->getAppRoot().'/'.BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE);
 
         $skillMd = 'src/CodingAgent/Resources/skills/subagents/SKILL.md';
         $frontmatterMd = 'src/CodingAgent/Resources/skills/subagents/references/frontmatter.md';

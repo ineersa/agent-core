@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Command;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -30,8 +31,12 @@ use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
+use Symfony\Component\Tui\Tui;
 
 class ModelCommandHandlerTest extends TestCase
 {
@@ -69,8 +74,8 @@ class ModelCommandHandlerTest extends TestCase
                 logging: new LoggingConfig(),
                 cwd: $this->tempDir.'/project',
             ),
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            entityManager: $this->createStub(EntityManagerInterface::class),
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $this->sessionMetaStore = $hatfieldSessionStore;
 
         $appConfig = $this->makeAppConfig($this->standardAiData());
@@ -384,9 +389,9 @@ class ModelCommandHandlerTest extends TestCase
         return new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger(), isFavourites: true);
     }
 
-    private function pickerTui(): \Symfony\Component\Tui\Tui
+    private function pickerTui(): Tui
     {
-        return new \Symfony\Component\Tui\Tui();
+        return new Tui();
     }
 
     private function pickerScreen(): ChatScreen

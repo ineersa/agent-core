@@ -4,32 +4,78 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Runtime;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
+use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
+use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
+use Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
+use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
+use Ineersa\Tui\Application\InteractiveMode;
+use Ineersa\Tui\Application\SessionInitializer;
+use Ineersa\Tui\Application\TuiSessionSwitchService;
+use Ineersa\Tui\Command\CommandMetadata;
+use Ineersa\Tui\Command\NoOp;
+use Ineersa\Tui\Command\SlashCommand;
+use Ineersa\Tui\Command\SlashCommandCatalog;
+use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Listener\ReloadCommandHandler;
+use Ineersa\Tui\Listener\SubmitListener;
+use Ineersa\Tui\Listener\TickPollListener;
+use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Question\QuestionKind;
+use Ineersa\Tui\Question\QuestionRequest;
+use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
+use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
+use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
+use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Tui\Event\TickEvent;
 
 #[AllowMockObjectsWithoutExpectations]
 final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
 {
-    use \Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+    use TuiRuntimeContextBuilderTrait;
 
     private TestLogger $logger;
 
@@ -56,7 +102,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
                 $state->resuming = false;
                 $state->replaceTranscript([]);
                 $harness->screen()->setTranscriptBlocks([]);
-                $state->handle = $client->start(new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Original prompt', '42'));
+                $state->handle = $client->start(new StartRunRequest('Original prompt', '42'));
                 $state->sessionReady = true;
                 $this->assertNull($state->handle->bootstrapRequestId);
                 $this->pumpUntil($client, $state, $harness, $poller, $mount,
@@ -66,7 +112,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $oldMounts = $mounts;
             $localInput = $state->queuedFollowUps = ['Locally queued input'];
             $harness->screen()->promptEditor()->replaceText('Preserved editor draft');
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
+            $client->send('42', new UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
             // No explicit attach, fake client, or recovery callback: ordinary
             // production polling restarts the owned pipe and adopts its identity.
@@ -79,13 +125,13 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->assertStringContainsString('Preserved editor draft', $harness->plainScreenText());
             $this->assertSame(['17' => 'Restored pending input'], $state->queuedUserMessages);
             $this->assertExactAck($directory);
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'Live after recovery'));
+            $client->send('42', new UserCommand(UserCommandTypeEnum::FollowUp, 'Live after recovery'));
             $this->pumpUntil($client, $state, $harness, $poller, $mount,
                 static fn (): bool => str_contains($harness->plainScreenText(), 'Live after recovery'));
             $this->assertNull($state->bootstrapError);
         } finally {
             $this->closePeer($client);
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+            TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 
@@ -104,7 +150,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $tick = static function () use ($state, $context): void {
             $state->lastPoll = 0;
             $state->subagentLiveView->childLastPoll = 0;
-            $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+            $context->ticks->dispatch(new TickEvent());
         };
         $wait = function (callable $ready) use ($tick, $client, $state, $harness): void {
             $deadline = microtime(true) + 3;
@@ -123,22 +169,22 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $state->handle = $client->attach('42');
             $wait(static fn (): bool => $state->sessionReady);
             $oldRequest = $state->handle->bootstrapRequestId;
-            $child = new \Ineersa\Tui\Runtime\SubagentLiveChildDTO('child-42', 'artifact', 'Child',
-                \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::Running, 'Child work', 1, 'provider/model', 'low');
+            $child = new SubagentLiveChildDTO('child-42', 'artifact', 'Child',
+                SubagentLiveStatusEnum::Running, 'Child work', 1, 'provider/model', 'low');
             $state->subagentLiveView->enter($child);
             $childBlock = new TranscriptBlock('child-block', TranscriptBlockKindEnum::AssistantMessage, 'child-42', 1, 'Visible child answer');
             $state->subagentLiveView->replaceChildTranscript([$childBlock]);
             $childProjector->replaceProjectedBlocks([$childBlock]);
             $harness->screen()->setTranscriptBlocks([$childBlock]);
             $client->beginObservingChildRun('child-42');
-            $context->sessionServices->questionCoordinator->enqueue(new \Ineersa\Tui\Question\QuestionRequest(
-                'child-question', \Ineersa\Tui\Question\QuestionKind::Confirm,
+            $context->sessionServices->questionCoordinator->enqueue(new QuestionRequest(
+                'child-question', QuestionKind::Confirm,
                 'Child question', runId: 'child-42'));
             $harness->screen()->promptEditor()->replaceText('Preserved draft');
             $state->queuedFollowUps = ['Local parent input'];
-            (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/child-run', 'child-42');
-            (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/suffix-type', RuntimeEventTypeEnum::RunCancelled->value);
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
+            (new Filesystem())->dumpFile($directory.'/child-run', 'child-42');
+            (new Filesystem())->dumpFile($directory.'/suffix-type', RuntimeEventTypeEnum::RunCancelled->value);
+            $client->send('42', new UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
             $wait(static fn (): bool => $state->sessionReady && $state->handle->bootstrapRequestId !== $oldRequest
                 && str_contains($harness->plainScreenText(), 'Local parent input'));
@@ -153,7 +199,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->assertSame('Preserved draft', $harness->screen()->editorText());
             $this->assertSame([], $state->queuedFollowUps);
             $this->assertExactAck($directory);
-            static::getContainer()->get(\Ineersa\Tui\Listener\SubmitListener::class)->register($context);
+            static::getContainer()->get(SubmitListener::class)->register($context);
             $harness->screen()->promptEditor()->replaceText('Ordinary parent submission');
             $harness->tui()->setFocus($harness->screen()->editorWidget());
             $harness->tui()->handleInput("\r");
@@ -163,7 +209,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->assertSame(['42', '42'], array_column($commands, 'runId'));
         } finally {
             $this->closePeer($client);
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+            TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 
@@ -189,7 +235,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         });
         $sent = [];
         $attempts = 0;
-        $client->method('send')->willReturnCallback(static function (string $run, \Ineersa\CodingAgent\Runtime\Contract\UserCommand $command) use ($state, &$sent, &$attempts, $retry): void {
+        $client->method('send')->willReturnCallback(static function (string $run, UserCommand $command) use ($state, &$sent, &$attempts, $retry): void {
             self::assertTrue($state->sessionReady);
             self::assertSame('42', $run);
             if (2 === ++$attempts && $retry) {
@@ -200,7 +246,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $context = $this->tickContext($state, $harness, $poller, $client);
         $tick = static function () use ($state, $context): void {
             $state->lastPoll = 0;
-            $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+            $context->ticks->dispatch(new TickEvent());
         };
         $tick();
         $this->assertFalse($state->sessionReady);
@@ -287,7 +333,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $client->expects($this->once())->method('acknowledgeBootstrap')->with($cut->toArray());
         $sent = [];
         $attempts = 0;
-        $client->method('send')->willReturnCallback(static function (string $run, \Ineersa\CodingAgent\Runtime\Contract\UserCommand $command) use (&$sent, &$attempts): void {
+        $client->method('send')->willReturnCallback(static function (string $run, UserCommand $command) use (&$sent, &$attempts): void {
             if (1 === ++$attempts) {
                 throw new \RuntimeException('Owned send failure');
             }
@@ -296,7 +342,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $context = $this->tickContext($state, $harness, $poller, $client);
         $tick = static function () use ($state, $context): void {
             $state->lastPoll = 0;
-            $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+            $context->ticks->dispatch(new TickEvent());
         };
         $tick();
         $this->assertSame(RunActivityStateEnum::Failed, $state->activity);
@@ -335,19 +381,19 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
                 $events = [$end]; // Fresh ignored frames cannot reset the unsent-intent error episode.
             }
             $state->lastPoll = 0;
-            $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+            $context->ticks->dispatch(new TickEvent());
         }
         $this->assertTrue($state->sessionReady);
         $this->assertSame([], $state->queuedFollowUps);
         $this->assertNull($state->pendingEditorRestoreText);
         $this->assertSame('Unsent intent', $harness->screen()->editorText());
-        $switch = $this->createMock(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class);
+        $switch = $this->createMock(TuiSessionSwitchServiceInterface::class);
         $switch->expects($this->once())->method('requestReload')->with('42');
-        $reload = new \Ineersa\Tui\Listener\ReloadCommandHandler($switch, $state, $harness->screen(), $context->sessionServices->questionCoordinator);
-        $command = new \Ineersa\Tui\Command\SlashCommand('reload', '', '/reload');
-        $this->assertInstanceOf(\Ineersa\Tui\Command\TranscriptMessage::class, $reload->handle($command));
+        $reload = new ReloadCommandHandler($switch, $state, $harness->screen(), $context->sessionServices->questionCoordinator);
+        $command = new SlashCommand('reload', '', '/reload');
+        $this->assertInstanceOf(TranscriptMessage::class, $reload->handle($command));
         $harness->screen()->promptEditor()->replaceText('');
-        $this->assertInstanceOf(\Ineersa\Tui\Command\NoOp::class, $reload->handle($command));
+        $this->assertInstanceOf(NoOp::class, $reload->handle($command));
     }
 
     #[DataProvider('restartAfterAttachReturn')]
@@ -356,7 +402,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         [$state, $harness, $poller] = $this->scope();
         $client = null;
         $originalStdin = null;
-        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())->method('warning')->willReturnCallback(function (string $message, array $context) use (&$client, &$originalStdin): void {
             self::assertSame('resume', $context['command_type']);
             self::assertSame('Controller pipe broken, restarting and retrying', $message);
@@ -365,7 +411,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         });
         [$client, $directory] = $this->protocolClient('42', logger: $logger);
         try {
-            $client->start(new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Original prompt', '42'));
+            $client->start(new StartRunRequest('Original prompt', '42'));
             $this->assertTrue((new \ReflectionProperty($client, 'runtimeReadyReceived'))->getValue($client));
             $this->assertTrue($this->peerRunning($client));
             // Fail the resume write after readiness while the original peer is
@@ -400,7 +446,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
                 fclose($originalStdin);
             }
             $this->closePeer($client);
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+            TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 
@@ -415,8 +461,8 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         [$state, $harness, $poller] = $this->scope();
         [$client, $directory] = $this->protocolClient('42');
         try {
-            $client->start(new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Original prompt', '42'));
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
+            $client->start(new StartRunRequest('Original prompt', '42'));
+            $client->send('42', new UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
             $state->handle = $client->attach('42');
             $returnedRequestId = $state->handle->bootstrapRequestId;
@@ -435,7 +481,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->assertExactAck($directory);
         } finally {
             $this->closePeer($client);
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+            TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 
@@ -458,7 +504,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
                 $state->resuming = false;
                 $state->replaceTranscript([]);
                 $harness->screen()->setTranscriptBlocks([]);
-                $state->handle = $client->start(new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Original prompt', '42'));
+                $state->handle = $client->start(new StartRunRequest('Original prompt', '42'));
                 $state->sessionReady = true;
                 $this->assertNull($state->handle->bootstrapRequestId);
                 $this->pumpUntil($client, $state, $harness, $poller, $mount,
@@ -466,9 +512,9 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             }
             $oldMounts = $mounts;
             $original = $state->handle->bootstrapRequestId;
-            (new \Symfony\Component\Filesystem\Filesystem())->dumpFile(
+            (new Filesystem())->dumpFile(
                 $directory.($beforeReady ? '/exit-before-ready' : '/fail-next-spawn'), '2');
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
+            $client->send('42', new UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
             $state->lastPoll = 0;
             // Default capture policy handles the real transport failure. No
@@ -498,7 +544,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->assertExactAck($directory);
         } finally {
             $this->closePeer($client);
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+            TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 
@@ -524,11 +570,11 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $state->handle = $client->attach('42');
             $this->pumpUntil($client, $state, $harness, $poller, $mount, static fn (): bool => $state->sessionReady);
             $original = $state->handle->bootstrapRequestId;
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
+            $client->send('42', new UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
+            $client->send('42', new UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
-            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'Live after chained recovery'));
+            $client->send('42', new UserCommand(UserCommandTypeEnum::FollowUp, 'Live after chained recovery'));
             $this->assertSame($original, $state->handle->bootstrapRequestId);
             $restoring = (new \ReflectionProperty($client, 'pendingSessionRestoring'))->getValue($client);
             $this->assertSame($original, $restoring->payload['previous_command_id']);
@@ -546,7 +592,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->assertExactAck($directory);
         } finally {
             $this->closePeer($client);
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+            TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 
@@ -555,7 +601,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         [$state, $harness, $poller] = $this->scope();
         [$client, $directory] = $this->protocolClient('42');
         try {
-            (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/child-run', 'child-42');
+            (new Filesystem())->dumpFile($directory.'/child-run', 'child-42');
             $state->handle = $client->attach('42');
             $client->beginObservingChildRun('child-42');
             $deadline = microtime(true) + 3;
@@ -584,33 +630,33 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->assertExactAck($directory);
         } finally {
             $this->closePeer($client);
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+            TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 
     public function testResumeStartupPromptAttachesThenUsesOrdinarySubmissionOnceAfterReadiness(): void
     {
-        $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('resume-prompt');
+        $directory = TestDirectoryIsolation::createProjectTempDir('resume-prompt');
         $client = null;
         try {
-            $store = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
-                new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
-                static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class), new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            $store = new HatfieldSessionStore(
+                new AppConfig(new TuiConfig(theme: 'default'), new LoggingConfig(), cwd: $directory),
+                static::getContainer()->get(EntityManagerInterface::class), new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
             $runId = $store->createSession('Original catalog prompt');
-            $initializer = new \Ineersa\Tui\Application\SessionInitializer($store, new \Ineersa\Tui\Transcript\TranscriptBlockFactory());
-            $state = $initializer->initialize($runId, new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Startup follow-up', cwd: $directory));
+            $initializer = new SessionInitializer($store, new TranscriptBlockFactory());
+            $state = $initializer->initialize($runId, new StartRunRequest('Startup follow-up', cwd: $directory));
             $state->replaceTranscript($initializer->buildInitialTranscript($state));
             [, $harness, $poller] = $this->scope($runId);
             [$client] = $this->protocolClient($runId, $directory);
             // Exercise the production startup branch without running a real TTY.
-            (new \ReflectionMethod(\Ineersa\Tui\Application\InteractiveMode::class, 'startOrResumeRun'))->invoke(
-                static::getContainer()->get(\Ineersa\Tui\Application\InteractiveMode::class), $client, $state, $harness->screen());
+            (new \ReflectionMethod(InteractiveMode::class, 'startOrResumeRun'))->invoke(
+                static::getContainer()->get(InteractiveMode::class), $client, $state, $harness->screen());
             $this->assertFalse($state->sessionReady);
             $this->assertNotNull($state->handle->bootstrapRequestId);
             $services = $this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state, client: $client);
             $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($state)->withClient($client)->withSessionStore($store)->withSessionServices($services)->build();
-            static::getContainer()->get(\Ineersa\Tui\Listener\SubmitListener::class)->register($context);
-            $tick = static function () use ($context): void { $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent()); };
+            static::getContainer()->get(SubmitListener::class)->register($context);
+            $tick = static function () use ($context): void { $context->ticks->dispatch(new TickEvent()); };
             $tick();
             $this->assertSame('Startup follow-up', $state->pendingInitialPrompt);
             $mount = function () use ($state, $harness, $tick, $directory): void {
@@ -630,7 +676,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->assertNull($state->pendingInitialPrompt);
             $this->assertSame('Original catalog prompt', $store->findSession($runId)->prompt);
             $oldRequest = $state->handle->bootstrapRequestId;
-            $client->send($runId, new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
+            $client->send($runId, new UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
             $this->awaitPeerExit($client);
             $this->pumpUntil($client, $state, $harness, $poller,
                 static function () use ($state, $harness): void { $harness->screen()->setTranscriptBlocks($state->transcript); },
@@ -650,7 +696,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             if (null !== $client) {
                 $this->closePeer($client);
             }
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+            TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 
@@ -722,7 +768,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
                 $resume['data']['editor_prompt_text'] = ['not text'];
             }
             $bytes = json_encode($resume, \JSON_THROW_ON_ERROR)."\n".$lines[1]."\n";
-            $this->assertLessThanOrEqual(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::FRAME_BYTES, \strlen($bytes));
+            $this->assertLessThanOrEqual(SessionBootstrapSpoolStore::FRAME_BYTES, \strlen($bytes));
             $cut = SessionBootstrapDescriptorDTO::fromArray(array_replace($cut->toArray(), ['bytes' => \strlen($bytes), 'checksum' => hash('sha256', $bytes)]));
             $available = new RuntimeEvent($available->type, '42', 0, $cut->toArray() + ['command_id' => 'request']);
             $frame = new RuntimeEvent($frame->type, '42', 0, array_replace($frame->payload, ['data' => base64_encode($bytes)]));
@@ -732,7 +778,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $client->expects($this->never())->method('acknowledgeBootstrap');
         $client->expects($this->once())->method('cancelBootstrap')->with('42');
         if ('disconnect' === $fault) {
-            $client->method('events')->willThrowException(new \Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException('Disconnected controller.'));
+            $client->method('events')->willThrowException(new RuntimeTransportException('Disconnected controller.'));
         } else {
             $client->method('events')->willReturn([$available, $frame, $end]);
         }
@@ -854,7 +900,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $client->expects($this->exactly(2))->method('cancelBootstrap')->with('42');
         $ack = $client->expects($this->once())->method('acknowledgeBootstrap')->with($cut->toArray());
         if ($ackFails) {
-            $ack->willThrowException(new \Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException('Acknowledgement connection failed.'));
+            $ack->willThrowException(new RuntimeTransportException('Acknowledgement connection failed.'));
         }
         $mount = static function () use ($harness, $state): void {
             $harness->screen()->setTranscriptBlocks($state->transcript);
@@ -872,13 +918,13 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $this->assertFalse($state->bootstrapMounted);
         $this->assertNotNull($state->bootstrapError);
 
-        $switch = new \Ineersa\Tui\Application\TuiSessionSwitchService($harness->tui(), $client, $state, $this->logger);
-        $catalog = new \Ineersa\Tui\Command\SlashCommandCatalog();
-        $questions = new \Ineersa\Tui\Question\QuestionCoordinator();
-        $catalog->register(new \Ineersa\Tui\Command\CommandMetadata('reload'), new \Ineersa\Tui\Listener\ReloadCommandHandler($switch, $state, $harness->screen(), $questions));
+        $switch = new TuiSessionSwitchService($harness->tui(), $client, $state, $this->logger);
+        $catalog = new SlashCommandCatalog();
+        $questions = new QuestionCoordinator();
+        $catalog->register(new CommandMetadata('reload'), new ReloadCommandHandler($switch, $state, $harness->screen(), $questions));
         $services = $this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state, client: $client, switch: $switch, catalog: $catalog, questionCoordinator: $questions);
         $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($state)->withClient($client)->withSessionServices($services)->build();
-        static::getContainer()->get(\Ineersa\Tui\Listener\SubmitListener::class)->register($context);
+        static::getContainer()->get(SubmitListener::class)->register($context);
         $harness->screen()->promptEditor()->replaceText('/reload');
         $harness->tui()->setFocus($harness->screen()->editorWidget());
         $harness->tui()->handleInput("\r");
@@ -926,25 +972,25 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         yield 'suffix readiness fails after acknowledgement' => [false];
     }
 
-    private function restartReturnedAttachBeforePolling(\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient $client, TuiSessionState $state): void
+    private function restartReturnedAttachBeforePolling(JsonlProcessAgentSessionClient $client, TuiSessionState $state): void
     {
         $returnedId = $state->handle->bootstrapRequestId;
-        $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
+        $client->send('42', new UserCommand(UserCommandTypeEnum::FollowUp, 'exit-controller'));
         $this->awaitPeerExit($client);
-        $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(UserCommandTypeEnum::FollowUp, 'Live after returned attach'));
+        $client->send('42', new UserCommand(UserCommandTypeEnum::FollowUp, 'Live after returned attach'));
         $this->assertSame($returnedId, $state->handle->bootstrapRequestId);
         $restoring = (new \ReflectionProperty($client, 'pendingSessionRestoring'))->getValue($client);
         $this->assertSame($returnedId, $restoring->payload['previous_command_id']);
         $this->assertNotSame($returnedId, $restoring->payload['command_id']);
     }
 
-    private function tickContext(TuiSessionState $state, VirtualTuiHarness $harness, RuntimeEventPoller $poller, AgentSessionClient $client, ?TranscriptProjectorInterface $childProjector = null): \Ineersa\Tui\Runtime\TuiRuntimeContext
+    private function tickContext(TuiSessionState $state, VirtualTuiHarness $harness, RuntimeEventPoller $poller, AgentSessionClient $client, ?TranscriptProjectorInterface $childProjector = null): TuiRuntimeContext
     {
         $services = $this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state,
             client: $client, parentPoller: $poller, childProjector: $childProjector ?? static::getContainer()->get('tui.session.child_transcript_projector'));
         $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())
             ->withState($state)->withClient($client)->withSessionServices($services)->build();
-        static::getContainer()->get(\Ineersa\Tui\Listener\TickPollListener::class)->register($context);
+        static::getContainer()->get(TickPollListener::class)->register($context);
 
         return $context;
     }
@@ -968,14 +1014,14 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         return [$state, $harness, $poller];
     }
 
-    /** @return array{\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient, string} */
-    private function protocolClient(string $runId, ?string $directory = null, ?\Psr\Log\LoggerInterface $logger = null): array
+    /** @return array{JsonlProcessAgentSessionClient, string} */
+    private function protocolClient(string $runId, ?string $directory = null, ?LoggerInterface $logger = null): array
     {
-        $directory ??= \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('bootstrap-recovery');
+        $directory ??= TestDirectoryIsolation::createProjectTempDir('bootstrap-recovery');
         [$cut, , $frame] = $this->transfer($runId);
-        (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/transfer.json', json_encode(
+        (new Filesystem())->dumpFile($directory.'/transfer.json', json_encode(
             ['cut' => $cut->toArray(), 'bytes' => base64_decode($frame->payload['data'], true)], \JSON_THROW_ON_ERROR));
-        $locator = new class($directory) implements \Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator {
+        $locator = new class($directory) implements AppExecutableLocator {
             public function __construct(private readonly string $directory)
             {
             }
@@ -983,8 +1029,8 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             public function command(): array
             {
                 if (is_file($this->directory.'/fail-next-spawn')) {
-                    (new \Symfony\Component\Filesystem\Filesystem())->remove($this->directory.'/fail-next-spawn');
-                    throw new \Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException('Injected executable resolution failure.');
+                    (new Filesystem())->remove($this->directory.'/fail-next-spawn');
+                    throw new RuntimeTransportException('Injected executable resolution failure.');
                 }
 
                 return [\PHP_BINARY, $this->path()];
@@ -995,22 +1041,22 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
                 return \dirname(__DIR__).'/Support/BootstrapRecoveryProtocol.php';
             }
         };
-        $client = new \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient(
-            new \Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig($locator, $directory),
-            new \Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig(),
-            new \Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig(),
+        $client = new JsonlProcessAgentSessionClient(
+            new RuntimeProcessConfig($locator, $directory),
+            new PromptTemplatesRuntimeConfig(),
+            new ToolFilterRuntimeConfig(),
             $logger ?? $this->logger,
-            \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(\Doctrine\ORM\EntityManagerInterface::class), $directory),
-            static::getContainer()->get(\Ineersa\CodingAgent\Tool\BackgroundProcessManager::class),
-            static::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService::class),
-            static::getContainer()->get(\Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider::class),
-            static::getContainer()->get(\Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher::class),
+            ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $directory),
+            static::getContainer()->get(BackgroundProcessManager::class),
+            static::getContainer()->get(ChildInvocationBackgroundService::class),
+            static::getContainer()->get(BackgroundWorkSnapshotProvider::class),
+            static::getContainer()->get(ExtensionSessionEventPublisher::class),
         );
 
         return [$client, $directory];
     }
 
-    private function pumpUntil(\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient $client, TuiSessionState $state, VirtualTuiHarness $harness, RuntimeEventPoller $poller, callable $mount, callable $ready): void
+    private function pumpUntil(JsonlProcessAgentSessionClient $client, TuiSessionState $state, VirtualTuiHarness $harness, RuntimeEventPoller $poller, callable $mount, callable $ready): void
     {
         $deadline = microtime(true) + 3;
         do {
@@ -1029,14 +1075,14 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $this->fail('Bootstrap did not become usable: '.$harness->plainScreenText());
     }
 
-    private function peerRunning(\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient $client): bool
+    private function peerRunning(JsonlProcessAgentSessionClient $client): bool
     {
         $process = (new \ReflectionProperty($client, 'process'))->getValue($client);
 
         return \is_resource($process) && proc_get_status($process)['running'];
     }
 
-    private function awaitPeerExit(\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient $client): void
+    private function awaitPeerExit(JsonlProcessAgentSessionClient $client): void
     {
         $deadline = microtime(true) + 3;
         while ($this->peerRunning($client) && microtime(true) < $deadline) {
@@ -1045,7 +1091,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $this->assertFalse($this->peerRunning($client), 'Controlled exit/EOF must stop the owned peer without a signal.');
     }
 
-    private function closePeer(\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient $client): void
+    private function closePeer(JsonlProcessAgentSessionClient $client): void
     {
         $pipes = (new \ReflectionProperty($client, 'pipes'))->getValue($client);
         if (isset($pipes[0]) && \is_resource($pipes[0])) {

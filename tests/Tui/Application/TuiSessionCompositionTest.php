@@ -27,9 +27,15 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscrib
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Application\TuiSessionCompositionFactory;
+use Ineersa\Tui\Command\ClearTranscript;
+use Ineersa\Tui\Command\SlashCommand;
+use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
+use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOverlayPromptRenderer;
+use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Command\FixedMessageTestHandler;
@@ -44,6 +50,8 @@ use Psr\Log\NullLogger;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Tui\Tui;
 
@@ -71,7 +79,7 @@ final class TuiSessionCompositionTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             $appConfig,
             $this->createStub(EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $modelService = new ModelSelectionService(
             $appConfig,
             new ModelResolver($appConfig, $sessionStore, new NullLogger()),
@@ -88,7 +96,7 @@ final class TuiSessionCompositionTest extends TestCase
                 'parent' => fn (): TranscriptProjector => $this->makeProjector(),
                 'child' => fn (): TranscriptProjector => $this->makeProjector(),
             ]),
-            commandCatalog: new \Ineersa\Tui\Command\SlashCommandCatalog(),
+            commandCatalog: new SlashCommandCatalog(),
             denormalizer: SubagentProgressSerializerTestSupport::denormalizer(),
             boundary: new RuntimeExceptionBoundary(new EventDispatcher()),
             sessionTranscriptProvider: $this->createStub(SessionTranscriptProviderInterface::class),
@@ -132,17 +140,17 @@ final class TuiSessionCompositionTest extends TestCase
         $scope1->commandRegistry->bind('clear', new FixedMessageTestHandler('scope-one'));
         $this->assertSame(
             'scope-one',
-            $scope1->commandRegistry->execute(new \Ineersa\Tui\Command\SlashCommand('clear', '', '/clear'))->text
+            $scope1->commandRegistry->execute(new SlashCommand('clear', '', '/clear'))->text
         );
         $this->assertInstanceOf(
-            \Ineersa\Tui\Command\ClearTranscript::class,
-            $scope2->commandRegistry->execute(new \Ineersa\Tui\Command\SlashCommand('clear', '', '/clear'))
+            ClearTranscript::class,
+            $scope2->commandRegistry->execute(new SlashCommand('clear', '', '/clear'))
         );
 
         // Question state is independent.
-        $scope1->questionCoordinator->enqueue(new \Ineersa\Tui\Question\QuestionRequest(
+        $scope1->questionCoordinator->enqueue(new QuestionRequest(
             requestId: 'q1',
-            kind: \Ineersa\Tui\Question\QuestionKind::Text,
+            kind: QuestionKind::Text,
             prompt: 'Scope one question?'
         ));
         $this->assertTrue($scope1->questionCoordinator->actionRequired());
@@ -184,7 +192,7 @@ final class TuiSessionCompositionTest extends TestCase
     }
 
     /** @return list<string> */
-    private static function historyPrompts(\Ineersa\Tui\Listener\PromptHistory $history): array
+    private static function historyPrompts(PromptHistory $history): array
     {
         $ref = new \ReflectionProperty($history, 'prompts');
 

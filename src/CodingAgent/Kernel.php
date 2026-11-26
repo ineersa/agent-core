@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent;
 
 use Ineersa\CodingAgent\Runtime\Process\PharExecutableLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\HttpKernel\Bundle\BundleInterface;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 
 class Kernel extends BaseKernel
@@ -22,7 +23,7 @@ class Kernel extends BaseKernel
     private const string HATFIELD_LOG_DIR = '.hatfield/logs';
 
     /**
-     * @return iterable<\Symfony\Component\HttpKernel\Bundle\BundleInterface>
+     * @return iterable<BundleInterface>
      */
     public function registerBundles(): iterable
     {

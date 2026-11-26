@@ -23,6 +23,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Tui\Tui;
 
 /**
  * Uses IsolatedKernelTestCase because HatfieldSessionStore now routes
@@ -183,7 +184,7 @@ final class RenameSessionCommandHandlerTest extends IsolatedKernelTestCase
     {
         $switch = $this->createStub(TuiSessionSwitchServiceInterface::class);
         $pickerController = new SessionPickerController(
-            new \Symfony\Component\Tui\Tui(),
+            new Tui(),
             new ChatScreen(
                 new DefaultTheme(new ThemePalette('test')),
                 'test-session',

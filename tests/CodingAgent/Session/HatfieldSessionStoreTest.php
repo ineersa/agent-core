@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatch;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\ToolBatchSchedule;
@@ -31,6 +32,7 @@ use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Filesystem\Exception\IOException;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
 
@@ -295,14 +297,14 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $run = $this->store->createSession('storage barrier');
         $connection = $container->get(Connection::class);
         $depth = $connection->getTransactionNestingLevel();
-        $realFactory = $container->get(\Symfony\Component\Lock\LockFactory::class);
-        $factory = $this->createMock(\Symfony\Component\Lock\LockFactory::class);
+        $realFactory = $container->get(LockFactory::class);
+        $factory = $this->createMock(LockFactory::class);
         $factory->expects($this->once())->method('createLock')->willReturnCallback(function (string $resource, ?float $ttl, bool $autoRelease) use ($realFactory, $connection, $depth): never {
             $this->assertSame($depth, $connection->getTransactionNestingLevel(), 'Deletion acquires storage before beginning its SQL transaction.');
             $this->assertFalse($realFactory->createLock($resource, $ttl, $autoRelease)->acquire(false), 'An independent deletion owner sees the actual publication lock.');
             throw new \RuntimeException('publication barrier');
         });
-        $deleter = new HatfieldSessionStore($container->get(\Ineersa\CodingAgent\Config\AppConfig::class), $container->get(EntityManagerInterface::class), $container->get(EventDispatcherInterface::class), $factory);
+        $deleter = new HatfieldSessionStore($container->get(AppConfig::class), $container->get(EntityManagerInterface::class), $container->get(EventDispatcherInterface::class), $factory);
         $payloads = $container->get(SessionToolPayloadStore::class);
         $payloads->withStorage($run, function () use ($run, $payloads, $deleter): void {
             $payloads->publish(new ExecuteToolCall($run, 1, 'step', 1, 'key', 'call', 'code_mode', [], 0));

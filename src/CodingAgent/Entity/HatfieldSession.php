@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Uid\UuidV7;
 
 /**
  * Doctrine ORM entity for the hatfield_session table.
@@ -104,6 +105,6 @@ class HatfieldSession
     {
         $this->createdAt = new \DateTimeImmutable();
         $this->updatedAt = new \DateTimeImmutable();
-        $this->providerCacheKey = \Symfony\Component\Uid\UuidV7::v7()->toRfc4122();
+        $this->providerCacheKey = UuidV7::v7()->toRfc4122();
     }
 }

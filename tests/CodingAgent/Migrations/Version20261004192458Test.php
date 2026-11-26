@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Migrations;
 
 use DoctrineMigrations\Version20261004192458;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
@@ -18,6 +19,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -97,12 +99,12 @@ final class Version20261004192458Test extends IsolatedKernelTestCase
         );
         $connection->update('deferred_subagent_child', [
             'child_event_cursor' => $terminal->seq,
-            'child_lifecycle_projection' => $container->get(SerializerInterface::class)->serialize($legacy, 'json', [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true]),
+            'child_lifecycle_projection' => $container->get(SerializerInterface::class)->serialize($legacy, 'json', [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]),
         ], ['child_run_id' => $childId]);
         $repository->rebindExistingChildToResumeBatch('resume-batch', 1, $childId, 'agent_resume', 'fork', 'resume task', 'test/model', 'medium');
         $recovery = $container->get(DeferredSubagentBatchRecoveryService::class);
         if ($resultCommitted) {
-            PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childId, 2, 'agent_command_queued', ['kind' => \Ineersa\AgentCore\Domain\Command\CoreCommandKind::FollowUp]));
+            PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childId, 2, 'agent_command_queued', ['kind' => CoreCommandKind::FollowUp]));
             PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childId, 2, 'llm_step_completed', [
                 'usage' => ['input_tokens' => 20, 'output_tokens' => 2, 'total_tokens' => 22, 'cost' => 0.02, 'cache_read_tokens' => 18],
                 'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'resumed result']]],

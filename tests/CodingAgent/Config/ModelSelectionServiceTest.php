@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
@@ -21,8 +22,13 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Coordinator-level tests for ModelSelectionService.
@@ -41,7 +47,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
     private string $tempDir;
     private string $homeDir;
     private HatfieldSessionStore $sessionMetaStore;
-    private \Doctrine\ORM\EntityManagerInterface $entityManager;
+    private EntityManagerInterface $entityManager;
     /** Session ID from auto-increment entity created in setUp. */
     private string $sessionId;
 
@@ -69,7 +75,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
                 cwd: $this->tempDir.'/project',
             ),
             entityManager: $this->entityManager,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $this->sessionMetaStore = $hatfieldSessionStore;
 
         $entity = new HatfieldSession();
@@ -306,7 +312,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
 
         $homeContent = file_get_contents($this->homeSettingsPath());
         $this->assertNotFalse($homeContent);
-        $parsed = \Symfony\Component\Yaml\Yaml::parse((string) $homeContent);
+        $parsed = Yaml::parse((string) $homeContent);
         $this->assertIsArray($parsed);
         $this->assertSame(
             ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'],
@@ -419,7 +425,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         // Draft sessions have no row; settings still receive the selection.
         $homeContent = file_get_contents($this->homeSettingsPath());
         $this->assertNotFalse($homeContent);
-        $parsed = \Symfony\Component\Yaml\Yaml::parse((string) $homeContent);
+        $parsed = Yaml::parse((string) $homeContent);
         $this->assertIsArray($parsed);
         $this->assertSame('llama_cpp/flash', $parsed['ai']['default_model'] ?? null);
     }
@@ -676,7 +682,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $appConfig = $this->makeAppConfig($aiData);
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
-        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore, new \Psr\Log\NullLogger());
+        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore, new NullLogger());
 
         return new ModelSelectionService($appConfig, $resolver, $homeWriter, $this->sessionMetaStore);
     }
@@ -753,7 +759,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $appConfig = $this->makeAppConfig($aiData);
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
-        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore, new \Psr\Log\NullLogger());
+        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore, new NullLogger());
 
         return [
             new ModelSelectionService($appConfig, $resolver, $homeWriter, $this->sessionMetaStore),

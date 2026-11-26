@@ -57,6 +57,8 @@ use Psr\Log\NullLogger;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Tui\Event\QuitEvent;
 
@@ -260,7 +262,7 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             $appConfig,
             $this->createStub(EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $historyProvider = $this->createStub(HistoryProviderInterface::class);
         $sessionInit = new SessionInitializer(
             sessionStore: $sessionStore,

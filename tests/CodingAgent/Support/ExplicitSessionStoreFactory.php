@@ -10,6 +10,8 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /** Store fixture for protocol tests that supply already allocated run IDs. */
 final class ExplicitSessionStoreFactory
@@ -19,6 +21,6 @@ final class ExplicitSessionStoreFactory
         return new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $cwd),
             $entityManager,
-            new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
     }
 }

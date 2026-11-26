@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\E2E;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Tests\E2E\Support\TuiE2eSessionCatalogSeeder;
+use Ineersa\Tui\Tests\Screen\TuiResumeSessionVirtualTest;
 use Ineersa\Tui\Tests\Support\ResumeCanonicalEventsFixture;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -16,7 +17,7 @@ use PHPUnit\Framework\TestCase;
  *
  * Seeds a real hatfield_session row + canonical events without an LLM turn.
  * Canonical block reconstruction remains virtual-owned
- * ({@see \Ineersa\Tui\Tests\Screen\TuiResumeSessionVirtualTest}).
+ * ({@see TuiResumeSessionVirtualTest}).
  *
  * @group tui-e2e-replay
  */

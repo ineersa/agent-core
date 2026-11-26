@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Mcp\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Psr\Log\LoggerInterface;
 
@@ -116,7 +119,7 @@ final class McpToolRegistrar
      * description, and input and output schemas, in catalog order. Non-cryptographic
      * (xxh128) — it only guards against redundant re-registration churn.
      */
-    private function fingerprintFor(string $catalogRunId, ?\Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO $catalog): string
+    private function fingerprintFor(string $catalogRunId, ?McpToolCatalogDTO $catalog): string
     {
         $content = [$catalogRunId];
 
@@ -162,7 +165,7 @@ final class McpToolRegistrar
      * Iterate connected catalog servers and register their tools as
      * dynamic registry entries.
      */
-    private function registerFromCatalog(\Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO $catalog, string $runId): void
+    private function registerFromCatalog(McpToolCatalogDTO $catalog, string $runId): void
     {
         foreach ($catalog->servers as $serverEntry) {
             if (McpServerCatalogStatusEnum::CONNECTED !== $serverEntry->status) {
@@ -182,7 +185,7 @@ final class McpToolRegistrar
      * for one tool does not block others from the same server.
      */
     private function registerServerTools(
-        \Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO $serverEntry,
+        McpServerCatalogEntryDTO $serverEntry,
         string $runId,
     ): void {
         foreach ($serverEntry->tools as $toolDef) {
@@ -200,7 +203,7 @@ final class McpToolRegistrar
      * never overwrite non-owned tools.
      */
     private function registerOneTool(
-        \Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO $toolDef,
+        McpToolDefinitionDTO $toolDef,
         string $serverName,
         string $runId,
     ): void {

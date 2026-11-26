@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Tool\AgentRetrieveTool;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -38,7 +39,7 @@ final class AgentRetrieveToolTest extends IsolatedKernelTestCase
             ],
             $def->promptGuidelines,
         );
-        $this->assertSame(\Ineersa\AgentCore\Domain\Tool\ToolExecutionMode::Sequential, $def->executionMode);
+        $this->assertSame(ToolExecutionMode::Sequential, $def->executionMode);
     }
 
     public function testInvokeRejectsWithoutToolContext(): void

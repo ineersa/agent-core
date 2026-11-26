@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\ProjectionPipeline;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
@@ -57,7 +58,7 @@ final class AssistantStreamProjectionSubscriberTest extends TestCase
         $session->applyTranscriptChangeSet($this->projector->drainChanges());
         // Native checkpoints must stand alone when process buffering prunes start/delta events.
         $this->assertSame(['Summary', 'read()', 'Answer'], array_column($session->transcript, 'text'));
-        $session->transcript[] = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock('local', TranscriptBlockKindEnum::System, 'run', 100, 'Local notification');
+        $session->transcript[] = new TranscriptBlock('local', TranscriptBlockKindEnum::System, 'run', 100, 'Local notification');
         $this->projector->accept($this->completion());
         $changes = $this->projector->drainChanges();
         $this->assertFalse($changes->isFull());

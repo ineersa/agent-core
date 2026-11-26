@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Picker;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
@@ -28,7 +29,10 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 
@@ -246,8 +250,8 @@ class ModelPickerControllerTest extends TestCase
                 logging: new LoggingConfig(),
                 cwd: $this->tempDir,
             ),
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            entityManager: $this->createStub(EntityManagerInterface::class),
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $sessionMetaStore = $hatfieldSessionStore;
 
         return new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore, new NullLogger()), $homeWriter, $sessionMetaStore);

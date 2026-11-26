@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Listener\NewSessionCommandHandler;
@@ -26,7 +27,7 @@ final class NewSessionCommandHandlerTest extends TestCase
             }
 
             public function requestNewDraft(
-                ?\Ineersa\CodingAgent\Runtime\Contract\StartRunRequest $request = null,
+                ?StartRunRequest $request = null,
             ): void {
                 $this->draftRequested = true;
             }

@@ -12,6 +12,8 @@ use Ineersa\Tui\ImagePaste\PastedImageValidationService;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
+use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
@@ -322,8 +324,8 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
     }
 
     private static function appendSystemMessage(
-        \Ineersa\Tui\Runtime\TuiSessionState $state,
-        \Ineersa\Tui\Screen\ChatScreen $screen,
+        TuiSessionState $state,
+        ChatScreen $screen,
         TranscriptBlockFactory $blockFactory,
         string $message,
     ): void {

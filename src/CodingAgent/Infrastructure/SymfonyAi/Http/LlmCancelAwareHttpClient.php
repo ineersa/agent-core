@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Symfony\Component\HttpClient\Chunk\ErrorChunk;
+use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\Response\ResponseStream;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
@@ -19,7 +20,7 @@ use Symfony\Contracts\HttpClient\ResponseStreamInterface;
  * The cancel token is captured at {@see request()} time so nested/sibling
  * scopes cannot cancel the wrong in-flight transfer. Progress throws
  * {@see LlmStreamCancelledException}. Vendor
- * {@see \Symfony\Component\HttpClient\EventSourceHttpClient} may swallow that as a
+ * {@see EventSourceHttpClient} may swallow that as a
  * reconnectable transport error, so {@see stream()} rethrows the typed cancel
  * from the captured token / exact cancel error before reconnect can hide it.
  */

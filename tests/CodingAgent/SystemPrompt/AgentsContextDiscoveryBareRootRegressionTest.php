@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\TestCase;
 
 /**
  * GF-05 RED: restore SYSTEM-02 bare ancestor AGENTS.md discovery (regression fde4cb989).
@@ -18,7 +19,7 @@ use PHPUnit\Framework\Attributes\Group;
  * @group gf-05-prompt-contract
  */
 #[Group('gf-05-prompt-contract')]
-final class AgentsContextDiscoveryBareRootRegressionTest extends \PHPUnit\Framework\TestCase
+final class AgentsContextDiscoveryBareRootRegressionTest extends TestCase
 {
     private string $tmpDir;
 

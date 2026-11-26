@@ -7,6 +7,9 @@ namespace Ineersa\Tui\Tests\Command;
 use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\ExitApplication;
+use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
+use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
+use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandCatalog;
@@ -216,7 +219,7 @@ final class SlashCommandRegistryTest extends TestCase
         $result = $this->registry->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
 
         $this->assertInstanceOf(
-            \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
+            HotkeyTableData::class,
             $result,
         );
         $this->assertSame([], $result->groups);
@@ -225,22 +228,22 @@ final class SlashCommandRegistryTest extends TestCase
     #[Test]
     public function executeHotkeysReturnsHotkeyTableDataWithGroupedBindings(): void
     {
-        $hotkeyReg = new \Ineersa\Tui\Command\Hotkey\HotkeyRegistry();
-        $hotkeyReg->add(new \Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO(
+        $hotkeyReg = new HotkeyRegistry();
+        $hotkeyReg->add(new HotkeyBindingDTO(
             context: 'Global',
             keys: ['ctrl+c'],
             action: 'Clear editor / cancel',
             description: 'Clear or double-exit',
             priority: 10,
         ));
-        $hotkeyReg->add(new \Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO(
+        $hotkeyReg->add(new HotkeyBindingDTO(
             context: 'Editor',
             keys: ['enter'],
             action: 'Submit prompt',
             description: 'Send editor content',
             priority: 10,
         ));
-        $hotkeyReg->add(new \Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO(
+        $hotkeyReg->add(new HotkeyBindingDTO(
             context: 'Editor',
             keys: ['ctrl+j', 'shift+enter'],
             action: 'Insert newline',
@@ -252,7 +255,7 @@ final class SlashCommandRegistryTest extends TestCase
         $result = $reg->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
 
         $this->assertInstanceOf(
-            \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
+            HotkeyTableData::class,
             $result,
         );
 
@@ -270,7 +273,7 @@ final class SlashCommandRegistryTest extends TestCase
         $editorBindings = $groups['Editor'];
         $this->assertCount(2, $editorBindings);
         $actions = array_map(
-            static fn (\Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO $b): string => $b->action,
+            static fn (HotkeyBindingDTO $b): string => $b->action,
             $editorBindings,
         );
         $this->assertContains('Submit prompt', $actions);

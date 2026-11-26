@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
@@ -21,11 +22,15 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Monolog\Level;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Tui\Render\Renderer;
 
 final class ExtensionManagerTest extends TestCase
 {
@@ -134,7 +139,7 @@ final class ExtensionManagerTest extends TestCase
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
+        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -190,7 +195,7 @@ PHP;
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
+        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(1, $bridge->getRegistrations());
@@ -206,7 +211,7 @@ PHP;
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new TestLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
+        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -243,7 +248,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new TestLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
+        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -344,7 +349,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new TestLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
+        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         // Both good extensions should have registered their tools
@@ -373,7 +378,7 @@ PHP
             extensions: ['Ineersa\\Hatfield\\ExtensionApi\\ExtensionApiInterface']
         );
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
+        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -437,7 +442,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
+        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         // Verify tool registration
@@ -506,7 +511,7 @@ PHP
         );
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
-        $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $dispatcher = new EventDispatcher();
 
         $manager = new ExtensionManager($config, $bridge, $logger, $dispatcher, new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
@@ -543,14 +548,14 @@ PHP;
             $path = $this->extensionsDir.'/'.$class.'.php';
             file_put_contents($path, str_replace(['CLASS_NAME', 'FAILURE_STAGE'], [$class, $stage], $source));
             require $path;
-            $valid = new class implements HatfieldExtensionInterface, \Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface {
+            $valid = new class implements HatfieldExtensionInterface, TuiExtensionInterface {
                 public static int $calls = 0;
 
-                public function registerTui(\Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface $context): void
+                public function registerTui(TuiExtensionContextInterface $context): void
                 {
                 }
 
-                public function register(\Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface $api): void
+                public function register(ExtensionApiInterface $api): void
                 {
                     ++self::$calls;
                 }
@@ -561,7 +566,7 @@ PHP;
                 $this->createAppConfig($this->extensionsDir, ['HatfieldExtTest\\'.$class, $valid::class]),
                 new InMemoryExtensionApiBridge(),
                 $logger,
-                new \Symfony\Component\EventDispatcher\EventDispatcher(),
+                new EventDispatcher(),
                 new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'),
             );
             $diagnostics = $manager->loadExtensions();
@@ -622,15 +627,15 @@ PHP);
             $config,
             new InMemoryExtensionApiBridge(),
             new TestLogger(),
-            new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            new EventDispatcher(),
             new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'),
         );
         $manager->loadExtensions();
 
-        $rendererClass = new \ReflectionClass(\Symfony\Component\Tui\Render\Renderer::class);
+        $rendererClass = new \ReflectionClass(Renderer::class);
         $this->assertSame($hostVendor.'/symfony/tui/Render/Renderer.php', $rendererClass->getFileName());
-        $this->assertTrue(method_exists(\Symfony\Component\Tui\Render\Renderer::class, 'renderFrame'));
-        $this->assertFalse(method_exists(\Symfony\Component\Tui\Render\Renderer::class, 'render'));
+        $this->assertTrue(method_exists(Renderer::class, 'renderFrame'));
+        $this->assertFalse(method_exists(Renderer::class, 'render'));
     }
 
     #[RunInSeparateProcess]
@@ -673,15 +678,15 @@ PHP);
             $config,
             new InMemoryExtensionApiBridge(),
             new TestLogger(),
-            new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            new EventDispatcher(),
             new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'),
         );
         $manager->loadExtensions();
 
-        $rendererClass = new \ReflectionClass(\Symfony\Component\Tui\Render\Renderer::class);
+        $rendererClass = new \ReflectionClass(Renderer::class);
         $this->assertSame($fakeTuiRoot.'/Render/Renderer.php', $rendererClass->getFileName());
-        $this->assertFalse(method_exists(\Symfony\Component\Tui\Render\Renderer::class, 'renderFrame'));
-        $this->assertTrue(method_exists(\Symfony\Component\Tui\Render\Renderer::class, 'render'));
+        $this->assertFalse(method_exists(Renderer::class, 'renderFrame'));
+        $this->assertTrue(method_exists(Renderer::class, 'render'));
     }
 
     // ── Helpers ──

@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\ChatGPT;
 
+use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
@@ -13,16 +17,25 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ReasoningOptionsResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ChatGPT\ChatGPTSymfonyAiProviderBuilder;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture;
 use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder;
@@ -33,9 +46,14 @@ use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionLimitException;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionPolicyException;
+use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Platform;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
@@ -205,7 +223,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
 
     public function testCancelBeforeFirstDeltaAbortsWithoutPersistingTools(): void
     {
-        $token = new class implements \Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface {
+        $token = new class implements CancellationTokenInterface {
             public function isCancellationRequested(): bool
             {
                 return true;
@@ -220,7 +238,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
 
     public function testCancellationDuringSilentTransportWaitDropsUnconsumedText(): void
     {
-        $token = new class implements \Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface {
+        $token = new class implements CancellationTokenInterface {
             public bool $requested = false;
 
             public function isCancellationRequested(): bool
@@ -276,19 +294,19 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         $this->assertNotNull($result->assistantMessage);
         $directory = TestDirectoryIsolation::createProjectTempDir('chatgpt-cold-replay');
         try {
-            $createStore = function () use ($directory): \Ineersa\CodingAgent\Session\SessionRunEventStore {
-                $sessions = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
-                    new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig('default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
-                    $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                    new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            $createStore = function () use ($directory): SessionRunEventStore {
+                $sessions = new HatfieldSessionStore(
+                    new AppConfig(new TuiConfig('default'), new LoggingConfig(), cwd: $directory),
+                    $this->createStub(EntityManagerInterface::class),
+                    new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
 
-                return new \Ineersa\CodingAgent\Session\SessionRunEventStore($sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
+                return new SessionRunEventStore($sessions, new EventPayloadNormalizer(), new LockFactory(new FlockStore()), new NullLogger(), new FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
             };
             $payload = (new AgentMessageNormalizer())->assistantMessagePayload($result->assistantMessage);
-            \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($createStore(), \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend(runId: 'fixture', turnNo: 1, type: 'llm_step_completed', payload: ['assistant_message' => $payload, 'model' => 'openai-codex/gpt-6.1-sol']));
+            PreparedEventStoreSeeder::append($createStore(), RunEvent::forAppend(runId: 'fixture', turnNo: 1, type: 'llm_step_completed', payload: ['assistant_message' => $payload, 'model' => 'openai-codex/gpt-6.1-sol']));
             $this->assertFileExists($directory.'/.hatfield/sessions/fixture/events.jsonl');
             $event = $createStore()->allFor('fixture')[0];
-            $assistant = (new \Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory())->create($event->payload['assistant_message'] + ['model' => $event->payload['model']]);
+            $assistant = (new ReplayAssistantMessageFactory())->create($event->payload['assistant_message'] + ['model' => $event->payload['model']]);
             $this->assertNotNull($assistant);
             $tools = [];
             foreach (['call_one', 'call_two'] as $id) {
@@ -299,9 +317,9 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
             $native = array_values(array_filter($bodies[1]['input'], static fn (array $item): bool => \in_array($item['type'] ?? null, ['reasoning', 'function_call', 'message'], true) && 'user' !== ($item['role'] ?? null)));
             $this->assertSame($expected, $native);
             $foreign = (new AgentMessageConverter())->toMessageBagForTarget([$assistant], 'foreign/model')->getMessages()[0];
-            $this->assertInstanceOf(\Symfony\AI\Platform\Message\AssistantMessage::class, $foreign);
+            $this->assertInstanceOf(AssistantMessage::class, $foreign);
             foreach ($foreign->getContent() as $part) {
-                if ($part instanceof \Symfony\AI\Platform\Message\Content\Text) {
+                if ($part instanceof Text) {
                     $this->assertNull($part->getSignature());
                 }
             }
@@ -327,8 +345,8 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         $storage->method('update')->willReturnCallback(static fn (callable $update) => $update($record));
         $builder = new ChatGPTSymfonyAiProviderBuilder(ChatGPTAuthFixture::service($storage, $client), $this->createStub(EventDispatcherInterface::class));
 
-        return new LlmPlatformAdapter(new NullRunOperationalStatusReader(), new AgentMessageConverter(), new DynamicToolDescriptionProcessor(), new Platform((new \Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory(
-            new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig('default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), catalog: new HatfieldModelCatalog(new AiConfig(providers: ['openai-codex' => $config ?? $this->config()]))),
+        return new LlmPlatformAdapter(new NullRunOperationalStatusReader(), new AgentMessageConverter(), new DynamicToolDescriptionProcessor(), new Platform((new SymfonyAiProviderFactory(
+            new AppConfig(new TuiConfig('default'), new LoggingConfig(), catalog: new HatfieldModelCatalog(new AiConfig(providers: ['openai-codex' => $config ?? $this->config()]))),
             $this->createStub(EventDispatcherInterface::class), [$builder], httpClient: $client,
         ))->createProviders()), [], [], null, null, new NullLogger(), AttributeSerializerValidatorTestFactory::denormalizer(), requestRetryPolicy: new LlmRequestRetryPolicy(maxRetries: $maxRetries, baseDelayMs: 0));
     }

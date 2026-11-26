@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Infrastructure\RunLogContext;
 
 /**
  * Per-fiber scope for the cancel token and run ID of an in-flight LLM invocation.
  *
- * Distinct from {@see \Ineersa\AgentCore\Infrastructure\RunLogContext}: this is
+ * Distinct from {@see RunLogContext}: this is
  * not logging correlation and must never be merged into log records.
  *
  * Outside any Fiber, the default stack is process-global. Keep at most one

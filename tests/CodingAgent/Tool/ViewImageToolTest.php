@@ -21,6 +21,7 @@ use Ineersa\CodingAgent\Config\ToolSettings;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook;
 use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
@@ -762,7 +763,7 @@ final class ViewImageToolTest extends TestCase
         $checker->method('supportsImages')->willReturn(false);
 
         $converter = new AgentMessageConverter();
-        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, $converter);
+        $hook = new ImageGatingConvertHook($checker, $converter);
 
         $imagePath = $this->tmpDir.'/gating_nonvision.png';
         $this->createPng1x1($imagePath);
@@ -806,7 +807,7 @@ final class ViewImageToolTest extends TestCase
         $checker->method('supportsImages')->willReturn(true);
 
         $converter = new AgentMessageConverter();
-        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, $converter);
+        $hook = new ImageGatingConvertHook($checker, $converter);
 
         $imagePath = $this->tmpDir.'/gating_vision.png';
         $this->createPng1x1($imagePath);
@@ -846,7 +847,7 @@ final class ViewImageToolTest extends TestCase
         $checker->method('supportsImages')->willReturn(true);
 
         $converter = new AgentMessageConverter();
-        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, $converter);
+        $hook = new ImageGatingConvertHook($checker, $converter);
 
         $imagePath = $this->tmpDir.'/gating_empty_model.png';
         $this->createPng1x1($imagePath);
@@ -887,7 +888,7 @@ final class ViewImageToolTest extends TestCase
         $checker->method('supportsImages')->willReturn(false);
 
         $converter = new AgentMessageConverter();
-        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, $converter);
+        $hook = new ImageGatingConvertHook($checker, $converter);
 
         $agentMessage = new AgentMessage(
             role: 'tool',

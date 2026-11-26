@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Support;
 
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
@@ -110,14 +111,14 @@ final class SubagentExecutionServiceFactory
 
         $identityFactory = new DeferredSubagentBatchIdentityFactory();
         $runtimeStart = new DeferredSubagentBatchRuntimeStartService(
-            $args['operationalStatusReader'] ?? new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            $args['operationalStatusReader'] ?? new NullRunOperationalStatusReader(),
             $args['agentRunner'],
             $batchLaunchService,
             $lifecyclePolicy,
             $args['logger'],
         );
         $batchPreparation = new DeferredSubagentBatchPreparationService(
-            $args['operationalStatusReader'] ?? new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            $args['operationalStatusReader'] ?? new NullRunOperationalStatusReader(),
             $launchPreparation,
             $identityFactory,
             $artifactLifecycle,

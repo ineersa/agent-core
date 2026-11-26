@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure;
 
+use Ineersa\CodingAgent\Logging\LogContextProcessor;
+
 /**
  * Per-fiber logging correlation context for long-lived workers.
  *
@@ -20,7 +22,7 @@ namespace Ineersa\AgentCore\Infrastructure;
  * in CodingAgent reads the context via {@see current()} and merges
  * the fields into log records.
  *
- * @see \Ineersa\CodingAgent\Logging\LogContextProcessor
+ * @see LogContextProcessor
  */
 final class RunLogContext
 {

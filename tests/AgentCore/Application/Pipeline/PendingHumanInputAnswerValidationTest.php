@@ -5,27 +5,38 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
+use Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -101,7 +112,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         $this->assertSame(RunEventTypeEnum::AgentCommandRejected->value, $result->events[0]->type);
         $this->assertStringContainsString('question_id', (string) $result->nextState?->errorMessage);
         $this->assertCount(1, $result->postCommitActions);
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO::class, $result->postCommitActions[0]);
+        $this->assertInstanceOf(RejectCommandDTO::class, $result->postCommitActions[0]);
     }
 
     public function testMatchingModelTurnAnswerClearsRequestAndSchedulesAdvance(): void
@@ -120,7 +131,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         $this->assertSame(RunEventTypeEnum::AgentCommandApplied->value, $result->events[0]->type);
         $this->assertSame('ah_ok', $result->events[0]->payload['question_id'] ?? null);
         foreach ($result->postCommitActions as $callback) {
-            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, $bus);
+            CoordinationActionTestRunner::run($callback, $bus);
         }
         $this->assertInstanceOf(AdvanceRun::class, $bus->messages[0] ?? null);
         $this->assertSame('run-hitl-ok', $bus->messages[0]->runId());
@@ -172,18 +183,18 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         $store = new InMemoryCommandStore();
         $router = new CommandRouter([]);
         $mailbox = new CommandMailboxPolicy($store, $router);
-        $handler = new \Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler(
-            deferred: new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
+        $handler = new AdvanceRunHandler(
+            deferred: new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $mailbox,
             eventFactory: new EventFactory(),
         );
 
-        $store->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand(
+        $store->enqueue(new PendingCommand(
             runId: 'run-followup-clear',
             kind: CoreCommandKind::FollowUp,
             idempotencyKey: 'fu-clear-1',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'go on']]]],
-            options: new \Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions(safe: false),
+            options: new CommandCancellationOptions(safe: false),
         ));
 
         $state = $this->waitingState('run-followup-clear', 'ah_orphan');
@@ -252,11 +263,11 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
 
     public function testCancelDeferredToolContinuationTerminalizesNotCancelling(): void
     {
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($store = new \Ineersa\AgentCore\Tests\Support\TestToolBatchStore());
+        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $store, 'run-tool-cancel', 1, 'step-t', [
-            new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall('run-tool-cancel', 1, 'step-t', 1, 'idemp-t', 'call-t', 'bash', ['command' => 'ls'], 0),
+            new ExecuteToolCall('run-tool-cancel', 1, 'step-t', 1, 'idemp-t', 'call-t', 'bash', ['command' => 'ls'], 0),
         ]);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $store, 'run-tool-cancel', 1, 'step-t', 'call-t', 'q-t');
+        TestToolBatchCoordination::suspend($collector, $store, 'run-tool-cancel', 1, 'step-t', 'call-t', 'q-t');
 
         $store = new InMemoryCommandStore();
         $router = new CommandRouter([]);
@@ -271,7 +282,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
             serializer: AttributeSerializerValidatorTestFactory::serializer(),
         );
 
-        $assistant = new \Ineersa\AgentCore\Domain\Message\AgentMessage(
+        $assistant = new AgentMessage(
             role: 'assistant',
             content: [['type' => 'text', 'text' => 'approve']],
             metadata: [

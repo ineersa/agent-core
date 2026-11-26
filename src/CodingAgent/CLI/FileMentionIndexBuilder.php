@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\CLI;
 
 use Ineersa\CodingAgent\CLI\DTO\FileMentionIndexEntryDTO;
+use Ineersa\Tui\Completion\FileMentionIndexReader;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Finder\SplFileInfo as FinderSplFileInfo;
@@ -19,7 +20,7 @@ use Symfony\Component\Process\Process;
  * This is intentionally NOT run in the TUI input hot path. The sole
  * production refresh owner is {@see CompletionFileIndexRefreshCommand}
  * (30s Symfony Scheduler period). An existing readable index is used
- * immediately by {@see \Ineersa\Tui\Completion\FileMentionIndexReader};
+ * immediately by {@see FileMentionIndexReader};
  * a missing first-ever index yields empty `@` suggestions until the
  * scheduler refresh succeeds (ponytail: no ad-hoc background process).
  *

@@ -12,10 +12,17 @@ declare(strict_types=1);
 use Castor\Attribute\AsOption;
 use Castor\Attribute\AsTask;
 use CastorTasks\OwnedTemporaryDirectory;
+use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueEnv;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
 use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
+use Ineersa\SqliteQueue\Client;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Finder\Finder;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Process\ExecutableFinder;
+use Symfony\Component\Process\Process;
 
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
@@ -310,7 +317,7 @@ function distribution_stage_phpmicro_for_spc(string $checkout, string $commit): 
     // hand-rolled RecursiveIterator copy. ignoreVCS skips the durable .git metadata.
     $filesystem = new Filesystem();
     $filesystem->mkdir($stage);
-    $entries = (new Symfony\Component\Finder\Finder())
+    $entries = (new Finder())
         ->in($checkout)
         ->ignoreDotFiles(false)
         ->ignoreVCS(true);
@@ -950,7 +957,7 @@ function distribution_read_process_executable(int $pid): string
     }
     // Darwin ps comm follows argv[0]. lsof's first text vnode is the actual
     // executable, independent of Amp changing its process title to amp-process.
-    $process = new Symfony\Component\Process\Process(['/usr/sbin/lsof', '-a', '-p', (string) $pid, '-d', 'txt', '-F0n']);
+    $process = new Process(['/usr/sbin/lsof', '-a', '-p', (string) $pid, '-d', 'txt', '-F0n']);
     $process->mustRun();
 
     return distribution_lsof_executable($process->getOutput());
@@ -1342,11 +1349,11 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
     }
 
     $sessionId = '1';
-    $queuePaths = Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths::forSession(
+    $queuePaths = SessionSqliteQueuePaths::forSession(
         $tmp.'/.hatfield/sessions',
         $sessionId,
     );
-    $queueEnv = Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueEnv::processEnv($queuePaths);
+    $queueEnv = SessionSqliteQueueEnv::processEnv($queuePaths);
 
     $descriptors = [
         0 => ['pipe', 'r'],
@@ -1373,7 +1380,7 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
     if ($smokeBashWithoutPhp) {
         $bin = $tmp.'/bin';
         mkdir($bin, 0700);
-        $finder = new Symfony\Component\Process\ExecutableFinder();
+        $finder = new ExecutableFinder();
         foreach (['bash', 'ps', 'grep', 'mktemp', 'mkfifo', 'rm', 'rmdir'] as $name) {
             $path = $finder->find($name);
             if (null === $path || !symlink($path, $bin.'/'.$name)) {
@@ -1494,7 +1501,7 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
         $ownedSnapshot = $descendants;
 
         // Prove the same broker can enqueue/reserve/ack through the Amp worker.
-        $client = Ineersa\SqliteQueue\Client::connect($queuePaths->endpointPath, 5.0);
+        $client = Client::connect($queuePaths->endpointPath, 5.0);
         try {
             // Isolated queue: Messenger consumers never select this name, so the
             // host Client cannot race the live run_control worker for the body.
@@ -1926,7 +1933,7 @@ function distribution_assert_phar_bundled_resources(string $pharPath): void
     }
 
     $root = \CastorTasks\project_root_dir();
-    $catalog = (new Ineersa\CodingAgent\Docs\BuiltinDocsCatalog())->discover($root);
+    $catalog = (new BuiltinDocsCatalog())->discover($root);
     $expected = [];
     foreach ($catalog as $entry) {
         $expected[$entry['relativePath']] = true;
@@ -1946,8 +1953,8 @@ function distribution_assert_phar_bundled_resources(string $pharPath): void
     // Exact Markdown inventory under both canonical archive doc roots, and
     // reject ANY archive entry under the vendor path-package Extension API docs tree.
     $canonicalPrefixes = [
-        Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::CORE_DOCS_RELATIVE.'/',
-        Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE.'/',
+        BuiltinDocsCatalog::CORE_DOCS_RELATIVE.'/',
+        BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE.'/',
     ];
     $vendorApiDocsPrefix = 'vendor/ineersa/hatfield-extension-api/docs/';
     foreach (new RecursiveIteratorIterator($phar) as $file) {

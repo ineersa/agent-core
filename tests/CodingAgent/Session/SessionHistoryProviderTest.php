@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
@@ -43,7 +44,9 @@ use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTNativeReplayFixture;
 use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
+use Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Factory;
@@ -58,7 +61,7 @@ use Symfony\Component\Lock\Store\FlockStore;
 final class SessionHistoryProviderTest extends IsolatedKernelTestCase
 {
     /** @param list<array<string, mixed>> $expected */
-    #[\PHPUnit\Framework\Attributes\DataProvider('nativeOutputProvider')]
+    #[DataProvider('nativeOutputProvider')]
     public function testColdCanonicalSessionReplayPreservesNativeItemsAndCacheIdentity(array $expected, bool $terminalMessages): void
     {
         $container = self::getContainer();
@@ -72,7 +75,7 @@ final class SessionHistoryProviderTest extends IsolatedKernelTestCase
         $key = $entity->providerCacheKey;
         $bodies = [];
         $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$bodies, $expected, $terminalMessages): MockResponse {
-            $bodies[] = \Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder::decode($options);
+            $bodies[] = HttpRequestBodyDecoder::decode($options);
 
             return ChatGPTNativeReplayFixture::response(1 === \count($bodies), $expected, $terminalMessages);
         });
@@ -96,7 +99,7 @@ final class SessionHistoryProviderTest extends IsolatedKernelTestCase
         // Discard both the event-store instance and ORM identity map. Nothing from the streamed result feeds the next request.
         $em->clear();
         $sessions = new HatfieldSessionStore($container->get(AppConfig::class), $em, new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
-        $cold = new SessionRunEventStore($sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new LockFactory(new FlockStore()), new NullLogger(), new FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
+        $cold = new SessionRunEventStore($sessions, new EventPayloadNormalizer(), new LockFactory(new FlockStore()), new NullLogger(), new FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
         $history = (new SessionHistoryProvider($cold, $container->get(RunHistoryIndex::class)))->forSession($runId);
         $this->assertSame('Read both fixtures', $history->entries[0]->text);
         $coordinator = $container->get(SessionReplayCoordinator::class);

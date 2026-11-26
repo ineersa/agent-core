@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\ControllerReplayE2eTestCase
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Support\ControllerReplayBackgroundProcessSeeder;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\TestCase;
 
 /**
  * Thesis: ordinary controller startup and shutdown retain completed native
@@ -29,7 +30,7 @@ final class HeadlessControllerBackgroundProcessLifecycleProcessTest extends Cont
             TestDirectoryIsolation::removeDirectory($this->tempDir);
         }
         $this->tempDir = '';
-        \PHPUnit\Framework\TestCase::tearDown();
+        TestCase::tearDown();
     }
 
     public function testControllerRetainsAcceptedEvidenceAtStartupAndShutdown(): void

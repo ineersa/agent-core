@@ -6,13 +6,14 @@ namespace Ineersa\CodingAgent\Tests\CLI;
 
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
 
 /** @covers \Ineersa\CodingAgent\CLI\AgentCommand */
 final class AgentCommandPromptTemplatesOptionsTest extends IsolatedKernelTestCase
 {
     public function testCommandExposesRepeatablePromptTemplateAndDisableOptions(): void
     {
-        $application = new \Symfony\Bundle\FrameworkBundle\Console\Application(self::$kernel);
+        $application = new Application(self::$kernel);
         $definition = $application->find('agent')->getDefinition();
 
         $this->assertTrue($definition->getOption('prompt-template')->isArray());

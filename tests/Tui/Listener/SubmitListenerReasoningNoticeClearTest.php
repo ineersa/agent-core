@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ImageToolConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
@@ -15,8 +21,11 @@ use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
+use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
+use Ineersa\Tui\ImagePaste\PastedImageValidationService;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Listener\HistoryCommandHandler;
+use Ineersa\Tui\Listener\HistoryCommandRegistrar;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Picker\HistoryPickerController;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
@@ -25,6 +34,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -76,7 +86,7 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
         $picker = new HistoryPickerController($tui, $screen, $state, $provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
         $screen->setTransientStatus('fixture', 'Previous command notice.');
         $catalog = new SlashCommandCatalog();
-        (new \Ineersa\Tui\Listener\HistoryCommandRegistrar())->registerCatalog($catalog);
+        (new HistoryCommandRegistrar())->registerCatalog($catalog);
         $registry = new SlashCommandRegistry($catalog);
         $registry->bind('history', new HistoryCommandHandler($picker));
         $client = $this->createMock(AgentSessionClient::class);
@@ -188,23 +198,23 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
 
         $listener = new SubmitListener(
             sessionStore: $context->sessionStore,
-            blockFactory: new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
+            blockFactory: new TranscriptBlockFactory(),
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
-            pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
-                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(
-                    new \Ineersa\CodingAgent\Config\ImageToolConfig(),
-                    new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            pastedImageSubmissionService: new PastedImageSubmissionService(
+                new PastedImageValidationService(
+                    new ImageToolConfig(),
+                    new TestLogger(),
                 ),
                 $context->sessionStore,
-                new \Ineersa\CodingAgent\Config\AppConfig(
-                    tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                    logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                    sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                new AppConfig(
+                    tui: new TuiConfig(theme: 'default'),
+                    logging: new LoggingConfig(),
+                    sessions: new SessionsConfig(),
                     cwd: '/tmp',
                 ),
-                new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
-                new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+                new TranscriptBlockFactory(),
+                new TestLogger(),
             ),
         );
         $listener->register($context);

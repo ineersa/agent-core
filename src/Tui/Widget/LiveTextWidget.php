@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Widget;
 
+use Ineersa\Tui\Screen\ChatScreen;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Ansi\TextWrapper;
 use Symfony\Component\Tui\Render\RenderContext;
@@ -29,7 +30,7 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
  * The former line-array bridge (TuiWidget/TuiRenderContext) was deleted and
  * all chrome regions migrated to directly mounted native widgets. This
  * widget survives ONLY for the blank top margin and the three responsive
- * separator rows in {@see \Ineersa\Tui\Screen\ChatScreen}: Symfony
+ * separator rows in {@see ChatScreen}: Symfony
  * {@see TextWidget} drops whitespace-only text, and no native
  * scrollback/separator primitive is exact for those rows.
  */

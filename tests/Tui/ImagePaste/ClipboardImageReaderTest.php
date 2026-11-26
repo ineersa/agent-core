@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\ImagePaste\ClipboardImageReader;
 use Ineersa\Tui\ImagePaste\ClipboardImageReadOutcomeEnum;
+use Ineersa\Tui\ImagePaste\ClipboardImageReadResultDTO;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -199,7 +200,7 @@ while true; do sleep 1; done');
         $this->assertFalse($reader->isReading());
     }
 
-    private function pollUntilTerminal(ClipboardImageReader $reader, int $maxSteps = 500): \Ineersa\Tui\ImagePaste\ClipboardImageReadResultDTO
+    private function pollUntilTerminal(ClipboardImageReader $reader, int $maxSteps = 500): ClipboardImageReadResultDTO
     {
         for ($i = 0; $i < $maxSteps; ++$i) {
             $poll = $reader->poll();

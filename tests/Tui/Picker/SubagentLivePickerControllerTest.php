@@ -15,6 +15,8 @@ use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundChildStatusDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -32,17 +34,22 @@ use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\ChildAgentExportEventsFixture;
+use Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture;
 use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Widget\SelectListWidget;
+use Symfony\Component\Tui\Widget\TextWidget;
 
 final class SubagentLivePickerControllerTest extends TestCase
 {
@@ -141,7 +148,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-paint', rows: 40);
         $state = new TuiSessionState('picker-paint');
-        $harness->screen()->setTranscriptBlocks([(new \Ineersa\Tui\Transcript\TranscriptBlockFactory())->system(
+        $harness->screen()->setTranscriptBlocks([(new TranscriptBlockFactory())->system(
             runId: $state->sessionId,
             text: 'Retained transcript sentinel',
             seq: 1,
@@ -431,9 +438,9 @@ final class SubagentLivePickerControllerTest extends TestCase
         $child = $state->subagentLiveCatalog->findByArtifactId('agent_snap');
         $this->assertNotNull($child);
 
-        $block = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock(
+        $block = new TranscriptBlock(
             'snap-b',
-            \Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum::Progress,
+            TranscriptBlockKindEnum::Progress,
             'child-run-snap',
             4,
             'snapshot line',
@@ -693,15 +700,15 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'artifact_id' => 'agent_ctx',
                     'agent_run_id' => 'child-run-ctx',
                     'task_summary' => 'Context stats', 'reasoning' => 'medium',
-                ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides()),
+                ], ChildContextStatisticsFixture::progressPayloadOverrides()),
             ],
         ));
 
         $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all());
         $this->assertNotEmpty($items);
         $label = preg_replace('/\x1b\[[0-9;]*m/', '', $items[0]['label']) ?? $items[0]['label'];
-        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_DETAIL, $label);
-        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL_SHORT, $label);
+        $this->assertStringContainsString(ChildContextStatisticsFixture::CONTEXT_DETAIL, $label);
+        $this->assertStringContainsString(ChildContextStatisticsFixture::MODEL_SHORT, $label);
     }
 
     #[Test]
@@ -981,7 +988,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         return new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
     }
 
     private function invokeExportSelected(
@@ -1022,7 +1029,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     {
         $headerRef = new \ReflectionProperty(SubagentLivePickerController::class, 'headerWidget');
         $header = $headerRef->getValue($picker);
-        $this->assertInstanceOf(\Symfony\Component\Tui\Widget\TextWidget::class, $header);
+        $this->assertInstanceOf(TextWidget::class, $header);
 
         return strip_tags($header->getText());
     }

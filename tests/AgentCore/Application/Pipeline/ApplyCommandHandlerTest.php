@@ -5,15 +5,24 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
+use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
+use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
+use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
@@ -22,11 +31,18 @@ use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
+use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -85,7 +101,7 @@ final class ApplyCommandHandlerTest extends TestCase
         // FollowUp dispatches AdvanceRun to pick up the queued message
         $this->assertCount(2, $result->postCommitActions);
         foreach ($result->postCommitActions as $action) {
-            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($action, $commandBus, store: $commandStore);
+            CoordinationActionTestRunner::run($action, $commandBus, store: $commandStore);
         }
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
@@ -136,7 +152,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame(CoreCommandKind::AppendMessage, $result->events[0]->payload['kind']);
         $this->assertCount(2, $result->postCommitActions);
         foreach ($result->postCommitActions as $action) {
-            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($action, $commandBus, store: $commandStore);
+            CoordinationActionTestRunner::run($action, $commandBus, store: $commandStore);
         }
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
@@ -239,7 +255,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame([], $result->postCommitEffects);
         $this->assertCount(1, $result->postCommitActions);
         $action = $result->postCommitActions[0];
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO::class, $action);
+        $this->assertInstanceOf(RejectCommandDTO::class, $action);
         $this->assertSame($message->runId(), $action->runId);
         $this->assertSame($message->idempotencyKey(), $action->idempotencyKey);
         $this->assertSame($result->events[0]->payload['reason'], $action->reason);
@@ -459,7 +475,7 @@ final class ApplyCommandHandlerTest extends TestCase
         );
 
         foreach ($result->postCommitActions as $action) {
-            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($action, $commandBus, store: $commandStore);
+            CoordinationActionTestRunner::run($action, $commandBus, store: $commandStore);
         }
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
@@ -484,20 +500,20 @@ final class ApplyCommandHandlerTest extends TestCase
         );
 
         // Pre-queue a steer and a follow_up command
-        $commandStore->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand(
+        $commandStore->enqueue(new PendingCommand(
             runId: 'run-cancel-stale',
             kind: CoreCommandKind::Steer,
             idempotencyKey: 'steer-stale-1',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Stale steer']]]],
-            options: new \Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions(safe: false),
+            options: new CommandCancellationOptions(safe: false),
         ));
 
-        $commandStore->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand(
+        $commandStore->enqueue(new PendingCommand(
             runId: 'run-cancel-stale',
             kind: CoreCommandKind::FollowUp,
             idempotencyKey: 'followup-stale-1',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Stale follow up']]]],
-            options: new \Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions(safe: false),
+            options: new CommandCancellationOptions(safe: false),
         ));
 
         $state = new RunState(
@@ -585,12 +601,12 @@ final class ApplyCommandHandlerTest extends TestCase
         );
 
         $runtimeText = 'Runtime notification line one';
-        $commandStore->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand(
+        $commandStore->enqueue(new PendingCommand(
             runId: 'run-append-cancel',
             kind: CoreCommandKind::AppendMessage,
             idempotencyKey: 'append-1',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $runtimeText]]]],
-            options: new \Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions(safe: false),
+            options: new CommandCancellationOptions(safe: false),
         ));
 
         $state = new RunState(
@@ -626,13 +642,13 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertTrue($commandStore->has('run-append-cancel', 'append-1'));
         $this->assertCount(2, $result->postCommitActions);
         foreach ($result->postCommitActions as $action) {
-            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($action, $commandBus, store: $commandStore);
+            CoordinationActionTestRunner::run($action, $commandBus, store: $commandStore);
         }
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
         $this->assertStringStartsWith('post-cancel-advance-', $commandBus->messages[0]->stepId());
 
-        $advanceHandler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
+        $advanceHandler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -662,12 +678,12 @@ final class ApplyCommandHandlerTest extends TestCase
         );
 
         $runtimeText = 'Queued between cancels';
-        $commandStore->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand(
+        $commandStore->enqueue(new PendingCommand(
             runId: 'run-second-cancel-append',
             kind: CoreCommandKind::AppendMessage,
             idempotencyKey: 'append-between-cancels',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $runtimeText]]]],
-            options: new \Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions(safe: false),
+            options: new CommandCancellationOptions(safe: false),
         ));
 
         $state = new RunState(
@@ -704,7 +720,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertTrue($commandStore->has('run-second-cancel-append', 'append-between-cancels'));
         $this->assertCount(2, $result->postCommitActions);
         foreach ($result->postCommitActions as $action) {
-            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($action, $commandBus, store: $commandStore);
+            CoordinationActionTestRunner::run($action, $commandBus, store: $commandStore);
         }
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
@@ -871,7 +887,7 @@ final class ApplyCommandHandlerTest extends TestCase
             'Terminal compact must include a post-commit CompactRun dispatch.',
         );
         foreach ($result->postCommitActions as $action) {
-            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($action, $commandBus, store: $commandStore);
+            CoordinationActionTestRunner::run($action, $commandBus, store: $commandStore);
         }
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(CompactRun::class, $commandBus->messages[0]);
@@ -1330,7 +1346,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertContains('agent_command_applied', $eventTypes);
         $this->assertNotContains('agent_end', $eventTypes);
         $this->assertCount(1, $result->postCommitActions);
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO::class, $result->postCommitActions[0]);
+        $this->assertInstanceOf(MarkCommandAppliedDTO::class, $result->postCommitActions[0]);
     }
 
     /**
@@ -1489,7 +1505,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore = new TestToolBatchStore());
+        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $batchStore, 'run-deferred-cancel', 1, 'step-d', [
             new ExecuteToolCall(
                 'run-deferred-cancel',
@@ -1503,7 +1519,7 @@ final class ApplyCommandHandlerTest extends TestCase
                 0,
             ),
         ]);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-deferred-cancel', 1, 'step-d', 'call-d', 'q-d');
+        TestToolBatchCoordination::suspend($collector, $batchStore, 'run-deferred-cancel', 1, 'step-d', 'call-d', 'q-d');
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -1537,16 +1553,16 @@ final class ApplyCommandHandlerTest extends TestCase
             messages: [$assistant],
             activeStepId: 'step-d',
             currentToolCalls: [
-                new \Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO(
-                    \Ineersa\AgentCore\Domain\Run\ToolBatchIdentity::fromTurnAndStep(1, 'step-d'),
+                new CurrentToolCallDTO(
+                    ToolBatchIdentity::fromTurnAndStep(1, 'step-d'),
                     'call-d',
                     0,
-                    \Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum::WaitingHuman,
+                    RunOperationalToolCallStatusEnum::WaitingHuman,
                     1,
                 ),
             ],
             pendingHumanInputRequests: [
-                \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
+                PendingHumanInputRequestDTO::toolCallFromPayload(
                     ['question_id' => 'q-d', 'prompt' => 'Allow?'],
                     ['run_id' => 'run-deferred-cancel', 'turn_no' => 1, 'step_id' => 'step-d', 'tool_call_id' => 'call-d'],
                 ),
@@ -1574,7 +1590,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame('tool', $result->nextState?->messages[1]->role);
         $this->assertSame('call-d', $result->nextState?->messages[1]->toolCallId);
         $this->assertTrue($result->nextState?->messages[1]->isError);
-        $finalizations = array_values(array_filter($result->postCommitActions, static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
+        $finalizations = array_values(array_filter($result->postCommitActions, static fn (object $action): bool => $action instanceof FinalizeToolBatchDTO));
         $this->assertCount(1, $finalizations);
         $this->assertTrue($finalizations[0]->finalized);
         $this->assertSame([], $finalizations[0]->pendingQueue);
@@ -1586,13 +1602,13 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-multi-d', 1, 'step-m', [
             new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
             new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-b', 'call-b', 'bash', ['command' => 'b'], 1),
         ]);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-multi-d', 1, 'step-m', 'call-a', 'q-a');
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-multi-d', 1, 'step-m', 'call-b', 'q-b');
+        TestToolBatchCoordination::suspend($collector, $batchStore, 'run-multi-d', 1, 'step-m', 'call-a', 'q-a');
+        TestToolBatchCoordination::suspend($collector, $batchStore, 'run-multi-d', 1, 'step-m', 'call-b', 'q-b');
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -1626,11 +1642,11 @@ final class ApplyCommandHandlerTest extends TestCase
             messages: [$assistant],
             activeStepId: 'step-m',
             pendingHumanInputRequests: [
-                \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
+                PendingHumanInputRequestDTO::toolCallFromPayload(
                     ['question_id' => 'q-a', 'prompt' => 'A?'],
                     ['run_id' => 'run-multi-d', 'turn_no' => 1, 'step_id' => 'step-m', 'tool_call_id' => 'call-a'],
                 ),
-                \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
+                PendingHumanInputRequestDTO::toolCallFromPayload(
                     ['question_id' => 'q-b', 'prompt' => 'B?'],
                     ['run_id' => 'run-multi-d', 'turn_no' => 1, 'step_id' => 'step-m', 'tool_call_id' => 'call-b'],
                 ),
@@ -1665,7 +1681,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-partial-d', 1, 'step-p', [
             new ExecuteToolCall('run-partial-d', 1, 'step-p', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
             new ExecuteToolCall('run-partial-d', 1, 'step-p', 1, 'idemp-b', 'call-b', 'ask_human', ['prompt' => 'B?'], 1),
@@ -1699,12 +1715,12 @@ final class ApplyCommandHandlerTest extends TestCase
             isError: false,
             error: null,
         );
-        $accepted = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $batchStore, $completedA);
+        $accepted = TestToolBatchCoordination::collect($collector, $batchStore, $completedA);
         $this->assertTrue($accepted->accepted);
         $this->assertFalse($accepted->complete);
         $this->assertArrayHasKey('call-a', $collector->getStoredResults('run-partial-d', 1, 'step-p'));
 
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-partial-d', 1, 'step-p', 'call-b', 'q-b');
+        TestToolBatchCoordination::suspend($collector, $batchStore, 'run-partial-d', 1, 'step-p', 'call-b', 'q-b');
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -1738,7 +1754,7 @@ final class ApplyCommandHandlerTest extends TestCase
             messages: [$assistant],
             activeStepId: 'step-p',
             pendingHumanInputRequests: [
-                \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
+                PendingHumanInputRequestDTO::toolCallFromPayload(
                     ['question_id' => 'q-b', 'prompt' => 'B?'],
                     ['run_id' => 'run-partial-d', 'turn_no' => 1, 'step_id' => 'step-p', 'tool_call_id' => 'call-b'],
                 ),
@@ -1866,12 +1882,12 @@ final class ApplyCommandHandlerTest extends TestCase
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-missing-store', 1, 'step-m', [
             new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0, mode: 'parallel', maxParallelism: 2),
             new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-b', 'call-b', 'ask_human', ['prompt' => 'B?'], 1, mode: 'parallel', maxParallelism: 2),
         ]);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-missing-store', 1, 'step-m', 'call-b', 'q-b');
+        TestToolBatchCoordination::suspend($collector, $batchStore, 'run-missing-store', 1, 'step-m', 'call-b', 'q-b');
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -1905,7 +1921,7 @@ final class ApplyCommandHandlerTest extends TestCase
             messages: [$assistant],
             activeStepId: 'step-m',
             pendingHumanInputRequests: [
-                \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
+                PendingHumanInputRequestDTO::toolCallFromPayload(
                     ['question_id' => 'q-b', 'prompt' => 'B?'],
                     ['run_id' => 'run-missing-store', 'turn_no' => 1, 'step_id' => 'step-m', 'tool_call_id' => 'call-b'],
                 ),
@@ -1927,11 +1943,11 @@ final class ApplyCommandHandlerTest extends TestCase
         ), $state);
     }
 
-    private function finalizeMailbox(\Ineersa\AgentCore\Application\Pipeline\HandlerResult $result, \Ineersa\AgentCore\Contract\CommandStoreInterface $store): void
+    private function finalizeMailbox(HandlerResult $result, CommandStoreInterface $store): void
     {
         foreach ($result->postCommitActions as $action) {
-            if ($action instanceof \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO || $action instanceof \Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO || $action instanceof \Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO) {
-                \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($action, store: $store);
+            if ($action instanceof EnqueueCommandDTO || $action instanceof MarkCommandAppliedDTO || $action instanceof RejectCommandDTO) {
+                CoordinationActionTestRunner::run($action, store: $store);
             }
         }
     }

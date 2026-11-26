@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Command;
 
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
+use Ineersa\Tui\Listener\TuiListenerRegistrar;
 
 /**
  * Session-scoped slash command registry with built-in help and dispatch.
@@ -16,7 +17,7 @@ use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
  * help/hotkeys → unknown command).
  *
  * Registrars bind their per-session handlers via {@see bind()} during
- * {@see \Ineersa\Tui\Listener\TuiListenerRegistrar::register()}.  Extension
+ * {@see TuiListenerRegistrar::register()}.  Extension
  * commands registered dynamically on the shared catalog are resolved at
  * execute time, so they are visible immediately.
  *

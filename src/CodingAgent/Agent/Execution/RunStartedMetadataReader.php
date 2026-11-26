@@ -8,12 +8,13 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
+use Ineersa\CodingAgent\Repository\RunRelationshipReader;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Reads immutable RunStarted launch metadata from canonical events.
  *
- * Hot child/parent classification belongs on {@see \Ineersa\CodingAgent\Repository\RunRelationshipReader}.
+ * Hot child/parent classification belongs on {@see RunRelationshipReader}.
  * This reader keeps only launch policy details that are not in the operational projection:
  * allowed tools/extensions and child model/reasoning.
  *

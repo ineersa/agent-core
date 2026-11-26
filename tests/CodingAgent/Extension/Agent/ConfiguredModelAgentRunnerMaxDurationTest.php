@@ -25,7 +25,9 @@ use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
+use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\Platform;
+use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -87,7 +89,7 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
         } catch (\Throwable $exception) {
             $failure = $exception;
         }
-        $this->assertInstanceOf(\Symfony\AI\Platform\Exception\ServerException::class, $failure);
+        $this->assertInstanceOf(ServerException::class, $failure);
 
         $runner->run(new AgentCallRequestDTO(
             model: 'mock/test',
@@ -127,7 +129,7 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
             public function createProvider(
                 string $providerId,
                 int $budgetSeconds,
-            ): \Symfony\AI\Platform\ProviderInterface {
+            ): ProviderInterface {
                 ++$this->builds;
 
                 return $this->inner->createProvider($providerId, $budgetSeconds);

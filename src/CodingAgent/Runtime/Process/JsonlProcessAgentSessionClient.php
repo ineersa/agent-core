@@ -24,6 +24,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\RepairResultNormalizer;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -75,7 +76,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     private string $stdoutBuffer = '';
     private string $stderrBuffer = '';
     private ?string $bootstrapCommandId = null;
-    private ?\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO $bootstrapDescriptor = null;
+    private ?SessionBootstrapDescriptorDTO $bootstrapDescriptor = null;
     private bool $bootstrapEnded = false;
     private bool $bootstrapAcknowledged = false;
     private string $suffixBuffer = '';
@@ -430,7 +431,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     /** @param array<string, mixed> $cut */
     public function acknowledgeBootstrap(array $cut): void
     {
-        $descriptor = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($cut);
+        $descriptor = SessionBootstrapDescriptorDTO::fromArray($cut);
         if (!$this->bootstrapEnded || null === $this->bootstrapDescriptor || $descriptor->toArray() !== $this->bootstrapDescriptor->toArray()) {
             throw new RuntimeTransportException('Bootstrap acknowledgement is stale or incomplete.');
         }
@@ -1184,7 +1185,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 if (!$this->runtimeReadyReceived || null === $this->bootstrapCommandId || ($event->payload['command_id'] ?? null) !== $this->bootstrapCommandId) {
                     continue;
                 }
-                $descriptor = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($event->payload);
+                $descriptor = SessionBootstrapDescriptorDTO::fromArray($event->payload);
                 if ($descriptor->runId !== $event->runId || $descriptor->runId !== $this->primaryRunId) {
                     throw new RuntimeTransportException('Bootstrap availability does not match the attached run.');
                 }
@@ -1203,7 +1204,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                     continue;
                 }
                 if (RuntimeEventTypeEnum::BootstrapEnd->value === $event->type) {
-                    $end = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($event->payload);
+                    $end = SessionBootstrapDescriptorDTO::fromArray($event->payload);
                     if ($end->toArray() !== $this->bootstrapDescriptor->toArray()) {
                         throw new RuntimeTransportException('Bootstrap end does not match its sealed cut.');
                     }

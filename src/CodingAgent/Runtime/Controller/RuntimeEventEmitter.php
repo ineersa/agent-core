@@ -9,6 +9,7 @@ use Amp\TimeoutCancellation;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 
@@ -138,9 +139,9 @@ final class RuntimeEventEmitter
         $this->pendingBytes = null === $partial ? 0 : \strlen($partial['line']);
         $this->onDrained = null;
         $this->bootstrapFilter = static fn (RuntimeEvent $event): bool => !\in_array($event->type, [
-            \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::CommandAck->value,
-            \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::CommandRejected->value,
-            \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ProtocolError->value,
+            RuntimeEventTypeEnum::CommandAck->value,
+            RuntimeEventTypeEnum::CommandRejected->value,
+            RuntimeEventTypeEnum::ProtocolError->value,
         ], true);
         if ([] === $this->pending && null !== $this->writeWatcher) {
             EventLoop::cancel($this->writeWatcher);

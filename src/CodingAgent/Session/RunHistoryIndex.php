@@ -8,8 +8,10 @@ use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception as DbalException;
+use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayLifecycleStatus;
 use Ineersa\AgentCore\Domain\Event\AgentCommandKindEnum;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Session\DTO\PendingToolInvocationDTO;
@@ -459,7 +461,7 @@ final readonly class RunHistoryIndex
         }
     }
 
-    /** @return \Generator<int, \Ineersa\AgentCore\Domain\Event\RunEvent> */
+    /** @return \Generator<int, RunEvent> */
     private function presentationEvents(JsonlRunEventLog $log, string $path, string $runId, int $endOffset): \Generator
     {
         $observation = new JsonlPhysicalReadObservation();
@@ -637,7 +639,7 @@ final readonly class RunHistoryIndex
                     $record = $log->decodeLine($location['line']);
                     if (\is_array($record) && \is_int($record['seq'] ?? null) && $record['seq'] <= $lastSeq
                         && false !== $db->fetchOne('SELECT seq FROM event_location WHERE seq = ?', [$record['seq']])) {
-                        throw new \Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException('Canonical history requires unique increasing sequences: duplicate sequence.');
+                        throw new RunStateDuplicateSequenceReplayException('Canonical history requires unique increasing sequences: duplicate sequence.');
                     }
                     if (!\is_array($record) || ($record['run_id'] ?? null) !== $runId || !\is_int($record['seq'] ?? null)
                         || $record['seq'] <= $lastSeq || !\is_string($record['type'] ?? null) || !\is_int($record['turn_no'] ?? null)

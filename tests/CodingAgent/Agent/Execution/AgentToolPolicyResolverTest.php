@@ -20,6 +20,7 @@ use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 #[CoversClass(AgentToolPolicyResolver::class)]
@@ -123,7 +124,7 @@ final class AgentToolPolicyResolverTest extends TestCase
     /**
      * @param list<string>|null $tools
      */
-    #[\PHPUnit\Framework\Attributes\DataProvider('childToolListCases')]
+    #[DataProvider('childToolListCases')]
     public function testDefaultExcludedToolsRemovedForChildren(?array $tools): void
     {
         $resolver = new AgentToolPolicyResolver(

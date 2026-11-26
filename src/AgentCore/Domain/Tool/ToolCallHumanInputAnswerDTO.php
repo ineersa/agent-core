@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Tool;
 
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
- * Internal typed answer attached to an exact {@see \Ineersa\AgentCore\Domain\Message\ExecuteToolCall}
+ * Internal typed answer attached to an exact {@see ExecuteToolCall}
  * after human resolution of a ToolCall-continuation WaitingHuman request.
  *
  * Never model-visible tool arguments. Replay/persistence-safe.

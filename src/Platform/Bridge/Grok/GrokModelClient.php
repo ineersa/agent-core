@@ -8,6 +8,7 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\OpenResponses\ModelClient;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
+use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\InvalidArgumentException;
 use Symfony\AI\Platform\JsonBodyEncodingTrait;
 use Symfony\AI\Platform\Model;
@@ -120,7 +121,7 @@ class GrokModelClient extends ModelClient
         // without parsing or exposing the provider's error body.
         if (401 === $response->getStatusCode()) {
             $response->cancel();
-            throw new \Symfony\AI\Platform\Exception\AuthenticationException('Grok authentication failed. Re-authenticate with Grok.');
+            throw new AuthenticationException('Grok authentication failed. Re-authenticate with Grok.');
         }
 
         return new RawHttpResult($response, $this->createStreamParser());

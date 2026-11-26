@@ -21,6 +21,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
@@ -247,6 +248,6 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         return new MessageBus([new ToolPayloadMiddleware(
             $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, $container->get(CanonicalToolInvocationReader::class)), $repository, $locks,
             $container->get(ValidatorInterface::class), $commands, $logger,
-            new CompleteDeferredToolCallHandler($repository, $commands, $locks, $batches, $logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer())]);
+            new CompleteDeferredToolCallHandler($repository, $commands, $locks, $batches, $logger), AttributeSerializerValidatorTestFactory::denormalizer())]);
     }
 }

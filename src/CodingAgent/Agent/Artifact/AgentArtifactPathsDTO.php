@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -11,7 +12,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  *
  * All paths are relative to the parent session directory
  * (<sessionsBase>/<parentRunId>/).  Callers that need absolute
- * paths should use {@see \Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver}.
+ * paths should use {@see SessionAgentArtifactPathResolver}.
  *
  * Immutable value object assembled during artifact creation.
  *

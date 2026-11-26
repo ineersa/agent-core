@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
@@ -19,6 +20,7 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -349,7 +351,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         return self::getContainer()->get(HatfieldSessionStore::class);
     }
 
-    private function entityManager(): \Doctrine\ORM\EntityManagerInterface
+    private function entityManager(): EntityManagerInterface
     {
         /* @var \Doctrine\ORM\EntityManagerInterface */
         return self::getContainer()->get('doctrine.orm.default_entity_manager');
@@ -400,7 +402,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         return new ModelResolver(
             $appConfig,
             $this->sessionMetaStore(),
-            new \Psr\Log\NullLogger(),
+            new NullLogger(),
         );
     }
 
@@ -441,7 +443,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         return new ModelResolver(
             $this->makeAppConfigFromAiData($cwd, $aiData),
             $this->sessionMetaStore(),
-            new \Psr\Log\NullLogger(),
+            new NullLogger(),
         );
     }
 

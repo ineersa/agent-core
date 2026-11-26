@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -166,7 +167,7 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $entity = BackgroundProcessFixture::record(self::getContainer(), $id);
         $this->assertNotNull($entity);
         BackgroundProcessFixture::finish($entity, 0, new \DateTimeImmutable());
-        self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->flush();
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
         // Finished fixtures cannot use native acceptance; stamp accepted_at directly.
         $this->assertTrue($this->store->acceptLocal($id, $sessionId));
 

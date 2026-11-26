@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Tool\McpCatalogRegisteringToolSetResolver;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory;
+use Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolRegistrar;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
@@ -384,7 +385,7 @@ final class McpCatalogRegisteringToolSetResolverTest extends TestCase
     {
         // McpToolInvoker is final and has autowired deps — Reflection is simplest
         // for registrar-only tests that never invoke the handler.
-        $invoker = (new \ReflectionClass(\Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker::class))->newInstanceWithoutConstructor();
+        $invoker = (new \ReflectionClass(McpToolInvoker::class))->newInstanceWithoutConstructor();
 
         return new McpToolHandlerFactory($invoker);
     }

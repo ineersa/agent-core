@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 use Revolt\EventLoop;
+use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\Component\Clock\MockClock;
@@ -87,7 +88,7 @@ final class LlmRequestRetryExecutorTest extends TestCase
                     return new PlatformInvocationResult(
                         assistantMessage: null,
                         error: (new LlmProviderErrorClassifier())->classify([
-                            'type' => \Symfony\AI\Platform\Exception\BadRequestException::class,
+                            'type' => BadRequestException::class,
                             'message' => '<html>Bad Request</html>',
                             'http_status_code' => 400,
                         ]),

@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\TestCase;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\DependencyInjection\Container;
 
 /**
  * Base class for tests that need a FRESH kernel boot and isolated CWD
@@ -14,7 +15,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  *
  * Use this only when per-class kernel boot ({@see IsolatedKernelTestCase})
  * is insufficient — for example when tests mutate the live container via
- * {@see \Symfony\Component\DependencyInjection\Container::set()}, when
+ * {@see Container::set()}, when
  * services cache state that cannot be cleared between methods, or when
  * per-method filesystem artifacts must be visible to a freshly-booted kernel.
  *

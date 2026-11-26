@@ -7,12 +7,16 @@ namespace Ineersa\CodingAgent\Tests\CLI;
 use Ineersa\CodingAgent\CLI\FileMentionIndexBuilder;
 use Ineersa\CodingAgent\CLI\FileMentionIndexLockHeldException;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Completion\CompletionContext;
+use Ineersa\Tui\Completion\FileMentionCompletionProvider;
+use Ineersa\Tui\Completion\FileMentionIndexReader;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Process\Process;
 
 #[CoversClass(FileMentionIndexBuilder::class)]
 final class FileMentionIndexBuilderTest extends TestCase
@@ -353,14 +357,14 @@ final class FileMentionIndexBuilderTest extends TestCase
         $this->assertGreaterThan(0, $count);
 
         // ── Reader loads the index ──
-        $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
+        $reader = new FileMentionIndexReader($indexPath);
 
         // ── Provider creates suggestions ──
-        $provider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
+        $provider = new FileMentionCompletionProvider($reader);
 
         // ── @ matching: verify suggestions are correct ──
         $suggestions = $provider->getSuggestions(
-            \Ineersa\Tui\Completion\CompletionContext::forCursorAtEnd('@src/'),
+            CompletionContext::forCursorAtEnd('@src/'),
         );
         $this->assertGreaterThan(0, \count($suggestions));
 
@@ -388,7 +392,7 @@ final class FileMentionIndexBuilderTest extends TestCase
 
         // ── @ directory suggestion ──
         $dirSuggs = $provider->getSuggestions(
-            \Ineersa\Tui\Completion\CompletionContext::forCursorAtEnd('@src'),
+            CompletionContext::forCursorAtEnd('@src'),
         );
         $nestedDir = null;
         foreach ($dirSuggs as $s) {
@@ -405,7 +409,7 @@ final class FileMentionIndexBuilderTest extends TestCase
 
         // ── Quoted path suggestion ──
         $quotedSuggs = $provider->getSuggestions(
-            \Ineersa\Tui\Completion\CompletionContext::forCursorAtEnd('@"dir'),
+            CompletionContext::forCursorAtEnd('@"dir'),
         );
         $this->assertGreaterThan(0, \count($quotedSuggs));
 
@@ -457,7 +461,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         touch($cwd.'/vendor/excluded.php');
 
         // ── Verify git sees the cwd as ignored ──
-        $check = new \Symfony\Component\Process\Process([
+        $check = new Process([
             'git', '-C', $cwd, 'check-ignore', '.',
         ]);
         $check->run();
@@ -495,7 +499,7 @@ final class FileMentionIndexBuilderTest extends TestCase
 
     private function gitAvailable(): bool
     {
-        $which = new \Symfony\Component\Process\Process(['which', 'git']);
+        $which = new Process(['which', 'git']);
         $which->run();
 
         return 0 === $which->getExitCode() && '' !== trim($which->getOutput());
@@ -506,7 +510,7 @@ final class FileMentionIndexBuilderTest extends TestCase
      */
     private function runGit(string $cwd, array $args): void
     {
-        $process = new \Symfony\Component\Process\Process(array_merge(['git', '-C', $cwd], $args));
+        $process = new Process(array_merge(['git', '-C', $cwd], $args));
         $process->run();
         $this->assertSame(
             0,
@@ -520,7 +524,7 @@ final class FileMentionIndexBuilderTest extends TestCase
      */
     private function runGitAllowFail(string $cwd, array $args): void
     {
-        $process = new \Symfony\Component\Process\Process(array_merge(['git', '-C', $cwd], $args));
+        $process = new Process(array_merge(['git', '-C', $cwd], $args));
         $process->run();
     }
 

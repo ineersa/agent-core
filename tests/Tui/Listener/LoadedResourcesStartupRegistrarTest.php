@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
+use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
+use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
+use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
@@ -33,10 +36,16 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\PropertyAccess\PropertyAccess;
+use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Tui\Event\TickEvent;
+use Symfony\Component\Validator\Validation;
 
 final class LoadedResourcesStartupRegistrarTest extends TestCase
 {
@@ -159,7 +168,7 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
                 logger: new NullLogger(),
             ),
             agentDefinitionDiscovery: new AgentDefinitionDiscovery(
-                agentsConfig: new \Ineersa\CodingAgent\Config\AgentsConfig(enabled: false),
+                agentsConfig: new AgentsConfig(enabled: false),
                 pathResolver: new SettingsPathResolver($this->tmpDir),
                 parser: $this->agentDefinitionParser(),
                 cwd: $this->tmpDir,
@@ -178,29 +187,29 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
                 ),
                 extensionApi: $this->createStub(ExtensionApiInterface::class),
                 logger: new NullLogger(),
-                eventDispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+                eventDispatcher: new EventDispatcher(),
                 pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir.'/home'),
             ),
         );
     }
 
-    private function agentDefinitionParser(): \Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser
+    private function agentDefinitionParser(): AgentDefinitionParser
     {
-        $reflectionExtractor = new \Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor();
+        $reflectionExtractor = new ReflectionExtractor();
         $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-        $objectNormalizer = new \Symfony\Component\Serializer\Normalizer\ObjectNormalizer(
+        $objectNormalizer = new ObjectNormalizer(
             classMetadataFactory: $classMetadataFactory,
             nameConverter: null,
-            propertyAccessor: \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
+            propertyAccessor: PropertyAccess::createPropertyAccessor(),
             propertyTypeExtractor: $reflectionExtractor,
         );
-        $serializer = new \Symfony\Component\Serializer\Serializer(normalizers: [$objectNormalizer], encoders: []);
-        $validator = \Symfony\Component\Validator\Validation::createValidatorBuilder()
+        $serializer = new Serializer(normalizers: [$objectNormalizer], encoders: []);
+        $validator = Validation::createValidatorBuilder()
             ->enableAttributeMapping()
             ->getValidator();
 
-        return new \Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser(
-            frontmatterParser: new \Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser(new MarkdownFrontmatterExtractor()),
+        return new AgentDefinitionParser(
+            frontmatterParser: new AgentFrontmatterParser(new MarkdownFrontmatterExtractor()),
             denormalizer: $serializer,
             validator: $validator,
         );

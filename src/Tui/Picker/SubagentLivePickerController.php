@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Picker;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Listener\FooterStateInitializer;
@@ -38,7 +39,7 @@ final class SubagentLivePickerController
     /** @var list<array{value: string, label: string}> */
     private array $openItems = [];
 
-    /** @var ?\Closure(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
+    /** @var ?\Closure(RuntimeEvent): void */
     private readonly ?\Closure $onHumanInputRequested;
 
     public function __construct(

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\ProjectionPipeline;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
@@ -278,8 +280,8 @@ final class CompactionProjectionSubscriberTest extends TestCase
     #[Test]
     public function testSuccessfulCompactionEmitsMemoryCheckpointWithRetentionScalars(): void
     {
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
-        $snapshot = new \Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger($logger);
+        $logger = new TestLogger();
+        $snapshot = new ProcessMemorySnapshotLogger($logger);
         $subscriber = new CompactionProjectionSubscriber($snapshot);
 
         $state = new TranscriptProjectionState();

@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\LoadedResources;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
+use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
+use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
+use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -18,6 +22,8 @@ use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceSectionDTO;
+use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
 use Ineersa\CodingAgent\Runtime\LoadedResources\LoadedResourcesSummaryBuilder;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
@@ -29,7 +35,17 @@ use Ineersa\Tui\Theme\ThemeRegistry;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\PropertyAccess\PropertyAccess;
+use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Validator\Validation;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Contract tests: skill, prompt, and agent collisions surface winner vs loser paths in summary DTO.
@@ -286,7 +302,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
 
         $pathResolver = new SettingsPathResolver($this->tmpDir, $homeDir);
         $agentDiscovery = new AgentDefinitionDiscovery(
-            agentsConfig: new \Ineersa\CodingAgent\Config\AgentsConfig(),
+            agentsConfig: new AgentsConfig(),
             pathResolver: $pathResolver,
             parser: $this->agentDefinitionParser(),
             cwd: $cwd,
@@ -313,7 +329,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         $this->assertSame($loser, $agents->conflicts[0]->loserPath);
     }
 
-    private function sectionByLabel(\Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO $summary, string $label): \Ineersa\CodingAgent\Runtime\Contract\LoadedResourceSectionDTO
+    private function sectionByLabel(LoadedResourcesSummaryDTO $summary, string $label): LoadedResourceSectionDTO
     {
         foreach ($summary->sections as $section) {
             if ($label === $section->label) {
@@ -353,9 +369,9 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
     private function disabledAgentDiscovery(): AgentDefinitionDiscovery
     {
         return new AgentDefinitionDiscovery(
-            agentsConfig: new \Ineersa\CodingAgent\Config\AgentsConfig(enabled: false),
+            agentsConfig: new AgentsConfig(enabled: false),
             pathResolver: new SettingsPathResolver($this->tmpDir),
-            parser: new \Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser(new \Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser(new MarkdownFrontmatterExtractor()), $this->createStub(\Symfony\Component\Serializer\Normalizer\DenormalizerInterface::class), $this->createStub(\Symfony\Component\Validator\Validator\ValidatorInterface::class)),
+            parser: new AgentDefinitionParser(new AgentFrontmatterParser(new MarkdownFrontmatterExtractor()), $this->createStub(DenormalizerInterface::class), $this->createStub(ValidatorInterface::class)),
             cwd: $this->tmpDir,
         );
     }
@@ -383,23 +399,23 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         );
     }
 
-    private function agentDefinitionParser(): \Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser
+    private function agentDefinitionParser(): AgentDefinitionParser
     {
-        $reflectionExtractor = new \Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor();
-        $classMetadataFactory = new \Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory(new \Symfony\Component\Serializer\Mapping\Loader\AttributeLoader());
-        $objectNormalizer = new \Symfony\Component\Serializer\Normalizer\ObjectNormalizer(
+        $reflectionExtractor = new ReflectionExtractor();
+        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
+        $objectNormalizer = new ObjectNormalizer(
             classMetadataFactory: $classMetadataFactory,
             nameConverter: null,
-            propertyAccessor: \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
+            propertyAccessor: PropertyAccess::createPropertyAccessor(),
             propertyTypeExtractor: $reflectionExtractor,
         );
-        $serializer = new \Symfony\Component\Serializer\Serializer(normalizers: [$objectNormalizer], encoders: []);
-        $validator = \Symfony\Component\Validator\Validation::createValidatorBuilder()
+        $serializer = new Serializer(normalizers: [$objectNormalizer], encoders: []);
+        $validator = Validation::createValidatorBuilder()
             ->enableAttributeMapping()
             ->getValidator();
 
-        return new \Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser(
-            frontmatterParser: new \Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser(new MarkdownFrontmatterExtractor()),
+        return new AgentDefinitionParser(
+            frontmatterParser: new AgentFrontmatterParser(new MarkdownFrontmatterExtractor()),
             denormalizer: $serializer,
             validator: $validator,
         );
@@ -436,14 +452,14 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             cwd: $cwd,
             logging: new LoggingConfig(),
             tui: new TuiConfig(theme: 'default', themePaths: []),
-            extensions: new \Ineersa\CodingAgent\Config\ExtensionsConfig(enabled: []),
+            extensions: new ExtensionsConfig(enabled: []),
         );
 
         return new ExtensionManager(
             config: $config,
             extensionApi: $this->createStub(ExtensionApiInterface::class),
             logger: new NullLogger(),
-            eventDispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            eventDispatcher: new EventDispatcher(),
             pathResolver: new SettingsPathResolver('/tmp', '/tmp/home'),
         );
     }
@@ -455,14 +471,14 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             cwd: $this->tmpDir,
             logging: new LoggingConfig(),
             tui: new TuiConfig(theme: 'default', themePaths: []),
-            extensions: new \Ineersa\CodingAgent\Config\ExtensionsConfig(enabled: []),
+            extensions: new ExtensionsConfig(enabled: []),
         );
 
         return new ExtensionManager(
             config: $config,
             extensionApi: $this->createStub(ExtensionApiInterface::class),
             logger: new NullLogger(),
-            eventDispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            eventDispatcher: new EventDispatcher(),
             pathResolver: new SettingsPathResolver('/tmp', '/tmp/home'),
         );
     }

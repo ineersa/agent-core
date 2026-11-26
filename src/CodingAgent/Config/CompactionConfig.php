@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Ineersa\CodingAgent\Compaction\SessionCompactor;
+
 /**
  * Compaction settings resolved from Hatfield config.
  *
@@ -15,7 +17,7 @@ namespace Ineersa\CodingAgent\Config;
  * Hydrated from the compaction section of Hatfield merged config via
  * Symfony Serializer denormalization.
  *
- * @see \Ineersa\CodingAgent\Compaction\SessionCompactor
+ * @see SessionCompactor
  */
 final readonly class CompactionConfig
 {

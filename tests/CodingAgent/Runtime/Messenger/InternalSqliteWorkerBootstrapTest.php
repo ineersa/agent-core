@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
 use Ineersa\CodingAgent\Runtime\Messenger\InternalSqliteWorkerBootstrap;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
@@ -128,7 +129,7 @@ final class InternalSqliteWorkerBootstrapTest extends TestCase
     /**
      * @param list<string> $ampArgv
      */
-    #[\PHPUnit\Framework\Attributes\DataProvider('rejectedWorkerArgvProvider')]
+    #[DataProvider('rejectedWorkerArgvProvider')]
     public function testTryRunRejectsNonContractArgv(array $ampArgv, string $errorFragment): void
     {
         $process = new Process([

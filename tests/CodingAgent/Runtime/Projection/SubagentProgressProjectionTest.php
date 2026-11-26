@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -21,7 +22,7 @@ final class SubagentProgressProjectionTest extends TestCase
     protected function setUp(): void
     {
         $dispatcher = new EventDispatcher();
-        $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
+        $state = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $this->projector = new TranscriptProjector($dispatcher, $state);
         $this->seq = 0;

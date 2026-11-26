@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -103,7 +104,7 @@ final class TmuxHarnessOwnedTeardownSafetyTest extends TestCase
     #[Group('tui-e2e-replay')]
     public function scopedTemporaryDirectoryReachesPaneOnPreExistingServer(): void
     {
-        require_once \Ineersa\CodingAgent\Tests\Support\ProjectDir::get().'/.castor/helpers.php';
+        require_once ProjectDir::get().'/.castor/helpers.php';
         $this->tempDir = TestDirectoryIsolation::createOsTempDir('tmux-old-server');
         $socket = $this->tempDir.'/socket';
         $tmux = 'tmux -S '.escapeshellarg($socket);

@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Ineersa\AgentCore\Contract\CanonicalSequenceBoundActionInterface;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 
 /** Exact-byte storage append recovery. This does not finalize owner coordination. */
 final readonly class JsonlAppendJournal
@@ -59,12 +63,12 @@ final readonly class JsonlAppendJournal
             $work['event_sequences'] = $sequences;
             foreach (['actions', 'after_turn_actions'] as $key) {
                 foreach ($work[$key] ?? [] as $index => $action) {
-                    if ($action instanceof \Ineersa\AgentCore\Contract\CanonicalSequenceBoundActionInterface) {
+                    if ($action instanceof CanonicalSequenceBoundActionInterface) {
                         $work[$key][$index] = $action->bindCanonicalSequences($sequences);
                     }
                 }
             }
-            $workBytes = (new \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer())->encode(new \Symfony\Component\Messenger\Envelope(new PendingTransitionWorkDTO($work)));
+            $workBytes = (new PhpSerializer())->encode(new Envelope(new PendingTransitionWorkDTO($work)));
             $encodedWork = json_encode($workBytes, \JSON_THROW_ON_ERROR);
             if (\strlen($encodedWork) > self::MAX_STAGED_BYTES) {
                 throw new \RuntimeException('Prepared transition work exceeds its byte limit.');
@@ -145,7 +149,7 @@ final readonly class JsonlAppendJournal
         }
     }
 
-    public function verifiedPending(string $path): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    public function verifiedPending(string $path): ?VerifiedTransitionDTO
     {
         $manifest = $this->manifest($path);
         if (null === $manifest) {
@@ -164,12 +168,12 @@ final readonly class JsonlAppendJournal
         if (!\is_array($encoded) || !\is_string($encoded['body'] ?? null)) {
             throw new \RuntimeException('Invalid prepared coordination envelope.');
         }
-        $descriptor = (new \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer())->decode($encoded)->getMessage();
+        $descriptor = (new PhpSerializer())->decode($encoded)->getMessage();
         if (!$descriptor instanceof PendingTransitionWorkDTO) {
             throw new \RuntimeException('Invalid prepared coordination descriptor.');
         }
 
-        return new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(hash('sha256', json_encode($manifest, \JSON_THROW_ON_ERROR)), $descriptor->work, $descriptor->work['event_sequences'] ?? []);
+        return new VerifiedTransitionDTO(hash('sha256', json_encode($manifest, \JSON_THROW_ON_ERROR)), $descriptor->work, $descriptor->work['event_sequences'] ?? []);
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Doctrine\DBAL\Connection;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
@@ -11,19 +12,32 @@ use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
+use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\Serializer as MessengerSerializer;
+use Symfony\Component\Process\Process;
 use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\Uid\Uuid;
 
 final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
 {
@@ -48,15 +62,15 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             $this->assertStringNotContainsString('PRIVATE_LAUNCH_BODY', $body);
             $readCall = new ExecuteToolCall($runId, 1, 'step-'.$count, 1, 'read-key', 'read', 'read', ['path' => 'x'], 1);
             $batch = new ToolBatchStateDTO(expectedOrder: [$callId => 0, 'read' => 1], calls: [$callId => $call, 'read' => $readCall], pendingQueue: [$callId], inFlight: [], results: [], finalized: false, maxParallelism: 2);
-            $register = new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($runId, 1, 'step-'.$count, [$call, $readCall], $batch->expectedOrder, $batch->pendingQueue, $batch->inFlight, $batch->maxParallelism);
-            $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => [$register]]);
+            $register = new RegisterToolBatchDTO($runId, 1, 'step-'.$count, [$call, $readCall], $batch->expectedOrder, $batch->pendingQueue, $batch->inFlight, $batch->maxParallelism);
+            $verified = new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => [$register]]);
             $batchStore->prepareChanges([$register], $verified)();
-            $schedule = self::getContainer()->get(\Doctrine\DBAL\Connection::class)->fetchAssociative(
+            $schedule = self::getContainer()->get(Connection::class)->fetchAssociative(
                 'SELECT expected_order_json, pending_queue_json, in_flight_json, awaiting_human_input_json FROM tool_batch WHERE run_id = ? AND turn_no = ? AND step_id = ?',
                 [$runId, 1, 'step-'.$count],
             );
             $this->assertIsArray($schedule);
-            $callRows = self::getContainer()->get(\Doctrine\DBAL\Connection::class)->fetchAllAssociative(
+            $callRows = self::getContainer()->get(Connection::class)->fetchAllAssociative(
                 'SELECT body_reference_json, mode FROM tool_batch_call WHERE run_id = ? AND turn_no = ? AND step_id = ? ORDER BY order_index',
                 [$runId, 1, 'step-'.$count],
             );
@@ -68,15 +82,15 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             $this->assertStringContainsString('PRIVATE_LAUNCH_BODY', file_get_contents($payloadPath));
             $original = hash_file('sha256', $payloadPath);
             // Schedule writes keep sealed launch input untouched.
-            $batchStore->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
+            $batchStore->prepareChanges([new FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)], new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), [
                 'run_id' => $runId,
-                'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)],
+                'actions' => [new FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)],
             ]))();
             $this->assertSame($original, hash_file('sha256', $payloadPath));
             file_put_contents($payloadPath, 'unreadable-as-input');
-            $batchStore->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
+            $batchStore->prepareChanges([new FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)], new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), [
                 'run_id' => $runId,
-                'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)],
+                'actions' => [new FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)],
             ]))();
             $this->assertSame('unreadable-as-input', file_get_contents($payloadPath));
             $this->assertNotSame($original, hash_file('sha256', $payloadPath));
@@ -105,7 +119,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $reference = $store->publish('fork', $runId, 1, 'step', 'fork-call', 'model', 'AGENTS BODY', $messages);
         $serializer = new MessengerSerializer(self::getContainer()->get(SerializerInterface::class), 'json');
         $call = $serializer->decode($serializer->encode(new Envelope($this->call($reference))))->getMessage();
-        $call = $call->withHumanInputAnswer(new \Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO('question', ['approved' => true], [], []));
+        $call = $call->withHumanInputAnswer(new ToolCallHumanInputAnswerDTO('question', ['approved' => true], [], []));
         $this->assertSame($reference->sha256, $call->launchContext->sha256);
         $executor = $this->createMock(ToolExecutorInterface::class);
         $executor->expects($this->once())->method('execute')->willReturnCallback(function ($toolCall) use ($messages): ToolResult {
@@ -121,9 +135,9 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             return new ToolResult('fork-call', 'fork', [['type' => 'text', 'text' => 'launch failed']], isError: true);
         });
         $bus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $store);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $store);
         $result = $worker($call);
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ToolCallResult::class, $result);
+        $this->assertInstanceOf(ToolCallResult::class, $result);
         $this->assertTrue($result->isError);
         $this->assertFileExists($this->payloadPath($runId, 'fork-call'));
     }
@@ -168,9 +182,9 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
 
     public function testPublicationHasBoundedWorkingMemoryAndDoesNotRetainOwnerMessages(): void
     {
-        $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('launch-input-memory');
+        $directory = TestDirectoryIsolation::createProjectTempDir('launch-input-memory');
         try {
-            $process = new \Symfony\Component\Process\Process([\PHP_BINARY, '-d', 'memory_limit=128M', __DIR__.'/Fixtures/tool-launch-input-memory.php', $directory]);
+            $process = new Process([\PHP_BINARY, '-d', 'memory_limit=128M', __DIR__.'/Fixtures/tool-launch-input-memory.php', $directory]);
             $process->setTimeout(8);
             $process->mustRun();
             $metrics = json_decode($process->getOutput(), true, flags: \JSON_THROW_ON_ERROR);
@@ -179,7 +193,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             $this->assertLessThan(8 * 1024 * 1024, $metrics['peak_bytes'] - $metrics['owner_allocated_bytes']);
             $this->assertTrue($metrics['source_released']);
         } finally {
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+            TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 
@@ -196,11 +210,11 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $parent = $hatfield->createSession('child-input-location');
         $child = 'launch-input-child';
         $artifact = 'agent_launch_input_child';
-        $lifecycle = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
-        $lifecycle->ensureReservedPending(new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO($parent, $child, $artifact, 'worker', 'task', \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum::Subagent));
+        $lifecycle = self::getContainer()->get(ChildRunArtifactLifecycleService::class);
+        $lifecycle->ensureReservedPending(new ChildRunIdentityDTO($parent, $child, $artifact, 'worker', 'task', AgentArtifactKindEnum::Subagent));
         $store = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $reference = $store->publish('subagent', $child, 1, 'step', 'call', 'model', 'agents-text', []);
-        $resolver = self::getContainer()->get(\Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver::class);
+        $resolver = self::getContainer()->get(SessionAgentArtifactPathResolver::class);
         $this->assertFileExists($resolver->resolveArtifactDir($parent, $artifact).'/runtime/tool-launch-inputs/'.hash('sha256', 'call').'.jsonl');
         $this->assertDirectoryDoesNotExist($hatfield->resolveSessionsBasePath().'/'.$child);
         $this->assertSame('agents-text', $store->read($reference)->agentsContext);
@@ -215,7 +229,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $inputStore->expects($this->never())->method('read');
         $reference = new ToolLaunchInputReferenceDTO('fork', 'owner', 2, 'step', 'call', 'model', str_repeat('a', 64), 1);
         $call = new ExecuteToolCall('owner', 1, 'step', 1, 'key', 'call', 'fork', [], 0, parentModel: 'model', launchContext: $reference);
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
         $this->assertOwnerVisibleInputFailure($worker($call), 'Tool launch input reference does not match execution envelope.');
     }
 
@@ -225,7 +239,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $executor->expects($this->never())->method('execute');
         $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $reference = new ToolLaunchInputReferenceDTO('fork', 'missing-owner', 1, 'step', 'call', 'model', str_repeat('a', 64), 1);
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
         $this->assertOwnerVisibleInputFailure($worker($this->call($reference)), 'Missing or corrupt tool launch input.');
     }
 
@@ -237,7 +251,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         file_put_contents($this->payloadPath($runId, 'call'), 'corrupt');
         $executor = $this->createMock(ToolExecutorInterface::class);
         $executor->expects($this->never())->method('execute');
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
         $this->assertOwnerVisibleInputFailure($worker($this->call($reference)), 'Missing or corrupt tool launch input.');
     }
 
@@ -248,13 +262,13 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $executor = $this->createMock(ToolExecutorInterface::class);
         $executor->expects($this->never())->method('execute');
         $reference = new ToolLaunchInputReferenceDTO('fork', 'owner', 1, 'step', 'call', 'model', str_repeat('a', 64), 1);
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
         $this->assertOwnerVisibleInputFailure($worker($this->call($reference)), 'Cannot open tool launch input.');
     }
 
-    private function assertOwnerVisibleInputFailure(?\Ineersa\AgentCore\Domain\Message\ToolCallResult $result, string $message): void
+    private function assertOwnerVisibleInputFailure(?ToolCallResult $result, string $message): void
     {
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ToolCallResult::class, $result);
+        $this->assertInstanceOf(ToolCallResult::class, $result);
         $this->assertTrue($result->isError);
         $this->assertSame('call', $result->toolCallId);
         $this->assertSame($message, $result->error['message']);

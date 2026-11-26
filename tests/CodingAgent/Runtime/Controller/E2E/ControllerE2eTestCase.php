@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Path;
 use Symfony\Component\Yaml\Yaml;
@@ -538,8 +539,8 @@ YAML;
             // producing duplicate top-level YAML keys (Symfony Yaml rejects them).
             $base = Yaml::parse($settings);
             $extra = Yaml::parse($extraYaml);
-            \PHPUnit\Framework\Assert::assertIsArray($base);
-            \PHPUnit\Framework\Assert::assertIsArray($extra);
+            Assert::assertIsArray($base);
+            Assert::assertIsArray($extra);
             $settings = Yaml::dump(
                 array_replace_recursive($base, $extra),
                 8,

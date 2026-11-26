@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\CodingAgent\Session\History\HistorySelectionService;
 
 /**
  * Typed corruption signal when duplicate sequence numbers are detected in persisted run event history.
  *
  * Raised by replay rebuilders ({@see RunStateRebuilderInterface} implementations such as session replay)
- * and by history-select preflight ({@see \Ineersa\CodingAgent\Session\History\HistorySelectionService::selectEntry()})
+ * and by history-select preflight ({@see HistorySelectionService::selectEntry()})
  * before appending a HistoryPositionSet event. Use {@see RunStateDuplicateSequenceReplayException}
  * to distinguish this case from other failures.
  *

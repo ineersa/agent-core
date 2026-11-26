@@ -13,7 +13,9 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
+use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
+use Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionRegistrationContext;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
@@ -29,9 +31,11 @@ use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
@@ -191,12 +195,12 @@ final class ExtensionOwnerFilteringTest extends TestCase
                 filesystem: new Filesystem(),
             ),
             toolInvoker: $this->unusedToolInvoker(),
-            children: $this->createStub(\Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface::class),
-            recurringJobs: new \Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), '', new TestMessageBus()),
+            children: $this->createStub(ChildRunExtensionAllowlistReaderInterface::class),
+            recurringJobs: new ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), '', new TestMessageBus()),
             commandBus: $this->createStub(MessageBusInterface::class),
             runRelationships: $this->createStub(RunRelationshipReaderInterface::class),
             sessions: $this->emptySessionRepository(),
-            sessionContext: $this->createStub(\Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface::class),
+            sessionContext: $this->createStub(SessionContextInterface::class),
         );
     }
 
@@ -267,7 +271,7 @@ final class ExtensionOwnerFilteringTest extends TestCase
     {
         return new class implements ExtensionAgentJobHandlerInterface {
             public function handle(
-                \Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface $api,
+                ExtensionApiInterface $api,
                 array $payload,
                 ?string $jobId,
                 ?string $correlationId,

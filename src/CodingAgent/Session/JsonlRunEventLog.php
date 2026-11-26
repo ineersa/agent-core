@@ -13,6 +13,8 @@ use Ineersa\CodingAgent\Session\DTO\PendingToolInvocationDTO;
 use Ineersa\CodingAgent\Session\History\RunPresentationDTO;
 use Ineersa\CodingAgent\Session\History\RunPresentationProjector;
 use Ineersa\CodingAgent\Session\History\RunPresentationProjectorFactory;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 
 /**
@@ -41,7 +43,7 @@ final class JsonlRunEventLog
         private readonly LockFactory $lockFactory,
         private readonly RunSequenceAllocatorInterface $sequenceAllocator,
         private readonly EventLogMaxSeqBootstrapReader $bootstrapReader,
-        private readonly \Psr\Log\LoggerInterface $logger,
+        private readonly LoggerInterface $logger,
         private readonly RunPresentationProjectorFactory $presentations,
     ) {
         $this->historyIndex = new RunHistoryIndex($lockFactory, $logger);
@@ -99,7 +101,7 @@ final class JsonlRunEventLog
             }
 
             if (null !== $dirMode) {
-                (new \Symfony\Component\Filesystem\Filesystem())->mkdir(\dirname($path), $dirMode);
+                (new Filesystem())->mkdir(\dirname($path), $dirMode);
             }
             $records = (function () use ($persisted): iterable {
                 foreach ($persisted as $event) {

@@ -16,13 +16,17 @@ use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
+use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Contract\CommandConsumptionPolicyInterface;
 use Ineersa\AgentCore\Domain\Command\DTO\CommandConsumptionDecisionDTO;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
@@ -31,18 +35,23 @@ use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
+use Symfony\Component\Messenger\Envelope;
 
 final class CommandMailboxPolicyTest extends TestCase
 {
@@ -117,7 +126,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $llmSteps = array_values(array_filter(
             $fixture->executionBus->messages,
             static function (object $message): bool {
-                if ($message instanceof \Symfony\Component\Messenger\Envelope) {
+                if ($message instanceof Envelope) {
                     $message = $message->getMessage();
                 }
 
@@ -151,7 +160,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $rejections = array_values(array_filter(
             $fixture->eventStore->allFor($runId),
-            static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_rejected' === $event->type
+            static fn (RunEvent $event): bool => 'agent_command_rejected' === $event->type
                 && 'cap-follow-up-1' === ($event->payload['idempotency_key'] ?? null),
         ));
 
@@ -211,7 +220,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $events = $fixture->eventStore->allFor($runId);
         $appliedFollowUp = array_values(array_filter(
             $events,
-            static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_applied' === $event->type
+            static fn (RunEvent $event): bool => 'agent_command_applied' === $event->type
                 && 'follow-up-1' === ($event->payload['idempotency_key'] ?? null),
         ));
         $this->assertCount(1, $appliedFollowUp);
@@ -436,7 +445,7 @@ final class CommandMailboxPolicyTest extends TestCase
             consumptionPolicies: null === $consumption ? [] : [$consumption],
         );
         $toolBatchCollector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
-        $stepDispatcher = new StepDispatcher($commandBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $stepDispatcher = new StepDispatcher($commandBus, $executionBus, new TestLogger(), events: new EventDispatcher());
 
         $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
@@ -458,35 +467,35 @@ final class CommandMailboxPolicyTest extends TestCase
             commands: $commandStore,
             handlers: [
                 new StartRunHandler(
-                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+                    eventFactory: new EventFactory(),
                     normalizer: TestSerializerFactory::normalizer(),
                 ),
                 new ApplyCommandHandler(
                     commandStore: $commandStore,
                     commandRouter: $commandRouter,
                     commandMailboxPolicy: $commandMailboxPolicy,
-                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
-                    messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
+                    eventFactory: new EventFactory(),
+                    messageNormalizer: new AgentMessageNormalizer(),
                     maxPendingCommands: $maxPendingCommands,
                 ),
-                new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
+                new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
                     commandMailboxPolicy: $commandMailboxPolicy,
-                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+                    eventFactory: new EventFactory(),
                 ),
                 new LlmStepResultHandler(
                     commandMailboxPolicy: $commandMailboxPolicy,
-                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
-                    toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
-                    messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
-                    normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+                    eventFactory: new EventFactory(),
+                    toolCallExtractor: new ToolCallExtractor(),
+                    messageNormalizer: new AgentMessageNormalizer(),
+                    normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
                     toolBatchCollector: $toolBatchCollector,
                 ),
                 new ToolCallResultHandler(
                     toolBatchCollector: $toolBatchCollector,
-                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
-                    toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
-                    messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
-                    serializer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+                    eventFactory: new EventFactory(),
+                    toolCallExtractor: new ToolCallExtractor(),
+                    messageNormalizer: new AgentMessageNormalizer(),
+                    serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
                 ),
             ],
         );

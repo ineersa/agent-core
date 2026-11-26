@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Compaction;
 
+use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\CodingAgent\Config\CompactionConfig;
@@ -19,7 +20,7 @@ use Psr\Log\NullLogger;
  * Uses committed llm_step_completed event usage as the authoritative
  * context size — NOT the text-only CompactionTokenEstimator.
  *
- * Registered in the container so {@see \Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler}
+ * Registered in the container so {@see AdvanceRunHandler}
  * can inject the AgentCore contract without depending on CodingAgent.
  *
  * Not readonly because it carries a small in-process dedup map that

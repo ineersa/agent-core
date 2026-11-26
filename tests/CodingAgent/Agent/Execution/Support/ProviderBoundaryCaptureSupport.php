@@ -12,6 +12,8 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Model;
@@ -55,7 +57,7 @@ final class ProviderBoundaryCaptureSupport
         );
 
         $adapter = new LlmPlatformAdapter(
-            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            statusReader: new NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox, $toolSetResolver),
             platform: $platform,
@@ -65,7 +67,7 @@ final class ProviderBoundaryCaptureSupport
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         return new self($adapter, $client);
