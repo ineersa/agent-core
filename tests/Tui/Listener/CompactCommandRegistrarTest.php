@@ -9,6 +9,7 @@ use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\CompactCommandRegistrar;
+use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
@@ -78,7 +79,7 @@ final class CompactCommandRegistrarTest extends TestCase
         $this->assertSame('No active session to compact.', $result->text);
     }
 
-    private function buildContext(VirtualTuiHarness $harness, TuiSessionState $state, SlashCommandCatalog $catalog): \Ineersa\Tui\Runtime\TuiRuntimeContext
+    private function buildContext(VirtualTuiHarness $harness, TuiSessionState $state, SlashCommandCatalog $catalog): TuiRuntimeContext
     {
         return $this->buildTuiContext()
             ->withTui($harness->tui())

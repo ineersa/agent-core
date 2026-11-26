@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -229,7 +230,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $childRun = 'child-events';
         $entry = $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
         self::getContainer()->get(AgentChildRunDirectory::class)->register($entry);
-        $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        $eventStore = self::getContainer()->get(PreparedTransitionEventStoreInterface::class);
 
         $secret = 'RAW_TOOL_OUTPUT_SECRET_12345';
         /** @var ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec */

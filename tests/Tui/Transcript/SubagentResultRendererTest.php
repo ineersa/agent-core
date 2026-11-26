@@ -7,15 +7,18 @@ namespace Ineersa\Tui\Tests\Transcript;
 use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Config\TuiTranscriptPreviewsConfig;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
+use Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\SubagentResultRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Render\Renderer;
 use Symfony\Component\Tui\Widget\ContainerWidget;
@@ -233,7 +236,7 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertCount(9, $this->renderBlockLines($block));
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('terminalStatuses')]
+    #[DataProvider('terminalStatuses')]
     public function testTerminalSingleCardKeepsCompactToolsTokensElapsedSummary(string $status): void
     {
         $progress = [
@@ -259,7 +262,7 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('deepseek/deepseek-v4-flash (reasoning: high)', $joined);
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('subsecondDurations')]
+    #[DataProvider('subsecondDurations')]
     public function testSubsecondSummaryMatchesPlainText(int $milliseconds, string $expected): void
     {
         $snapshot = $this->snapshot([
@@ -273,7 +276,7 @@ final class SubagentResultRendererTest extends TestCase
             text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $snapshot],
         );
         $this->assertStringContainsString(' · '.$expected, implode("\n", $this->renderBlockLines($block)));
-        $this->assertStringContainsString(' | '.$expected, new \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter()->format($snapshot));
+        $this->assertStringContainsString(' | '.$expected, new SubagentProgressDisplayFormatter()->format($snapshot));
     }
 
     public static function subsecondDurations(): iterable
@@ -497,27 +500,27 @@ final class SubagentResultRendererTest extends TestCase
             'input_tokens' => 35000, 'output_tokens' => 14000,
         ];
 
-        $canonical = array_merge($base, \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides());
+        $canonical = array_merge($base, ChildContextStatisticsFixture::progressPayloadOverrides());
         $plainCanonical = $this->plainRenderedSubagentCard($canonical);
-        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $plainCanonical);
+        $this->assertStringContainsString(ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $plainCanonical);
 
-        $missingLatest = array_merge($base, ['model' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL]);
+        $missingLatest = array_merge($base, ['model' => ChildContextStatisticsFixture::MODEL]);
         $plainMissingLatest = $this->plainRenderedSubagentCard($missingLatest);
         $this->assertStringNotContainsString('CTX ', $plainMissingLatest, 'Missing latest_input_tokens must not fabricate a CTX line');
         $this->assertDoesNotMatchRegularExpression('/\b\d+%\s+\d/', $plainMissingLatest, 'Missing latest tokens must not show a context percentage');
 
         // Canonical progress always carries model; CTX still requires latest tokens + window.
-        $missingWindow = array_merge($base, \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesMissingContextWindow());
+        $missingWindow = array_merge($base, ChildContextStatisticsFixture::progressPayloadOverridesMissingContextWindow());
         $plainMissingWindow = $this->plainRenderedSubagentCard($missingWindow);
         $this->assertStringNotContainsString('CTX ', $plainMissingWindow, 'Missing context_window must not fabricate a CTX line');
         $this->assertDoesNotMatchRegularExpression('/\b\d+%\s+\d/', $plainMissingWindow);
 
-        $unresolvableModelWithWindow = array_merge($base, \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesUnresolvableModelWithWindow());
+        $unresolvableModelWithWindow = array_merge($base, ChildContextStatisticsFixture::progressPayloadOverridesUnresolvableModelWithWindow());
         $plainUnresolvableWithWindow = $this->plainRenderedSubagentCard($unresolvableModelWithWindow);
-        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $plainUnresolvableWithWindow, 'Explicit context_window must format CTX even when model is not catalog-resolvable');
+        $this->assertStringContainsString(ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $plainUnresolvableWithWindow, 'Explicit context_window must format CTX even when model is not catalog-resolvable');
 
-        $unresolvableNoWindow = array_merge($base, \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesWithLatestInput(
-            \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
+        $unresolvableNoWindow = array_merge($base, ChildContextStatisticsFixture::progressPayloadOverridesWithLatestInput(
+            ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
             'unknown-provider/no-context-window',
             0,
         ));

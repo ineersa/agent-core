@@ -7,8 +7,10 @@ namespace Ineersa\CodingAgent\Tests\Compaction;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
+use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
+use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -24,6 +26,7 @@ use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -38,14 +41,14 @@ use PHPUnit\Framework\TestCase;
 final class AutoCompactionHookSubscriberTest extends TestCase
 {
     private AutoCompactionHookSubscriber $subscriber;
-    /** @var EventStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
+    /** @var EventStoreInterface&MockObject */
     private $eventStore;
     private ProviderContextUsageResolver $providerUsageResolver;
     private RunState $committedRunState;
     private CompactionConfig $compactionConfig;
-    /** @var RunModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
+    /** @var RunModelResolverInterface&MockObject */
     private $modelResolver;
-    /** @var CompactionServiceInterface&\PHPUnit\Framework\MockObject\MockObject */
+    /** @var CompactionServiceInterface&MockObject */
     private $compactionService;
     private TestMessageBus $commandBus;
     private StubRunRelationshipReader $metadataReader;
@@ -875,7 +878,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
                 ?string $activeModel = null,
-            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+            ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
@@ -963,7 +966,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
                 ?string $activeModel = null,
-            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+            ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
@@ -1029,7 +1032,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
                 ?string $activeModel = null,
-            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+            ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
@@ -1115,7 +1118,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     private function dispatchPrepared(AutoCompactionHookSubscriber $subscriber, AfterTurnCommitHookContext $context): void
     {
         foreach ($subscriber->prepareAfterTurnCommit($context, $context->runState->lastSeq) as $action) {
-            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO::class, $action);
+            $this->assertInstanceOf(DispatchCoordinationMessageDTO::class, $action);
             $this->commandBus->dispatch($action->message);
         }
     }

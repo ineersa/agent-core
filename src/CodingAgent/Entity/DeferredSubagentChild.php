@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
+use Symfony\Component\Uid\UuidV7;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'deferred_subagent_child')]
@@ -86,6 +87,6 @@ class DeferredSubagentChild
         $now = new \DateTimeImmutable();
         $this->createdAt = $now;
         $this->updatedAt = $now;
-        $this->providerCacheKey = \Symfony\Component\Uid\UuidV7::v7()->toRfc4122();
+        $this->providerCacheKey = UuidV7::v7()->toRfc4122();
     }
 }

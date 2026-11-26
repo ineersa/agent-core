@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
+use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
@@ -125,10 +126,10 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
             $questionCoordinator,
             $questionController,
         );
-        $overlay = new \Ineersa\Tui\Picker\PickerOverlay();
+        $overlay = new PickerOverlay();
         $overlayRef = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
         $overlayRef->setValue($picker, $overlay);
-        $openRef = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'isOpen');
+        $openRef = new \ReflectionProperty(PickerOverlay::class, 'isOpen');
         $openRef->setValue($overlay, true);
 
         return $picker;

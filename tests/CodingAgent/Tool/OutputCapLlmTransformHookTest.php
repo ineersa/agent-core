@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\OutputCap;
@@ -45,7 +46,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
         $cap = $this->outputCap($cfg);
-        $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $hook = new OutputCapLlmTransformHook($cap, AttributeSerializerValidatorTestFactory::denormalizer());
         $converter = new AgentMessageConverter();
 
         $prefix = str_repeat('A', 250);
@@ -100,7 +101,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
         $cap = $this->outputCap($cfg);
-        $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $hook = new OutputCapLlmTransformHook($cap, AttributeSerializerValidatorTestFactory::denormalizer());
         $converter = new AgentMessageConverter();
 
         $sentinel = 'DETAILS_SENTINEL_'.bin2hex(random_bytes(8));
@@ -144,7 +145,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
         $cap = $this->outputCap($cfg);
-        $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $hook = new OutputCapLlmTransformHook($cap, AttributeSerializerValidatorTestFactory::denormalizer());
 
         $smallText = 'Hello, tool!';
 
@@ -168,7 +169,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10);
         $cap = $this->outputCap($cfg);
-        $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $hook = new OutputCapLlmTransformHook($cap, AttributeSerializerValidatorTestFactory::denormalizer());
 
         $userMsg = new AgentMessage(
             role: 'user',
@@ -202,7 +203,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
         $cap = $this->outputCap($cfg);
-        $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $hook = new OutputCapLlmTransformHook($cap, AttributeSerializerValidatorTestFactory::denormalizer());
 
         $timestamp = new \DateTimeImmutable('2025-01-01 12:00:00');
 
@@ -240,7 +241,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
         $cap = $this->outputCap($cfg);
-        $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $hook = new OutputCapLlmTransformHook($cap, AttributeSerializerValidatorTestFactory::denormalizer());
 
         $message = new AgentMessage(
             role: 'tool',
@@ -285,7 +286,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
         $cap = $this->outputCap($cfg);
-        $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $hook = new OutputCapLlmTransformHook($cap, AttributeSerializerValidatorTestFactory::denormalizer());
 
         // Each part individually small, but combined exceeds cap
         $sentinel = 'MULTI_PART_SENTINEL_'.bin2hex(random_bytes(8));
@@ -318,7 +319,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10);
         $cap = $this->outputCap($cfg);
-        $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $hook = new OutputCapLlmTransformHook($cap, AttributeSerializerValidatorTestFactory::denormalizer());
 
         $message = new AgentMessage(
             role: 'tool',
@@ -346,7 +347,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 100);
         $cap = $this->outputCap($cfg);
-        $hook = new OutputCapLlmTransformHook($cap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $hook = new OutputCapLlmTransformHook($cap, AttributeSerializerValidatorTestFactory::denormalizer());
 
         $largeText = str_repeat('X', 500);
 
@@ -397,7 +398,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50);
         $outputCap = $this->outputCap($cfg);
-        $hook = new OutputCapLlmTransformHook($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $hook = new OutputCapLlmTransformHook($outputCap, AttributeSerializerValidatorTestFactory::denormalizer());
         $converter = new AgentMessageConverter();
 
         $sentinel = 'READ_SENTINEL_'.bin2hex(random_bytes(8));

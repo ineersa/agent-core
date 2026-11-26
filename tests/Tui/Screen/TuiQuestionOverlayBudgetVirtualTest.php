@@ -24,11 +24,14 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
+use Symfony\Component\Tui\Widget\MarkdownWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
+use Symfony\Component\Tui\Widget\TextWidget;
 use Symfony\Component\Tui\Widget\VerticallyExpandableInterface;
 
 /**
@@ -68,8 +71,8 @@ final class TuiQuestionOverlayBudgetVirtualTest extends TestCase
         $terminal = new VirtualTerminal(columns: 40, rows: 2);
         $tui = new Tui(terminal: $terminal);
         $overlay = new QuestionOverlayWidget();
-        $overlay->setStyle(new \Symfony\Component\Tui\Style\Style(gap: 1));
-        $overlay->add(new \Symfony\Component\Tui\Widget\TextWidget('Question heading'));
+        $overlay->setStyle(new Style(gap: 1));
+        $overlay->add(new TextWidget('Question heading'));
         $overlay->add(new SelectListWidget([['value' => 'alpha', 'label' => 'Alpha answer']]));
         $tui->add($overlay);
         try {
@@ -89,16 +92,16 @@ final class TuiQuestionOverlayBudgetVirtualTest extends TestCase
         $terminal = new VirtualTerminal(columns: 80, rows: 24);
         $tui = new Tui(terminal: $terminal);
         $overlay = new QuestionOverlayWidget();
-        $overlay->setStyle(new \Symfony\Component\Tui\Style\Style(gap: 1));
-        $overlay->add(new \Symfony\Component\Tui\Widget\TextWidget('Decorative approval header'));
-        $overlay->add(new \Symfony\Component\Tui\Widget\MarkdownWidget(str_repeat("Approval operation\n\n", 10)));
+        $overlay->setStyle(new Style(gap: 1));
+        $overlay->add(new TextWidget('Decorative approval header'));
+        $overlay->add(new MarkdownWidget(str_repeat("Approval operation\n\n", 10)));
         $overlay->add(new SelectListWidget([
             ['value' => 'allow', 'label' => 'Allow'],
             ['value' => 'deny', 'label' => 'Deny'],
         ]));
         $tui->add($overlay);
         // Model remaining overlay room in a normal terminal, not a tiny terminal.
-        $tui->add(new \Symfony\Component\Tui\Widget\TextWidget(implode("\n", array_fill(0, 24 - $budget, 'LOWER_CHROME'))));
+        $tui->add(new TextWidget(implode("\n", array_fill(0, 24 - $budget, 'LOWER_CHROME'))));
         try {
             $tui->start();
             $tui->processRender();

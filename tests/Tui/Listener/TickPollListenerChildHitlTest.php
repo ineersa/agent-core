@@ -13,6 +13,7 @@ use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
+use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\TestCase;
 
 final class TickPollListenerChildHitlTest extends TestCase
@@ -30,7 +31,7 @@ final class TickPollListenerChildHitlTest extends TestCase
         );
 
         $coordinator = new QuestionCoordinator();
-        $state = new \Ineersa\Tui\Runtime\TuiSessionState('parent-1');
+        $state = new TuiSessionState('parent-1');
         $state->subagentLiveView->enter(new SubagentLiveChildDTO(
             $childRunId,
             'agent_a',

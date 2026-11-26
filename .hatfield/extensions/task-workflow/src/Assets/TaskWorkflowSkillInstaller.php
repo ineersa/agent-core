@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\TaskWorkflow\Assets;
 
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Filesystem\Exception\IOExceptionInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Filesystem\Path;
+use Symfony\Component\Yaml\Exception\ParseException;
 
 /**
  * Installs the packaged task-workflow skill into the project skill tree.
@@ -74,7 +76,7 @@ final readonly class TaskWorkflowSkillInstaller
             try {
                 $frontmatter = TaskWorkflowMarkdownFrontmatter::parse($installed)['frontmatter'];
                 $installedVersion = TaskWorkflowMarkdownFrontmatter::versionOf($installed);
-            } catch (\Symfony\Component\Yaml\Exception\ParseException $exception) {
+            } catch (ParseException $exception) {
                 $this->logger->warning('task_workflow.assets.skill_installed_version_invalid', [
                     'component' => 'task_workflow',
                     'event_type' => 'task_workflow.assets.skill_installed_version_invalid',
@@ -108,7 +110,7 @@ final readonly class TaskWorkflowSkillInstaller
             $filesystem->mirror($this->packageRoot.'/templates/issue', $destinationDir.'/templates/issue');
             // Publish the version last so a partial copy is retried on next registration.
             $filesystem->dumpFile($destinationSkill, $bundled);
-        } catch (\Symfony\Component\Filesystem\Exception\IOExceptionInterface $exception) {
+        } catch (IOExceptionInterface $exception) {
             $this->logger->warning('task_workflow.assets.skill_write_failed', [
                 'component' => 'task_workflow',
                 'event_type' => 'task_workflow.assets.skill_write_failed',

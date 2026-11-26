@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator;
@@ -37,20 +38,28 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionConsumptionPolicy;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionRunHandler;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionProvenanceDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\MarkCodeModeBackgroundedDTO;
 use Ineersa\CodingAgent\Application\Pipeline\BackgroundCodeModeInvocationHandler;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeBackgroundCoordinationHandler;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\History\HistorySelectionService;
@@ -104,9 +113,9 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
             if ($retained) {
                 $container->get(ToolPayloadStoreInterface::class)->publishFirstResult(ToolCallResultFactory::fromDeferredCorrelationAndCompletion($call, [['type' => 'text', 'text' => 'LATE']]), $deferred->findMetadataByDeferredId($call->deferredId)->reference);
             }
-            $container->get(CodeModeBackgroundCoordinationHandler::class)->controllerStarting(new \Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent($run));
+            $container->get(CodeModeBackgroundCoordinationHandler::class)->controllerStarting(new ControllerSessionStartingEvent($run));
             $this->assertSame([], $container->get(CommandStoreInterface::class)->pending($run));
-            $this->assertSame(0, $container->get(\Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository::class)->count(['deferredId' => $call->deferredId]));
+            $this->assertSame(0, $container->get(BackgroundCompletionReceiptRepository::class)->count(['deferredId' => $call->deferredId]));
             $this->assertNull($container->get(SessionRepairService::class)->repair($run, true, 'no-receipt-repair')->refusalReason);
             $this->assertSame(RunStatus::Completed, $container->get(ActiveRunContextInterface::class)->requireLoaded($run)->status);
             $delivery = array_find($transport->getSent(), static fn ($envelope): bool => $envelope->getMessage() instanceof DeliverBackgroundCompletionDTO && $envelope->getMessage()->identity === $call->deferredId)->getMessage();
@@ -147,8 +156,8 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
         $root = $run;
         if ('owned-child' === $phase) {
             $run = Uuid::v7()->toRfc4122();
-            $entry = $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class)->create($root, 'owned-child', $run, 'scout', \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum::Subagent);
-            $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class)->register($entry);
+            $entry = $container->get(AgentArtifactRegistry::class)->create($root, 'owned-child', $run, 'scout', AgentArtifactKindEnum::Subagent);
+            $container->get(AgentChildRunDirectory::class)->register($entry);
         }
         $call = new DeferredToolCompletionCorrelation(Uuid::v7()->toRfc4122(), $run, 1, 'step', 1, 'key', 'call', 'code_mode', [], 0);
         TestToolBatchRegistration::registerDeferredInvocation($container->get(ToolBatchStoreInterface::class), $call);
@@ -167,14 +176,14 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
             $repository->interrupt($call->deferredId, DeferredToolInterruptionReasonEnum::from($phase));
         } elseif (\in_array($phase, ['historical', 'successor'], true)) {
             $repository->markCompleted($call->deferredId);
-            $container->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace($state->with(['turnNo' => 'historical' === $phase ? 2 : 1, 'pendingToolCalls' => []]));
+            $container->get(RunOperationalProjectionRepository::class)->replace($state->with(['turnNo' => 'historical' === $phase ? 2 : 1, 'pendingToolCalls' => []]));
         }
         self::ensureKernelShutdown();
         self::bootKernel(['environment' => 'test', 'debug' => false]);
         $container = self::getContainer();
         $repository = $container->get(DeferredToolCompletionRepository::class);
         $coordinator = $container->get(CodeModeBackgroundCoordinationHandler::class);
-        $coordinator->controllerStarting(new \Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent($root));
+        $coordinator->controllerStarting(new ControllerSessionStartingEvent($root));
         $this->assertSame([], $container->get('messenger.transport.run_control')->getSent(), 'Passive cold startup sends no completion or successor.');
         $metadata = $repository->findMetadataByDeferredId($call->deferredId);
         $outstanding = !\in_array($phase, ['cancelled', 'historical'], true);
@@ -190,10 +199,10 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
         $this->assertSame([], $advance->postCommitEffects);
         // Authorization participates in the same metadata transaction; rollback
         // must retain both the wake fence and the sticky physical-host fence.
-        $em = $container->get(\Doctrine\ORM\EntityManagerInterface::class);
+        $em = $container->get(EntityManagerInterface::class);
         $connection = $em->getConnection();
         $connection->beginTransaction();
-        $this->admit($run, [new DispatchLocalMetadataMessageDTO(new \Ineersa\CodingAgent\Application\Message\DTO\MarkCodeModeBackgroundedDTO($call->deferredId, new \DateTimeImmutable(), continuationRequired: false))]);
+        $this->admit($run, [new DispatchLocalMetadataMessageDTO(new MarkCodeModeBackgroundedDTO($call->deferredId, new \DateTimeImmutable(), continuationRequired: false))]);
         $this->assertFalse($repository->runRequiresContinuation($run));
         $connection->rollBack();
         $em->clear();
@@ -239,7 +248,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
             $attachment = $payloads->saveAttachment($run, 'host', static fn ($handle) => fwrite($handle, 'retained output'));
             $result = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($first, [['type' => 'text', 'text' => 'retained terminal']]);
             $payloads->publishFirstResult($result, $repository->findMetadataByDeferredId($first->deferredId)->reference);
-            $container->get(CodeModeBackgroundCoordinationHandler::class)->controllerStarting(new \Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent($run));
+            $container->get(CodeModeBackgroundCoordinationHandler::class)->controllerStarting(new ControllerSessionStartingEvent($run));
         }
         if ($lost) {
             $repository->interrupt($first->deferredId, DeferredToolInterruptionReasonEnum::ControllerLost);
@@ -260,7 +269,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
         $this->assertSame(RunStatus::Running, $state->status);
         if ($terminal) {
             $this->assertSame(DeferredToolCompletionStatusEnum::Completed, $repository->status($first->deferredId), 'Stop retires retained terminal evidence without another worker delivery or restart.');
-            $work = $container->get(\Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider::class)->snapshot($run)->work;
+            $work = $container->get(BackgroundWorkSnapshotProvider::class)->snapshot($run)->work;
             $this->assertNotContains($first->deferredId, array_column($work, 'id'));
             $repository->markCompleted($other->deferredId);
             $batches = $container->get(ToolBatchStoreInterface::class);

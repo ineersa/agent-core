@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
+use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -125,7 +126,7 @@ final readonly class StartRunHandler implements RunMessageHandler
 
     /**
      * Live StartRun must carry the same bounded parent identity that
-     * {@see \Ineersa\AgentCore\Application\Replay\RunStateReducer} derives from
+     * {@see RunStateReducer} derives from
      * run_started.metadata.session so the operational projection is never
      * written as a top-level row for a newly launched child.
      */

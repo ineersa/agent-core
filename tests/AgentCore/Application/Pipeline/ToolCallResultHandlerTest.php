@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
@@ -26,12 +27,15 @@ use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -125,7 +129,7 @@ final class ToolCallResultHandlerTest extends TestCase
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'follow up']]]],
             options: new CommandCancellationOptions(safe: false),
         ));
-        $advance = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
+        $advance = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: new CommandMailboxPolicy($commandStore, new CommandRouter([])),
             eventFactory: new EventFactory(),
         );
@@ -262,7 +266,7 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);
         $this->assertSame('tool-b', $result->postCommitEffects[0]->toolCallId);
         $this->assertCount(1, $result->postCommitActions);
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO::class, $result->postCommitActions[0]);
+        $this->assertInstanceOf(FinalizeToolBatchDTO::class, $result->postCommitActions[0]);
     }
 
     public function testUntrackedCurrentTokenRedeliveryIsIdempotentNoOp(): void
@@ -1093,7 +1097,7 @@ final class ToolCallResultHandlerTest extends TestCase
             runId: $runId, turnNo: 1, stepId: 'tools', attempt: 1,
             idempotencyKey: 'fork-execution', toolCallId: 'fork-call', toolName: 'fork', args: [],
             orderIndex: 1, mode: 'parallel', maxParallelism: 2,
-            launchContext: new \Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO(
+            launchContext: new ToolLaunchInputReferenceDTO(
                 kind: 'fork', producingRunId: $runId, producingTurnNo: 1, producingModel: 'test-model',
                 producingStepId: 'tools', toolCallId: 'fork-call', sha256: str_repeat('a', 64), bytes: 100,
             ),
@@ -1109,7 +1113,7 @@ final class ToolCallResultHandlerTest extends TestCase
         $read = ToolCallResultBuilder::success($runId)->withTurnNo(1)->withStepId('tools')
             ->withToolCallId('read-call')->withOrderIndex(0)
             ->withResult(['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => 'saved read result']]])->build();
-        $this->assertFalse(\Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $read)->complete);
+        $this->assertFalse(TestToolBatchCoordination::collect($collector, $store, $read)->complete);
         $handler = new ToolCallResultHandler(
             toolBatchCollector: $collector, eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(), messageNormalizer: new AgentMessageNormalizer(),

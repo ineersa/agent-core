@@ -9,6 +9,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\DTO\LibrarianSettingsDTO;
 use Ineersa\HatfieldExt\ObservationalMemory\Librarian\LibrarianClient;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\HttpClient\Exception\TimeoutException;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
@@ -114,7 +115,7 @@ final class LibrarianClientTest extends TestCase
             $budgets[] = $options['max_duration'];
             if ('memory_search' === $tool && $fail) {
                 $fail = false;
-                throw new \Symfony\Component\HttpClient\Exception\TimeoutException('Synthetic HTTP deadline');
+                throw new TimeoutException('Synthetic HTTP deadline');
             }
 
             return ['ok' => true];

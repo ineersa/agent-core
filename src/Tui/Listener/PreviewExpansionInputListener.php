@@ -6,13 +6,15 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Symfony\Component\Tui\Event\InputEvent;
 
 /**
  * Toggles session-local preview expansion for previewable transcript blocks (Ctrl+O).
  *
- * Only mutates {@see \Ineersa\Tui\Transcript\TranscriptDisplayState::$previewableBlocksExpanded}
- * on {@see \Ineersa\Tui\Runtime\TuiSessionState}. Does not touch Hatfield settings,
+ * Only mutates {@see TranscriptDisplayState::$previewableBlocksExpanded}
+ * on {@see TuiSessionState}. Does not touch Hatfield settings,
  * session metadata, runtime commands, or canonical events.
  *
  * Registered at priority {@see InputPriority::PREVIEW_EXPANSION}: Ctrl+C/D handling and completion-overlay cleanup

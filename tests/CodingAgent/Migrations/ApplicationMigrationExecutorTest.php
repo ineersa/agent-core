@@ -8,6 +8,9 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Schema\Schema;
 use DoctrineMigrations\Version20260601152619;
 use DoctrineMigrations\Version20260607000000;
+use DoctrineMigrations\Version20260617141001;
+use DoctrineMigrations\Version20260713120000;
+use DoctrineMigrations\Version20260715120000;
 use DoctrineMigrations\Version20261019185942;
 use DoctrineMigrations\Version20261021034317;
 use DoctrineMigrations\Version20261022235428;
@@ -465,7 +468,7 @@ SQL);
             'item_time' => 1_725_000_000,
         ]);
 
-        $migration = \DoctrineMigrations\Version20260617141001::class;
+        $migration = Version20260617141001::class;
         $executor = new ApplicationMigrationExecutor($connection, new NullLogger(), [$migration]);
         $executor();
 
@@ -511,7 +514,7 @@ SQL);
         $executor = new ApplicationMigrationExecutor(
             $connection,
             new NullLogger(),
-            [\DoctrineMigrations\Version20260713120000::class],
+            [Version20260713120000::class],
         );
         $executor();
 
@@ -564,7 +567,7 @@ SQL);
         $executor = new ApplicationMigrationExecutor(
             $connection,
             new NullLogger(),
-            [\DoctrineMigrations\Version20260715120000::class],
+            [Version20260715120000::class],
         );
         $executor();
 
@@ -588,7 +591,7 @@ SQL);
         $executorAgain = new ApplicationMigrationExecutor(
             $connection,
             new NullLogger(),
-            [\DoctrineMigrations\Version20260715120000::class],
+            [Version20260715120000::class],
         );
         $executorAgain();
         $keysAfterSecondPass = $connection->fetchFirstColumn('SELECT provider_cache_key FROM hatfield_session ORDER BY id');

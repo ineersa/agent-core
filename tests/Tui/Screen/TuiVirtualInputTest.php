@@ -15,6 +15,7 @@ use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\AppHotkeyRegistrar;
 use Ineersa\Tui\Listener\EditorHotkeyRegistrar;
+use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
@@ -224,7 +225,7 @@ final class TuiVirtualInputTest extends TestCase
     }
 
     /**
-     * Mirror {@see \Ineersa\Tui\Listener\SubmitListener} structured hotkey-table application.
+     * Mirror {@see SubmitListener} structured hotkey-table application.
      */
     private function applyHotkeyTableToScreen(
         HotkeyTableData $result,

@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
@@ -37,7 +38,7 @@ final class SystemPromptBuilderTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+        $this->projectDir = ProjectDir::get();
 
         // Create a temp directory for test templates without polluting real .hatfield/
         $this->tmpDir = TestDirectoryIsolation::createOsTempDir('system_prompt_test');

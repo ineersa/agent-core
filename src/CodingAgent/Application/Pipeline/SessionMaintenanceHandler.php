@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\RefreshRunContext;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
+use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Application\Message\RepairDeferredChildObligationDTO;
 use Ineersa\CodingAgent\Application\Message\RepairDeferredChildrenDTO;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
@@ -16,12 +23,16 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
+use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Runtime\Protocol\RunHistoryPositionChangedEventFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer;
 use Ineersa\CodingAgent\Session\Repair\RepairResultNormalizer;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\Clock\Clock;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
@@ -34,30 +45,30 @@ final readonly class SessionMaintenanceHandler
         private StdoutRuntimeEventSink $stdoutSink,
         #[Autowire('%env(bool:HATFIELD_CONSUMER_STDOUT_EVENTS)%')]
         private bool $consumerStdoutEvents,
-        private \Psr\Log\LoggerInterface $logger,
-        private \Ineersa\AgentCore\Contract\ActiveRunContextInterface $registry,
-        private \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor $processor,
-        private \Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware $initialization,
-        private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $recovery,
+        private LoggerInterface $logger,
+        private ActiveRunContextInterface $registry,
+        private RunMessageProcessor $processor,
+        private OwnerRunInitializationMiddleware $initialization,
+        private PendingTransitionRecovery $recovery,
         private DeferredSubagentBatchRepository $deferredBatches,
-        private \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer $bootstrap,
-        private \Ineersa\AgentCore\Application\Handler\RunLockManager $locks,
+        private SessionBootstrapProducer $bootstrap,
+        private RunLockManager $locks,
     ) {
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]
-    public function attach(\Ineersa\CodingAgent\Application\Message\AttachRun $command): void
+    public function attach(AttachRun $command): void
     {
         $this->locks->synchronized($command->runId, function () use ($command): void {
             try {
                 $state = $this->bootstrap->prepare($command->runId);
                 if (RunStatus::WaitingHuman === $state->status || [] !== $state->pendingHumanInputRequests) {
                     $step = 'attach-cancel-'.$command->commandId;
-                    $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']));
+                    $this->processor->process('attach', new ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']));
                 }
                 // Do not retain the old context beside the refreshed owner state.
                 unset($state);
-                $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($command->runId, $command->messages));
+                $this->processor->process('attach', new RefreshRunContext($command->runId, $command->messages));
                 $descriptor = $this->bootstrap->seal();
                 // A slow controller must never hold the owner transition lock while
                 // receiving the token. The body remains in the private bounded spool.
@@ -147,7 +158,7 @@ final readonly class SessionMaintenanceHandler
             }
             // Launch/startup already queued the deadline message. Leave expired
             // work to that timeout owner rather than restarting its execution.
-            if (null !== $batch->deadlineAt && $batch->deadlineAt <= \Symfony\Component\Clock\Clock::get()->now()) {
+            if (null !== $batch->deadlineAt && $batch->deadlineAt <= Clock::get()->now()) {
                 continue;
             }
             // Cancellation and timeout retain their existing lifecycle owner.

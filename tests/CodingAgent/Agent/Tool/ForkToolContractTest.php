@@ -15,8 +15,12 @@ use Ineersa\CodingAgent\Agent\Fork\ForkRuntimeConfigResolver;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionBuilder;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionProvider;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ForksConfigDTO;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\ForkArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
@@ -24,6 +28,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
+use Psr\Log\NullLogger;
 
 #[CoversClass(ForkToolHandler::class)]
 #[CoversClass(ForkToolDefinitionBuilder::class)]
@@ -129,15 +134,15 @@ final class ForkToolContractTest extends TestCase
     public function testConfigResolverPrecedence(): void
     {
         // ModelResolver + HatfieldSessionStore are final; build a real resolver with empty session id path.
-        $sessionStore = (new \ReflectionClass(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class))
+        $sessionStore = (new \ReflectionClass(HatfieldSessionStore::class))
             ->newInstanceWithoutConstructor();
         $modelResolver = new ModelResolver(
-            new \Ineersa\CodingAgent\Config\AppConfig(
-                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+            new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
             ),
             $sessionStore,
-            new \Psr\Log\NullLogger(),
+            new NullLogger(),
         );
 
         $resolver = new ForkRuntimeConfigResolver(

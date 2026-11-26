@@ -8,6 +8,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\SubagentLiveCatalog;
+use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Tests\Support\SubagentLiveScenarioHarness;
 use Ineersa\Tui\Tests\Support\TuiSessionServicesFactoryTrait;
@@ -288,7 +290,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         );
     }
 
-    private static function firstNeeding(\Ineersa\Tui\Runtime\SubagentLiveCatalog $catalog): ?\Ineersa\Tui\Runtime\SubagentLiveChildDTO
+    private static function firstNeeding(SubagentLiveCatalog $catalog): ?SubagentLiveChildDTO
     {
         foreach ($catalog->all() as $child) {
             if ($child->needsAttention()) {

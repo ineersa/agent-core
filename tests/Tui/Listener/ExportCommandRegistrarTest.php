@@ -8,16 +8,26 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Listener\ExportCommandRegistrar;
+use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Runtime\TuiTickDispatcher;
+use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Tests\Support\TuiSessionServicesFactoryTrait;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Tui\Tui;
 
 #[CoversClass(ExportCommandRegistrar::class)]
 final class ExportCommandRegistrarTest extends TestCase
@@ -94,18 +104,18 @@ final class ExportCommandRegistrarTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
 
         return new TuiRuntimeContext(
-            tui: $this->createStub(\Symfony\Component\Tui\Tui::class),
-            client: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient::class),
+            tui: $this->createStub(Tui::class),
+            client: $this->createStub(AgentSessionClient::class),
             state: $state,
-            screen: (new \ReflectionClass(\Ineersa\Tui\Screen\ChatScreen::class))->newInstanceWithoutConstructor(),
+            screen: (new \ReflectionClass(ChatScreen::class))->newInstanceWithoutConstructor(),
             sessionStore: $sessionStore,
-            ticks: (new \ReflectionClass(\Ineersa\Tui\Runtime\TuiTickDispatcher::class))->newInstanceWithoutConstructor(),
-            switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
-            lifecycle: (new \ReflectionClass(\Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher::class))->newInstanceWithoutConstructor(),
-            historyProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface::class),
+            ticks: (new \ReflectionClass(TuiTickDispatcher::class))->newInstanceWithoutConstructor(),
+            switch: $this->createStub(TuiSessionSwitchServiceInterface::class),
+            lifecycle: (new \ReflectionClass(TuiSessionLifecycleDispatcher::class))->newInstanceWithoutConstructor(),
+            historyProvider: $this->createStub(HistoryProviderInterface::class),
             sessionServices: $this->createSessionServices(catalog: $catalog ?? new SlashCommandCatalog()),
         );
     }

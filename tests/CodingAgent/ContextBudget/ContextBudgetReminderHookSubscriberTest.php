@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\ContextBudget;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -27,6 +28,7 @@ use Ineersa\CodingAgent\ContextBudget\ContextBudgetReminderHookSubscriber;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Constraint\Callback;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -39,9 +41,9 @@ use PHPUnit\Framework\TestCase;
 #[AllowMockObjectsWithoutExpectations]
 final class ContextBudgetReminderHookSubscriberTest extends TestCase
 {
-    /** @var EventStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
+    /** @var EventStoreInterface&MockObject */
     private $eventStore;
-    /** @var AgentRunnerInterface&\PHPUnit\Framework\MockObject\MockObject */
+    /** @var AgentRunnerInterface&MockObject */
     private $agentRunner;
     private ContextBudgetReminderHookSubscriber $subscriber;
 
@@ -422,7 +424,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
     private function dispatchPrepared(ContextBudgetReminderHookSubscriber $subscriber, AfterTurnCommitHookContext $context): void
     {
         foreach ($subscriber->prepareAfterTurnCommit($context, $context->runState->lastSeq) as $action) {
-            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO::class, $action);
+            $this->assertInstanceOf(DispatchCoordinationMessageDTO::class, $action);
             $data = $action->message->payload['message'];
             $this->agentRunner->appendMessage($context->runId, new AgentMessage(role: $data['role'], content: $data['content'], metadata: $data['metadata']));
         }

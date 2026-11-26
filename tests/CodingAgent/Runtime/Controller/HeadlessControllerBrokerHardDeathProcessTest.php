@@ -6,9 +6,11 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\ControllerReplayE2eTestCase;
 use Ineersa\CodingAgent\Tests\Support\OwnedProcessTree;
+use Ineersa\CodingAgent\Tests\Support\SessionSqliteQueueTestEnv;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
@@ -33,7 +35,7 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
             TestDirectoryIsolation::removeDirectory($this->tempDir);
         }
         $this->tempDir = '';
-        \PHPUnit\Framework\TestCase::tearDown();
+        TestCase::tearDown();
     }
 
     public function testControllerSigkillStopsOwnedBrokerHelperAndAllowsDurableDbRestart(): void
@@ -215,7 +217,7 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
                 'HATFIELD_SESSION_ID' => false, 'HATFIELD_REPLAY_SESSION_ID' => $this->sessionId,
                 'HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $this->tempDir.'/app_test-replay-'.$this->sessionId.'.sqlite',
                 'HATFIELD_BINARY_PATH' => E2E\Replay\ControllerReplaySourceMessengerConsole::install($this->tempDir, $this->projectDir.'/bin/console'),
-                ...\Ineersa\CodingAgent\Tests\Support\SessionSqliteQueueTestEnv::forSession($this->tempDir.'/.hatfield/sessions', $this->sessionId),
+                ...SessionSqliteQueueTestEnv::forSession($this->tempDir.'/.hatfield/sessions', $this->sessionId),
             ]), $input, 10);
         $tree = [];
         try {

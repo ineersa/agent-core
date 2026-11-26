@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\Hatfield\ExtensionApi\Tool;
 
+use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+
 /**
  * Extension-facing contract for permanent tool execution handlers.
  *
  * Extensions register tools via {@see ToolRegistrationDTO} with a handler that
  * implements this interface. Hatfield adapts it internally to
- * {@see \Ineersa\CodingAgent\Tool\ToolHandlerInterface} at registration time
+ * {@see ToolHandlerInterface} at registration time
  * so extension packages stay within the ExtensionApi boundary.
  *
- * Mirrors {@see \Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface}
+ * Mirrors {@see ExtensionCommandHandlerInterface}
  * naming: the "Extension" prefix marks the public extension contract.
  */
 interface ExtensionToolHandlerInterface

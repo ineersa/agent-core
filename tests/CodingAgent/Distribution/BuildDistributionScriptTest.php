@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Contract: scripts/build-distribution.sh is concurrency-safe, validates options,
@@ -34,7 +35,7 @@ final class BuildDistributionScriptTest extends TestCase
     public function testReleaseChecksPhpStartupBeforeComposerWithoutProvisioningZstd(): void
     {
         $root = ProjectDir::get();
-        $workflow = \Symfony\Component\Yaml\Yaml::parseFile($root.'/.github/workflows/release.yml');
+        $workflow = Yaml::parseFile($root.'/.github/workflows/release.yml');
         $this->assertFileDoesNotExist($root.'/.github/actions/setup-zstd/action.yml');
         $this->assertStringNotContainsString('zstd', (string) file_get_contents($root.'/.github/workflows/release.yml'));
         foreach (['phar', 'static', 'publish'] as $job) {
@@ -65,7 +66,7 @@ final class BuildDistributionScriptTest extends TestCase
 
     public function testNativeReleasePinsLinuxAmd64RunnerAndBoundsStaticBuild(): void
     {
-        $workflow = \Symfony\Component\Yaml\Yaml::parseFile(ProjectDir::get().'/.github/workflows/release.yml');
+        $workflow = Yaml::parseFile(ProjectDir::get().'/.github/workflows/release.yml');
         $static = $workflow['jobs']['static'];
         $runners = array_column($static['strategy']['matrix']['include'], 'runner', 'target');
         $this->assertSame('ubuntu-26.04', $runners['linux-amd64']);
@@ -76,7 +77,7 @@ final class BuildDistributionScriptTest extends TestCase
 
     public function testRuntimeRestoreRecoversOnlyAnExactDraftPrerelease(): void
     {
-        $workflow = \Symfony\Component\Yaml\Yaml::parseFile(ProjectDir::get().'/.github/workflows/release.yml');
+        $workflow = Yaml::parseFile(ProjectDir::get().'/.github/workflows/release.yml');
         $steps = array_column($workflow['jobs']['static']['steps'], null, 'name');
         $restore = $steps['Restore published runtime if present']['run'];
         $publish = $steps['Publish verified runtime prerelease'];

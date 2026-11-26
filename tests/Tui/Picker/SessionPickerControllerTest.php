@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
+use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Picker\SessionPickerController;
@@ -20,6 +21,10 @@ use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Tui\Tui;
 
 #[CoversClass(SessionPickerController::class)]
 final class SessionPickerControllerTest extends TestCase
@@ -36,7 +41,7 @@ final class SessionPickerControllerTest extends TestCase
             }
 
             public function requestNewDraft(
-                ?\Ineersa\CodingAgent\Runtime\Contract\StartRunRequest $request = null,
+                ?StartRunRequest $request = null,
             ): void {
             }
 
@@ -54,7 +59,7 @@ final class SessionPickerControllerTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $controller = new SessionPickerController($this->tui(), $this->screen(), $sessionStore, $switch);
 
         $controller->applySelectEffect('42');
@@ -67,9 +72,9 @@ final class SessionPickerControllerTest extends TestCase
         return new DefaultTheme(new ThemePalette('test'));
     }
 
-    private function tui(): \Symfony\Component\Tui\Tui
+    private function tui(): Tui
     {
-        return new \Symfony\Component\Tui\Tui();
+        return new Tui();
     }
 
     private function screen(): ChatScreen

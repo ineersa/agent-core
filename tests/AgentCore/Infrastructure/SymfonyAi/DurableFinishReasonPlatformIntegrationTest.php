@@ -9,6 +9,8 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
@@ -17,6 +19,7 @@ use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Capability;
+use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelCatalog\ModelCatalogInterface;
 use Symfony\AI\Platform\ModelClientInterface;
@@ -24,6 +27,7 @@ use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
+use Symfony\AI\Platform\Result\Stream\HttpStreamInterface;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
@@ -66,13 +70,13 @@ final class DurableFinishReasonPlatformIntegrationTest extends TestCase
         );
 
         return new LlmPlatformAdapter(
-            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            statusReader: new NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
                 new class implements ToolboxInterface {
                     public function execute(ToolCall $toolCall): ToolResult
                     {
-                        return new ToolResult($toolCall, new \Symfony\AI\Platform\Message\Content\Text(''));
+                        return new ToolResult($toolCall, new Text(''));
                     }
 
                     public function getToolIterator(): \Traversable
@@ -93,7 +97,7 @@ final class DurableFinishReasonPlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
     }
 }
@@ -163,7 +167,7 @@ final class RecordingGenericModelClient implements ModelClientInterface
 
         return new RawHttpResult(
             $response,
-            new class($this->chunks) implements \Symfony\AI\Platform\Result\Stream\HttpStreamInterface {
+            new class($this->chunks) implements HttpStreamInterface {
                 /** @param list<array<string, mixed>> $chunks */
                 public function __construct(private readonly array $chunks)
                 {

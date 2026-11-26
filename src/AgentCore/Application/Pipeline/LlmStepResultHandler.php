@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
+use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
@@ -15,6 +17,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
@@ -38,7 +41,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         private ToolCallExtractor $toolCallExtractor,
         private AgentMessageNormalizer $messageNormalizer,
         private NormalizerInterface $normalizer,
-        private \Ineersa\AgentCore\Application\Handler\ToolBatchCollector $toolBatchCollector,
+        private ToolBatchCollector $toolBatchCollector,
         private ?ToolSetResolverInterface $toolSetResolver = null,
         private ?ToolboxInterface $toolbox = null,
         private ?RunTracer $tracer = null,
@@ -60,7 +63,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
 
     public function handle(object $message, RunState $state): HandlerResult
     {
-        return \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::finalize($this->prepare($message, $state));
+        return CommandMailboxCoordinationFactory::finalize($this->prepare($message, $state));
     }
 
     private function prepare(object $message, RunState $state): HandlerResult
@@ -520,7 +523,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
     }
 
     /**
-     * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $messages
+     * @param list<AgentMessage> $messages
      */
     private function extractUserContextSource(array $messages, string $source): string
     {

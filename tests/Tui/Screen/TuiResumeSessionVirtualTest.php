@@ -5,13 +5,22 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Screen;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\ResumeCanonicalEventsFixture;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
@@ -35,9 +44,9 @@ final class TuiResumeSessionVirtualTest extends TestCase
     #[Test]
     public function testResumeShowsRestoringNoticeInsteadOfReconstructingTheArchive(): void
     {
-        $store = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $this->projectDir),
-            $this->createStub(EntityManagerInterface::class), new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
-        $initializer = new \Ineersa\Tui\Application\SessionInitializer($store, new \Ineersa\Tui\Transcript\TranscriptBlockFactory());
+        $store = new HatfieldSessionStore(new AppConfig(new TuiConfig(theme: 'default'), new LoggingConfig(), cwd: $this->projectDir),
+            $this->createStub(EntityManagerInterface::class), new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
+        $initializer = new SessionInitializer($store, new TranscriptBlockFactory());
         $state = new TuiSessionState(self::SESSION_ID, true);
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
         $harness->screen()->setTranscriptBlocks($initializer->buildInitialTranscript($state));

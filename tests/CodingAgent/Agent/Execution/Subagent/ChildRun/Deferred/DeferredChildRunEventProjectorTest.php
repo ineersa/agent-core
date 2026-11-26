@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Deferred;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -11,8 +12,12 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
+use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Exception\ServerException;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 
 /**
  * Test thesis: committed child projection must expose only safe tool argument pairs,
@@ -28,7 +33,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 {
     public function testCanonicalCancellationReconstructsPendingStatusWithoutOperationalOverride(): void
     {
-        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         foreach ([RunStatus::Running, RunStatus::WaitingHuman] as $initialStatus) {
             $current = new DeferredChildRunLifecycleProjectionDTO($initialStatus, 1, 10, 'test/model', 'medium');
             $cancelled = $projector->apply($current, [new AfterTurnCommitEventSummary(11, RunEventTypeEnum::AgentCommandApplied->value, ['kind' => CoreCommandKind::Cancel])], committedStatus: null, committedTurnNo: 1);
@@ -43,7 +48,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
     public function testCanonicalRunStartedModelOverridesStaleDefinitionAndSurvivesResume(): void
     {
-        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -107,13 +112,13 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(2, $resumed->llmStepCount);
         $this->assertSame(4, $resumed->childTurnNo);
         [$serializer] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
-        $wire = $serializer->normalize($resumed, null, [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
+        $wire = $serializer->normalize($resumed, null, [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
         $this->assertSame('xhigh', $serializer->denormalize($wire, DeferredChildRunLifecycleProjectionDTO::class)->reasoning);
     }
 
     public function testResumeWakeDoesNotReusePreviousTerminalStatusBeforeFollowUpStarts(): void
     {
-        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -176,7 +181,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
     public function testLlmStepFailedIsTerminalEvenWithTrailingModelNotification(): void
     {
-        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -193,7 +198,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             [
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepFailed->value, [
                     'error' => [
-                        'type' => \Symfony\AI\Platform\Exception\ServerException::class,
+                        'type' => ServerException::class,
                         'message' => 'LLM provider request failed after retries were exhausted.',
                         'user_message' => 'LLM provider request failed after retries were exhausted.',
                         'retryable' => false,
@@ -228,7 +233,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
     public function testApplyEnforcesPrivacyStatusOverridesAndMalformedArgumentSafety(): void
     {
-        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -328,7 +333,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
     public function testCompletedAndFailedLlmStepsIncrementDurableCounterAndRoundTrip(): void
     {
-        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -362,18 +367,18 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(18, $projection->cacheReadTokens);
 
         [$serializer] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
-        $wire = $serializer->normalize($projection, null, [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
+        $wire = $serializer->normalize($projection, null, [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
         $roundTrip = $serializer->denormalize($wire, DeferredChildRunLifecycleProjectionDTO::class);
         $this->assertSame(3, $roundTrip->llmStepCount);
         $this->assertSame(3, $wire['llm_step_count'] ?? null);
         $this->assertSame(7, $roundTrip->childTurnNo);
         $this->assertSame(18, $roundTrip->cacheReadTokens);
 
-        $summary = (new \Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder())->fromDeferredProjection($roundTrip, 'agent_llm_steps');
+        $summary = (new SubagentChildProgressSummaryBuilder())->fromDeferredProjection($roundTrip, 'agent_llm_steps');
         $this->assertSame(3, $summary->llmStepCount);
         $this->assertSame(60.0, $summary->cacheReadHitPercentage);
 
-        $snapshot = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->singleFromChildTurn(
+        $snapshot = (new SubagentProgressSnapshotBuilder())->singleFromChildTurn(
             agentName: 'scout',
             artifactId: 'agent_llm_steps',
             agentRunId: 'child-run-llm-steps',

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Validation\BashTimeout;
 
+use Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider;
 use Symfony\Component\Validator\Constraint;
 
 /**
@@ -12,7 +13,7 @@ use Symfony\Component\Validator\Constraint;
  * The bound is settings-derived (tools.bash.max_timeout_seconds), so it
  * cannot be a static Assert option; the validator autowires the same config
  * object the provider-visible schema fragment comes from
- * ({@see \Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider}), so the
+ * ({@see BashTimeoutSchemaProvider}), so the
  * schema `maximum` and the runtime limit can never drift.
  */
 #[\Attribute(\Attribute::TARGET_PROPERTY)]

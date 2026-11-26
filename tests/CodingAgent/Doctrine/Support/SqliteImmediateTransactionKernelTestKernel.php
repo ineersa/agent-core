@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Doctrine\Support;
 
 use Ineersa\CodingAgent\Kernel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Minimal KernelTestCase subclass so test subprocesses can boot the container.
@@ -19,7 +20,7 @@ final class SqliteImmediateTransactionKernelTestKernel extends KernelTestCase
         self::bootKernel(['environment' => 'test', 'debug' => false]);
     }
 
-    public static function getContainerForSqliteWorker(): \Symfony\Component\DependencyInjection\ContainerInterface
+    public static function getContainerForSqliteWorker(): ContainerInterface
     {
         return self::getContainer();
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\CLI\Extensions;
 
+use Composer\Autoload\ClassLoader;
 use Ineersa\CodingAgent\CLI\Extensions\Exception\ExtensionSetupRefusalException;
 use Ineersa\CodingAgent\CLI\Extensions\ExtensionsSetupFlow;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -157,7 +158,7 @@ final class ExtensionsSetupFlowTest extends PerMethodIsolatedKernelTestCase
             $this->assertSame($settings, Yaml::parseFile($projectSettings));
         } finally {
             foreach ($roots as $root) {
-                (\Composer\Autoload\ClassLoader::getRegisteredLoaders()[$root.'/vendor'] ?? null)?->unregister();
+                (ClassLoader::getRegisteredLoaders()[$root.'/vendor'] ?? null)?->unregister();
             }
             $fixture->close();
         }

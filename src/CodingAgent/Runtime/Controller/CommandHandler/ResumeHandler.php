@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -21,7 +22,7 @@ final readonly class ResumeHandler
 {
     public function __construct(
         private readonly AgentSessionClient $client,
-        private readonly \Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery $bootstrap,
+        private readonly SessionBootstrapDelivery $bootstrap,
     ) {
     }
 

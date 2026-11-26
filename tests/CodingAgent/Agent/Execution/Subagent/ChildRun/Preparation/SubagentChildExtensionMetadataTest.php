@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Preparation;
 
+use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
+use Ineersa\AgentCore\Application\Handler\ToolExecutor;
+use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -12,8 +15,14 @@ use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
 use Ineersa\CodingAgent\Agent\Fork\ForkLaunchTaskDTO;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
+use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
+use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
+use Symfony\AI\Platform\Contract\JsonSchema\Factory;
 
 /**
  * Test thesis: child launch persists effective extension allowlist in RunMetadata
@@ -39,18 +48,18 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
                 );
             }
         };
-        $registry = new \Ineersa\CodingAgent\Tool\ToolRegistry();
+        $registry = new ToolRegistry();
         $registry->registerTool(name: 'subagent', description: 'launch', parametersJsonSchema: [], handler: $handler, promptLine: 'subagent');
-        $executor = new \Ineersa\AgentCore\Application\Handler\ToolExecutor(
+        $executor = new ToolExecutor(
             defaultMode: 'sequential', maxParallelism: 1,
-            toolbox: new \Ineersa\CodingAgent\Tool\RegistryBackedToolbox(
+            toolbox: new RegistryBackedToolbox(
                 $registry,
-                new \Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver(new \Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver()),
-                new \Symfony\AI\Platform\Contract\JsonSchema\Factory(new \Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber()),
+                new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+                new Factory(new MapToolArgumentsDescriber()),
             ),
-            resultStore: new \Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore(),
+            resultStore: new ToolExecutionResultStore(),
         );
-        $result = $executor->execute(\Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder::create('missing-extension-call')->withToolName('subagent')->withArguments([])->build());
+        $result = $executor->execute(ToolCallBuilder::create('missing-extension-call')->withToolName('subagent')->withArguments([])->build());
         $this->assertTrue($result->isError);
         $this->assertStringContainsString('MissingExtension', $result->content[0]['text']);
         $this->assertStringContainsString('extensions.enabled', $result->content[0]['text']);

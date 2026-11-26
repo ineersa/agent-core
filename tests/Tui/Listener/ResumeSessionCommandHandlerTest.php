@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Tui\Command\NoOp;
@@ -18,6 +19,7 @@ use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\Tui\Tui;
 
 /**
  * Uses IsolatedKernelTestCase because HatfieldSessionStore::exists() now uses
@@ -95,7 +97,7 @@ final class ResumeSessionCommandHandlerTest extends IsolatedKernelTestCase
     private function createHandler(TuiSessionSwitchServiceInterface $switch): ResumeSessionCommandHandler
     {
         $pickerController = new SessionPickerController(
-            new \Symfony\Component\Tui\Tui(),
+            new Tui(),
             new ChatScreen(
                 new DefaultTheme(new ThemePalette('test')),
                 'test-session',
@@ -119,7 +121,7 @@ final class ResumeSessionCommandHandlerTest extends IsolatedKernelTestCase
             }
 
             public function requestNewDraft(
-                ?\Ineersa\CodingAgent\Runtime\Contract\StartRunRequest $request = null,
+                ?StartRunRequest $request = null,
             ): void {
             }
 

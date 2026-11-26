@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
@@ -19,6 +20,8 @@ use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
@@ -138,14 +141,14 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
         $this->assertSame($runId, $client->attach($runId)->runId);
         $this->assertCount(1, $bus->messages);
         $refresh = $bus->messages[0];
-        $this->assertInstanceOf(\Ineersa\CodingAgent\Application\Message\AttachRun::class, $refresh);
+        $this->assertInstanceOf(AttachRun::class, $refresh);
         $this->assertSame($runId, $refresh->runId);
         $this->assertSame('system', $refresh->messages[0]->role);
         $this->assertNotEmpty($refresh->messages[0]->content);
 
         $client->attach($runId);
         $this->assertCount(2, $bus->messages);
-        $this->assertInstanceOf(\Ineersa\CodingAgent\Application\Message\AttachRun::class, $bus->messages[1]);
+        $this->assertInstanceOf(AttachRun::class, $bus->messages[1]);
     }
 
     #[Test]
@@ -182,8 +185,8 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
             backgroundProcesses: self::getContainer()->get(BackgroundProcessManager::class),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
-            bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
-            bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
+            bootstrapSpools: self::getContainer()->get(SessionBootstrapSpoolStore::class),
+            bootstrapTransfer: self::getContainer()->get(SessionBootstrapTransfer::class),
             transientSink: $transientSink,
         );
     }

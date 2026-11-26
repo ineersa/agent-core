@@ -6,14 +6,18 @@ namespace Ineersa\CodingAgent\ContextBudget;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ContextBudgetReminderConfig;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * After-turn hook: queue one-shot wrap-up append messages when committed LLM
@@ -85,13 +89,13 @@ final readonly class ContextBudgetReminderHookSubscriber implements EssentialAft
         $text = $urgentEligible ? self::URGENT_TEXT : self::EARLY_TEXT;
         $wrapped = self::wrapSystemReminder($text);
 
-        $stepId = 'append_message-'.\Symfony\Component\Uid\Uuid::v7()->toRfc4122();
+        $stepId = 'append_message-'.Uuid::v7()->toRfc4122();
 
-        return [new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(
-            new \Ineersa\AgentCore\Domain\Message\ApplyCommand(
+        return [new DispatchCoordinationMessageDTO(
+            new ApplyCommand(
                 runId: $context->runId, turnNo: 0, stepId: $stepId, attempt: 1,
                 idempotencyKey: hash('sha256', $context->runId.'|'.$stepId),
-                kind: \Ineersa\AgentCore\Domain\Command\CoreCommandKind::AppendMessage,
+                kind: CoreCommandKind::AppendMessage,
                 payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $wrapped]], 'metadata' => ['system_reminder' => true]]],
             ),
         )];

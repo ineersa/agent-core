@@ -4,21 +4,32 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\CommandMetadata;
+use Ineersa\Tui\Command\CommandResult;
+use Ineersa\Tui\Command\NoOp;
+use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
+use Ineersa\Tui\Completion\CompletionProviderRegistry;
+use Ineersa\Tui\Completion\FileMentionCompletionProvider;
+use Ineersa\Tui\Completion\FileMentionIndexReader;
 use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CompletionListener;
 use Ineersa\Tui\Listener\CompletionMenu;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
+use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
@@ -30,6 +41,9 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
@@ -267,9 +281,9 @@ final class CompletionListenerTest extends TestCase
             $this->catalog->register(
                 new CommandMetadata(name: $name, aliases: [], description: 'extra '.$name),
                 new readonly class implements SlashCommandHandler {
-                    public function handle(\Ineersa\Tui\Command\SlashCommand $command): \Ineersa\Tui\Command\CommandResult
+                    public function handle(SlashCommand $command): CommandResult
                     {
-                        return new \Ineersa\Tui\Command\NoOp();
+                        return new NoOp();
                     }
                 },
             );
@@ -628,7 +642,7 @@ final class CompletionListenerTest extends TestCase
         // Wire onSubmit to capture the submitted text from EditorWidget.
         $submittedText = null;
         $this->screen->editorWidget()->onSubmit(
-            static function (\Symfony\Component\Tui\Event\SubmitEvent $event) use (&$submittedText): void {
+            static function (SubmitEvent $event) use (&$submittedText): void {
                 $submittedText = $event->getValue();
             },
         );
@@ -659,7 +673,7 @@ final class CompletionListenerTest extends TestCase
 
         $submittedText = null;
         $this->screen->editorWidget()->onSubmit(
-            static function (\Symfony\Component\Tui\Event\SubmitEvent $event) use (&$submittedText): void {
+            static function (SubmitEvent $event) use (&$submittedText): void {
                 $submittedText = $event->getValue();
             },
         );
@@ -690,7 +704,7 @@ final class CompletionListenerTest extends TestCase
 
         $submittedText = null;
         $this->screen->editorWidget()->onSubmit(
-            static function (\Symfony\Component\Tui\Event\SubmitEvent $event) use (&$submittedText): void {
+            static function (SubmitEvent $event) use (&$submittedText): void {
                 $submittedText = $event->getValue();
             },
         );
@@ -764,11 +778,11 @@ final class CompletionListenerTest extends TestCase
             ) {
             }
 
-            public function handle(\Ineersa\Tui\Command\SlashCommand $command): \Ineersa\Tui\Command\CommandResult
+            public function handle(SlashCommand $command): CommandResult
             {
                 $this->callCount->called = true;
 
-                return new \Ineersa\Tui\Command\NoOp();
+                return new NoOp();
             }
         };
 
@@ -798,18 +812,18 @@ final class CompletionListenerTest extends TestCase
         );
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            entityManager: $this->createStub(EntityManagerInterface::class),
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $isolatedContext = new TuiRuntimeContext(
             tui: $isolatedTui,
             client: $client,
             state: $state,
             screen: $isolatedScreen,
             sessionStore: $sessionStore,
-            ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-            switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
-            lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
-            historyProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface::class),
+            ticks: new TuiTickDispatcher(),
+            switch: $this->createStub(TuiSessionSwitchServiceInterface::class),
+            lifecycle: new TuiSessionLifecycleDispatcher(),
+            historyProvider: $this->createStub(HistoryProviderInterface::class),
             sessionServices: $this->createSessionServices(),
         );
         $listener->register($isolatedContext);
@@ -959,9 +973,9 @@ final class CompletionListenerTest extends TestCase
                 '{"path":"src/bar.php","dir":false}',
             ]));
 
-            $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
-            $fileProvider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
-            $registry = new \Ineersa\Tui\Completion\CompletionProviderRegistry([
+            $reader = new FileMentionIndexReader($indexPath);
+            $fileProvider = new FileMentionCompletionProvider($reader);
+            $registry = new CompletionProviderRegistry([
                 new SlashCommandCompletionProvider($this->catalog),
                 $fileProvider,
             ]);
@@ -983,18 +997,18 @@ final class CompletionListenerTest extends TestCase
             );
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
-                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+                entityManager: $this->createStub(EntityManagerInterface::class),
+                dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
                 state: new TuiSessionState('test-session'),
                 screen: $isolatedScreen,
                 sessionStore: $sessionStore,
-                ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-                switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
-                lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
-                historyProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface::class),
+                ticks: new TuiTickDispatcher(),
+                switch: $this->createStub(TuiSessionSwitchServiceInterface::class),
+                lifecycle: new TuiSessionLifecycleDispatcher(),
+                historyProvider: $this->createStub(HistoryProviderInterface::class),
                 sessionServices: $this->createSessionServices(),
             );
             $listener->register($context);
@@ -1023,9 +1037,9 @@ final class CompletionListenerTest extends TestCase
         try {
             file_put_contents($indexPath, '{"path":"my-file.php","dir":false}');
 
-            $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
-            $fileProvider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
-            $registry = new \Ineersa\Tui\Completion\CompletionProviderRegistry([
+            $reader = new FileMentionIndexReader($indexPath);
+            $fileProvider = new FileMentionCompletionProvider($reader);
+            $registry = new CompletionProviderRegistry([
                 new SlashCommandCompletionProvider($this->catalog),
                 $fileProvider,
             ]);
@@ -1046,18 +1060,18 @@ final class CompletionListenerTest extends TestCase
             );
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
-                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+                entityManager: $this->createStub(EntityManagerInterface::class),
+                dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
                 state: new TuiSessionState('test-session'),
                 screen: $isolatedScreen,
                 sessionStore: $sessionStore,
-                ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-                switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
-                lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
-                historyProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface::class),
+                ticks: new TuiTickDispatcher(),
+                switch: $this->createStub(TuiSessionSwitchServiceInterface::class),
+                lifecycle: new TuiSessionLifecycleDispatcher(),
+                historyProvider: $this->createStub(HistoryProviderInterface::class),
                 sessionServices: $this->createSessionServices(),
             );
             $listener->register($context);
@@ -1086,8 +1100,8 @@ final class CompletionListenerTest extends TestCase
         try {
             file_put_contents($indexPath, '{"path":"src/file.php","dir":false}');
 
-            $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
-            $fileProvider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
+            $reader = new FileMentionIndexReader($indexPath);
+            $fileProvider = new FileMentionCompletionProvider($reader);
 
             $isolatedTui = new Tui();
             $isolatedEditor = new PromptEditor();
@@ -1105,18 +1119,18 @@ final class CompletionListenerTest extends TestCase
             );
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
-                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+                entityManager: $this->createStub(EntityManagerInterface::class),
+                dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
                 state: new TuiSessionState('test-session'),
                 screen: $isolatedScreen,
                 sessionStore: $sessionStore,
-                ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-                switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
-                lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
-                historyProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface::class),
+                ticks: new TuiTickDispatcher(),
+                switch: $this->createStub(TuiSessionSwitchServiceInterface::class),
+                lifecycle: new TuiSessionLifecycleDispatcher(),
+                historyProvider: $this->createStub(HistoryProviderInterface::class),
                 sessionServices: $this->createSessionServices(),
             );
             $listener->register($context);
@@ -1150,8 +1164,8 @@ final class CompletionListenerTest extends TestCase
                 '{"path":"src/other.php","dir":false}',
             ]));
 
-            $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
-            $fileProvider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
+            $reader = new FileMentionIndexReader($indexPath);
+            $fileProvider = new FileMentionCompletionProvider($reader);
 
             $isolatedTui = new Tui();
             $isolatedEditor = new PromptEditor();
@@ -1169,18 +1183,18 @@ final class CompletionListenerTest extends TestCase
             );
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
-                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+                entityManager: $this->createStub(EntityManagerInterface::class),
+                dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
                 state: new TuiSessionState('test-session'),
                 screen: $isolatedScreen,
                 sessionStore: $sessionStore,
-                ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-                switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
-                lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
-                historyProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface::class),
+                ticks: new TuiTickDispatcher(),
+                switch: $this->createStub(TuiSessionSwitchServiceInterface::class),
+                lifecycle: new TuiSessionLifecycleDispatcher(),
+                historyProvider: $this->createStub(HistoryProviderInterface::class),
                 sessionServices: $this->createSessionServices(),
             );
             $listener->register($context);

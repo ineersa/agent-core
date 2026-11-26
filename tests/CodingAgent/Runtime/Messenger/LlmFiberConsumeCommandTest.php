@@ -44,6 +44,7 @@ use Psr\Container\ContainerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\SignalRegistry\SignalRegistry;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -286,7 +287,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         $this->assertFalse($definition->hasOption('bus'));
         $this->assertFalse($definition->hasOption('concurrency'));
 
-        if (\Symfony\Component\Console\SignalRegistry\SignalRegistry::isSupported()) {
+        if (SignalRegistry::isSupported()) {
             $signals = $command->getSubscribedSignals();
             $this->assertContains(\SIGTERM, $signals);
             $this->assertContains(\SIGINT, $signals);

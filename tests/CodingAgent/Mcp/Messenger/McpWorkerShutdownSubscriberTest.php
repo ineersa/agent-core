@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Mcp\Messenger;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Ineersa\CodingAgent\Mcp\Messenger\McpWorkerShutdownSubscriber;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Event\WorkerStoppedEvent;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -47,7 +48,7 @@ class McpWorkerShutdownSubscriberTest extends TestCase
 
         $event = new WorkerStoppedEvent($worker);
 
-        /** @var McpConnectionManagerInterface&\PHPUnit\Framework\MockObject\MockObject $connectionManager */
+        /** @var McpConnectionManagerInterface&MockObject $connectionManager */
         $connectionManager = $this->createMock(McpConnectionManagerInterface::class);
         $connectionManager->expects($this->once())
             ->method('disconnectAll')
@@ -70,7 +71,7 @@ class McpWorkerShutdownSubscriberTest extends TestCase
 
         $event = new WorkerStoppedEvent($worker);
 
-        /** @var McpConnectionManagerInterface&\PHPUnit\Framework\MockObject\MockObject $connectionManager */
+        /** @var McpConnectionManagerInterface&MockObject $connectionManager */
         $connectionManager = $this->createMock(McpConnectionManagerInterface::class);
         $connectionManager->expects($this->never())
             ->method('disconnectAll');
@@ -92,7 +93,7 @@ class McpWorkerShutdownSubscriberTest extends TestCase
 
         $event = new WorkerStoppedEvent($worker);
 
-        /** @var McpConnectionManagerInterface&\PHPUnit\Framework\MockObject\MockObject $connectionManager */
+        /** @var McpConnectionManagerInterface&MockObject $connectionManager */
         $connectionManager = $this->createMock(McpConnectionManagerInterface::class);
         $connectionManager->expects($this->never())
             ->method('disconnectAll');
@@ -119,7 +120,7 @@ class McpWorkerShutdownSubscriberTest extends TestCase
 
         $event = new WorkerStoppedEvent($worker);
 
-        /** @var McpConnectionManagerInterface&\PHPUnit\Framework\MockObject\MockObject $connectionManager */
+        /** @var McpConnectionManagerInterface&MockObject $connectionManager */
         $connectionManager = $this->createMock(McpConnectionManagerInterface::class);
         $connectionManager->expects($this->never())
             ->method('disconnectAll');
@@ -148,7 +149,7 @@ class McpWorkerShutdownSubscriberTest extends TestCase
 
         $disconnectError = new \RuntimeException('connection lost during shutdown');
 
-        /** @var McpConnectionManagerInterface&\PHPUnit\Framework\MockObject\MockObject $connectionManager */
+        /** @var McpConnectionManagerInterface&MockObject $connectionManager */
         $connectionManager = $this->createMock(McpConnectionManagerInterface::class);
         $connectionManager->expects($this->once())
             ->method('disconnectAll')

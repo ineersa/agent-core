@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\Tests\CodingAgent\Config\Ai;
 
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiCost;
 use Ineersa\CodingAgent\Config\Ai\AiCostCalculator;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
+use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use PHPUnit\Framework\TestCase;
 
@@ -28,13 +30,13 @@ final class AiCostCalculatorTest extends TestCase
             cost: new AiCost(input: 3.0, output: 15.0, cacheRead: 3.75, cacheWrite: 6.0),
         );
 
-        $providerConfig = new \Ineersa\CodingAgent\Config\Ai\AiProviderConfig(
+        $providerConfig = new AiProviderConfig(
             id: 'anthropic',
             enabled: true,
             models: ['claude-sonnet-4' => $modelDef],
         );
 
-        $aiConfig = new \Ineersa\CodingAgent\Config\Ai\AiConfig(
+        $aiConfig = new AiConfig(
             providers: ['anthropic' => $providerConfig],
         );
 
@@ -195,13 +197,13 @@ final class AiCostCalculatorTest extends TestCase
             cost: new AiCost(input: 0.0, output: 0.0, cacheRead: 0.0, cacheWrite: 0.0),
         );
 
-        $providerConfig = new \Ineersa\CodingAgent\Config\Ai\AiProviderConfig(
+        $providerConfig = new AiProviderConfig(
             id: 'test',
             enabled: true,
             models: ['free-model' => $modelDef],
         );
 
-        $aiConfig = new \Ineersa\CodingAgent\Config\Ai\AiConfig(
+        $aiConfig = new AiConfig(
             providers: ['test' => $providerConfig],
         );
 

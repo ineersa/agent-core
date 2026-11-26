@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Completion;
 
+use Symfony\Component\Tui\Widget\SelectListWidget;
+
 /**
  * Pure state machine for completion menu lifecycle.
  *
  * Tracks whether the menu is open and which suggestions are displayed.
- * Selection index ownership lives on the mounted {@see \Symfony\Component\Tui\Widget\SelectListWidget};
+ * Selection index ownership lives on the mounted {@see SelectListWidget};
  * this state only stores the suggestion list for accept/replacement mapping.
  *
  * Closing via {@see close()} does not mutate editor text — the caller

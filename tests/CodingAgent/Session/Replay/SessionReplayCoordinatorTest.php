@@ -4,14 +4,24 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Kernel;
+use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator;
+use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Filesystem\Filesystem;
 
 final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
@@ -32,15 +42,15 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
     public function testConfiguredOwnerColdEntryAdmitsOnlyCompletedReconstruction(): void
     {
         $container = static::getContainer();
-        $this->runId = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('owner replay');
-        $this->path = $container->get(\Ineersa\CodingAgent\Session\SessionRunEventStore::class)->historySource($this->runId)->path;
+        $this->runId = $container->get(HatfieldSessionStore::class)->createSession('owner replay');
+        $this->path = $container->get(SessionRunEventStore::class)->historySource($this->runId)->path;
         (new Filesystem())->mkdir(\dirname($this->path));
         $this->write(1, 0, 'run_started', ['payload' => ['messages' => [$this->message('owner prompt')]]]);
         $this->write(7, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'owned-step']);
-        $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class)->initializeForOwner(
-            $this->runId, new \Ineersa\CodingAgent\Application\Message\AttachRun($this->runId, [], 'owner-entry'),
+        $container->get(OwnerRunInitializationMiddleware::class)->initializeForOwner(
+            $this->runId, new AttachRun($this->runId, [], 'owner-entry'),
         );
-        $state = $container->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class)->requireLoaded($this->runId);
+        $state = $container->get(ActiveRunContextInterface::class)->requireLoaded($this->runId);
         $this->assertSame(7, $state->lastSeq);
         $this->assertSame('owned-step', $state->currentOperation?->stepId);
         $this->assertCount(1, $state->messages);
@@ -194,11 +204,11 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
         $this->assertSame([], $recovered->state->currentToolCalls);
         $this->assertNull($recovered->state->currentOperation);
         $this->assertSame(19, $recovered->state->lastSeq);
-        $late = new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
+        $late = new ToolCallResult(
             runId: 'coordinated', turnNo: 1, stepId: 'old-step', attempt: 1, idempotencyKey: 'old-result',
             toolCallId: 'old-tool', orderIndex: 0, result: ['content' => [['type' => 'text', 'text' => 'late archived result']]],
         );
-        $ignored = static::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler::class)->handle($late, $recovered->state);
+        $ignored = static::getContainer()->get(ToolCallResultHandler::class)->handle($late, $recovered->state);
         $this->assertSame([], $ignored->events);
         $this->assertNull($ignored->nextState);
     }
@@ -208,11 +218,11 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
         $this->write(1, 0, 'run_started', ['payload' => ['messages' => [$this->message('root')]]]);
         $this->write(3, 0, 'waiting_human', ['question_id' => 'answered-question', 'prompt' => 'Proceed?']);
         $this->write(5, 0, 'agent_command_applied', ['kind' => 'human_response', 'question_id' => 'answered-question', 'answer' => 'yes']);
-        $codec = static::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec::class);
+        $codec = static::getContainer()->get(ToolExecutionEndPayloadCodec::class);
         for ($i = 0; $i < 3; ++$i) {
             $call = 'complete-'.$i;
             $this->write(7 + $i * 6, 0, 'tool_execution_start', ['tool_call_id' => $call, 'tool_name' => 'read', 'arguments' => ['path' => 'example.txt']]);
-            $result = new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
+            $result = new ToolCallResult(
                 runId: 'coordinated', turnNo: 0, stepId: 'step', attempt: 1, idempotencyKey: $call,
                 toolCallId: $call, orderIndex: 0,
                 result: ['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => str_repeat('x', 1024 * 1024)]]],
@@ -254,12 +264,12 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
         $this->assertSame([], static::getContainer()->get('owner.replay.transcript_projector')->blocks());
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('questionCancellation')]
+    #[DataProvider('questionCancellation')]
     public function testCancelledQuestionCanBeEvictedButActiveQuestionPinsItsGroup(bool $cancel): void
     {
         $container = static::getContainer();
-        $this->runId = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('question eviction');
-        $this->path = $container->get(\Ineersa\CodingAgent\Session\SessionRunEventStore::class)->historySource($this->runId)->path;
+        $this->runId = $container->get(HatfieldSessionStore::class)->createSession('question eviction');
+        $this->path = $container->get(SessionRunEventStore::class)->historySource($this->runId)->path;
         (new Filesystem())->mkdir(\dirname($this->path));
         $this->write(1, 0, 'run_started', ['payload' => ['messages' => [$this->message('root')]]]);
         $this->write(3, 0, 'waiting_human', ['question_id' => 'historic-question', 'prompt' => 'Proceed?']);
@@ -268,11 +278,11 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
         if ($cancel) {
             $this->write(5, 0, 'agent_command_applied', ['kind' => 'cancel']);
         }
-        $codec = $container->get(\Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec::class);
+        $codec = $container->get(ToolExecutionEndPayloadCodec::class);
         for ($i = 0; $i < 3; ++$i) {
             $call = 'complete-'.$i;
             $this->write(7 + $i * 6, 0, 'tool_execution_start', ['tool_call_id' => $call, 'tool_name' => 'read', 'arguments' => ['path' => 'example.txt']]);
-            $result = new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
+            $result = new ToolCallResult(
                 runId: $this->runId, turnNo: 0, stepId: 'step', attempt: 1, idempotencyKey: $call,
                 toolCallId: $call, orderIndex: 0,
                 result: ['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => str_repeat('x', 1024 * 1024)]]],
@@ -294,7 +304,7 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
         $this->assertNotContains('hitl_historic-question', array_column($view->blocks, 'id'));
         $this->assertContains('tool_call_complete-2', array_column($view->blocks, 'id'));
         $this->assertContains('tool_result_complete-2', array_column($view->blocks, 'id'));
-        $spools = $container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class);
+        $spools = $container->get(SessionBootstrapSpoolStore::class);
         try {
             $descriptor = $spools->seal($this->runId, $view->state->lastSeq, $view->endOffset, $view->anchor, $view->blocks,
                 ['status' => $view->state->status->value, 'model' => $view->state->model, 'turn_no' => $view->state->turnNo] + $view->resume);

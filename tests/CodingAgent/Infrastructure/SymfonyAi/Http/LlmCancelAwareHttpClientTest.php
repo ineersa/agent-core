@@ -14,10 +14,13 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Result\Stream\SseStream;
 use Symfony\Component\HttpClient\AmpHttpClient;
+use Symfony\Component\HttpClient\Chunk\ServerSentEvent;
 use Symfony\Component\HttpClient\CurlHttpClient;
 use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\Exception\TimeoutException;
+use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\NativeHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Process\Process;
 use Symfony\Contracts\HttpClient\ChunkInterface;
 use Symfony\Contracts\HttpClient\Exception\TimeoutExceptionInterface;
@@ -148,7 +151,7 @@ final class LlmCancelAwareHttpClientTest extends TestCase
                     if ($chunk->isFirst()) {
                         continue;
                     }
-                    if (!$sawFirst && $chunk instanceof \Symfony\Component\HttpClient\Chunk\ServerSentEvent) {
+                    if (!$sawFirst && $chunk instanceof ServerSentEvent) {
                         $sawFirst = true;
                         $token->cancelled = true;
                         continue;
@@ -220,11 +223,11 @@ final class LlmCancelAwareHttpClientTest extends TestCase
         LlmInvocationCancelScope::enter($requestToken);
         try {
             $requests = 0;
-            $transport = new LlmCancelAwareHttpClient(new \Symfony\Component\HttpClient\MockHttpClient(
-                static function () use (&$requests): \Symfony\Component\HttpClient\Response\MockResponse {
+            $transport = new LlmCancelAwareHttpClient(new MockHttpClient(
+                static function () use (&$requests): MockResponse {
                     ++$requests;
 
-                    return new \Symfony\Component\HttpClient\Response\MockResponse(
+                    return new MockResponse(
                         "data: {\"choices\":[{\"delta\":{\"content\":\"A\"}}]}\n\n",
                         ['http_code' => 200, 'response_headers' => ['content-type' => 'text/event-stream']],
                     );

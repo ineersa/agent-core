@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -109,7 +110,7 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
      * merging.
      */
     private function compactCappedToolResult(
-        \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState $state,
+        TranscriptProjectionState $state,
         string $runId,
         string $toolCallId,
         ?string $toolName,

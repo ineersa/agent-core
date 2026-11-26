@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplaySourceMessengerConsole;
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
+use Ineersa\CodingAgent\Tests\Support\SessionSqliteQueueTestEnv;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Assert;
 
 /** Offline source-controller harness for protocol and process lifecycle tests. */
 abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
@@ -14,7 +17,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     {
         parent::setUp();
 
-        $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+        $this->projectDir = ProjectDir::get();
 
         // Ephemeral replay E2E runs must not use all-digit ids: SessionAwareModelResolver treats
         // ctype_digit session ids as persisted Hatfield sessions and fails when metadata is missing.
@@ -66,9 +69,9 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         // config/packages/test/ bundles (e.g. DAMA\DoctrineTestBundle).
         // These test-only bundles are not included in the PHAR.
         $php = \PHP_BINARY;
-        $projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+        $projectDir = ProjectDir::get();
         $script = $projectDir.'/bin/console';
-        \PHPUnit\Framework\Assert::assertFileExists(
+        Assert::assertFileExists(
             $script, 'Agent executable not found at '.$script,
         );
 
@@ -100,7 +103,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             'HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $this->tempDir.'/app_test-replay-'.$this->sessionId.'.sqlite',
             // The test wrapper sets $_SERVER identity without tagging signal-owned PIDs.
             'HATFIELD_REPLAY_SESSION_ID' => $this->sessionId,
-            ...\Ineersa\CodingAgent\Tests\Support\SessionSqliteQueueTestEnv::forSession(
+            ...SessionSqliteQueueTestEnv::forSession(
                 $this->tempDir.'/.hatfield/sessions',
                 $this->sessionId,
             ),

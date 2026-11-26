@@ -16,8 +16,10 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscri
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -71,8 +73,8 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $state = new TuiSessionState('run-history-position', true);
         $state->queuedUserMessages = ['ik-discarded' => 'Want to test bash in parallel'];
 
-        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
-            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::RunHistoryPositionChanged->value,
+        $applier->apply($state, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunHistoryPositionChanged->value,
             runId: 'run-history-position',
             seq: 10,
             payload: ['turn_no' => 2],
@@ -87,8 +89,8 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $applier = $this->buildApplier();
         $state = new TuiSessionState('run-retry', true);
 
-        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
-            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::LlmRequestRetrying->value,
+        $applier->apply($state, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::LlmRequestRetrying->value,
             runId: 'run-retry',
             seq: 0,
             payload: [
@@ -104,8 +106,8 @@ final class TuiRuntimeEventApplierTest extends TestCase
             $state->llmRetryWorkingMessage,
         );
 
-        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
-            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::AssistantMessageStarted->value,
+        $applier->apply($state, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::AssistantMessageStarted->value,
             runId: 'run-retry',
             seq: 0,
             payload: [],
@@ -121,8 +123,8 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $state = new TuiSessionState('run-cancel', true);
         $state->queuedUserMessages = ['ik-pending' => 'queued during active run'];
 
-        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
-            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::RunCancelled->value,
+        $applier->apply($state, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunCancelled->value,
             runId: 'run-cancel',
             seq: 5,
             payload: [],
@@ -139,7 +141,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $state->isCompacting = true;
         $state->activity = RunActivityStateEnum::Compacting;
 
-        $this->buildApplier()->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+        $this->buildApplier()->apply($state, new RuntimeEvent(
             type: $type, runId: 'run-compaction-terminal', seq: 5,
         ));
 
@@ -160,8 +162,8 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $applier = $this->buildApplier();
         $state = new TuiSessionState('run-ghost', true);
 
-        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
-            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::RunCancelled->value,
+        $applier->apply($state, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunCancelled->value,
             runId: 'run-ghost',
             seq: 10,
             payload: ['reason' => 'cancelled'],
@@ -169,8 +171,8 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
         $applier->drainProjectedChanges();
 
-        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
-            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolCallStarted->value,
+        $applier->apply($state, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolCallStarted->value,
             runId: 'run-ghost',
             seq: 0,
             payload: [
@@ -211,8 +213,8 @@ final class TuiRuntimeEventApplierTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('subagent_progress payload must be an array when present.');
-        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
-            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+        $applier->apply($state, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'run-progress-bad',
             seq: 1,
             payload: [
@@ -228,8 +230,8 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $applier = $this->buildApplier();
         $state = new TuiSessionState('run-progress-ok', true);
 
-        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
-            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+        $applier->apply($state, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             runId: 'run-progress-ok',
             seq: 1,
             payload: [

@@ -18,6 +18,7 @@ use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\ThemeStyleSheetFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Render\Renderer;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\EditorWidget;
@@ -131,9 +132,9 @@ class QuestionControllerTest extends TestCase
         $this->assertInstanceOf(MarkdownWidget::class, $children[1]);
         $this->assertInstanceOf(TextWidget::class, $children[2]);
 
-        $headerLines = $children[0]->render(new \Symfony\Component\Tui\Render\RenderContext(80, 24));
-        $promptLines = $children[1]->render(new \Symfony\Component\Tui\Render\RenderContext(80, 24));
-        $hintLines = $children[2]->render(new \Symfony\Component\Tui\Render\RenderContext(80, 24));
+        $headerLines = $children[0]->render(new RenderContext(80, 24));
+        $promptLines = $children[1]->render(new RenderContext(80, 24));
+        $hintLines = $children[2]->render(new RenderContext(80, 24));
         $header = implode('', $headerLines);
         $prompt = implode("\n", $promptLines);
         $hint = implode('', $hintLines);
@@ -190,7 +191,7 @@ class QuestionControllerTest extends TestCase
         // generic widget renderer after the overlay is mounted into ChatScreen.
         $rendered = $renderer->renderWidgetLines(
             $container,
-            new \Symfony\Component\Tui\Render\RenderContext(96, 30),
+            new RenderContext(96, 30),
         )->toArray();
         $joined = implode("\n", $rendered);
         $plainLines = array_map(

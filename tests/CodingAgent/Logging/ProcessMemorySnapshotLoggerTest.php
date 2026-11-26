@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\AbstractLogger;
 
 #[CoversClass(ProcessMemorySnapshotLogger::class)]
 final class ProcessMemorySnapshotLoggerTest extends TestCase
@@ -69,7 +70,7 @@ final class ProcessMemorySnapshotLoggerTest extends TestCase
 
     public function testCheckpointLoggerFailureDegradesToErrorLogWithoutRethrow(): void
     {
-        $logger = new class extends \Psr\Log\AbstractLogger {
+        $logger = new class extends AbstractLogger {
             public function log($level, \Stringable|string $message, array $context = []): void
             {
                 throw new \RuntimeException('disk full: /secret/path and prompt text');

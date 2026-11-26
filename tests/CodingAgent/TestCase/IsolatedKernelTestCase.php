@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\DependencyInjection\Container;
 
 /**
  * Base class for tests that need a booted Symfony kernel with an isolated
@@ -39,7 +40,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * id reuse after DAMA rollback cannot collide with leftover dirs.
  *
  * CAUTION: Subclasses that mutate the live container via
- * {@see \Symfony\Component\DependencyInjection\Container::set()}
+ * {@see Container::set()}
  * must re-set the service in {@see setUp()} each time — the container
  * is shared across test methods within the class.
  *

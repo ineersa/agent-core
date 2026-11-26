@@ -13,12 +13,14 @@ use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
+use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
@@ -129,7 +131,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                         : [],
                 )),
             )
-            : new \Ineersa\AgentCore\Domain\Model\ResolvedModel($request->model);
+            : new ResolvedModel($request->model);
 
         $messageBag = $this->applyConvertHooks($messages, $cancelToken, $resolvedModel->model);
 
@@ -680,7 +682,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $diag['response_content_type'] = $headers['content-type'][0] ?? null;
             $requestId = $headers['x-request-id'][0] ?? $headers['request-id'][0] ?? null;
             if (null !== $requestId) {
-                $diag['response_request_id'] = \Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer::sanitize($requestId, 200);
+                $diag['response_request_id'] = DiagnosticMessageSanitizer::sanitize($requestId, 200);
             }
         } catch (\Throwable $exception) {
             $this->logDiagnosticFailure('headers', $exception);
@@ -711,7 +713,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         } else {
             $diag['response_body_is_json'] = false;
             if (null !== $diag['http_status_code'] && $diag['http_status_code'] >= 400) {
-                $redacted = \Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer::redact($body);
+                $redacted = DiagnosticMessageSanitizer::redact($body);
                 $redacted = mb_scrub($redacted, 'UTF-8');
                 $diag['response_body_preview'] = mb_strcut($redacted, 0, 2048, 'UTF-8');
                 $diag['response_body_truncated'] = \strlen($redacted) > 2048;

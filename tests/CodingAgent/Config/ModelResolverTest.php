@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
+use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
@@ -17,6 +19,9 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Pure unit tests for ModelResolver (read-only resolution).
@@ -69,7 +74,7 @@ class ModelResolverTest extends TestCase
         $aiData = $this->standardAiData();
         // Parseable but listed by no provider: tier 3 skips it, tier 4 wins.
         $aiData['default_model'] = 'deepseek/nonexistent-model';
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $logger = new TestLogger();
         $resolver = $this->createResolver($aiData, $logger);
 
         $result = $resolver->resolveInitialModel(null, '');
@@ -92,7 +97,7 @@ class ModelResolverTest extends TestCase
 
     public function testAvailableDefaultDoesNotWarn(): void
     {
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $logger = new TestLogger();
         $resolver = $this->createResolver($this->standardAiData(), $logger);
 
         $resolver->resolveInitialModel(null, '');
@@ -579,7 +584,7 @@ class ModelResolverTest extends TestCase
 
     private function createResolver(
         array $aiData,
-        ?\Ineersa\AgentCore\Tests\Support\TestLogger $logger = null,
+        ?TestLogger $logger = null,
         ?HatfieldSessionStore $sessionMetaStore = null,
     ): ModelResolver {
         $appConfig = $this->makeAppConfig($aiData);
@@ -587,7 +592,7 @@ class ModelResolverTest extends TestCase
         return new ModelResolver(
             $appConfig,
             $sessionMetaStore ?? $this->createSessionMetaStore(),
-            $logger ?? new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            $logger ?? new TestLogger(),
         );
     }
 
@@ -600,7 +605,7 @@ class ModelResolverTest extends TestCase
 
     private function createSessionMetaStoreWithFind(HatfieldSession $session): HatfieldSessionStore
     {
-        $em = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $em = $this->createMock(EntityManagerInterface::class);
         $em->method('find')->willReturnCallback(
             static function (string $class, mixed $id) use ($session): ?HatfieldSession {
                 return (string) $session->id === (string) $id ? $session : null;
@@ -613,7 +618,7 @@ class ModelResolverTest extends TestCase
         return new HatfieldSessionStore(
             appConfig: $this->makeAppConfig($this->standardAiData()),
             entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
     }
 
     private function makeAppConfig(array $aiData): AppConfig

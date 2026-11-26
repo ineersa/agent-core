@@ -9,8 +9,11 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -22,6 +25,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredS
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
 use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Repository\RunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
@@ -280,12 +284,12 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
      */
     private function appendCanonicalParentRun(string $runId, string $model, array $messages): void
     {
-        $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        PreparedEventStoreSeeder::append($eventStore, new \Ineersa\AgentCore\Domain\Event\RunEvent(
+        $eventStore = self::getContainer()->get(EventStoreInterface::class);
+        PreparedEventStoreSeeder::append($eventStore, new RunEvent(
             runId: $runId,
             seq: 1,
             turnNo: 0,
-            type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::RunStarted->value,
+            type: RunEventTypeEnum::RunStarted->value,
             payload: [
                 'payload' => [
                     'metadata' => ['session' => ['kind' => 'parent'], 'model' => $model],
@@ -319,7 +323,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         ToolLaunchContextDTO $launchContext,
         callable $callback,
     ): mixed {
-        self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(
             new RunState($parentRunId, RunStatus::Running),
         );
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);

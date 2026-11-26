@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
@@ -18,7 +19,7 @@ final readonly class CompleteDeferredToolCallHandler
         private DeferredToolCompletionRepositoryInterface $deferredRepository,
         private MessageBusInterface $commandBus,
         private RunLockManager $locks,
-        private \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface $batches,
+        private ToolBatchStoreInterface $batches,
         private LoggerInterface $logger,
     ) {
     }

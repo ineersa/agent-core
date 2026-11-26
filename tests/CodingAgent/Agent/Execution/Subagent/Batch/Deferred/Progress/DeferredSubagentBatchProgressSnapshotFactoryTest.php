@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChild
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 
@@ -23,7 +24,7 @@ use Symfony\Component\Clock\MockClock;
  */
 final class DeferredSubagentBatchProgressSnapshotFactoryTest extends TestCase
 {
-    #[\PHPUnit\Framework\Attributes\DataProvider('terminalStatuses')]
+    #[DataProvider('terminalStatuses')]
     public function testSingleTerminalElapsedFreezesFromChildTimestamps(RunStatus $status): void
     {
         $clock = new MockClock(new \DateTimeImmutable('2026-01-01T00:05:00Z'));

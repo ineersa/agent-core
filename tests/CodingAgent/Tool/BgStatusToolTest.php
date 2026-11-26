@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Doctrine\ORM\EntityManagerInterface;
 use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
@@ -164,7 +167,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
             $entity = BackgroundProcessFixture::record(self::getContainer(), $process->id);
             $this->assertNotNull($entity);
             $entity->status = BackgroundProcessStatusEnum::Stopped;
-            self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->flush();
+            self::getContainer()->get(EntityManagerInterface::class)->flush();
 
             $data = Toon::decode($this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list'))));
             $this->assertSame('stopping', $data['processes'][0]['status']);
@@ -431,8 +434,8 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     private function withContext(string $sessionId, callable $callback): mixed
     {
-        $cancellationToken = new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken();
-        $toolContext = new \Ineersa\AgentCore\Application\Tool\ToolContext(
+        $cancellationToken = new NullCancellationToken();
+        $toolContext = new ToolContext(
             runId: $sessionId,
             turnNo: 0,
             toolCallId: 'test',

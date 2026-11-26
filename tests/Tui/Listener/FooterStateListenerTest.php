@@ -6,7 +6,11 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Listener\FooterStateInitializer;
@@ -17,6 +21,9 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Tui\Event\TickEvent;
 
 final class FooterStateListenerTest extends TestCase
@@ -102,13 +109,13 @@ final class FooterStateListenerTest extends TestCase
 
         return new FooterStateInitializer(
             $appConfig,
-            new \Ineersa\CodingAgent\Config\ModelSelectionService(
+            new ModelSelectionService(
                 $appConfig,
-                new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $context->sessionStore, new \Psr\Log\NullLogger()),
-                new \Ineersa\CodingAgent\Config\SettingsOverrideWriter(
-                    new \Ineersa\CodingAgent\Config\SettingsPathResolver('/tmp'),
-                    \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
-                    new \Symfony\Component\Filesystem\Filesystem(),
+                new ModelResolver($appConfig, $context->sessionStore, new NullLogger()),
+                new SettingsOverrideWriter(
+                    new SettingsPathResolver('/tmp'),
+                    PropertyAccess::createPropertyAccessor(),
+                    new Filesystem(),
                 ),
                 $context->sessionStore,
             ),

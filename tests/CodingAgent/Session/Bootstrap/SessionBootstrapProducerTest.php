@@ -4,24 +4,38 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session\Bootstrap;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Application\Message\AttachRun;
+use Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
+use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
 use Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Ineersa\Tui\Tests\E2E\TuiE2eDatabaseEnv;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
+use Symfony\Component\Process\Process;
 
 final class SessionBootstrapProducerTest extends PerMethodIsolatedKernelTestCase
 {
@@ -29,20 +43,20 @@ final class SessionBootstrapProducerTest extends PerMethodIsolatedKernelTestCase
     {
         $container = static::getContainer();
         $logger = new TestLogger();
-        $coordinator = new SessionReplayCoordinator($container->get(RunHistorySourceProviderInterface::class), $container->get(RunStateReducer::class), $container->get(RuntimeEventMapper::class), $container->get('owner.replay.transcript_projector'), $logger, $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class));
+        $coordinator = new SessionReplayCoordinator($container->get(RunHistorySourceProviderInterface::class), $container->get(RunStateReducer::class), $container->get(RuntimeEventMapper::class), $container->get('owner.replay.transcript_projector'), $logger, $container->get(CommandStoreInterface::class));
         $container->set(SessionReplayCoordinator::class, $coordinator);
-        $container->set(\Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler::class, new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler(
-            $container->get(\Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface::class),
-            $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
+        $container->set(SessionMaintenanceHandler::class, new SessionMaintenanceHandler(
+            $container->get(HistorySelectionServiceInterface::class),
+            $container->get(SessionRepairServiceInterface::class),
             $container->get(InMemoryRuntimeEventSink::class),
-            $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class),
+            $container->get(StdoutRuntimeEventSink::class),
             false, $logger, $container->get(ActiveRunContextInterface::class),
-            $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class),
-            $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
-            $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
-            $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
+            $container->get(RunMessageProcessor::class),
+            $container->get(OwnerRunInitializationMiddleware::class),
+            $container->get(PendingTransitionRecovery::class),
+            $container->get(DeferredSubagentBatchRepository::class),
             $container->get(SessionBootstrapProducer::class),
-            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            $container->get(RunLockManager::class),
         ));
         $sessions = $container->get(HatfieldSessionStore::class);
         $run = $sessions->createSession('bootstrap owner');
@@ -97,16 +111,16 @@ final class SessionBootstrapProducerTest extends PerMethodIsolatedKernelTestCase
 
     public function testColdAttachBoundsSpoolAndArchiveReadsInSeparate128MProcesses(): void
     {
-        $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('owner-bootstrap-memory');
+        $directory = TestDirectoryIsolation::createProjectTempDir('owner-bootstrap-memory');
         try {
             $measurements = [];
             foreach ([256, 4096] as $count) {
-                $paths = \Ineersa\Tui\Tests\E2E\TuiE2eDatabaseEnv::allocateIsolatedPaths(\dirname(__DIR__, 4), $directory.'/'.$count, 'owner-bootstrap');
+                $paths = TuiE2eDatabaseEnv::allocateIsolatedPaths(\dirname(__DIR__, 4), $directory.'/'.$count, 'owner-bootstrap');
                 // Castor already migrated this schema. Each probe gets its own copy,
                 // never the parent test's open DAMA transaction or shared queue.
                 $schema = static::getContainer()->get('doctrine.dbal.default_connection')->getParams()['path'];
-                (new \Symfony\Component\Filesystem\Filesystem())->copy($schema, $paths['appAbsolute']);
-                $process = new \Symfony\Component\Process\Process([\PHP_BINARY, '-d', 'memory_limit=128M', __DIR__.'/Support/OwnerBootstrapMemory.php', $directory, (string) $count], \dirname(__DIR__, 4), [
+                (new Filesystem())->copy($schema, $paths['appAbsolute']);
+                $process = new Process([\PHP_BINARY, '-d', 'memory_limit=128M', __DIR__.'/Support/OwnerBootstrapMemory.php', $directory, (string) $count], \dirname(__DIR__, 4), [
                     'HATFIELD_SESSION_ID' => false,
                     'HATFIELD_TEST_DATABASE_PATH' => $paths['appEnv'],
                 ], timeout: 8);
@@ -129,7 +143,7 @@ final class SessionBootstrapProducerTest extends PerMethodIsolatedKernelTestCase
                 $this->assertSame($measurement['count'] * 9 + 2, $measurement['canonical_seq']);
             }
         } finally {
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+            TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 }

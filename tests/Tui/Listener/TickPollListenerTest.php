@@ -5,14 +5,18 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -24,6 +28,8 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
+use Ineersa\Tui\Picker\PickerOverlay;
+use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
@@ -31,7 +37,9 @@ use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
+use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
+use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
@@ -42,9 +50,12 @@ use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\AbstractLogger;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Tui\Event\TickEvent;
 use Symfony\Component\Tui\Tui;
 
 /**
@@ -71,8 +82,8 @@ final class TickPollListenerTest extends TestCase
     {
         $state = new TuiSessionState('parent');
         $state->handle = new RunHandle('parent', 'attached', 'old-request');
-        $state->subagentLiveView->enter(new \Ineersa\Tui\Runtime\SubagentLiveChildDTO('child', 'artifact', 'Child',
-            \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::Running, 'Child work', 1, 'provider/model', 'low'));
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO('child', 'artifact', 'Child',
+            SubagentLiveStatusEnum::Running, 'Child work', 1, 'provider/model', 'low'));
         $state->queuedFollowUps = ['Deferred parent input'];
         $state->pendingEditorRestoreText = 'Pending parent restoration';
         $harness = new VirtualTuiHarness(sessionId: 'parent');
@@ -110,7 +121,7 @@ final class TickPollListenerTest extends TestCase
         $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($state)
             ->withClient($client)->withSessionServices($services)->build();
         $this->createTickPollListener()->register($context);
-        $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        $context->ticks->dispatch(new TickEvent());
         $this->assertSame(['child', 'parent'], $order);
         $this->assertFalse($state->subagentLiveView->active);
         $this->assertSame('parent', $state->visibleQuestionOwnerRunId());
@@ -159,7 +170,7 @@ final class TickPollListenerTest extends TestCase
             ->withClient($client)->withSessionServices($services)->build();
         $this->createTickPollListener()->register($context);
 
-        $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        $context->ticks->dispatch(new TickEvent());
 
         $this->assertFalse($state->sessionReady);
         $this->assertSame('new-request', $state->handle->bootstrapRequestId);
@@ -169,7 +180,7 @@ final class TickPollListenerTest extends TestCase
 
         // Replacement bootstrap still delivers historical prefill identity; dirty input wins.
         $state->pendingEditorPromptText = 'Canonical following prompt U2';
-        $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        $context->ticks->dispatch(new TickEvent());
         $this->assertNull($state->pendingEditorPromptText);
         $this->assertSame('LOCAL DRAFT', $harness->screen()->editorText());
     }
@@ -238,7 +249,7 @@ final class TickPollListenerTest extends TestCase
         $this->assertFalse($state->editorChangedSinceAttach, 'Ready-session edits and untouched initial attachment both start recovery without the dirty guard.');
 
         $state->lastPoll = 0.0;
-        $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        $context->ticks->dispatch(new TickEvent());
 
         $this->assertTrue($state->bootstrapMounted);
         $this->assertTrue($state->sessionReady);
@@ -248,7 +259,7 @@ final class TickPollListenerTest extends TestCase
         $this->assertSame($expectedEditor, $harness->screen()->editorText());
 
         $state->lastPoll = 0.0;
-        $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        $context->ticks->dispatch(new TickEvent());
         $this->assertSame($expectedEditor, $harness->screen()->editorText());
         $harness->stopInputLoop();
     }
@@ -1037,7 +1048,7 @@ final class TickPollListenerTest extends TestCase
         }
 
         $handler = $this->registerTickHandler($listener, $state, poller: $poller);
-        $tickEvent = new \Symfony\Component\Tui\Event\TickEvent();
+        $tickEvent = new TickEvent();
 
         $this->assertSame($expected, $handler($tickEvent));
         $dispatch = $this->contextTicks->dispatch($tickEvent);
@@ -1056,7 +1067,7 @@ final class TickPollListenerTest extends TestCase
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
 
         $handler = $this->registerTickHandler($listener, $state, poller: $poller);
-        $tickEvent = new \Symfony\Component\Tui\Event\TickEvent();
+        $tickEvent = new TickEvent();
 
         $this->assertTrue($handler($tickEvent));
     }
@@ -1073,7 +1084,7 @@ final class TickPollListenerTest extends TestCase
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Idle;
 
         $handler = $this->registerTickHandler($listener, $state, poller: $poller);
-        $tickEvent = new \Symfony\Component\Tui\Event\TickEvent();
+        $tickEvent = new TickEvent();
 
         $this->assertNull($handler($tickEvent));
     }
@@ -1094,26 +1105,26 @@ final class TickPollListenerTest extends TestCase
             [new RuntimeEvent('run.failed', $runId, 10, ['reason' => 'provider_failure'])],
             [new RuntimeEvent('compaction.started', $runId, 11, ['trigger' => 'manual']), new RuntimeEvent('compaction.completed', $runId, 12)],
         );
-        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
-        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $poller = new RuntimeEventPoller(
             new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
             new NullLogger(),
-            new RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
         $poller->poll($state, $client);
         $this->assertSame(RunActivityStateEnum::Failed, $state->activity);
         $this->assertFalse($state->isCompacting);
-        $state->subagentLiveView->enter(new \Ineersa\Tui\Runtime\SubagentLiveChildDTO(
-            'child-run', 'child-artifact', 'child', \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::Completed,
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
+            'child-run', 'child-artifact', 'child', SubagentLiveStatusEnum::Completed,
             'Child task', 1, 'llama_cpp_test/test', 'off',
         ));
         $handler = $this->registerTickHandler($this->createTickPollListener(), $state, screen: $harness->screen());
-        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $handler(new TickEvent());
         $this->assertSame('Unsubmitted draft', $harness->screen()->promptEditor()->getText(), 'Parent input must not enter the child editor.');
         $state->subagentLiveView->exit();
-        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $handler(new TickEvent());
         $expected = "Run the checks after compaction\n\nAlso update the docs\n\nUnsubmitted draft";
         $this->assertSame($expected, $harness->screen()->promptEditor()->getText());
         $this->assertStringContainsString('Run the checks after compaction', $harness->plainScreenText());
@@ -1121,7 +1132,7 @@ final class TickPollListenerTest extends TestCase
 
         $state->lastPoll = 0.0;
         $poller->poll($state, $client);
-        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $handler(new TickEvent());
         $this->assertSame($expected, $harness->screen()->promptEditor()->getText());
     }
 
@@ -1141,21 +1152,21 @@ final class TickPollListenerTest extends TestCase
             screen: $harness->screen(),
         );
 
-        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $handler(new TickEvent());
         $this->assertStringContainsString('⏳ Existing queued steer', $harness->plainScreenText());
         $this->assertStringContainsString('⏳ Run the checks after compaction', $harness->plainScreenText());
 
         $state->activity = RunActivityStateEnum::Starting;
         $state->queuedFollowUps = [];
-        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $handler(new TickEvent());
         $this->assertStringContainsString('⏳ Existing queued steer', $harness->plainScreenText());
         $this->assertStringNotContainsString('⏳ Run the checks after compaction', $harness->plainScreenText());
     }
 
     public function testIdleMountSchedulesOneShotIdleMemoryCheckpointWithoutBoundary(): void
     {
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
-        $snapshot = new \Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger($logger);
+        $logger = new TestLogger();
+        $snapshot = new ProcessMemorySnapshotLogger($logger);
         $listener = new TickPollListener(new RuntimeQuestionEventHandler(), $snapshot);
 
         $runId = 'tick-memory-resume-idle';
@@ -1178,18 +1189,18 @@ final class TickPollListenerTest extends TestCase
             ->method('events')
             ->willReturn([]);
 
-        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
         $projector->method('accept');
         $projector->method('reset');
         $projector->method('blocks')->willReturn([]);
-        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $poller = new RuntimeEventPoller(
             new TuiRuntimeEventApplier(
                 $projector,
                 SubagentProgressSerializerTestSupport::denormalizer(),
             ),
             new NullLogger(),
-            new RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
@@ -1216,7 +1227,7 @@ final class TickPollListenerTest extends TestCase
         $listener->register($context);
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         $handler = $handlerRef->getValue($context->ticks)[0];
-        $tick = new \Symfony\Component\Tui\Event\TickEvent();
+        $tick = new TickEvent();
 
         $handler($tick);
         $this->assertCount(1, $logger->records);
@@ -1231,8 +1242,8 @@ final class TickPollListenerTest extends TestCase
 
     public function testTerminalBoundarySchedulesOneShotIdleMemoryCheckpoint(): void
     {
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
-        $snapshot = new \Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger($logger);
+        $logger = new TestLogger();
+        $snapshot = new ProcessMemorySnapshotLogger($logger);
         $listener = new TickPollListener(new RuntimeQuestionEventHandler(), $snapshot);
 
         $runId = 'tick-memory-idle';
@@ -1266,11 +1277,11 @@ final class TickPollListenerTest extends TestCase
                 [],
             );
 
-        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
         $projector->method('accept');
         $projector->method('reset');
         $projector->method('blocks')->willReturn([]);
-        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $eventApplier = new TuiRuntimeEventApplier(
             $projector,
             SubagentProgressSerializerTestSupport::denormalizer(),
@@ -1278,7 +1289,7 @@ final class TickPollListenerTest extends TestCase
         $poller = new RuntimeEventPoller(
             $eventApplier,
             new NullLogger(),
-            new RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
@@ -1305,7 +1316,7 @@ final class TickPollListenerTest extends TestCase
         $listener->register($context);
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         $handler = $handlerRef->getValue($context->ticks)[0];
-        $tick = new \Symfony\Component\Tui\Event\TickEvent();
+        $tick = new TickEvent();
 
         $handler($tick);
         $this->assertSame(RunActivityStateEnum::Completed, $state->activity);
@@ -1330,8 +1341,8 @@ final class TickPollListenerTest extends TestCase
 
     public function testCompactionStartedAndCompletedInOnePollEmitsSettledThenOneIdle(): void
     {
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
-        $snapshot = new \Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger($logger);
+        $logger = new TestLogger();
+        $snapshot = new ProcessMemorySnapshotLogger($logger);
         $listener = new TickPollListener(new RuntimeQuestionEventHandler(), $snapshot);
 
         $runId = 'tick-memory-compact-batch';
@@ -1361,18 +1372,18 @@ final class TickPollListenerTest extends TestCase
                 [],
             );
 
-        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
         $projector->method('accept');
         $projector->method('reset');
         $projector->method('blocks')->willReturn([]);
-        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $poller = new RuntimeEventPoller(
             new TuiRuntimeEventApplier(
                 $projector,
                 SubagentProgressSerializerTestSupport::denormalizer(),
             ),
             new NullLogger(),
-            new RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
@@ -1399,7 +1410,7 @@ final class TickPollListenerTest extends TestCase
         $listener->register($context);
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         $handler = $handlerRef->getValue($context->ticks)[0];
-        $tick = new \Symfony\Component\Tui\Event\TickEvent();
+        $tick = new TickEvent();
 
         $handler($tick);
         $this->assertSame(RunActivityStateEnum::Completed, $state->activity);
@@ -1416,8 +1427,8 @@ final class TickPollListenerTest extends TestCase
 
     public function testCompactionSettlementThenQueuedFollowUpInSamePollEmitsSettledBoundary(): void
     {
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
-        $snapshot = new \Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger($logger);
+        $logger = new TestLogger();
+        $snapshot = new ProcessMemorySnapshotLogger($logger);
         $listener = new TickPollListener(new RuntimeQuestionEventHandler(), $snapshot);
 
         $runId = 'tick-memory-compaction-followup';
@@ -1449,18 +1460,18 @@ final class TickPollListenerTest extends TestCase
                 ),
             );
 
-        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
         $projector->method('accept');
         $projector->method('reset');
         $projector->method('blocks')->willReturn([]);
-        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $poller = new RuntimeEventPoller(
             new TuiRuntimeEventApplier(
                 $projector,
                 SubagentProgressSerializerTestSupport::denormalizer(),
             ),
             new NullLogger(),
-            new RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
@@ -1488,7 +1499,7 @@ final class TickPollListenerTest extends TestCase
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         $handler = $handlerRef->getValue($context->ticks)[0];
 
-        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $handler(new TickEvent());
         $this->assertSame(RunActivityStateEnum::Starting, $state->activity);
         $this->assertSame([], $state->queuedFollowUps);
         $this->assertCount(1, $logger->records);
@@ -1498,8 +1509,8 @@ final class TickPollListenerTest extends TestCase
 
     public function testTerminalThenQueuedFollowUpInSamePollEmitsTerminalBoundaryAndSkipsIdle(): void
     {
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
-        $snapshot = new \Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger($logger);
+        $logger = new TestLogger();
+        $snapshot = new ProcessMemorySnapshotLogger($logger);
         $listener = new TickPollListener(new RuntimeQuestionEventHandler(), $snapshot);
 
         $runId = 'tick-memory-terminal-followup';
@@ -1533,18 +1544,18 @@ final class TickPollListenerTest extends TestCase
                 ),
             );
 
-        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
         $projector->method('accept');
         $projector->method('reset');
         $projector->method('blocks')->willReturn([]);
-        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $poller = new RuntimeEventPoller(
             new TuiRuntimeEventApplier(
                 $projector,
                 SubagentProgressSerializerTestSupport::denormalizer(),
             ),
             new NullLogger(),
-            new RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
@@ -1571,7 +1582,7 @@ final class TickPollListenerTest extends TestCase
         $listener->register($context);
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         $handler = $handlerRef->getValue($context->ticks)[0];
-        $tick = new \Symfony\Component\Tui\Event\TickEvent();
+        $tick = new TickEvent();
 
         $handler($tick);
         $this->assertSame(RunActivityStateEnum::Starting, $state->activity);
@@ -1588,13 +1599,13 @@ final class TickPollListenerTest extends TestCase
 
     public function testThrowingCheckpointLoggerDoesNotBreakTickPoll(): void
     {
-        $throwing = new class extends \Psr\Log\AbstractLogger {
+        $throwing = new class extends AbstractLogger {
             public function log($level, \Stringable|string $message, array $context = []): void
             {
                 throw new \RuntimeException('checkpoint sink unavailable');
             }
         };
-        $snapshot = new \Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger($throwing);
+        $snapshot = new ProcessMemorySnapshotLogger($throwing);
         $listener = new TickPollListener(new RuntimeQuestionEventHandler(), $snapshot);
         $previous = \ini_get('error_log');
         $errorDir = TestDirectoryIsolation::createProjectTempDir('tick-mem-err-');
@@ -1619,18 +1630,18 @@ final class TickPollListenerTest extends TestCase
                 ),
             ]);
 
-        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
         $projector->method('accept');
         $projector->method('reset');
         $projector->method('blocks')->willReturn([]);
-        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $poller = new RuntimeEventPoller(
             new TuiRuntimeEventApplier(
                 $projector,
                 SubagentProgressSerializerTestSupport::denormalizer(),
             ),
             new NullLogger(),
-            new RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
@@ -1659,7 +1670,7 @@ final class TickPollListenerTest extends TestCase
         $handler = $handlerRef->getValue($context->ticks)[0];
 
         try {
-            $handler(new \Symfony\Component\Tui\Event\TickEvent());
+            $handler(new TickEvent());
             $this->assertSame(RunActivityStateEnum::Completed, $state->activity);
             $this->assertSame(2, $state->lastSeq);
         } finally {
@@ -1670,8 +1681,8 @@ final class TickPollListenerTest extends TestCase
 
     public function testAlreadyAppliedRetryDoesNotDuplicateBoundary(): void
     {
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
-        $snapshot = new \Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger($logger);
+        $logger = new TestLogger();
+        $snapshot = new ProcessMemorySnapshotLogger($logger);
         $listener = new TickPollListener(new RuntimeQuestionEventHandler(), $snapshot);
 
         $runId = 'tick-memory-already-applied';
@@ -1693,18 +1704,18 @@ final class TickPollListenerTest extends TestCase
                 ),
             ]);
 
-        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
         $projector->method('accept');
         $projector->method('reset');
         $projector->method('blocks')->willReturn([]);
-        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $poller = new RuntimeEventPoller(
             new TuiRuntimeEventApplier(
                 $projector,
                 SubagentProgressSerializerTestSupport::denormalizer(),
             ),
             new NullLogger(),
-            new RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
@@ -1732,7 +1743,7 @@ final class TickPollListenerTest extends TestCase
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         $handler = $handlerRef->getValue($context->ticks)[0];
 
-        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $handler(new TickEvent());
         $this->assertSame(RunActivityStateEnum::Running, $state->activity);
         $this->assertSame(2, $state->lastSeq);
         $this->assertSame([], $logger->records);
@@ -1740,8 +1751,8 @@ final class TickPollListenerTest extends TestCase
 
     public function testNonTransitioningApplyDoesNotEmitBoundary(): void
     {
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
-        $snapshot = new \Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger($logger);
+        $logger = new TestLogger();
+        $snapshot = new ProcessMemorySnapshotLogger($logger);
         $listener = new TickPollListener(new RuntimeQuestionEventHandler(), $snapshot);
 
         $runId = 'tick-memory-non-transition';
@@ -1765,18 +1776,18 @@ final class TickPollListenerTest extends TestCase
                 ),
             ]);
 
-        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
         $projector->method('accept');
         $projector->method('reset');
         $projector->method('blocks')->willReturn([]);
-        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $poller = new RuntimeEventPoller(
             new TuiRuntimeEventApplier(
                 $projector,
                 SubagentProgressSerializerTestSupport::denormalizer(),
             ),
             new NullLogger(),
-            new RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
@@ -1804,15 +1815,15 @@ final class TickPollListenerTest extends TestCase
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         $handler = $handlerRef->getValue($context->ticks)[0];
 
-        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $handler(new TickEvent());
         $this->assertSame(RunActivityStateEnum::Running, $state->activity);
         $this->assertSame([], $logger->records);
     }
 
     public function testTerminalAndCompactionSettlementInSamePollEmitBothKindsOnce(): void
     {
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
-        $snapshot = new \Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger($logger);
+        $logger = new TestLogger();
+        $snapshot = new ProcessMemorySnapshotLogger($logger);
         $listener = new TickPollListener(new RuntimeQuestionEventHandler(), $snapshot);
 
         $runId = 'tick-memory-both-kinds';
@@ -1843,18 +1854,18 @@ final class TickPollListenerTest extends TestCase
                 [],
             );
 
-        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
         $projector->method('accept');
         $projector->method('reset');
         $projector->method('blocks')->willReturn([]);
-        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $poller = new RuntimeEventPoller(
             new TuiRuntimeEventApplier(
                 $projector,
                 SubagentProgressSerializerTestSupport::denormalizer(),
             ),
             new NullLogger(),
-            new RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
@@ -1881,7 +1892,7 @@ final class TickPollListenerTest extends TestCase
         $listener->register($context);
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         $handler = $handlerRef->getValue($context->ticks)[0];
-        $tick = new \Symfony\Component\Tui\Event\TickEvent();
+        $tick = new TickEvent();
 
         $handler($tick);
         $this->assertSame(RunActivityStateEnum::Completed, $state->activity);
@@ -1967,7 +1978,7 @@ final class TickPollListenerTest extends TestCase
     }
 
     /**
-     * @return callable(\Symfony\Component\Tui\Event\TickEvent): ?bool
+     * @return callable(TickEvent): ?bool
      */
     private function registerTickHandler(
         TickPollListener $listener,
@@ -2040,13 +2051,13 @@ final class TickPollListenerTest extends TestCase
         return $ref->getProperty('workingVisible')->getValue($screen);
     }
 
-    private function closedSubagentLivePicker(): \Ineersa\Tui\Picker\SubagentLivePickerController
+    private function closedSubagentLivePicker(): SubagentLivePickerController
     {
-        $picker = (new \ReflectionClass(\Ineersa\Tui\Picker\SubagentLivePickerController::class))->newInstanceWithoutConstructor();
-        $overlay = new \Ineersa\Tui\Picker\PickerOverlay();
-        $overlayRef = new \ReflectionProperty(\Ineersa\Tui\Picker\SubagentLivePickerController::class, 'overlay');
+        $picker = (new \ReflectionClass(SubagentLivePickerController::class))->newInstanceWithoutConstructor();
+        $overlay = new PickerOverlay();
+        $overlayRef = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
         $overlayRef->setValue($picker, $overlay);
-        $openRef = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'isOpen');
+        $openRef = new \ReflectionProperty(PickerOverlay::class, 'isOpen');
         $openRef->setValue($overlay, false);
 
         return $picker;

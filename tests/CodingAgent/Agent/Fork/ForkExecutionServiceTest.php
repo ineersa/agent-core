@@ -17,7 +17,10 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
@@ -30,6 +33,9 @@ use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
@@ -42,14 +48,17 @@ use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\DeferredSubagentBatchRecoveryService;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
 use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
+use Ineersa\CodingAgent\Config\Ai\AiCompatibility;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -59,14 +68,25 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator;
+use Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService;
+use Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture;
+use Ineersa\CodingAgent\Tests\Support\ChatGPTNativeReplayFixture;
+use Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\DTO\AgentResumeArgumentsDTO;
 use Ineersa\Tui\Tests\Support\AgentTaskPresentationAssertionsTrait;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Factory;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\ProviderInterface;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 // Cases replace compaction and runner services (and the resume case replaces the command bus) before resolution.
 #[Group('db')]
@@ -89,10 +109,10 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $this->appendCanonicalParentRun($parent, $entity->model, 2);
         $container->get(RunOperationalProjectionRepository::class)->replace(new RunState($parent, RunStatus::Running));
         $frames = [];
-        $http = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url, array $options) use (&$frames): \Symfony\Component\HttpClient\Response\MockResponse {
-            $frames[] = \Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder::decode($options);
+        $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$frames): MockResponse {
+            $frames[] = HttpRequestBodyDecoder::decode($options);
 
-            return \Ineersa\CodingAgent\Tests\Support\ChatGPTNativeReplayFixture::response(1 === \count($frames));
+            return ChatGPTNativeReplayFixture::response(1 === \count($frames));
         });
         $adapter = $this->forkProviderAdapter($this->httpProvider($http));
         $inheritedHuman = 'Read both fixtures'.str_repeat("\nInherited human detail.", 9)."\nInherited human final line.";
@@ -100,7 +120,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $native = $adapter->invoke(new ModelInvocationRequest('', new ModelInvocationInput(runId: $parent, messages: $messages)));
         $this->assertNull($native->error);
         $this->assertNotNull($native->assistantMessage);
-        $messages[] = (new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer())->assistantMessage($native->assistantMessage, 'openai-codex/gpt-5.5');
+        $messages[] = (new AgentMessageNormalizer())->assistantMessage($native->assistantMessage, 'openai-codex/gpt-5.5');
         foreach (['call_one', 'call_two'] as $id) {
             $messages[] = new AgentMessage('tool', [['type' => 'text', 'text' => 'contents']], toolCallId: $id.'|fc_'.$id, toolName: 'read_file');
         }
@@ -112,7 +132,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $this->assertCount(0, array_filter($frames[1]['input'], static fn (array $item): bool => 'configuration_update' === ($item['type'] ?? null)));
         $snapshot = new ToolLaunchContextDTO(kind: ToolLaunchContextDTO::KIND_FORK, producingRunId: $parent, producingTurnNo: 2, producingModel: 'openai-codex/gpt-5.5', forkMessages: $messages);
         $commandBus = new TestMessageBus();
-        $runner = new AgentRunner($commandBus, $container->get(\Symfony\Component\Serializer\SerializerInterface::class));
+        $runner = new AgentRunner($commandBus, $container->get(SerializerInterface::class));
         $container->set(AgentRunnerInterface::class, $runner);
         $compaction = $this->createStub(CompactionServiceInterface::class);
         $compaction->method('compactMessages')->willReturnCallback(static fn (string $runId, int $turnNo, array $history): MessageSnapshotCompactionResult => MessageSnapshotCompactionResult::structuralNoOp($history));
@@ -148,8 +168,8 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $this->assertAgentTaskPresentation([$canonical], $child->artifactId, $assignment->content[0]['text'], 'Implement the decided change.', $inheritedHuman);
         $em->clear();
         $cold = $container->get(AgentChildRunEventStoreFactory::class)->create($parent, $childId, $child->artifactId);
-        $coordinator = $container->get(\Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator::class);
-        $replay = new \Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService($cold, $coordinator);
+        $coordinator = $container->get(SessionReplayCoordinator::class);
+        $replay = new SessionRunStateReplayService($cold, $coordinator);
         $state = $replay->rebuildIfStale(RunState::queued($childId), $childId)->rebuiltState;
         $this->assertNotNull($state);
         $this->assertSame($assignment->metadata, $state->messages[array_key_last($state->messages)]->metadata);
@@ -159,7 +179,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $result = $this->forkProviderAdapter($this->httpProvider($http))->invoke(new ModelInvocationRequest('', new ModelInvocationInput(runId: $childId, messages: $state->messages)));
             $this->assertNull($result->error);
             $body = $frames[2 + $restart];
-            $this->assertSame(\Ineersa\CodingAgent\Tests\Support\ChatGPTNativeReplayFixture::items(), \Ineersa\CodingAgent\Tests\Support\ChatGPTNativeReplayFixture::replayedItems($body));
+            $this->assertSame(ChatGPTNativeReplayFixture::items(), ChatGPTNativeReplayFixture::replayedItems($body));
             $this->assertSame($key, $body['prompt_cache_key']);
             $this->assertNotSame($parentKey, $body['prompt_cache_key']);
             $this->assertSame('low', $body['reasoning']['effort']);
@@ -209,16 +229,16 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $child = $container->get(DeferredSubagentChildRepository::class)->findOrderedByBatchLifecycleId($launch->deferredId)[0];
         $this->assertSame($started[0]->runId, $child->childRunId);
         $store = $container->get(AgentChildRunEventStoreFactory::class)->create($parent, $child->childRunId, $child->artifactId);
-        $metadata = $container->get(\Symfony\Component\Serializer\SerializerInterface::class)->normalize($started[0]->metadata);
+        $metadata = $container->get(SerializerInterface::class)->normalize($started[0]->metadata);
         PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child->childRunId, 1, 'run_started', ['payload' => ['metadata' => $metadata]]));
 
         $frames = [];
-        $httpClient = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url, array $options) use (&$frames): \Symfony\Component\HttpClient\Response\MockResponse {
+        $httpClient = new MockHttpClient(static function (string $method, string $url, array $options) use (&$frames): MockResponse {
             self::assertSame('POST', $method);
             self::assertSame('https://api.openai.com/v1/responses', $url);
-            $frames[] = \Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder::decode($options);
+            $frames[] = HttpRequestBodyDecoder::decode($options);
 
-            return new \Symfony\Component\HttpClient\Response\MockResponse('data: {"type":"response.output_text.delta","delta":"ok"}'."\n\n".'data: {"type":"response.completed","response":{"id":"resp_test","status":"completed","output":[]}}'."\n\n", ['response_headers' => ['content-type: text/event-stream']]);
+            return new MockResponse('data: {"type":"response.output_text.delta","delta":"ok"}'."\n\n".'data: {"type":"response.completed","response":{"id":"resp_test","status":"completed","output":[]}}'."\n\n", ['response_headers' => ['content-type: text/event-stream']]);
         });
         try {
             $adapter = $this->forkProviderAdapter($this->httpProvider($httpClient));
@@ -245,7 +265,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $this->assertArrayNotHasKey('previous_response_id', $frames[2]);
 
             $terminal = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child->childRunId, 1, 'agent_end', ['reason' => 'completed']));
-            $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\DeferredSubagentBatchRecoveryService::class)->recover($launch->deferredId);
+            $container->get(DeferredSubagentBatchRecoveryService::class)->recover($launch->deferredId);
             $container->get(RunOperationalProjectionRepository::class)->replace(new RunState(
                 $child->childRunId, RunStatus::Completed, parentRunId: $parent, lastSeq: $terminal->seq,
             ));
@@ -269,7 +289,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $this->withToolContext($parent, 'cache-resume', static fn () => $resume->resume($parent,
                 new AgentResumeArgumentsDTO(artifact_id: $child->artifactId, task: 'resume'),
             ), toolName: 'agent_resume', stepId: $stepId);
-            $followUps = array_values(array_filter($resumeCommands->messages, static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\ApplyCommand && 'follow_up' === $message->kind));
+            $followUps = array_values(array_filter($resumeCommands->messages, static fn (object $message): bool => $message instanceof ApplyCommand && 'follow_up' === $message->kind));
             $this->assertCount(1, $followUps);
             $this->assertSame($child->childRunId, $followUps[0]->runId());
             $messages[] = new AgentMessage('assistant', [['type' => 'text', 'text' => $third->assistantMessage->asText()]]);
@@ -383,7 +403,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             runId: $childRunId,
             seq: 1,
             turnNo: 1,
-            type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::RunStarted->value,
+            type: RunEventTypeEnum::RunStarted->value,
             payload: [
                 'payload' => [
                     'metadata' => [
@@ -420,14 +440,14 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         }
     }
 
-    private function httpProvider(\Symfony\Contracts\HttpClient\HttpClientInterface $client): ProviderInterface
+    private function httpProvider(HttpClientInterface $client): ProviderInterface
     {
-        $record = \Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture::record();
-        $storage = $this->createStub(\Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface::class);
+        $record = ChatGPTAuthFixture::record();
+        $storage = $this->createStub(AuthStorageInterface::class);
         $storage->method('update')->willReturnCallback(static fn (callable $update) => $update($record));
 
-        return \Symfony\AI\Platform\Bridge\OpenAIChatGPT\Factory::createProvider(
-            \Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture::service($storage, $client), $client,
+        return Factory::createProvider(
+            ChatGPTAuthFixture::service($storage, $client), $client,
             new ProjectedSymfonyModelCatalog(['gpt-5.5' => new AiModelDefinition(id: 'gpt-5.5', reasoning: true)], ResponsesModel::class, 'openai-codex'),
             name: 'openai-codex',
         );
@@ -438,12 +458,12 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $container = self::getContainer();
         $catalog = new HatfieldModelCatalog(new AiConfig(defaultModel: 'openai-codex/gpt-5.5', providers: [
             'openai-codex' => new AiProviderConfig(id: 'openai-codex', type: 'chatgpt', enabled: true,
-                compatibility: \Ineersa\CodingAgent\Config\Ai\AiCompatibility::fromArray(['thinking_format' => 'chatgpt']),
+                compatibility: AiCompatibility::fromArray(['thinking_format' => 'chatgpt']),
                 models: ['gpt-5.5' => new AiModelDefinition(id: 'gpt-5.5', reasoning: true, thinkingLevelMap: ['low' => 'low', 'high' => 'high'], compatibility: null)]),
         ]));
         $config = new AppConfig(new TuiConfig(theme: 'default'), new LoggingConfig(), catalog: $catalog);
         $store = $container->get(HatfieldSessionStore::class);
-        $selection = new ModelSelectionService($config, new \Ineersa\CodingAgent\Config\ModelResolver($config, $store, new NullLogger()), $container->get(SettingsOverrideWriter::class), $store);
+        $selection = new ModelSelectionService($config, new ModelResolver($config, $store, new NullLogger()), $container->get(SettingsOverrideWriter::class), $store);
         $metadataReader = new RunStartedMetadataReader($container->get(EventStoreInterface::class), AttributeSerializerValidatorTestFactory::denormalizer());
         $resolver = new SessionAwareModelResolver($selection, $catalog, $store,
             $container->get(DeferredSubagentChildRepository::class), $metadataReader);
@@ -453,7 +473,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(), platform: new Platform([$provider]),
             transformContextHooks: [], convertToLlmHooks: [], streamObserver: null, costCalculator: null,
             logger: new NullLogger(), denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(), modelResolver: $resolver,
-            providerRequestPreparer: new \Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer([], new \Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper([new \Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper()])),
+            providerRequestPreparer: new ProviderRequestPreparer([], new ProviderCompatibilityRequestShaper([new ReasoningOptionsFeatureShaper()])),
         );
     }
 
@@ -468,14 +488,14 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             runId: $runId,
             seq: 1,
             turnNo: 0,
-            type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::RunStarted->value,
+            type: RunEventTypeEnum::RunStarted->value,
             payload: ['payload' => ['metadata' => $metadata, 'messages' => []]],
         ));
         PreparedEventStoreSeeder::append($eventStore, new RunEvent(
             runId: $runId,
             seq: 2,
             turnNo: $turnNo,
-            type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::TurnAdvanced->value,
+            type: RunEventTypeEnum::TurnAdvanced->value,
             payload: ['turn_no' => $turnNo, 'step_id' => 'parent-step'],
         ));
     }

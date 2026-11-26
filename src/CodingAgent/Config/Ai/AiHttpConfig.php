@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config\Ai;
 
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpClientOptions;
+
 /**
  * HTTP retry and timeout configuration for LLM provider requests.
  *
@@ -12,12 +15,12 @@ namespace Ineersa\CodingAgent\Config\Ai;
  * `env:VARNAME` syntax to reference an environment variable.
  *
  * When a value is null, consumers apply their own defaults:
- * `timeout`/`max_duration` → {@see \Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpClientOptions};
- * `max_retries`/delay fields → {@see \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy}
+ * `timeout`/`max_duration` → {@see LlmHttpClientOptions};
+ * `max_retries`/delay fields → {@see LlmRequestRetryPolicy}
  * (application retry budget).
  *
- * @see \Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpClientOptions Timeout defaults
- * @see \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy Retry budget defaults
+ * @see LlmHttpClientOptions Timeout defaults
+ * @see LlmRequestRetryPolicy Retry budget defaults
  *
  * @param int|null $timeout     Per-request timeout in seconds
  * @param int|null $maxDuration Total request duration budget in seconds (0 = no total limit)

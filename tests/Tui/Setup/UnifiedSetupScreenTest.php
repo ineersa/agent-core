@@ -27,6 +27,7 @@ use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
+use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\SettingItem;
 use Symfony\Component\Tui\Widget\SettingsListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -332,8 +333,8 @@ final class UnifiedSetupScreenTest extends PerMethodIsolatedKernelTestCase
     private function select(Tui $tui, string $value): void
     {
         $list = $tui->getFocus();
-        $this->assertInstanceOf(\Symfony\Component\Tui\Widget\SelectListWidget::class, $list);
-        $index = array_search($value, array_column((new \ReflectionProperty(\Symfony\Component\Tui\Widget\SelectListWidget::class, 'items'))->getValue($list), 'value'), true);
+        $this->assertInstanceOf(SelectListWidget::class, $list);
+        $index = array_search($value, array_column((new \ReflectionProperty(SelectListWidget::class, 'items'))->getValue($list), 'value'), true);
         $this->assertIsInt($index);
         $list->setSelectedIndex($index);
         $tui->handleInput("\r");

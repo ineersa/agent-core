@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -25,6 +26,7 @@ use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
@@ -32,6 +34,9 @@ use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -69,7 +74,7 @@ class CancelListenerTest extends TestCase
         $this->state->sessionReady = false;
         $this->client->expects($this->once())->method('cancelBootstrap')->with('run-123');
         $this->client->expects($this->never())->method('cancel');
-        $harness = new \Ineersa\Tui\Tests\Support\VirtualTuiHarness(sessionId: 'test-session');
+        $harness = new VirtualTuiHarness(sessionId: 'test-session');
         $this->dispatchCancelEvent(screen: $harness->screen());
         $this->assertFalse($this->state->sessionReady);
         $this->assertStringContainsString('Not attached', $harness->plainScreenText());
@@ -576,10 +581,10 @@ class CancelListenerTest extends TestCase
         );
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            entityManager: $this->createStub(EntityManagerInterface::class),
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
 
-        $eventDispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $eventDispatcher = new EventDispatcher();
         $eventDispatcher->addSubscriber(new RuntimeExceptionPolicySubscriber(
             new RuntimeErrorCaptureConfig(captureErrors: '0' !== $captureErrorEnv),
             new NullLogger(),

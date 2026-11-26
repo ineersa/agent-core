@@ -12,6 +12,8 @@ use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
+use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -29,8 +31,10 @@ use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
+use Symfony\Component\Uid\Uuid;
 
 final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 {
@@ -216,7 +220,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             eventStore: $eventStore,
             logger: new TestLogger(),
             hookDispatcher: new HookDispatcher([$this->subscriber($this->createStore(), $inputStore)]),
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
         );
         $this->expectExceptionMessage('append failed');
         $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call', 'result' => ['tool_name' => 'fork']]])]);
@@ -230,7 +234,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 
     private function seedBatch(ToolBatchStoreInterface $store, string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batch): void
     {
-        $store->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO(
+        $store->prepareChanges([new RegisterToolBatchDTO(
             $runId,
             $turnNo,
             $stepId,
@@ -239,11 +243,11 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             array_values($batch->pendingQueue),
             $batch->inFlight,
             $batch->maxParallelism,
-        )], new VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
+        )], new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(),
             ['run_id' => $runId, 'actions' => []],
         ))();
         if ($batch->finalized || [] !== $batch->results || [] !== $batch->awaitingHumanInput || [] !== $batch->pendingQueue || [] !== $batch->inFlight) {
-            $store->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO(
+            $store->prepareChanges([new FinalizeToolBatchDTO(
                 $runId,
                 $turnNo,
                 $stepId,
@@ -251,8 +255,8 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
                 $batch->inFlight,
                 $batch->awaitingHumanInput,
                 $batch->finalized,
-            )], new VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
-                ['run_id' => $runId, 'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO(
+            )], new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(),
+                ['run_id' => $runId, 'actions' => [new FinalizeToolBatchDTO(
                     $runId,
                     $turnNo,
                     $stepId,
@@ -291,7 +295,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             eventStore: $eventStore,
             logger: new TestLogger(),
             hookDispatcher: $hookDispatcher,
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
         );
     }
 }

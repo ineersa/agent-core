@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use PHPUnit\Framework\AssertionFailedError;
 
 /**
  * Shared assertions for GF-05 prompt/message contract RED specifications.
@@ -102,23 +103,23 @@ final class PromptContractTestSupport
     public static function assertMessageListsEquivalent(array $left, array $right): void
     {
         if (\count($left) !== \count($right)) {
-            throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Message count mismatch: %d vs %d', \count($left), \count($right)));
+            throw new AssertionFailedError(\sprintf('Message count mismatch: %d vs %d', \count($left), \count($right)));
         }
 
         foreach ($left as $index => $message) {
             $other = $right[$index];
             if ($message->role !== $other->role) {
-                throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Message[%d] role mismatch: %s vs %s', $index, $message->role, $other->role));
+                throw new AssertionFailedError(\sprintf('Message[%d] role mismatch: %s vs %s', $index, $message->role, $other->role));
             }
 
             $leftSource = $message->metadata['source'] ?? null;
             $rightSource = $other->metadata['source'] ?? null;
             if ($leftSource !== $rightSource) {
-                throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Message[%d] metadata.source mismatch: %s vs %s', $index, (string) $leftSource, (string) $rightSource));
+                throw new AssertionFailedError(\sprintf('Message[%d] metadata.source mismatch: %s vs %s', $index, (string) $leftSource, (string) $rightSource));
             }
 
             if (self::messageText($message) !== self::messageText($other)) {
-                throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Message[%d] text mismatch for role=%s source=%s', $index, $message->role, (string) $leftSource));
+                throw new AssertionFailedError(\sprintf('Message[%d] text mismatch for role=%s source=%s', $index, $message->role, (string) $leftSource));
             }
         }
     }
@@ -198,7 +199,7 @@ final class PromptContractTestSupport
             }
         }
         if ($count !== $expected) {
-            throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Expected sentinel %s in agents_context exactly %d times, found %d', $sentinel, $expected, $count));
+            throw new AssertionFailedError(\sprintf('Expected sentinel %s in agents_context exactly %d times, found %d', $sentinel, $expected, $count));
         }
     }
 
@@ -217,7 +218,7 @@ final class PromptContractTestSupport
             }
         }
         if (1 !== $hits) {
-            throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Expected sentinel in exactly one provider user message, hits=%d', $hits));
+            throw new AssertionFailedError(\sprintf('Expected sentinel in exactly one provider user message, hits=%d', $hits));
         }
     }
 }

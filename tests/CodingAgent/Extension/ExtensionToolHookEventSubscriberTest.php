@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolResult as DomainToolResult;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
 use Ineersa\CodingAgent\Tool\Event\ToolCallFailedEvent;
@@ -257,7 +258,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $registry = new ExtensionHookRegistry();
         $registry->addToolCallHook($allowOnlyHook);
         $accessor = new StackToolExecutionContextAccessor();
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $logger = new TestLogger();
         $subscriber = new ExtensionToolHookEventSubscriber($registry, '/tmp', $accessor, logger: $logger);
 
         $missingHookClass = 'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardToolCallHook';
@@ -452,7 +453,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
         $registry = new ExtensionHookRegistry();
         $registry->addToolResultHook($hook);
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $logger = new TestLogger();
         $subscriber = new ExtensionToolHookEventSubscriber($registry, '/tmp', logger: $logger);
 
         $toolCall = new ToolCall('call-hook-fail', 'read', ['path' => './x.txt']);

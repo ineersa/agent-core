@@ -10,17 +10,22 @@ use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
+use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\Builder\StartRunMessageBuilder;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 
@@ -44,12 +49,12 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: $locks,
-            commands: new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(),
+            commands: new InMemoryCommandStore(),
             runCommit: new RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 logger: new NullLogger(),
-                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()), locks: $locks),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus, new TestLogger(), events: new EventDispatcher()), locks: $locks),
             ),
             handlers: [
                 new StartRunHandler(
@@ -89,7 +94,7 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
 
         $this->assertCount(1, $eventStore->allFor('run-start-projection-fail'), 'Redelivery must not append a second run_started.');
         $this->assertCount(1, $commandBus->messages);
-        $advance = $commandBus->messages[0] instanceof \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO
+        $advance = $commandBus->messages[0] instanceof DispatchCoordinationMessageDTO
             ? $commandBus->messages[0]->message
             : $commandBus->messages[0];
         $this->assertInstanceOf(AdvanceRun::class, $advance);
@@ -120,7 +125,7 @@ final class FailOnceProjectionActiveRunContext implements ActiveRunContextInterf
 
     public function requireLoaded(string $runId): RunState
     {
-        return $this->states[$runId] ?? throw new \Ineersa\AgentCore\Contract\RunContextNotLoadedException('Fixture not loaded');
+        return $this->states[$runId] ?? throw new RunContextNotLoadedException('Fixture not loaded');
     }
 
     public function replaceCurrent(RunState $state): void

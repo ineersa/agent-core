@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Application\Pipeline\RunMessageHandlerLogComponentInterfac
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -533,9 +534,9 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
     }
 
     /**
-     * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
-     * @param string|null                                    $activeStepId null = preserve current; non-null = override
-     * @param RunStatus|null                                 $status       null = preserve current; non-null = override
+     * @param list<RunEvent> $events
+     * @param string|null    $activeStepId null = preserve current; non-null = override
+     * @param RunStatus|null $status       null = preserve current; non-null = override
      */
     private function incrementState(RunState $state, array $events, ?string $activeStepId = null, ?RunStatus $status = null): RunState
     {

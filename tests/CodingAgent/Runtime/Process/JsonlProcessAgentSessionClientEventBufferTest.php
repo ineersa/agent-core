@@ -16,9 +16,19 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
 use Ineersa\CodingAgent\Tests\Support\ControlledJsonlControllerFixture;
+use Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\SessionEventRecorder;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -112,7 +122,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
         $dispatcher->addSubscriber($recorder);
         $publisher = new ExtensionSessionEventPublisher($dispatcher, new TestLogger());
         $client = $this->createIdleClient(extensionEvents: $publisher);
-        $descriptor = new \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO('parent-run', str_repeat('a', 32), 2, 50, 100, 1, 1, 1, str_repeat('0', 64));
+        $descriptor = new SessionBootstrapDescriptorDTO('parent-run', str_repeat('a', 32), 2, 50, 100, 1, 1, 1, str_repeat('0', 64));
         $reflection = new \ReflectionClass($client);
         $reflection->getProperty('bootstrapDescriptor')->setValue($client, $descriptor);
         $reflection->getProperty('suffixCursor')->setValue($client, 50);
@@ -380,14 +390,14 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
         $this->assertSame('ABC', $messageCompleted[0]->payload['text'] ?? '');
 
         $dispatcher = new EventDispatcher();
-        $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
-        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber());
-        $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $state);
+        $state = new TranscriptProjectionState();
+        $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
+        $projector = new TranscriptProjector($dispatcher, $state);
         $projector->accept($messageCompleted[0]);
 
         $assistantText = '';
         foreach ($projector->blocks() as $block) {
-            if (\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum::AssistantMessage === $block->kind) {
+            if (TranscriptBlockKindEnum::AssistantMessage === $block->kind) {
                 $assistantText .= $block->text;
             }
         }
@@ -590,12 +600,12 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
         $this->assertSame(['command' => 'ls -1'], $childDrain[0]->payload['arguments'] ?? null);
 
         $dispatcher = new EventDispatcher();
-        $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
-        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber(
-            new \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter(),
+        $state = new TranscriptProjectionState();
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(
+            new SubagentProgressDisplayFormatter(),
             SubagentProgressSerializerTestSupport::denormalizer(),
         ));
-        $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $state);
+        $projector = new TranscriptProjector($dispatcher, $state);
         foreach ($childDrain as $event) {
             $projector->accept($event);
         }
@@ -603,10 +613,10 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
         $toolCalls = [];
         $toolResults = [];
         foreach ($projector->blocks() as $block) {
-            if (\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum::ToolCall === $block->kind) {
+            if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
                 $toolCalls[] = $block;
             }
-            if (\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum::ToolResult === $block->kind) {
+            if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
                 $toolResults[] = $block;
             }
         }
@@ -701,13 +711,13 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
         // No child process is needed to prove the decoder's identity boundary.
         $client = $this->createClientWithFakeScript(__FILE__);
         $reflection = new \ReflectionClass($client);
-        $descriptor = new \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO('parent-run', str_repeat('a', 32), 2, 50, 100, 1, 1, 1, str_repeat('0', 64));
+        $descriptor = new SessionBootstrapDescriptorDTO('parent-run', str_repeat('a', 32), 2, 50, 100, 1, 1, 1, str_repeat('0', 64));
         $reflection->getProperty('bootstrapDescriptor')->setValue($client, $descriptor);
         $reflection->getProperty('suffixCursor')->setValue($client, 50);
         $reflection->getProperty('bootstrapAcknowledged')->setValue($client, true);
         $decode = $reflection->getMethod('decodeSuffix');
         $event = new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', 53, ['turn_no' => 3]);
-        $encoded = \Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec::encodeEvent($event);
+        $encoded = JsonlCodec::encodeEvent($event);
         $payload = ['bootstrap_id' => $descriptor->bootstrapId, 'view_epoch' => 2, 'canonical_seq' => 53,
             'index' => 0, 'data' => base64_encode(substr($encoded, 0, 40)), 'last' => false];
         $this->assertNull($decode->invoke($client, new RuntimeEvent('bootstrap.suffix', 'parent-run', 0, $payload)));
@@ -855,7 +865,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
             $this->expectException(RuntimeTransportException::class);
             $this->expectExceptionMessage('Broker died; uncertain deliveries must not be replayed.');
             $argument = 'writeCommandWithRetry' === $inspection
-                ? new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand('retry-command', 'cancel', 'parent-run')
+                ? new RuntimeCommand('retry-command', 'cancel', 'parent-run')
                 : 'waiting for runtime.ready';
             new \ReflectionMethod($client, $inspection)->invoke($client, $argument);
         } finally {
@@ -1119,7 +1129,7 @@ PHP);
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: $logger ?? new TestLogger(),
-            sessionStore: \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tmpDir),
+            sessionStore: ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tmpDir),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
             extensionEvents: $extensionEvents ?? self::getContainer()->get(ExtensionSessionEventPublisher::class),

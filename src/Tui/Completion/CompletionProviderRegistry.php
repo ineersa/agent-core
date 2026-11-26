@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Completion;
 
+use Ineersa\Tui\Listener\CompletionListener;
+
 /**
  * Composite completion provider that delegates to a prioritised
  * collection of registered providers.
@@ -14,7 +16,7 @@ namespace Ineersa\Tui\Completion;
  * while keeping each provider independent and testable.
  *
  * Registered as the default {@see CompletionProvider} service so
- * {@see \Ineersa\Tui\Listener\CompletionListener} can depend on a
+ * {@see CompletionListener} can depend on a
  * single provider without knowing about individual implementations.
  */
 final readonly class CompletionProviderRegistry implements CompletionProvider

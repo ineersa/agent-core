@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Command;
 
 use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
+use Ineersa\Tui\Listener\SubmitListener;
 
 /**
  * Central input policy while subagent live view owns the screen.
  *
- * Precedence (enforced in {@see \Ineersa\Tui\Listener\SubmitListener}):
+ * Precedence (enforced in {@see SubmitListener}):
  * question overlay → live-view policy → main-session routing.
  *
  * Slash/shell blocking rationale: parent session commands (!, /new, /resume, …)

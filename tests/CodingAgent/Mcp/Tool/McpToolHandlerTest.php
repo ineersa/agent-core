@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Mcp\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -130,7 +131,7 @@ final class McpToolHandlerTest extends TestCase
             {
             }
 
-            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?\Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
+            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
             {
                 return [
                     'content' => [['type' => 'text', 'text' => $this->fakeResult]],
@@ -163,7 +164,7 @@ final class McpToolHandlerTest extends TestCase
             {
             }
 
-            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?\Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
+            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
             {
                 throw $this->exception;
             }

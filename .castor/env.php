@@ -11,6 +11,7 @@ declare(strict_types=1);
  */
 
 use Castor\Attribute\AsTask;
+use Ineersa\CodingAgent\Kernel;
 
 use function CastorTasks\build_idea_run_config_xml;
 use function CastorTasks\project_root_dir;
@@ -182,7 +183,7 @@ function diagnostic(): void
     echo '  config paths: '.implode(' : ', $configPaths).\PHP_EOL;
 
     try {
-        $kernel = new Ineersa\CodingAgent\Kernel($appEnv, $appDebug);
+        $kernel = new Kernel($appEnv, $appDebug);
         $kernel->boot();
         echo '  boot: ok'.\PHP_EOL;
     } catch (Throwable $e) {

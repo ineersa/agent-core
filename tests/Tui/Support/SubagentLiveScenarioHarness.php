@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Support;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -30,6 +32,8 @@ use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
+use Ineersa\Tui\ImagePaste\PastedImageValidationService;
 use Ineersa\Tui\Listener\AgentsMainCommandHandler;
 use Ineersa\Tui\Listener\CancelListener;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
@@ -41,6 +45,7 @@ use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
+use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
@@ -54,6 +59,8 @@ use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Tui;
@@ -83,7 +90,7 @@ final class SubagentLiveScenarioHarness
         Tui $tui,
         PromptEditor $promptEditor,
         string $parentRunId,
-        private readonly \Ineersa\Tui\Runtime\SubagentLiveChildViewPoller $childPoller,
+        private readonly SubagentLiveChildViewPoller $childPoller,
     ) {
         $this->state = $state;
         $this->screen = $screen;
@@ -160,7 +167,7 @@ final class SubagentLiveScenarioHarness
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $entityManager,
-            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
 
         $context = new TuiRuntimeContext(
             tui: $tui,
@@ -180,8 +187,8 @@ final class SubagentLiveScenarioHarness
             blockFactory: new TranscriptBlockFactory(),
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
-            pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
-                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
+            pastedImageSubmissionService: new PastedImageSubmissionService(
+                new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
                 $context->sessionStore,
                 new AppConfig(
                     tui: new TuiConfig(theme: 'default'),
@@ -190,7 +197,7 @@ final class SubagentLiveScenarioHarness
                     cwd: getcwd() ?: '/tmp',
                 ),
                 new TranscriptBlockFactory(),
-                new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+                new TestLogger(),
             ),
         );
         $submitListener->register($context);

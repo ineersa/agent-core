@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
+
 /**
  * PHPUnit-compatible tmux test harness for TUI e2e/snapshot tests.
  *
@@ -58,7 +60,7 @@ final class TmuxHarness
 
     public function __construct()
     {
-        $this->root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+        $this->root = ProjectDir::get();
         $this->pid = getmypid();
     }
 

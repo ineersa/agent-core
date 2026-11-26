@@ -5,17 +5,19 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Command\Hotkey;
 
 use Ineersa\Tui\Command\CommandResult;
+use Ineersa\Tui\Listener\SubmitListener;
+use Ineersa\Tui\Transcript\HotkeyTableWidget;
 
 /**
  * Carries the raw hotkey binding data from {@see SlashCommandRegistry}
- * to {@see \Ineersa\Tui\Listener\SubmitListener}.
+ * to {@see SubmitListener}.
  *
  * This is a data-transfer CommandResult — it contains no rendering logic
  * and stays in the TuiCommand layer so SlashCommandRegistry has zero
  * theme dependencies.
  *
  * SubmitListener stores typed binding groups on a System transcript
- * block; {@see \Ineersa\Tui\Transcript\HotkeyTableWidget} renders them.
+ * block; {@see HotkeyTableWidget} renders them.
  * The empty-message fallback is owned by the widget, not duplicated here.
  */
 final readonly class HotkeyTableData implements CommandResult

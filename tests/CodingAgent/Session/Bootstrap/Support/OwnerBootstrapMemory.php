@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Monolog\Handler\TestHandler;
+use Monolog\LogRecord;
 use Symfony\Component\Filesystem\Filesystem;
 
 require dirname(__DIR__, 5).'/vendor/autoload.php';
@@ -29,7 +30,7 @@ try {
     $kernel->boot();
     $container = $kernel->getContainer()->get('test.service_container');
     $handler = new class extends TestHandler {
-        public function handle(Monolog\LogRecord $record): bool
+        public function handle(LogRecord $record): bool
         {
             return 'history_index.physical_read' === $record->message && parent::handle($record);
         }

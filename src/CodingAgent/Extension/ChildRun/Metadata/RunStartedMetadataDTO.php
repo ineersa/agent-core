@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\ChildRun\Metadata;
 
+use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Symfony\Component\Serializer\Attribute\SerializedPath;
 
 /**
@@ -11,7 +12,7 @@ use Symfony\Component\Serializer\Attribute\SerializedPath;
  *
  * Canonical successful RunStarted always has a nonblank model (StartRunHandler enforces it).
  * Child runs (session.kind=agent_child) also require reasoning, tools_scope, and session identity.
- * Does not replace generic {@see \Ineersa\AgentCore\Domain\Run\RunMetadata} write-side construction.
+ * Does not replace generic {@see RunMetadata} write-side construction.
  *
  * SerializedPath attributes live on properties (AttributeLoader does not read constructor params).
  */

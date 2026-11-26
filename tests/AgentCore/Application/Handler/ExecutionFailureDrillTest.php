@@ -16,7 +16,10 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\Fake\FakePlatform;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeToolExecutor;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -51,7 +54,7 @@ final class ExecutionFailureDrillTest extends TestCase
             toolsRef: 'toolset:run:run-failure-worker-1:turn:1',
         );
 
-        $result = (new ExecuteLlmStepWorker(commandBus: new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), platform: $platform))($message);
+        $result = (new ExecuteLlmStepWorker(commandBus: new TestMessageBus(), platform: $platform))($message);
         $this->assertInstanceOf(LlmStepResult::class, $result);
         $this->assertSame('first-attempt', $result->assistantMessage?->asText());
     }
@@ -83,11 +86,11 @@ final class ExecutionFailureDrillTest extends TestCase
             orderIndex: 0,
         );
 
-        $worker = new ExecuteToolCallWorker(commandBus: new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+        $worker = new ExecuteToolCallWorker(commandBus: new TestMessageBus(), logger: new TestLogger(),
             toolExecutor: $toolExecutor,
             deferredToolCompletionRepository: new InMemoryDeferredToolCompletionRepository(),
             resultStore: new ToolExecutionResultStore(),
-            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            statusReader: new NullRunOperationalStatusReader(),
         );
 
         $result = $worker($message);

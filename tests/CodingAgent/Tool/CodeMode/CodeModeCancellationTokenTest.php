@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeCancellationToken;
@@ -25,7 +26,7 @@ final class CodeModeCancellationTokenTest extends TestCase
         $repository->method('findMetadataByDeferredId')->willReturnOnConsecutiveCalls(
             new DeferredToolCompletionMetadataDTO('id', $reference, DeferredToolCompletionStatusEnum::Pending),
             new DeferredToolCompletionMetadataDTO('id', $reference, DeferredToolCompletionStatusEnum::Pending, backgroundedAt: $acceptedAt),
-            new DeferredToolCompletionMetadataDTO('id', $reference, DeferredToolCompletionStatusEnum::Pending, backgroundedAt: $acceptedAt, interruptionReason: \Ineersa\AgentCore\Contract\Tool\DeferredToolInterruptionReasonEnum::Stopped),
+            new DeferredToolCompletionMetadataDTO('id', $reference, DeferredToolCompletionStatusEnum::Pending, backgroundedAt: $acceptedAt, interruptionReason: DeferredToolInterruptionReasonEnum::Stopped),
         );
         $token = new CodeModeCancellationToken($parent, $repository, 'id');
 

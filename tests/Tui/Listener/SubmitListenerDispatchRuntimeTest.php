@@ -6,14 +6,31 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ImageToolConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
+use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
@@ -24,24 +41,40 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
+use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\ImagePaste\PastedImagePendingDTO;
+use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
+use Ineersa\Tui\ImagePaste\PastedImageValidationService;
+use Ineersa\Tui\Listener\CompactCommandHandler;
+use Ineersa\Tui\Listener\PendingModelSelection;
 use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\RuntimeEventPoller;
+use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Tui;
 
@@ -50,7 +83,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     use TuiRuntimeContextBuilderTrait;
 
     private TuiSessionState $state;
-    /** @var AgentSessionClient&\PHPUnit\Framework\MockObject\MockObject */
+    /** @var AgentSessionClient&MockObject */
     private AgentSessionClient $client;
     private TestLogger $logger;
     private SlashCommandCatalog $catalog;
@@ -246,13 +279,13 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertStringContainsString('Add regression tests.', $harness->plainScreenText());
         $this->assertStringContainsString('Also update the docs.', $harness->plainScreenText());
 
-        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
-        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
-        $poller = new \Ineersa\Tui\Runtime\RuntimeEventPoller(
-            new \Ineersa\Tui\Runtime\TuiRuntimeEventApplier($projector, \Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport::denormalizer()),
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
+        $poller = new RuntimeEventPoller(
+            new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
             $this->logger,
-            new \Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
-            $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface::class),
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
+            $this->createStub(SessionTranscriptProviderInterface::class),
         );
         $poller->poll($this->state, $this->client);
 
@@ -270,9 +303,9 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Failed;
         $this->state->pendingEditorRestoreText = 'Previously restored input';
         $this->client->expects($this->once())->method('compact')->with('run-1', null);
-        $request = (new \Ineersa\Tui\Listener\CompactCommandHandler($this->client, $this->state))
+        $request = (new CompactCommandHandler($this->client, $this->state))
             ->handle(new SlashCommand('compact', '', '/compact'));
-        $this->assertInstanceOf(\Ineersa\Tui\Command\TranscriptMessage::class, $request);
+        $this->assertInstanceOf(TranscriptMessage::class, $request);
         $this->assertSame('Compaction requested.', $request->text);
         $sent = [];
         $this->client->expects($this->once())->method('send')
@@ -286,13 +319,13 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertSame([], $sent);
         $this->assertStringContainsString('Continue after compaction.', $harness->plainScreenText());
 
-        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
-        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
-        $poller = new \Ineersa\Tui\Runtime\RuntimeEventPoller(
-            new \Ineersa\Tui\Runtime\TuiRuntimeEventApplier($projector, \Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport::denormalizer()),
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
+        $poller = new RuntimeEventPoller(
+            new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
             $this->logger,
-            new \Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
-            $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface::class),
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
+            $this->createStub(SessionTranscriptProviderInterface::class),
         );
         $poller->poll($this->state, $this->client);
         if (null !== $completion) {
@@ -483,14 +516,14 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $em->method('find')->willReturn(null);
 
         $sessionStore = new HatfieldSessionStore(
-            appConfig: new \Ineersa\CodingAgent\Config\AppConfig(
-                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                sessions: new SessionsConfig(),
                 cwd: $this->tempCwd,
             ),
             entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
 
         $this->client->expects($this->once())
             ->method('start')
@@ -527,11 +560,11 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertFileDoesNotExist($settingsPath);
         $this->assertFalse(is_link($settingsPath));
         file_put_contents($settingsPath, "tui:\n    theme: default\n");
-        $pathResolver = new \Ineersa\CodingAgent\Config\SettingsPathResolver($this->tempCwd, $homeDir);
-        $homeWriter = new \Ineersa\CodingAgent\Config\SettingsOverrideWriter(
+        $pathResolver = new SettingsPathResolver($this->tempCwd, $homeDir);
+        $homeWriter = new SettingsOverrideWriter(
             $pathResolver,
-            \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
-            new \Symfony\Component\Filesystem\Filesystem(),
+            PropertyAccess::createPropertyAccessor(),
+            new Filesystem(),
         );
 
         $nextId = 1;
@@ -557,17 +590,17 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
-        $modelService = new \Ineersa\CodingAgent\Config\ModelSelectionService(
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
+        $modelService = new ModelSelectionService(
             $appConfig,
-            new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $sessionStore, new NullLogger()),
+            new ModelResolver($appConfig, $sessionStore, new NullLogger()),
             $homeWriter,
             $sessionStore,
         );
 
-        $selected = \Ineersa\CodingAgent\Config\Ai\AiModelReference::tryParse('llama_cpp_test/test');
+        $selected = AiModelReference::tryParse('llama_cpp_test/test');
         $this->assertNotNull($selected);
-        \Ineersa\Tui\Listener\PendingModelSelection::updateModel($modelService, $selected, $this->state);
+        PendingModelSelection::updateModel($modelService, $selected, $this->state);
         $this->assertSame('llama_cpp_test/test', $this->state->request?->model);
 
         $startedModel = null;
@@ -797,9 +830,9 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 acceptsArguments: false,
             ),
             new class implements SlashCommandHandler {
-                public function handle(SlashCommand $command): \Ineersa\Tui\Command\TranscriptMessage
+                public function handle(SlashCommand $command): TranscriptMessage
                 {
-                    return new \Ineersa\Tui\Command\TranscriptMessage('local', 'system');
+                    return new TranscriptMessage('local', 'system');
                 }
             },
         );
@@ -841,20 +874,20 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $em->method('find')->willReturn(null);
 
         $sessionStore = new HatfieldSessionStore(
-            appConfig: new \Ineersa\CodingAgent\Config\AppConfig(
-                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                sessions: new SessionsConfig(),
                 cwd: $this->tempCwd,
             ),
             entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
 
         $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
         $this->assertNotFalse($png);
         $staged = $this->tempCwd.'/staged-paste-1.png';
         file_put_contents($staged, $png);
-        $this->state->pastedImagePendingByIndex[1] = new \Ineersa\Tui\ImagePaste\PastedImagePendingDTO($staged);
+        $this->state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO($staged);
 
         $this->client->expects($this->once())
             ->method('start')
@@ -921,19 +954,19 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $listener = new SubmitListener(
             sessionStore: $context->sessionStore,
-            blockFactory: new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
+            blockFactory: new TranscriptBlockFactory(),
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: $this->logger,
-            pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
-                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new TestLogger()),
+            pastedImageSubmissionService: new PastedImageSubmissionService(
+                new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
                 $context->sessionStore,
-                new \Ineersa\CodingAgent\Config\AppConfig(
-                    tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                    logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                    sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                new AppConfig(
+                    tui: new TuiConfig(theme: 'default'),
+                    logging: new LoggingConfig(),
+                    sessions: new SessionsConfig(),
                     cwd: $this->tempCwd,
                 ),
-                new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
+                new TranscriptBlockFactory(),
                 new TestLogger(),
             ),
         );
@@ -956,7 +989,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     /**
      * AppConfig with a minimal AI catalog for draft model-selection tests.
      */
-    private static function footerAppConfig(string $cwd): \Ineersa\CodingAgent\Config\AppConfig
+    private static function footerAppConfig(string $cwd): AppConfig
     {
         $raw = [
             'tui' => ['theme' => 'default'],
@@ -982,15 +1015,15 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 ],
             ],
         ];
-        $ai = \Ineersa\CodingAgent\Config\Ai\AiConfig::optionalFromArray($raw);
+        $ai = AiConfig::optionalFromArray($raw);
 
-        return new \Ineersa\CodingAgent\Config\AppConfig(
-            tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-            logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-            sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+        return new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            sessions: new SessionsConfig(),
             ai: $ai,
             raw: $raw,
-            catalog: null !== $ai ? new \Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog($ai) : null,
+            catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
             cwd: $cwd,
         );
     }

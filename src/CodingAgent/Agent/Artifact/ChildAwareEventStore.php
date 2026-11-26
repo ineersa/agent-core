@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
+use Ineersa\CodingAgent\Session\RunHistorySourceDTO;
+use Ineersa\CodingAgent\Session\SessionRunEventStore;
 
 /**
  * Child-aware decorator for EventStoreInterface that delegates between parent-scoped and
@@ -18,7 +22,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
  *
  * Child run location uses AgentChildRunDirectory.
  */
-final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface, \Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface
+final class ChildAwareEventStore implements PreparedTransitionEventStoreInterface, RunHistorySourceProviderInterface
 {
     /** @var array<string, AgentChildRunEventStore> agentRunId → store */
     private array $childStores = [];
@@ -33,7 +37,7 @@ final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\Prepared
     public function appendTransition(array $events, array $work): array
     {
         $store = $this->resolveChildStore($events[0]->runId ?? $work['run_id']) ?? $this->parentStore;
-        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+        if (!$store instanceof PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
 
@@ -43,7 +47,7 @@ final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\Prepared
     public function verifiedPendingTransition(string $runId): ?VerifiedTransitionDTO
     {
         $store = $this->resolveChildStore($runId) ?? $this->parentStore;
-        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+        if (!$store instanceof PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
 
@@ -53,7 +57,7 @@ final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\Prepared
     public function verifiedPendingBatch(string $runId, VerifiedTransitionDTO $verified): array
     {
         $store = $this->resolveChildStore($runId) ?? $this->parentStore;
-        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+        if (!$store instanceof PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
 
@@ -63,7 +67,7 @@ final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\Prepared
     public function finalizeVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
     {
         $store = $this->resolveChildStore($runId) ?? $this->parentStore;
-        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+        if (!$store instanceof PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
         $store->finalizeVerifiedTransition($runId, $verified);
@@ -72,7 +76,7 @@ final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\Prepared
     public function assertVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
     {
         $store = $this->resolveChildStore($runId) ?? $this->parentStore;
-        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+        if (!$store instanceof PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
         $store->assertVerifiedTransition($runId, $verified);
@@ -81,19 +85,19 @@ final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\Prepared
     public function assertTransitionReady(string $runId): void
     {
         $store = $this->resolveChildStore($runId) ?? $this->parentStore;
-        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+        if (!$store instanceof PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
         $store->assertTransitionReady($runId);
     }
 
-    public function historySource(string $runId): \Ineersa\CodingAgent\Session\RunHistorySourceDTO
+    public function historySource(string $runId): RunHistorySourceDTO
     {
         $child = $this->resolveChildStore($runId);
         if (null !== $child) {
             return $child->historySource();
         }
-        if (!$this->parentStore instanceof \Ineersa\CodingAgent\Session\SessionRunEventStore) {
+        if (!$this->parentStore instanceof SessionRunEventStore) {
             throw new \LogicException('Indexed replay requires the configured canonical session store.');
         }
 

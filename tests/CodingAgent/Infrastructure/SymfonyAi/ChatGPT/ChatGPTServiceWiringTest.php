@@ -4,12 +4,26 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\ChatGPT;
 
+use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
+use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ChatGPT\ChatGPTSymfonyAiProviderBuilder;
+use Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthCommand;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthException;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthFileStore;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\IdTokenVerifier;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\OAuthConfig;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\OAuthService;
+use Symfony\AI\Platform\Message\Message;
+use Symfony\AI\Platform\Message\MessageBag;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Console\CommandLoader\CommandLoaderInterface;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 // Provider cases install different auth/clock/HTTP doubles; the registration case needs an untouched container.
 final class ChatGPTServiceWiringTest extends PerMethodIsolatedKernelTestCase
@@ -17,14 +31,14 @@ final class ChatGPTServiceWiringTest extends PerMethodIsolatedKernelTestCase
     public function testHostProviderPreservesHistoryAndRoutingHeadersWithOrWithoutCompression(): void
     {
         $container = self::getContainer();
-        $record = \Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture::record();
+        $record = ChatGPTAuthFixture::record();
         $storage = $this->createStub(AuthStorageInterface::class);
         $storage->method('update')->willReturnCallback(static fn (callable $update) => $update($record));
         $container->set(AuthStorageInterface::class, $storage);
         $text = implode('', array_map(static fn (int $index): string => hash('sha256', (string) $index), range(1, 256)));
         $text .= $text;
         $requests = 0;
-        $http = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url, array $options) use ($text, &$requests): \Symfony\Component\HttpClient\Response\MockResponse {
+        $http = new MockHttpClient(static function (string $method, string $url, array $options) use ($text, &$requests): MockResponse {
             ++$requests;
             self::assertSame('POST', $method);
             self::assertSame('https://api.openai.com/v1/responses', $url);
@@ -53,13 +67,13 @@ final class ChatGPTServiceWiringTest extends PerMethodIsolatedKernelTestCase
             self::assertFalse($body['store']);
             self::assertTrue($body['stream']);
 
-            return new \Symfony\Component\HttpClient\Response\MockResponse("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n", ['response_headers' => ['content-type: text/event-stream']]);
+            return new MockResponse("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n", ['response_headers' => ['content-type: text/event-stream']]);
         });
         $provider = $container->get(ChatGPTSymfonyAiProviderBuilder::class)->build(
-            new \Ineersa\CodingAgent\Config\Ai\AiProviderConfig('openai-codex', type: 'chatgpt', models: ['gpt-6.1-sol' => new \Ineersa\CodingAgent\Config\Ai\AiModelDefinition('gpt-6.1-sol', toolCalling: true, reasoning: true)]),
+            new AiProviderConfig('openai-codex', type: 'chatgpt', models: ['gpt-6.1-sol' => new AiModelDefinition('gpt-6.1-sol', toolCalling: true, reasoning: true)]),
             $http->withOptions(['headers' => ['X-Host-Proof' => 'unchanged']]),
         );
-        $result = $provider->invoke('openai-codex/gpt-6.1-sol', new \Symfony\AI\Platform\Message\MessageBag(\Symfony\AI\Platform\Message\Message::ofUser($text)), ['prompt_cache_key' => 'synthetic-cache-key']);
+        $result = $provider->invoke('openai-codex/gpt-6.1-sol', new MessageBag(Message::ofUser($text)), ['prompt_cache_key' => 'synthetic-cache-key']);
         foreach ($result->getResult()->getContent() as $chunk) {
             // Consume the real package stream so the HTTP boundary assertions execute.
         }
@@ -69,31 +83,31 @@ final class ChatGPTServiceWiringTest extends PerMethodIsolatedKernelTestCase
     public function testOAuthAndPendingIdentityVerifierUseTheSameInjectedClock(): void
     {
         $container = self::getContainer();
-        $clock = new \Symfony\Component\Clock\MockClock('2100-01-01T00:00:00Z');
-        $container->set(\Symfony\Component\Clock\ClockInterface::class, $clock);
-        $record = \Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture::record();
+        $clock = new MockClock('2100-01-01T00:00:00Z');
+        $container->set(ClockInterface::class, $clock);
+        $record = ChatGPTAuthFixture::record();
         $storage = $this->createStub(AuthStorageInterface::class);
         $storage->method('update')->willReturnCallback(static function (callable $update) use (&$record) {
             return $record = $update($record);
         });
         $container->set(AuthStorageInterface::class, $storage);
         $requests = [];
-        $http = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url) use (&$requests): \Symfony\Component\HttpClient\Response\MockResponse {
+        $http = new MockHttpClient(static function (string $method, string $url) use (&$requests): MockResponse {
             $requests[] = [$method, $url];
             if ('POST' === $method) {
-                return new \Symfony\Component\HttpClient\Response\MockResponse(json_encode(['access_token' => 'rotated-synthetic-access', 'refresh_token' => 'rotated-synthetic-refresh', 'token_type' => 'Bearer', 'expires_in' => 3600, 'scope' => \Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\OAuthConfig::SCOPE], \JSON_THROW_ON_ERROR));
+                return new MockResponse(json_encode(['access_token' => 'rotated-synthetic-access', 'refresh_token' => 'rotated-synthetic-refresh', 'token_type' => 'Bearer', 'expires_in' => 3600, 'scope' => OAuthConfig::SCOPE], \JSON_THROW_ON_ERROR));
             }
 
-            return new \Symfony\Component\HttpClient\Response\MockResponse('{}', ['http_code' => 503]);
+            return new MockResponse('{}', ['http_code' => 503]);
         });
-        $container->set(\Symfony\Contracts\HttpClient\HttpClientInterface::class, $http);
-        $updated = $container->get(\Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\OAuthService::class)->refreshCredentials();
+        $container->set(HttpClientInterface::class, $http);
+        $updated = $container->get(OAuthService::class)->refreshCredentials();
         $this->assertSame($clock->now()->getTimestamp() + 3600, $updated->expires);
         $token = rtrim(strtr(base64_encode('{"alg":"RS256","kid":"synthetic-key"}'), '+/', '-_'), '=').'.e30.invalid';
         try {
-            $container->get(\Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\IdTokenVerifier::class)->verifyReceived($token, $record->clientId, $record->nonce, $clock->now()->getTimestamp());
+            $container->get(IdTokenVerifier::class)->verifyReceived($token, $record->clientId, $record->nonce, $clock->now()->getTimestamp());
             $this->fail('An unavailable signing key must still prevent identity verification.');
-        } catch (\Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthException $error) {
+        } catch (AuthException $error) {
             $this->assertSame("HTTP 503\n{}", $error->getMessage());
             $this->assertNotNull($error->getPrevious());
             $this->assertSame($error->getMessage(), $error->getPrevious()->getMessage());

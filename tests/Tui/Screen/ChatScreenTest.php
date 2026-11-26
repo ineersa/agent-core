@@ -12,6 +12,7 @@ use Ineersa\Tui\Question\QuestionOverlayWidget;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Theme\TuiTheme;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -75,9 +76,9 @@ class ChatScreenTest extends TestCase
                 return $text;
             }
 
-            public function getPalette(): \Ineersa\Tui\Theme\ThemePalette
+            public function getPalette(): ThemePalette
             {
-                return new \Ineersa\Tui\Theme\ThemePalette(
+                return new ThemePalette(
                     name: 'test',
                     colors: [],
                 );
@@ -442,9 +443,9 @@ class ChatScreenTest extends TestCase
                 return $text;
             }
 
-            public function getPalette(): \Ineersa\Tui\Theme\ThemePalette
+            public function getPalette(): ThemePalette
             {
-                return new \Ineersa\Tui\Theme\ThemePalette(name: 'test', colors: []);
+                return new ThemePalette(name: 'test', colors: []);
             }
         };
     }

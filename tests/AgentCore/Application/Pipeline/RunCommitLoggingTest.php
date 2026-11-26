@@ -16,6 +16,8 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /** Regression: commits log one canonical-event summary, not one line per event. */
 final class RunCommitLoggingTest extends TestCase
@@ -32,7 +34,7 @@ final class RunCommitLoggingTest extends TestCase
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: $logger,
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
         );
 
         $next = new RunState(
@@ -71,7 +73,7 @@ final class RunCommitLoggingTest extends TestCase
             activeRunContext: $activeRunContext,
             eventStore: new RecordingEventStore(),
             logger: new TestLogger(),
-            finalizer: TestTransitionFinalizerFactory::create(new RecordingEventStore(), new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+            finalizer: TestTransitionFinalizerFactory::create(new RecordingEventStore(), new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
         ))->commit($previous, $next, []);
 
         $this->assertSame($next, $activeRunContext->requireLoaded('run-1'));
@@ -86,13 +88,13 @@ final class RunCommitLoggingTest extends TestCase
         $store->expects($this->once())->method('assertTransitionReady')->with('run-1')
             ->willThrowException(new \RuntimeException('coordination pending'));
         $store->expects($this->never())->method('appendTransition');
-        $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+        $bus = $this->createMock(MessageBusInterface::class);
         $bus->expects($this->never())->method('dispatch');
         $commit = new RunCommit(
             activeRunContext: $active,
             eventStore: $store,
             logger: new TestLogger(),
-            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus, new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus, new TestLogger(), events: new EventDispatcher())),
         );
 
         try {

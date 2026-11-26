@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 
@@ -300,7 +301,7 @@ final class JsonlRunEventLogReverseLinesFailureTest extends TestCase
             new LockFactory(new InMemoryStore()),
             $this->createStub(RunSequenceAllocatorInterface::class),
             new EventLogMaxSeqBootstrapReader(),
-            new \Psr\Log\NullLogger(),
+            new NullLogger(),
             presentations: HistoryEventStoreFactory::presentationFactory());
     }
 

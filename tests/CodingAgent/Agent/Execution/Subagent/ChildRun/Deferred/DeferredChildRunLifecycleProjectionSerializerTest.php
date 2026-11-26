@@ -10,6 +10,8 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChild
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredPendingToolCallRowDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 
 /**
@@ -166,7 +168,7 @@ final class DeferredChildRunLifecycleProjectionSerializerTest extends IsolatedKe
 
         /** @var array<string, mixed> $wire */
         $wire = $serializer->normalize($projection, null, [
-            \Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true,
+            AbstractObjectNormalizer::SKIP_NULL_VALUES => true,
         ]);
         $this->assertSame(
             ['tc1' => ['name' => 'bash', 'display_line' => 'bash ls']],
@@ -184,11 +186,11 @@ final class DeferredChildRunLifecycleProjectionSerializerTest extends IsolatedKe
      */
     private function encodeProjection(DeferredChildRunLifecycleProjectionDTO $projection): array
     {
-        $serializer = self::getContainer()->get(\Symfony\Component\Serializer\SerializerInterface::class);
+        $serializer = self::getContainer()->get(SerializerInterface::class);
         $json = $serializer->serialize(
             $projection,
             'json',
-            [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+            [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
         );
 
         /** @var array<string, mixed> $wire */

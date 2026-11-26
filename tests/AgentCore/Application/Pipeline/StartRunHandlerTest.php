@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
+use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -12,6 +13,7 @@ use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\StartRunMessageBuilder;
+use Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use PHPUnit\Framework\TestCase;
@@ -74,7 +76,7 @@ final class StartRunHandlerTest extends TestCase
         $this->assertSame([], $result->postCommitEffects);
         $this->assertCount(1, $result->postCommitActions);
         $this->assertInstanceOf(
-            \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO::class,
+            DispatchCoordinationMessageDTO::class,
             $result->postCommitActions[0],
         );
         $this->assertInstanceOf(AdvanceRun::class, $result->postCommitActions[0]->message);
@@ -188,7 +190,7 @@ final class StartRunHandlerTest extends TestCase
         $this->assertSame([], $redelivery->events);
         $this->assertSame([], $redelivery->effects);
         $this->assertCount(1, $redelivery->postCommitActions);
-        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($redelivery->postCommitActions[0], $commandBus);
+        CoordinationActionTestRunner::run($redelivery->postCommitActions[0], $commandBus);
 
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
@@ -234,7 +236,7 @@ final class StartRunHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         $this->assertCount(1, $result->postCommitActions);
-        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], $commandBus);
+        CoordinationActionTestRunner::run($result->postCommitActions[0], $commandBus);
 
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);

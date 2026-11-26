@@ -16,6 +16,7 @@ use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionKindEnum;
+use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionKindEnum;
 use Psr\Log\LoggerInterface;
@@ -243,7 +244,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
     private function handleRequireApproval(
         ToolCallRequested $event,
         ToolCall $toolCall,
-        \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface $hook,
+        ToolCallHookInterface $hook,
         ToolCallDecisionDTO $decision,
         ToolCallContextDTO $context,
     ): void {
@@ -338,7 +339,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
     }
 
     /**
-     * @param \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface $hook
+     * @param ToolCallHookInterface $hook
      */
     private function applyResumedAnswer(
         ToolCallRequested $event,

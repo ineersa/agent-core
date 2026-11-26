@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Support\TestProcessRuntime;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeProcessOwner;
 use PHPUnit\Framework\Attributes\TestWith;
 use Psr\Log\NullLogger;
@@ -33,8 +36,8 @@ final class CodeModeProcessOwnerTest extends IsolatedKernelTestCase
             $workspace = $root.'/workspace';
             $fs->mkdir($workspace);
             $container = self::getContainer();
-            $store = $container->get(\Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore::class);
-            $owner = new CodeModeProcessOwner(new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $root), new NullLogger(), new LockFactory(new FlockStore($root)), TestProcessRuntime::source()), $container->get(\Ineersa\CodingAgent\Entity\BackgroundProcessRepository::class), $store);
+            $store = $container->get(ProcessStore::class);
+            $owner = new CodeModeProcessOwner(new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $root), new NullLogger(), new LockFactory(new FlockStore($root)), TestProcessRuntime::source()), $container->get(BackgroundProcessRepository::class), $store);
             $prefix = $root.'/code-mode-'.hash('sha256', 'run').'-'.hash('sha256', 'invocation');
             $store->insertRecord(['session_id' => 'run', 'code_mode_id' => 'invocation', 'code_mode_launch' => json_encode([
                 'workspace' => $workspace, 'startedAtNs' => hrtime(true) - 10_000_000_000, 'standaloneTurn' => null, 'policy' => ['explicitTimeout' => 30, 'callerTimeout' => 5, 'retainOutput' => true, 'attachmentOwner' => 'call'],
@@ -56,7 +59,7 @@ final class CodeModeProcessOwnerTest extends IsolatedKernelTestCase
             if ('abandoned' === $case) {
                 $this->assertTrue($owner->invocation('run', 'invocation')['fenced']);
                 $this->assertSame($expected, $owner->observeTerminal('run', 'invocation', null, null, static fn (): ?array => null));
-                $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+                $this->expectException(ToolCallException::class);
                 $owner->launch('run', 'invocation', $workspace, 'false', hrtime(true), ['explicitTimeout' => null, 'callerTimeout' => null, 'retainOutput' => false, 'attachmentOwner' => 'call']);
             }
         } finally {

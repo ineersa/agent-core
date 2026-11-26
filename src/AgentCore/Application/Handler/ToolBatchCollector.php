@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
+use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
@@ -22,7 +23,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  *
  * Cross-process coordination pipeline:
  *   1. {@see LlmStepResultHandler} calls {@see prepareRegistration()} once and journals
- *      the captured {@see \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO}.
+ *      the captured {@see RegisterToolBatchDTO}.
  *   2. Local metadata applies that exact membership; later collect/human deltas
  *      arm subsequent calls through the same store.
  *   3. {@see ToolCallResultHandler} calls {@see prepareCollect()} without publication.
@@ -43,7 +44,7 @@ final class ToolBatchCollector
      *
      * @param list<ExecuteToolCall> $toolCalls
      */
-    public function prepareRegistration(string $runId, int $turnNo, string $stepId, array $toolCalls): \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO
+    public function prepareRegistration(string $runId, int $turnNo, string $stepId, array $toolCalls): RegisterToolBatchDTO
     {
         usort(
             $toolCalls,
@@ -74,7 +75,7 @@ final class ToolBatchCollector
                 }
             }
 
-            return new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO(
+            return new RegisterToolBatchDTO(
                 $runId,
                 $turnNo,
                 $stepId,
@@ -98,7 +99,7 @@ final class ToolBatchCollector
         );
         $this->dispatchableCalls($batch);
 
-        return new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO(
+        return new RegisterToolBatchDTO(
             $runId,
             $turnNo,
             $stepId,

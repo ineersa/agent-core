@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Support;
 
 use DAMA\DoctrineTestBundle\Doctrine\DBAL\StaticDriver;
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
@@ -67,7 +68,7 @@ final class ControllerReplayBackgroundProcessSeeder
                 throw new \RuntimeException(\sprintf('Unable to accept seeded background process %d.', $id));
             }
             BackgroundProcessFixture::finish($entity, 0, new \DateTimeImmutable());
-            $container->get(\Doctrine\ORM\EntityManagerInterface::class)->flush();
+            $container->get(EntityManagerInterface::class)->flush();
 
             return [
                 'id' => $id,

@@ -7,8 +7,10 @@ namespace Ineersa\CodingAgent\Tests\Compaction;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -24,7 +26,7 @@ use PHPUnit\Framework\TestCase;
 #[AllowMockObjectsWithoutExpectations]
 final class ProviderContextUsageResolverTest extends TestCase
 {
-    /** @var EventStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
+    /** @var EventStoreInterface&MockObject */
     private $eventStore;
     private ProviderContextUsageResolver $resolver;
 
@@ -44,7 +46,7 @@ final class ProviderContextUsageResolverTest extends TestCase
     public function testOwnerBatchMeasurementDoesNotReadUnfinalizedArchive(): void
     {
         $this->eventStore->expects($this->never())->method('reverseFor');
-        $summary = new \Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary(
+        $summary = new AfterTurnCommitEventSummary(
             seq: 6,
             type: RunEventTypeEnum::LlmStepCompleted->value,
             payload: ['usage' => ['input_tokens' => 45000]],
@@ -58,7 +60,7 @@ final class ProviderContextUsageResolverTest extends TestCase
     public function testOwnerBatchAutoAttemptFencesPredecessorMeasurement(): void
     {
         $this->mockBoundedReverseEvents([$this->makeLlmStepCompleted(5, 45000)]);
-        $summary = new \Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary(
+        $summary = new AfterTurnCommitEventSummary(
             seq: 6,
             type: RunEventTypeEnum::ContextCompactionStarted->value,
             payload: ['trigger' => 'auto'],

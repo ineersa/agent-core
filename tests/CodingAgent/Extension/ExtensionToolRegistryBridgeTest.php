@@ -15,7 +15,9 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
+use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
+use Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHandlerAdapter;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
@@ -36,6 +38,7 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
@@ -49,7 +52,10 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Tests for ExtensionToolRegistryBridge — the adapter that maps public
@@ -612,7 +618,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         ?StackToolExecutionContextAccessor $toolContextAccessor = null,
         ?RunRelationshipReaderInterface $runRelationships = null,
     ): ExtensionToolRegistryBridge {
-        $logger = new \Psr\Log\NullLogger();
+        $logger = new NullLogger();
 
         $appConfig = $appConfig ?? $this->testAppConfig();
 
@@ -625,10 +631,10 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             $this->dummyAgentRunner(),
             $this->dummySessionEventReader(),
             new ExtensionAgentJobRegistry(),
-            new ExtensionAgentJobDispatcher(new class implements \Symfony\Component\Messenger\MessageBusInterface {
-                public function dispatch(object $message, array $stamps = []): \Symfony\Component\Messenger\Envelope
+            new ExtensionAgentJobDispatcher(new class implements MessageBusInterface {
+                public function dispatch(object $message, array $stamps = []): Envelope
                 {
-                    return new \Symfony\Component\Messenger\Envelope($message);
+                    return new Envelope($message);
                 }
             }, $logger, 'in-memory://'),
             $toolContextAccessor ?? new StackToolExecutionContextAccessor(),
@@ -641,12 +647,12 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
                 filesystem: new Filesystem(),
             ),
             toolInvoker: $this->unusedToolInvoker(),
-            children: $this->createStub(\Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface::class),
-            recurringJobs: new \Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), '', new TestMessageBus()),
-            commandBus: $this->createStub(\Symfony\Component\Messenger\MessageBusInterface::class),
+            children: $this->createStub(ChildRunExtensionAllowlistReaderInterface::class),
+            recurringJobs: new ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), '', new TestMessageBus()),
+            commandBus: $this->createStub(MessageBusInterface::class),
             runRelationships: $runRelationships ?? $this->createStub(RunRelationshipReaderInterface::class),
             sessions: $this->emptySessionRepository(),
-            sessionContext: $this->createStub(\Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface::class),
+            sessionContext: $this->createStub(SessionContextInterface::class),
         );
     }
 

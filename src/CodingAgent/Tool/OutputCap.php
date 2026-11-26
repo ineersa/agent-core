@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Agent\Tool\AgentRetrieveTool;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\LockInterface;
 
 use function Amp\delay;
 use function Symfony\Component\String\u;
@@ -375,7 +376,7 @@ STRING;
         return 'run-'.hash('sha256', $runId);
     }
 
-    private function scopeLock(string $canonicalRoot, string $scopeName): \Symfony\Component\Lock\LockInterface
+    private function scopeLock(string $canonicalRoot, string $scopeName): LockInterface
     {
         return $this->lockFactory->createLock('output-cap:'.hash('sha256', $canonicalRoot.'/'.$scopeName));
     }

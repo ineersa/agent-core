@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
+use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
@@ -12,6 +13,7 @@ use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
+use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -63,7 +65,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
     public function handle(object $message, RunState $state): HandlerResult
     {
-        return \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::finalize($this->prepare($message, $state));
+        return CommandMailboxCoordinationFactory::finalize($this->prepare($message, $state));
     }
 
     /** Shared owner-lock admission for producers using the same command mailbox. */
@@ -189,7 +191,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // dispatch AdvanceRun while the prompt tail contains unresolved
         // assistant tool_calls, causing the provider to reject the run
         // with "insufficient tool messages following tool_calls message".
-        $postCommitActions = [new \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO($pendingCommand)];
+        $postCommitActions = [new EnqueueCommandDTO($pendingCommand)];
         // Active runs (Running, Cancelling, or Compacting) queue the command
         // for the next safe boundary.  Non-active runs apply immediately.
         $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling, RunStatus::Compacting], true);
@@ -474,7 +476,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return new HandlerResult(
             nextState: $nextState,
             events: [$queuedEvent],
-            postCommitActions: [new \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO($pendingCommand)],
+            postCommitActions: [new EnqueueCommandDTO($pendingCommand)],
         );
     }
 
@@ -903,7 +905,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return new HandlerResult(
             nextState: $nextState,
             events: [$queuedEvent],
-            postCommitActions: [new \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO($pendingCommand)],
+            postCommitActions: [new EnqueueCommandDTO($pendingCommand)],
         );
     }
 

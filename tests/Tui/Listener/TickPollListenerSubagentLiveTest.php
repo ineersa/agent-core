@@ -7,8 +7,12 @@ namespace Ineersa\Tui\Tests\Listener;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
+use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
@@ -23,12 +27,15 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
+use Ineersa\Tui\Picker\PickerOverlay;
+use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
+use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -41,8 +48,10 @@ use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Tui;
+use Symfony\Component\Tui\Widget\LoaderWidget;
 
 /** @covers \Ineersa\Tui\Listener\TickPollListener */
 final class TickPollListenerSubagentLiveTest extends TestCase
@@ -94,7 +103,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $childPoller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-            new \Psr\Log\NullLogger(),
+            new NullLogger(),
             SubagentProgressSerializerTestSupport::denormalizer(),
         );
 
@@ -174,7 +183,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $childPoller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-            new \Psr\Log\NullLogger(),
+            new NullLogger(),
             SubagentProgressSerializerTestSupport::denormalizer(),
         );
 
@@ -250,30 +259,30 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $childPoller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-            new \Psr\Log\NullLogger(),
+            new NullLogger(),
             SubagentProgressSerializerTestSupport::denormalizer(),
         );
         $questionCoordinator = new QuestionCoordinator();
         $questionController = new QuestionController($questionCoordinator, $screen);
-        $picker = new \Ineersa\Tui\Picker\SubagentLivePickerController(
+        $picker = new SubagentLivePickerController(
             $harness->tui(),
             $screen,
             $state,
             $client,
             $childPoller,
-            new class implements \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface {
-                public function snapshot(string $childRunId): \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO
+            new class implements ChildRunTranscriptSnapshotProviderInterface {
+                public function snapshot(string $childRunId): ChildRunTranscriptSnapshotDTO
                 {
-                    return new \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO([], [], 0);
+                    return new ChildRunTranscriptSnapshotDTO([], [], 0);
                 }
             },
-            $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface::class),
+            $this->createStub(ChildAgentEventsPathResolverInterface::class),
             SessionEventsExportServiceFactory::create(),
             $questionCoordinator,
             $questionController,
         );
 
-        $enter = new \ReflectionMethod(\Ineersa\Tui\Picker\SubagentLivePickerController::class, 'enterLiveView');
+        $enter = new \ReflectionMethod(SubagentLivePickerController::class, 'enterLiveView');
         $enter->invoke($picker, $taskB, $state, $screen);
 
         $this->assertSame(RunActivityStateEnum::Running, $state->subagentLiveView->childActivity);
@@ -304,7 +313,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Running, $state->subagentLiveView->childActivity);
         $this->assertSame(SubagentLiveStatusEnum::Running, $state->subagentLiveCatalog->findByArtifactId($artifactId)?->status);
 
-        \Ineersa\Tui\Runtime\SubagentLiveMainReturn::returnToMain($state, $screen, $services->questionCoordinator, $services->questionController, $childPoller, $client);
+        SubagentLiveMainReturn::returnToMain($state, $screen, $services->questionCoordinator, $services->questionController, $childPoller, $client);
         $this->assertFalse($state->subagentLiveView->active);
 
         $picker->open();
@@ -322,23 +331,23 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $this->assertStringNotContainsString('[running]', $screenText);
     }
 
-    private function closedSubagentLivePicker(): \Ineersa\Tui\Picker\SubagentLivePickerController
+    private function closedSubagentLivePicker(): SubagentLivePickerController
     {
-        $picker = (new \ReflectionClass(\Ineersa\Tui\Picker\SubagentLivePickerController::class))->newInstanceWithoutConstructor();
-        $overlay = new \Ineersa\Tui\Picker\PickerOverlay();
-        $overlayRef = new \ReflectionProperty(\Ineersa\Tui\Picker\SubagentLivePickerController::class, 'overlay');
+        $picker = (new \ReflectionClass(SubagentLivePickerController::class))->newInstanceWithoutConstructor();
+        $overlay = new PickerOverlay();
+        $overlayRef = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
         $overlayRef->setValue($picker, $overlay);
-        $openRef = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'isOpen');
+        $openRef = new \ReflectionProperty(PickerOverlay::class, 'isOpen');
         $openRef->setValue($overlay, false);
 
         return $picker;
     }
 
-    private function workingWidget(ChatScreen $screen): \Symfony\Component\Tui\Widget\LoaderWidget
+    private function workingWidget(ChatScreen $screen): LoaderWidget
     {
         $property = new \ReflectionProperty($screen, 'workingWidget');
         $widget = $property->getValue($screen);
-        $this->assertInstanceOf(\Symfony\Component\Tui\Widget\LoaderWidget::class, $widget);
+        $this->assertInstanceOf(LoaderWidget::class, $widget);
 
         return $widget;
     }
@@ -477,9 +486,9 @@ final class ParentEventClient implements AgentSessionClient
         throw new \BadMethodCallException();
     }
 
-    public function repair(string $runId, bool $apply = true): \Ineersa\CodingAgent\Runtime\Contract\RepairResult
+    public function repair(string $runId, bool $apply = true): RepairResult
     {
-        return new \Ineersa\CodingAgent\Runtime\Contract\RepairResult(false, false, 'No repairable corruption detected.');
+        return new RepairResult(false, false, 'No repairable corruption detected.');
     }
 
     public function compact(string $runId, ?string $customInstructions = null): void

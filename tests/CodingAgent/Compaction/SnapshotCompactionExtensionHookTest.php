@@ -33,6 +33,8 @@ use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
 /**
@@ -205,8 +207,8 @@ final class SnapshotCompactionExtensionHookTest extends TestCase
                     ++$this->invokes;
 
                     return new PlatformInvocationResult(
-                        assistantMessage: new \Symfony\AI\Platform\Message\AssistantMessage(
-                            new \Symfony\AI\Platform\Message\Content\Text('MODEL_SNAPSHOT_SUMMARY'),
+                        assistantMessage: new AssistantMessage(
+                            new Text('MODEL_SNAPSHOT_SUMMARY'),
                         ),
                     );
                 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Auth;
 
+use GuzzleHttp\ClientInterface;
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\PublicOAuthProvider;
 
@@ -20,13 +21,13 @@ use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\PublicOAuthProvider;
 class GrokTokenRefresher
 {
     /**
-     * @param \GuzzleHttp\ClientInterface|null $httpClient Optional Guzzle client
-     *                                                     for tests (MockHandler).
-     *                                                     Production leaves null.
+     * @param ClientInterface|null $httpClient Optional Guzzle client
+     *                                         for tests (MockHandler).
+     *                                         Production leaves null.
      */
     public function __construct(
         private int $port = GrokOAuthConfig::DEFAULT_PORT,
-        private readonly ?\GuzzleHttp\ClientInterface $httpClient = null,
+        private readonly ?ClientInterface $httpClient = null,
     ) {
     }
 

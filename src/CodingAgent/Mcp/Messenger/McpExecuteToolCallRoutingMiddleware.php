@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Mcp\Messenger;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
@@ -113,7 +114,7 @@ final readonly class McpExecuteToolCallRoutingMiddleware implements MiddlewareIn
      * Check whether a tool name matches an MCP tool from a connected server
      * in the session catalog.
      */
-    private function isMcpTool(string $toolName, \Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO $catalog): bool
+    private function isMcpTool(string $toolName, McpToolCatalogDTO $catalog): bool
     {
         foreach ($catalog->servers as $serverEntry) {
             if (McpServerCatalogStatusEnum::CONNECTED !== $serverEntry->status) {

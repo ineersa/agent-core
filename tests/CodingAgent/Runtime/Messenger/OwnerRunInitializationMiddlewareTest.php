@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
+use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
@@ -19,20 +23,35 @@ use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\ChildRunFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
+use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
 use Symfony\Component\Messenger\Middleware\StackMiddleware;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
+use Symfony\Component\Messenger\Stamp\SentStamp;
+use Symfony\Component\Messenger\Transport\Sync\SyncTransport;
 use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
 
 final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
 {
@@ -111,8 +130,8 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
         $this->assertCount(3, array_filter($all, static fn (RunEvent $event): bool => 'turn_advanced' === $event->type));
     }
 
-    #[\PHPUnit\Framework\Attributes\TestWith([true])]
-    #[\PHPUnit\Framework\Attributes\TestWith([false])]
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testConsumedResumeReleasesReconstructedTerminalChildOnly(bool $terminal): void
     {
         $container = self::getContainer();
@@ -151,22 +170,22 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
         }
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('launchKinds')]
+    #[DataProvider('launchKinds')]
     public function testEnqueuedChildStartIsAcceptedByFreshOwnerDirectory(AgentArtifactKindEnum $kind): void
     {
         $container = self::getContainer();
         $parent = $this->reserve();
-        $identity = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO($parent, $this->childId(), 'agent_fresh', 'scout', 'task', $kind);
+        $identity = new ChildRunIdentityDTO($parent, $this->childId(), 'agent_fresh', 'scout', 'task', $kind);
         ChildRunFixture::reserve($container, $parent, $identity->artifactId, $identity->childRunId);
-        $lifecycle = $container->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
+        $lifecycle = $container->get(ChildRunArtifactLifecycleService::class);
         $lifecycle->reservePending($identity);
-        $input = new \Ineersa\AgentCore\Domain\Run\StartRunInput('instructions', [], $identity->childRunId, new RunMetadata(session: ['kind' => 'agent_child', 'parent_run_id' => $parent], model: 'test-model'));
-        $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService::class)->startPrepared($parent, 'launch-call', $identity, new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO($identity, $input));
+        $input = new StartRunInput('instructions', [], $identity->childRunId, new RunMetadata(session: ['kind' => 'agent_child', 'parent_run_id' => $parent], model: 'test-model'));
+        $container->get(DeferredSubagentBatchRuntimeStartService::class)->startPrepared($parent, 'launch-call', $identity, new PreparedAgentChildRunDTO($identity, $input));
         $queued = $container->get('messenger.transport.run_control')->getSent()[0];
         $this->assertInstanceOf(StartRun::class, $queued->getMessage());
         $artifacts = $container->get(AgentArtifactRegistry::class);
-        $freshDirectory = new \Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory($container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class), $artifacts);
-        $this->assertSame(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Pending, $freshDirectory->locate($identity->childRunId)->status);
+        $freshDirectory = new AgentChildRunDirectory($container->get(DeferredSubagentChildRepository::class), $artifacts);
+        $this->assertSame(AgentArtifactStatusEnum::Pending, $freshDirectory->locate($identity->childRunId)->status);
         $events = $container->get(EventStoreInterface::class);
         $this->assertNull($events->latestSequenceFor($identity->childRunId));
         self::$kernel->shutdown();
@@ -179,7 +198,7 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
         $this->assertSame(RunStatus::Running, $freshRegistry->requireLoaded($identity->childRunId)->status);
         $this->assertSame($parent, $freshRegistry->requireLoaded($identity->childRunId)->parentRunId);
         $this->assertSame(1, $events->latestSequenceFor($identity->childRunId));
-        $this->assertSame(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Running, $artifacts->get($parent, $identity->artifactId)->status);
+        $this->assertSame(AgentArtifactStatusEnum::Running, $artifacts->get($parent, $identity->artifactId)->status);
         $container->get('agent.command.bus')->dispatch($queued->with(new ReceivedStamp('run_control')));
         $this->assertSame(1, $events->latestSequenceFor($identity->childRunId), 'Launch redelivery must not append a second StartRun.');
     }
@@ -266,11 +285,11 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
         try {
             $this->registry()->replaceCurrent(new RunState($run, RunStatus::Running, lastSeq: 1, activeStepId: str_repeat('x', 256)));
             $this->fail('Projection validation must fail after the canonical append.');
-        } catch (\Symfony\Component\Validator\Exception\ValidationFailedException $exception) {
+        } catch (ValidationFailedException $exception) {
             $this->assertNotEmpty($exception->getMessage());
         }
-        $sync = new \Symfony\Component\Messenger\Transport\Sync\SyncTransport(self::getContainer()->get('agent.command.bus'));
-        $sync->send(new Envelope($this->start($run), [new \Symfony\Component\Messenger\Stamp\SentStamp($sync::class, 'run_control')]));
+        $sync = new SyncTransport(self::getContainer()->get('agent.command.bus'));
+        $sync->send(new Envelope($this->start($run), [new SentStamp($sync::class, 'run_control')]));
         $state = $this->registry()->requireLoaded($run);
         $this->assertSame(RunStatus::Running, $state->status);
         $this->assertSame('test-model', $state->model);
@@ -286,13 +305,13 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
         $run = $this->reserve();
         $events = self::getContainer()->get(EventStoreInterface::class);
         PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'test-model']]]));
-        $replay = $this->createMock(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class);
-        $replay->expects($this->once())->method('rebuildIfStale')->willReturn(\Ineersa\AgentCore\Application\Dto\RunStateReplayResult::noEvents());
+        $replay = $this->createMock(RunStateRebuilderInterface::class);
+        $replay->expects($this->once())->method('rebuildIfStale')->willReturn(RunStateReplayResult::noEvents());
         $middleware = new OwnerRunInitializationMiddleware($this->registry(), $events, $replay,
             self::getContainer()->get(HatfieldSessionStore::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            new \Psr\Log\NullLogger(), self::getContainer()->get(AgentArtifactRegistry::class), self::getContainer()->get(PendingTransitionRecovery::class), self::getContainer()->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class), self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader::class));
+            self::getContainer()->get(AgentChildRunDirectory::class),
+            self::getContainer()->get(RunLockManager::class),
+            new NullLogger(), self::getContainer()->get(AgentArtifactRegistry::class), self::getContainer()->get(PendingTransitionRecovery::class), self::getContainer()->get(RunOperationalStatusReaderInterface::class), self::getContainer()->get(AgentResumeCommandReader::class));
         try {
             $middleware->handle(new Envelope($this->start($run), [new ReceivedStamp('run_control')]), new StackMiddleware());
             $this->fail('Empty recovery must not admit queued state.');
@@ -303,12 +322,12 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
         $this->registry()->requireLoaded($run);
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('lateStartTerminalKinds')]
+    #[DataProvider('lateStartTerminalKinds')]
     public function testLateStartOnTerminalChildDoesNotReviveAndLeavesChildUnloaded(string $kind): void
     {
         $container = self::getContainer();
         $parent = $this->reserve();
-        $identity = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO(
+        $identity = new ChildRunIdentityDTO(
             $parent,
             $this->childId(),
             'agent_terminal_'.$kind,
@@ -317,20 +336,20 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
             AgentArtifactKindEnum::Subagent,
         );
         ChildRunFixture::reserve($container, $parent, $identity->artifactId, $identity->childRunId);
-        $lifecycle = $container->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
+        $lifecycle = $container->get(ChildRunArtifactLifecycleService::class);
         $lifecycle->reservePending($identity);
 
         $events = $container->get(EventStoreInterface::class);
         $registry = $this->registry();
         if ('completed' === $kind) {
-            $input = new \Ineersa\AgentCore\Domain\Run\StartRunInput(
+            $input = new StartRunInput(
                 'instructions',
                 [],
                 $identity->childRunId,
                 new RunMetadata(session: ['kind' => 'agent_child', 'parent_run_id' => $parent], model: 'test-model'),
             );
-            $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService::class)
-                ->startPrepared($parent, 'launch-call-'.$kind, $identity, new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO($identity, $input));
+            $container->get(DeferredSubagentBatchRuntimeStartService::class)
+                ->startPrepared($parent, 'launch-call-'.$kind, $identity, new PreparedAgentChildRunDTO($identity, $input));
             $queued = $container->get('messenger.transport.run_control')->getSent()[0];
             $this->assertInstanceOf(StartRun::class, $queued->getMessage());
             $container->get('agent.command.bus')->dispatch($queued->with(new ReceivedStamp('run_control')));

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Amp\CancelledException;
+use Amp\Socket\ServerSocket;
 use Amp\TimeoutCancellation;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -872,7 +873,7 @@ final class Hatfield360ClaudeHookTest extends TestCase
     }
 
     /** @return array<array-key, mixed> */
-    private function exchange(\Amp\Socket\ServerSocket $server, Process $process, ?string $reply = '{"ok":true,"status":"accepted"}', bool $finish = true, ?\Closure $beforeReply = null): array
+    private function exchange(ServerSocket $server, Process $process, ?string $reply = '{"ok":true,"status":"accepted"}', bool $finish = true, ?\Closure $beforeReply = null): array
     {
         try {
             $deadline = new TimeoutCancellation(2);

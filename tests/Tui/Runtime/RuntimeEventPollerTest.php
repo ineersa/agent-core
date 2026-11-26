@@ -16,6 +16,10 @@ use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CompactionProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
@@ -28,6 +32,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -1333,11 +1338,11 @@ final class RuntimeEventPollerTest extends TestCase
     /** @return array{RuntimeEventPoller, TranscriptProjectorInterface} */
     private function retentionPoller(): array
     {
-        $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
-        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber());
-        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\CompactionProjectionSubscriber());
-        $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector(
-            $dispatcher, new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState(),
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
+        $dispatcher->addSubscriber(new CompactionProjectionSubscriber());
+        $projector = new TranscriptProjector(
+            $dispatcher, new TranscriptProjectionState(),
         );
 
         return [new RuntimeEventPoller(

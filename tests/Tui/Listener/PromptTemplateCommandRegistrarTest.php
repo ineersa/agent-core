@@ -15,11 +15,13 @@ use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateSubstitutor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\PromptTemplateCommandRegistrar;
 use Ineersa\Tui\Listener\SlashCommandCatalogRegistrar;
 use PHPUnit\Framework\Attributes\Test;
@@ -105,7 +107,7 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
 
         $this->commandCatalog = new SlashCommandCatalog();
         $this->commandCatalog->register(
-            new \Ineersa\Tui\Command\CommandMetadata(
+            new CommandMetadata(
                 name: 'review',
                 description: 'Real review command',
                 usage: '/review',
@@ -134,7 +136,7 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
         $this->createRegistrar()->registerCatalog($this->commandCatalog);
 
         $result = (new SlashCommandRegistry($this->commandCatalog))->execute(new SlashCommand('help', '', '/help'));
-        $this->assertInstanceOf(\Ineersa\Tui\Command\TranscriptMessage::class, $result);
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
 
         $this->assertTrue($this->commandCatalog->has('review'));
     }

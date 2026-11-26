@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Path;
 use Symfony\Component\Process\Process;
 
 /**
@@ -26,7 +27,7 @@ final class PendingTransitionIdleOwnerRestartTest extends TestCase
     {
         $directory = TestDirectoryIsolation::createProjectTempDir('idle-owner-pending');
         TestDirectoryIsolation::createHatfieldTree($directory, withSessions: true);
-        $dbDirectory = \Symfony\Component\Filesystem\Path::makeRelative($directory, ProjectDir::get().'/var/test');
+        $dbDirectory = Path::makeRelative($directory, ProjectDir::get().'/var/test');
         $marker = $directory.'/recovery.json';
         $process = new Process([
             \PHP_BINARY,

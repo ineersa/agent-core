@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
+use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
@@ -36,7 +37,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
 
     public function handle(object $message, RunState $state): HandlerResult
     {
-        return \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::finalize($this->prepare($message, $state));
+        return CommandMailboxCoordinationFactory::finalize($this->prepare($message, $state));
     }
 
     private function prepare(object $message, RunState $state): HandlerResult

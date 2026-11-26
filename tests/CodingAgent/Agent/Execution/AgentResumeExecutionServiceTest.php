@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
@@ -12,6 +13,7 @@ use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
@@ -26,6 +28,7 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -37,6 +40,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
+use Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
@@ -50,6 +54,7 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
@@ -64,6 +69,10 @@ use Ineersa\Tui\Tests\Support\AgentTaskPresentationAssertionsTrait;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Messenger\Handler\HandlersLocator;
+use Symfony\Component\Messenger\MessageBus;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -151,7 +160,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertCount(1, $enqueues);
         $enqueue = $enqueues[0];
         $this->assertInstanceOf(EnqueueCommandDTO::class, $enqueue);
-        self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class)->enqueue($enqueue->command);
+        self::getContainer()->get(CommandStoreInterface::class)->enqueue($enqueue->command);
         $continued = $mailbox->applyPendingTurnStartCommands($queued->nextState);
         $state = $continued->state;
         $this->assertSame($originalMessages, \array_slice($state->messages, 0, 2));
@@ -806,7 +815,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         // Hold AdvanceRun/observation: only enqueue the follow_up command.
         $enqueues = array_values(array_filter($queued->postCommitActions, static fn (object $action): bool => $action instanceof EnqueueCommandDTO));
         $this->assertCount(1, $enqueues);
-        self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class)->enqueue($enqueues[0]->command);
+        self::getContainer()->get(CommandStoreInterface::class)->enqueue($enqueues[0]->command);
 
         $duplicateCall = new ExecuteToolCall($parent, 1, $stepId, 1, hash('sha256', 'q2'), 'resume-q2', 'agent_resume', [
             'artifact_id' => $artifact,
@@ -859,7 +868,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             normalizer: self::getContainer()->get(SerializerInterface::class),
             denormalizer: self::getContainer()->get(SerializerInterface::class),
             validator: self::getContainer()->get(ValidatorInterface::class),
-            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($events, self::getContainer()->get(RunHistorySourceProviderInterface::class)),
+            resumeCommands: new AgentResumeCommandReader($events, self::getContainer()->get(RunHistorySourceProviderInterface::class)),
         );
         $step = 'stable-resume-step';
         $call = new ExecuteToolCall($parent, 1, $step, 1, hash('sha256', 'stable'), 'resume-stable', 'agent_resume', ['artifact_id' => $artifact, 'task' => 'continue'], 0, parentModel: 'test/model');
@@ -867,7 +876,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $invoke = static fn () => $context->with(new ToolContext($parent, 1, 'resume-stable', 'agent_resume', new NullCancellationToken(), 30, 0, stepId: $step, parentModel: 'test/model'), static fn () => $service->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')));
         $first = $invoke();
         // Simulate process loss after dispatch, before local launch-success persistence.
-        self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getConnection()->executeStatement("UPDATE deferred_subagent_batch SET launch_status = 'reserved' WHERE lifecycle_id = ?", [$first->deferredId]);
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement("UPDATE deferred_subagent_batch SET launch_status = 'reserved' WHERE lifecycle_id = ?", [$first->deferredId]);
         $second = $invoke();
         $this->assertSame($first->deferredId, $second->deferredId);
         $this->assertCount(2, $commands->messages);
@@ -877,7 +886,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame('follow_up', $original->kind);
         $state = new RunState($child, RunStatus::Completed);
         $handler = self::getContainer()->get(ApplyCommandHandler::class);
-        $store = self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class);
+        $store = self::getContainer()->get(CommandStoreInterface::class);
         foreach ([$original, $replayed] as $command) {
             $transition = $handler->handle($command, $state);
             foreach ($transition->postCommitActions as $action) {
@@ -894,7 +903,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         // still proves that this resume started even if the local write was lost.
         PreparedEventStoreSeeder::appendMany($canonicalStore, (new EventFactory())->eventsFromSpecs($child, 2, 2, $continued->eventSpecs));
         $status = RunStatus::Running;
-        $connection = self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getConnection();
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $connection->executeStatement("UPDATE deferred_subagent_batch SET launch_status = 'reserved' WHERE lifecycle_id = ?", [$first->deferredId]);
         $this->assertSame($first->deferredId, $invoke()->deferredId);
         $this->assertCount(2, $commands->messages);
@@ -916,12 +925,12 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertNotSame($original->idempotencyKey(), $commands->messages[2]->idempotencyKey());
     }
 
-    private function resumeCommandBus(AgentRunnerInterface $runner): \Symfony\Component\Messenger\MessageBusInterface
+    private function resumeCommandBus(AgentRunnerInterface $runner): MessageBusInterface
     {
         $serializer = self::getContainer()->get(SerializerInterface::class);
 
-        return new \Symfony\Component\Messenger\MessageBus([
-            new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
+        return new MessageBus([
+            new HandleMessageMiddleware(new HandlersLocator([
                 ApplyCommand::class => [static function (ApplyCommand $command) use ($runner, $serializer): void {
                     $runner->followUp($command->runId(), $serializer->denormalize($command->payload['message'], AgentMessage::class));
                 }],
@@ -961,7 +970,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             toolBatches: self::getContainer()->get(ToolBatchStoreInterface::class),
             denormalizer: self::getContainer()->get(SerializerInterface::class),
             validator: self::getContainer()->get(ValidatorInterface::class),
-            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($eventStore, self::getContainer()->get(RunHistorySourceProviderInterface::class)),
+            resumeCommands: new AgentResumeCommandReader($eventStore, self::getContainer()->get(RunHistorySourceProviderInterface::class)),
         );
     }
 
@@ -975,8 +984,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         ?TestLogger $logger = null,
         ?RunOperationalStatusReaderInterface $operationalStatusReader = null,
         ?EventStoreInterface $eventStore = null,
-        ?\Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface $relationshipReader = null,
-    ): \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome {
+        ?RunRelationshipReaderInterface $relationshipReader = null,
+    ): DeferredToolCompletionOutcome {
         $contextAccessor = new StackToolExecutionContextAccessor();
         if (null === $operationalStatusReader) {
             $operationalStatusReader = $this->createStub(RunOperationalStatusReaderInterface::class);
@@ -1010,7 +1019,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             toolBatches: self::getContainer()->get(ToolBatchStoreInterface::class),
             denormalizer: self::getContainer()->get(SerializerInterface::class),
             validator: self::getContainer()->get(ValidatorInterface::class),
-            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($eventStore, self::getContainer()->get(RunHistorySourceProviderInterface::class)),
+            resumeCommands: new AgentResumeCommandReader($eventStore, self::getContainer()->get(RunHistorySourceProviderInterface::class)),
         );
 
         $stepId = 'resume-step-'.$toolCallId;
@@ -1052,7 +1061,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
                 stepId: $stepId,
                 parentModel: 'test/model',
             ),
-            static function () use ($service, $parentRunId, $task): \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome {
+            static function () use ($service, $parentRunId, $task): DeferredToolCompletionOutcome {
                 return $service->resume($parentRunId, $task);
             },
         );

@@ -10,6 +10,8 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
+use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -17,17 +19,25 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
+use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
+use Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver;
 use Ineersa\CodingAgent\Config\AgentsConfig;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
@@ -35,11 +45,13 @@ use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PipelineCapturingAgentRunn
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\ProviderBoundaryCaptureSupport;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
+use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
@@ -383,24 +395,24 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             'policyResolver' => $policy,
             'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
             'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
-            'artifactRegistry' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class),
+            'artifactRegistry' => self::getContainer()->get(AgentArtifactRegistry::class),
             'agentRunner' => $agentRunner,
             'runStateRebuilder' => $this->rebuildParentState($parentState),
             'eventStore' => $eventStore,
             'metadataReader' => new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
-            'relationshipReader' => \Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader::topLevel($parentState->runId),
+            'relationshipReader' => StubRunRelationshipReader::topLevel($parentState->runId),
             'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(subagentToolTimeoutSeconds: 2),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
-            'appConfig' => self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
-            'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
-            'batchRepository' => self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
-            'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
-            'forkLaunchInputBuilder' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder::class),
-            'forkToolPolicyResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver::class),
-            'childExtensionSelection' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
+            'appConfig' => self::getContainer()->get(AppConfig::class),
+            'modelResolver' => self::getContainer()->get(ModelResolver::class),
+            'batchRepository' => self::getContainer()->get(DeferredSubagentBatchRepository::class),
+            'lifecycleListener' => self::getContainer()->get(SubagentChildRunBatchLifecycleListener::class),
+            'forkLaunchInputBuilder' => self::getContainer()->get(ForkChildLaunchInputBuilder::class),
+            'forkToolPolicyResolver' => self::getContainer()->get(ForkToolPolicyResolver::class),
+            'childExtensionSelection' => self::getContainer()->get(ChildExtensionSelectionService::class),
             'toolRegistry' => self::getContainer()->get(ToolRegistryInterface::class),
         ], $prepare);
     }
@@ -436,18 +448,18 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
     /**
      * @param list<string> $toolNames
      */
-    private function innerToolboxResolver(ToolRegistry $registry, array $toolNames): \Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface
+    private function innerToolboxResolver(ToolRegistry $registry, array $toolNames): ToolSetResolverInterface
     {
-        return new class($registry, $toolNames) implements \Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface {
+        return new class($registry, $toolNames) implements ToolSetResolverInterface {
             public function __construct(private ToolRegistry $registry, private array $toolNames)
             {
             }
 
-            public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): \Ineersa\AgentCore\Contract\Tool\ActiveToolSet
+            public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
             {
                 unset($toolsRef, $turnNo, $runId);
 
-                return new \Ineersa\AgentCore\Contract\Tool\ActiveToolSet(toolNames: $this->toolNames);
+                return new ActiveToolSet(toolNames: $this->toolNames);
             }
         };
     }
@@ -474,7 +486,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
                 return $tools;
             }
 
-            public function execute(ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
+            public function execute(ToolCall $toolCall): ToolResult
             {
                 throw new \LogicException('not used');
             }

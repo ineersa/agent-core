@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Mcp\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -14,6 +18,8 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore;
 use Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException;
+use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
+use Ineersa\CodingAgent\Mcp\Tool\McpResultMapper;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandler;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolHandlerFactory;
 use Ineersa\CodingAgent\Mcp\Tool\McpToolInvoker;
@@ -38,14 +44,14 @@ final class McpToolRegistrarTest extends TestCase
 {
     private ToolRegistry $registry;
     private TestLogger $logger;
-    private \Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor $contextAccessor;
+    private StackToolExecutionContextAccessor $contextAccessor;
 
     /** @var array<string, McpToolCatalogDTO> */
     protected function setUp(): void
     {
         $this->registry = new ToolRegistry();
         $this->logger = new TestLogger();
-        $this->contextAccessor = new \Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor();
+        $this->contextAccessor = new StackToolExecutionContextAccessor();
     }
 
     /* ── Test thesis 1: Catalog tools become dynamic registry tools ── */
@@ -105,7 +111,7 @@ final class McpToolRegistrarTest extends TestCase
         $this->expectExceptionMessage('MCP tool "read" (server "my-server"): UnexpectedValueException: MCP reply could not be decoded');
 
         $this->contextAccessor->with(
-            new \Ineersa\AgentCore\Application\Tool\ToolContext('run-1', 1, 'tc1', 'my_server_read', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30),
+            new ToolContext('run-1', 1, 'tc1', 'my_server_read', new NullCancellationToken(), 30),
             static fn () => ($handler)(['path' => 'test.txt']),
         );
     }
@@ -119,7 +125,7 @@ final class McpToolRegistrarTest extends TestCase
 
         try {
             $this->contextAccessor->with(
-                new \Ineersa\AgentCore\Application\Tool\ToolContext('run-1', 1, 'tc1', 'my_server_read', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30),
+                new ToolContext('run-1', 1, 'tc1', 'my_server_read', new NullCancellationToken(), 30),
                 static fn () => ($handler)([]),
             );
             $this->fail('Expected ToolCallException');
@@ -679,9 +685,9 @@ final class McpToolRegistrarTest extends TestCase
 
     private function makeThrowingInvoker(\Throwable $exception): McpToolInvoker
     {
-        $resultMapper = new \Ineersa\CodingAgent\Mcp\Tool\McpResultMapper();
+        $resultMapper = new McpResultMapper();
 
-        $stubManager = new class($exception) implements \Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface {
+        $stubManager = new class($exception) implements McpConnectionManagerInterface {
             public function __construct(private \Throwable $exception)
             {
             }
@@ -695,7 +701,7 @@ final class McpToolRegistrarTest extends TestCase
             {
             }
 
-            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?\Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
+            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
             {
                 throw $this->exception;
             }

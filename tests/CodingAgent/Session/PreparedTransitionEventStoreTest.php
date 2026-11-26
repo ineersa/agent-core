@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -17,6 +22,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore;
@@ -28,9 +34,12 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\PendingTransitionWorkDTO;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\HandlerArgumentsStamp;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
@@ -147,7 +156,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $first = PreparedEventStoreSeeder::append($store, new RunEvent($run, 0, 0, 'run_started', []));
         $path = $sessions->resolveSessionsBasePath().'/'.$run.'/events.jsonl';
         $container->get(FileRunSequenceAllocator::class)->allocateBlock(FileRunSequenceAllocator::counterPathForEventsLog($path), 2);
-        $action = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::create($run, 0, 'prepared');
+        $action = AdvanceRunCoordinationFactory::create($run, 0, 'prepared');
         $persisted = $store->appendTransition([new RunEvent($run, 0, 0, 'agent_end', ['reason' => 'completed'])], [
             'run_id' => $run, 'predecessor_seq' => $first->seq, 'actions' => [$action], 'effects' => [], 'post_commit_effects' => [], 'after_turn_hooks' => false,
         ]);
@@ -162,7 +171,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $serializer = $container->get('messenger.transport.native_php_serializer');
         $encoded = json_decode(file_get_contents($path.'.append.work'), true, flags: \JSON_THROW_ON_ERROR);
         $restored = $serializer->decode($encoded)->getMessage();
-        $this->assertInstanceOf(\Ineersa\CodingAgent\Session\PendingTransitionWorkDTO::class, $restored);
+        $this->assertInstanceOf(PendingTransitionWorkDTO::class, $restored);
         $this->assertSame($action->message->stepId(), $restored->work['actions'][0]->message->stepId());
         $pending = $store->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
@@ -347,8 +356,8 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $order = [];
         $cutVisibleDuringObservation = null;
         $failure = $this->createMock(MessageBusInterface::class);
-        $failure->expects($this->atLeastOnce())->method('dispatch')->willReturnCallback(static function (object $message) use (&$order, &$cutVisibleDuringObservation, $store, $run): \Symfony\Component\Messenger\Envelope {
-            if ($message instanceof \Symfony\Component\Messenger\Envelope) {
+        $failure->expects($this->atLeastOnce())->method('dispatch')->willReturnCallback(static function (object $message) use (&$order, &$cutVisibleDuringObservation, $store, $run): Envelope {
+            if ($message instanceof Envelope) {
                 $message = $message->getMessage();
             }
             $order[] = $message::class;
@@ -360,18 +369,18 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
                 $cutVisibleDuringObservation = null !== $store->verifiedPendingTransition($run);
             }
 
-            return new \Symfony\Component\Messenger\Envelope($message);
+            return new Envelope($message);
         });
         $recovery = new PendingTransitionRecovery(
             $store,
             $container->get(ActiveRunContextInterface::class),
             TestTransitionFinalizerFactory::create(
                 $store,
-                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($failure, $failure, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
-                batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
-                commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
+                new StepDispatcher($failure, $failure, new TestLogger(), events: new EventDispatcher()),
+                batches: $container->get(ToolBatchStoreInterface::class),
+                commands: $container->get(CommandStoreInterface::class),
             ),
-            $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
+            $container->get(CoordinationActionValidator::class),
         );
         // Delivery failures after journal finalization are local degradation: the
         // pending cut is cleared; a lost continuation requires explicit repair.

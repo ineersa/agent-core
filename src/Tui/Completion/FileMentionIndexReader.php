@@ -4,20 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Completion;
 
+use Ineersa\CodingAgent\CLI\CompletionFileIndexRefreshCommand;
 use Ineersa\CodingAgent\CLI\DTO\FileMentionIndexEntryDTO;
+use Ineersa\CodingAgent\CLI\FileMentionIndexBuilder;
 
 /**
  * In-memory reader for the file mention completion index.
  *
  * Loads a JSONL index file produced by
- * {@see \Ineersa\CodingAgent\CLI\FileMentionIndexBuilder},
+ * {@see FileMentionIndexBuilder},
  * caches the parsed entries in memory, and reloads automatically when
  * the index file's mtime changes.
  *
  * Missing or unreadable index files are treated as empty — the caller
  * never receives an exception from index access.  This is intentional
  * local degradation: completion silently returns no suggestions until
- * {@see \Ineersa\CodingAgent\CLI\CompletionFileIndexRefreshCommand}
+ * {@see CompletionFileIndexRefreshCommand}
  * (scheduler) produces an index.  When the index file exists and can be
  * read but every line within it is invalid JSON, the loaded index becomes
  * empty (no previous cache is retained).  The previous in-memory

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Mcp\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\CodingAgent\Mcp\Client\McpConnectionManager;
 use Mcp\Server\Capability\Discovery\SchemaValidator;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
@@ -140,7 +141,7 @@ final class McpResultMapper
         // Redact common secret-bearing patterns (Bearer tokens,
         // API keys, passwords).  Use the same patterns as the
         // connection manager's SECRET_PATTERNS for consistency.
-        return \Ineersa\CodingAgent\Mcp\Client\McpConnectionManager::sanitizeLogMessage($joined);
+        return McpConnectionManager::sanitizeLogMessage($joined);
     }
 
     /**

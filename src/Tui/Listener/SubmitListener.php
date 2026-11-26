@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
@@ -24,6 +25,7 @@ use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -278,7 +280,7 @@ final class SubmitListener implements TuiListenerRegistrar
         ChatScreen $screen,
         HatfieldSessionStore $sessionStore,
         TranscriptBlockFactory $blockFactory,
-        \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
+        AgentSessionClient $client,
         LoggerInterface $logger,
         Tui $tui,
         TuiSessionLifecycleDispatcher $lifecycle,
@@ -503,7 +505,7 @@ final class SubmitListener implements TuiListenerRegistrar
         $state->sessionId = $sessionStore->createSession($seedPrompt, $state->pendingGoal);
         $state->pendingGoal = null;
         $screen->updateSessionId($state->sessionId);
-        $lifecycle->dispatch(\Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted);
+        $lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionStarted);
         $logger->info('Draft session promoted to real session', [
             'component' => 'SubmitListener',
             'event_type' => $eventType,
@@ -563,7 +565,7 @@ final class SubmitListener implements TuiListenerRegistrar
         ChatScreen $screen,
         HatfieldSessionStore $sessionStore,
         TranscriptBlockFactory $blockFactory,
-        \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
+        AgentSessionClient $client,
         LoggerInterface $logger,
         TuiSessionLifecycleDispatcher $lifecycle,
     ): void {
@@ -573,7 +575,7 @@ final class SubmitListener implements TuiListenerRegistrar
             if ('' === $state->sessionId) {
                 $state->sessionId = $sessionStore->createSession($shellCommand->rawInput);
                 $screen->updateSessionId($state->sessionId);
-                $lifecycle->dispatch(\Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted);
+                $lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionStarted);
                 $logger->info('Draft session promoted for shell command', [
                     'component' => 'SubmitListener',
                     'event_type' => 'draft_promoted_shell',
@@ -667,7 +669,7 @@ final class SubmitListener implements TuiListenerRegistrar
         string $text,
         TuiSessionState $state,
         ChatScreen $screen,
-        \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
+        AgentSessionClient $client,
         TranscriptBlockFactory $blockFactory,
         SubagentLiveInputPolicy $policy,
         LoggerInterface $logger,

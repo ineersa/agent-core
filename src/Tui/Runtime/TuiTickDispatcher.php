@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 use Symfony\Component\Tui\Event\TickEvent;
+use Symfony\Component\Tui\Tui;
 
 /**
  * Per-run tick dispatcher allowing multiple listener registrars to
  * register tick callbacks without overwriting each other.
  *
- * Symfony TUI's {@see \Symfony\Component\Tui\Tui::onTick()} is a
+ * Symfony TUI's {@see Tui::onTick()} is a
  * single-slot setter. This dispatcher replaces it as the single
  * Symfony callback and multiplexes to all registered handlers.
  */

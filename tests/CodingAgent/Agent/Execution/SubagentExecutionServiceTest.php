@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -14,6 +16,7 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
@@ -22,10 +25,16 @@ use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
+use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
+use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
+use Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
@@ -79,13 +88,13 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(),
-            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            'progressSnapshotBuilder' => new SubagentProgressSnapshotBuilder(),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'appConfig' => self::getContainer()->get(AppConfig::class),
-            'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
+            'modelResolver' => self::getContainer()->get(ModelResolver::class),
         ]);
         self::getContainer()->get(StackToolExecutionContextAccessor::class)->with(
-            new \Ineersa\AgentCore\Application\Tool\ToolContext('parent-child-run', 2, 'call-nested', 'subagent', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30, stepId: 'nested-step', parentModel: 'test-model'),
+            new ToolContext('parent-child-run', 2, 'call-nested', 'subagent', new NullCancellationToken(), 30, stepId: 'nested-step', parentModel: 'test-model'),
             static fn () => $service->execute('parent-child-run', 'nested', 'Go deeper'),
         );
     }
@@ -116,12 +125,12 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(),
-            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            'progressSnapshotBuilder' => new SubagentProgressSnapshotBuilder(),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'appConfig' => self::getContainer()->get(AppConfig::class),
         ]);
         self::getContainer()->get(StackToolExecutionContextAccessor::class)->with(
-            new \Ineersa\AgentCore\Application\Tool\ToolContext('parent-4', 2, 'call-missing', 'subagent', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30, stepId: 'missing-step', parentModel: 'test-model'),
+            new ToolContext('parent-4', 2, 'call-missing', 'subagent', new NullCancellationToken(), 30, stepId: 'missing-step', parentModel: 'test-model'),
             static fn () => $service->execute('parent-4', 'nonexistent-agent', 'Do something'),
         );
     }
@@ -162,16 +171,16 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(),
-            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            'progressSnapshotBuilder' => new SubagentProgressSnapshotBuilder(),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'appConfig' => self::getContainer()->get(AppConfig::class),
-            'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
+            'modelResolver' => self::getContainer()->get(ModelResolver::class),
             'clock' => new NativeClock(),
-            'batchRepository' => self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
-            'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
-            'forkLaunchInputBuilder' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder::class),
-            'forkToolPolicyResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver::class),
-            'childExtensionSelection' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
+            'batchRepository' => self::getContainer()->get(DeferredSubagentBatchRepository::class),
+            'lifecycleListener' => self::getContainer()->get(SubagentChildRunBatchLifecycleListener::class),
+            'forkLaunchInputBuilder' => self::getContainer()->get(ForkChildLaunchInputBuilder::class),
+            'forkToolPolicyResolver' => self::getContainer()->get(ForkToolPolicyResolver::class),
+            'childExtensionSelection' => self::getContainer()->get(ChildExtensionSelectionService::class),
             'toolRegistry' => self::getContainer()->get(ToolRegistryInterface::class),
         ];
 

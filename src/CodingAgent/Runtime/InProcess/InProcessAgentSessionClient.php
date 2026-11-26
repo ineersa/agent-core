@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
@@ -32,6 +33,9 @@ use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Exception\BackgroundProcessUnavailableException;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
@@ -42,6 +46,7 @@ use Ineersa\CodingAgent\Tool\BashBackgroundRequestService;
 use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * In-process implementation of AgentSessionClient.
@@ -57,7 +62,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 {
     private ?string $bootstrapRequestId = null;
     private ?string $bootstrapRunId = null;
-    private ?\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO $bootstrapDescriptor = null;
+    private ?SessionBootstrapDescriptorDTO $bootstrapDescriptor = null;
     /** @var \Generator<int, RuntimeEvent>|null */
     private ?\Generator $bootstrapStream = null;
     private bool $bootstrapEnded = false;
@@ -79,8 +84,8 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly BackgroundProcessManager $backgroundProcesses,
         private readonly ChildInvocationBackgroundService $childBackground,
         private readonly BackgroundWorkSnapshotProvider $backgroundWork,
-        private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore $bootstrapSpools,
-        private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer $bootstrapTransfer,
+        private readonly SessionBootstrapSpoolStore $bootstrapSpools,
+        private readonly SessionBootstrapTransfer $bootstrapTransfer,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?McpSessionLifecycleDispatcher $mcpDispatcher = null,
         private readonly ?AgentArtifactRegistry $artifactRegistry = null,
@@ -133,12 +138,12 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $runId));
         }
 
-        $this->bootstrapRequestId = \Symfony\Component\Uid\Uuid::v4()->toRfc4122();
+        $this->bootstrapRequestId = Uuid::v4()->toRfc4122();
         $this->bootstrapRunId = $runId;
         $this->bootstrapDescriptor = null;
         $this->bootstrapStream = null;
         $this->bootstrapEnded = false;
-        $this->commandBus->dispatch(new \Ineersa\CodingAgent\Application\Message\AttachRun($runId, $this->buildContextMessages(), $this->bootstrapRequestId));
+        $this->commandBus->dispatch(new AttachRun($runId, $this->buildContextMessages(), $this->bootstrapRequestId));
 
         // Attaching is a new parent lifetime: existing artifacts stay retrievable
         // but agent_resume must not continue children launched before /resume.
@@ -154,7 +159,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     /** @param array<string, mixed> $cut */
     public function acknowledgeBootstrap(array $cut): void
     {
-        $descriptor = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($cut);
+        $descriptor = SessionBootstrapDescriptorDTO::fromArray($cut);
         if (!$this->bootstrapEnded || null === $this->bootstrapDescriptor || $descriptor->toArray() !== $this->bootstrapDescriptor->toArray()) {
             throw new \RuntimeException('Bootstrap acknowledgement is stale or incomplete.');
         }
@@ -247,7 +252,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             foreach ($this->transientSink->drain($runId) as $event) {
                 if (null !== $this->bootstrapRequestId && $runId === $this->bootstrapRunId) {
                     if ('bootstrap.available' === $event->type && ($event->payload['request_id'] ?? null) === $this->bootstrapRequestId) {
-                        $this->bootstrapDescriptor = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($event->payload);
+                        $this->bootstrapDescriptor = SessionBootstrapDescriptorDTO::fromArray($event->payload);
                         $this->bootstrapStream = $this->bootstrapTransfer->frames($this->bootstrapDescriptor);
                         yield $event;
                     }
@@ -316,7 +321,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             throw new \InvalidArgumentException('repair requires a non-empty runId.');
         }
 
-        $envelope = $this->commandBus->dispatch(new RepairSession($runId, $apply, \Symfony\Component\Uid\Uuid::v4()->toRfc4122()));
+        $envelope = $this->commandBus->dispatch(new RepairSession($runId, $apply, Uuid::v4()->toRfc4122()));
         $result = $envelope->last(HandledStamp::class)?->getResult();
         if (!$result instanceof RepairResult) {
             throw new \LogicException('In-process repair requires synchronous owner handling.');
@@ -496,7 +501,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     {
         $targetTurnNo = (int) ($command->payload['turn_no'] ?? 0);
 
-        $this->commandBus->dispatch(new SelectHistoryEntry($runId, $targetTurnNo, \Symfony\Component\Uid\Uuid::v4()->toRfc4122(), (string) ($command->payload['role'] ?? 'user')));
+        $this->commandBus->dispatch(new SelectHistoryEntry($runId, $targetTurnNo, Uuid::v4()->toRfc4122(), (string) ($command->payload['role'] ?? 'user')));
     }
 
     /**

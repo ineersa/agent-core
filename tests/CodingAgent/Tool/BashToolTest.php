@@ -10,12 +10,14 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -191,7 +193,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertNotNull($records[0]->finishedAt);
 
         $message = new ExecuteToolCall($this->sessionId, 1, 'step-exit', 1, 'execute-bash-exit', $call->toolCallId, $call->toolName, $call->arguments, 0);
-        $codec = self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec::class);
+        $codec = self::getContainer()->get(ToolExecutionEndPayloadCodec::class);
         $events = [
             new RunEvent($this->sessionId, 1, 1, RunEventTypeEnum::ToolExecutionStart->value, [
                 'tool_call_id' => $call->toolCallId,
@@ -1139,7 +1141,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
             logger: $this->logger,
-            payloads: self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
+            payloads: self::getContainer()->get(ToolPayloadStoreInterface::class),
             config: $this->bashConfig,
         );
     }

@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Support;
 
+use Ineersa\CodingAgent\Repository\RunRelationshipReader;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 
 /**
  * Deterministic hot relationship double for unit tests.
  *
- * Missing rows fail closed like production {@see \Ineersa\CodingAgent\Repository\RunRelationshipReader}.
+ * Missing rows fail closed like production {@see RunRelationshipReader}.
  */
 final class StubRunRelationshipReader implements RunRelationshipReaderInterface
 {

@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Contract;
 
 use Ineersa\AgentCore\Domain\Model\ProviderRequest;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
 
 /**
  * A single provider-compatibility feature shaper, called during the
@@ -13,7 +14,7 @@ use Ineersa\AgentCore\Domain\Model\ResolvedModel;
  * {@see Hook\BeforeProviderRequestHookInterface} hooks.
  *
  * Feature shapers are tagged with {@code agent_core.provider_compatibility_feature_shaper}
- * and iterated by {@see \Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper}.
+ * and iterated by {@see ProviderCompatibilityRequestShaper}.
  *
  * Each shaper checks whether its feature is active via {@see supports()} and,
  * if so, applies the necessary options or input/message transformations via

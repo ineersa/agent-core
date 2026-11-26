@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\DeferredSubagentBatchChildTurnHookSubscriber;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnHandler;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
@@ -110,7 +111,7 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
             $this->assertSame(7, $msg->committedEvents[0]->seq);
             // This complete canonical batch follows cursor zero despite allocation holes.
             $bound = $actions[0]->bindCanonicalSequences([7, 8]);
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnHandler::class)($bound->message);
+            self::getContainer()->get(ObserveDeferredSubagentBatchChildTurnHandler::class)($bound->message);
             $this->assertSame(8, $childRepo->findEntityByBatchLifecycleAndIndex($lifecycle, 1)->childEventCursor);
         }
     }

@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Event\PostLoadEventArgs;
 use Doctrine\ORM\Events;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -45,6 +46,9 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -108,7 +112,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $observe = new ObserveDeferredSubagentBatchChildTurnHandler(
             $batchRepo,
             $childRepo,
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
             $bus,
         );
@@ -133,7 +137,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             $batchRepo,
             $childRepo,
             self::getContainer()->get(AgentChildRunEventStoreFactory::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             $recoveryBus,
             new TestLogger(),
         );
@@ -369,7 +373,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             $batchRepo,
             self::getContainer()->get(DeferredSubagentChildRepository::class),
             self::getContainer()->get(AgentChildRunEventStoreFactory::class),
-            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             $interruptRecoveryBus,
             new TestLogger(),
         );
@@ -389,7 +393,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: (string) getcwd()),
             entityManager: $this->createStub(EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $resolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
         $path = $resolver->eventsPath($parentRunId, $artifactId);
         if (!is_dir(\dirname($path))) {

@@ -14,8 +14,11 @@
 
 declare(strict_types=1);
 
+use Mcp\Schema\Content\TextContent;
+use Mcp\Schema\Result\CallToolResult;
 use Mcp\Server\Server;
 use Mcp\Server\Transport\StdioTransport;
+use Psr\Log\NullLogger;
 
 // Load Composer autoload relative to this script's location within the worktree.
 $autoloadPath = __DIR__.'/../../../../vendor/autoload.php';
@@ -27,15 +30,15 @@ $server = Server::builder()
         version: '0.0.0',
     )
     ->setInstructions('Test echo server for MCP integration tests.')
-    ->setLogger(new Psr\Log\NullLogger())
+    ->setLogger(new NullLogger())
     ->addTool(
-        handler: static function (string $text): Mcp\Schema\Result\CallToolResult {
-            $content = [new Mcp\Schema\Content\TextContent('echo: '.$text)];
+        handler: static function (string $text): CallToolResult {
+            $content = [new TextContent('echo: '.$text)];
 
             return match ($text) {
-                'structured-object' => new Mcp\Schema\Result\CallToolResult($content, structuredContent: (object) ['data' => str_repeat('m', 1_100_000)]),
-                'structured-list' => new Mcp\Schema\Result\CallToolResult($content, structuredContent: []),
-                default => new Mcp\Schema\Result\CallToolResult($content),
+                'structured-object' => new CallToolResult($content, structuredContent: (object) ['data' => str_repeat('m', 1_100_000)]),
+                'structured-list' => new CallToolResult($content, structuredContent: []),
+                default => new CallToolResult($content),
             };
         },
         name: 'echo',

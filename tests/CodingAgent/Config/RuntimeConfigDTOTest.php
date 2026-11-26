@@ -8,14 +8,19 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\DTO\RuntimeConfigDTO;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\PropertyAccess\PropertyAccess;
+use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validation;
@@ -44,7 +49,7 @@ final class RuntimeConfigDTOTest extends TestCase
         mkdir($this->defaultsDir, 0755, true);
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
-        $pathResolver = new \Ineersa\CodingAgent\Config\SettingsPathResolver(
+        $pathResolver = new SettingsPathResolver(
             appRoot: '/app',
             homeDir: $this->homeDir,
         );
@@ -194,15 +199,15 @@ final class RuntimeConfigDTOTest extends TestCase
 
     private function createSerializer(): SerializerInterface
     {
-        $reflectionExtractor = new \Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor();
+        $reflectionExtractor = new ReflectionExtractor();
         $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
 
-        return new \Symfony\Component\Serializer\Serializer(
+        return new Serializer(
             normalizers: [
-                new \Symfony\Component\Serializer\Normalizer\ObjectNormalizer(
+                new ObjectNormalizer(
                     classMetadataFactory: $classMetadataFactory,
                     nameConverter: new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter()),
-                    propertyAccessor: \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
+                    propertyAccessor: PropertyAccess::createPropertyAccessor(),
                     propertyTypeExtractor: $reflectionExtractor,
                 ),
             ],

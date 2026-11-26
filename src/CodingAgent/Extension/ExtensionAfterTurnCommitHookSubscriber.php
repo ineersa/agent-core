@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitEventSummaryDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
+use Psr\Log\LoggerInterface;
 
 /**
  * Bridges AgentCore after-turn hook dispatch to ExtensionApi hooks.
@@ -20,7 +21,7 @@ final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubsc
 {
     public function __construct(
         private ExtensionHookRegistry $hookRegistry,
-        private \Psr\Log\LoggerInterface $logger,
+        private LoggerInterface $logger,
         private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
     ) {
     }

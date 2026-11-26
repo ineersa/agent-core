@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Runtime\Stream;
 
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapEmissionGate;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -21,7 +23,7 @@ final class CommittedRuntimeEventStdoutSink implements RuntimeEventSinkInterface
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly StdoutRuntimeEventSink $stdoutSink,
-        private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapEmissionGate $bootstrapGate,
+        private readonly SessionBootstrapEmissionGate $bootstrapGate,
     ) {
     }
 
@@ -31,7 +33,7 @@ final class CommittedRuntimeEventStdoutSink implements RuntimeEventSinkInterface
             // The owner still publishes the full event locally to its temporary
             // projector. A stalled screen receives only a durable marker here.
             if ($event->seq > 0 && $this->bootstrapGate->holds($event->runId)) {
-                $event = new RuntimeEvent(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::CanonicalHighWater->value,
+                $event = new RuntimeEvent(RuntimeEventTypeEnum::CanonicalHighWater->value,
                     $event->runId, 0, ['canonical_seq' => $event->seq]);
             }
             $result = $this->stdoutSink->write($event);

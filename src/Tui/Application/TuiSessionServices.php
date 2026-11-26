@@ -16,6 +16,7 @@ use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
+use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 
 /**
@@ -26,7 +27,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
  * late per-iteration rebinding; every instance here is fresh per
  * session and constructor-valid (usable immediately).  Shared
  * stateless registrars consume them through
- * {@see \Ineersa\Tui\Runtime\TuiRuntimeContext::$sessionServices}.
+ * {@see TuiRuntimeContext::$sessionServices}.
  */
 final readonly class TuiSessionServices
 {

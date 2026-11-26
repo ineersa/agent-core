@@ -18,6 +18,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Messenger\RunCommandMessage;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Process\Process;
 use Symfony\Component\Scheduler\Generator\MessageContext;
 use Symfony\Component\Yaml\Yaml;
 
@@ -157,7 +158,7 @@ final class SessionResourceSamplerTaskTest extends TestCase
             $controller = 'require '.$autoload.'; (new \Symfony\Component\Process\Process('
                 .'[PHP_BINARY, "-r", '.var_export($worker, true).'], '
                 .'env: ["HATFIELD_SESSION_ID" => false], timeout: 5))->mustRun();';
-            (new \Symfony\Component\Process\Process(
+            (new Process(
                 [\PHP_BINARY, '-r', $controller], env: ['HATFIELD_SESSION_ID' => false], timeout: 7,
             ))->mustRun();
             $read = [$socket];

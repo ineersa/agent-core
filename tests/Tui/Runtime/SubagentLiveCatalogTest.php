@@ -9,7 +9,9 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Runtime\SubagentLiveCatalog;
+use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
+use Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture;
 use PHPUnit\Framework\TestCase;
 
 /** @covers \Ineersa\Tui\Runtime\SubagentLiveCatalog */
@@ -223,18 +225,18 @@ final class SubagentLiveCatalogTest extends TestCase
             'artifact_id' => 'agent_ctx',
             'agent_run_id' => 'child-run-ctx',
             'task_summary' => 'Context stats',
-            'model' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL,
+            'model' => ChildContextStatisticsFixture::MODEL,
             'reasoning' => 'high',
-            'latest_input_tokens' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
-            'context_window' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
+            'latest_input_tokens' => ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
+            'context_window' => ChildContextStatisticsFixture::CONTEXT_WINDOW,
         ]));
 
         $child = $catalog->findByArtifactId('agent_ctx');
         $this->assertNotNull($child);
-        $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL, $this->childContextString($child, 'model'));
+        $this->assertSame(ChildContextStatisticsFixture::MODEL, $this->childContextString($child, 'model'));
         $this->assertSame('high', $this->childContextString($child, 'reasoning'));
-        $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS, $this->childContextInt($child, 'latestInputTokens'));
-        $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW, $this->childContextInt($child, 'contextWindow'));
+        $this->assertSame(ChildContextStatisticsFixture::LATEST_INPUT_TOKENS, $this->childContextInt($child, 'latestInputTokens'));
+        $this->assertSame(ChildContextStatisticsFixture::CONTEXT_WINDOW, $this->childContextInt($child, 'contextWindow'));
     }
 
     public function testCatalogPreservesModelAndLatestInputTokensAcrossStatusUpdates(): void
@@ -246,10 +248,10 @@ final class SubagentLiveCatalogTest extends TestCase
             'artifact_id' => 'agent_ctx',
             'agent_run_id' => 'child-run-ctx',
             'task_summary' => 'Context stats',
-            'model' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL,
+            'model' => ChildContextStatisticsFixture::MODEL,
             'reasoning' => 'high',
-            'latest_input_tokens' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
-            'context_window' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
+            'latest_input_tokens' => ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
+            'context_window' => ChildContextStatisticsFixture::CONTEXT_WINDOW,
         ];
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', $base + ['status' => 'running']));
         $catalog->applyChildStatus('agent_ctx', SubagentLiveStatusEnum::Cancelled);
@@ -257,10 +259,10 @@ final class SubagentLiveCatalogTest extends TestCase
         $child = $catalog->findByArtifactId('agent_ctx');
         $this->assertNotNull($child);
         $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
-        $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL, $this->childContextString($child, 'model'));
+        $this->assertSame(ChildContextStatisticsFixture::MODEL, $this->childContextString($child, 'model'));
         $this->assertSame('high', $this->childContextString($child, 'reasoning'));
-        $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS, $this->childContextInt($child, 'latestInputTokens'));
-        $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW, $this->childContextInt($child, 'contextWindow'));
+        $this->assertSame(ChildContextStatisticsFixture::LATEST_INPUT_TOKENS, $this->childContextInt($child, 'latestInputTokens'));
+        $this->assertSame(ChildContextStatisticsFixture::CONTEXT_WINDOW, $this->childContextInt($child, 'contextWindow'));
     }
 
     /** @param array<string, mixed> $progress */
@@ -274,7 +276,7 @@ final class SubagentLiveCatalogTest extends TestCase
         );
     }
 
-    private function childContextString(\Ineersa\Tui\Runtime\SubagentLiveChildDTO $child, string $property): ?string
+    private function childContextString(SubagentLiveChildDTO $child, string $property): ?string
     {
         if (!property_exists($child, $property)) {
             $this->fail('SubagentLiveChildDTO must expose '.$property.' for child context statistics');
@@ -285,7 +287,7 @@ final class SubagentLiveCatalogTest extends TestCase
         return \is_string($value) ? $value : null;
     }
 
-    private function childContextInt(\Ineersa\Tui\Runtime\SubagentLiveChildDTO $child, string $property): int
+    private function childContextInt(SubagentLiveChildDTO $child, string $property): int
     {
         if (!property_exists($child, $property)) {
             $this->fail('SubagentLiveChildDTO must expose '.$property.' for child context statistics');

@@ -9,13 +9,14 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\CodingAgent\Agent\Tool\AgentRetrieveTool;
 use Ineersa\CodingAgent\Session\History\RunPresentationDTO;
 use Ineersa\CodingAgent\Session\History\RunPresentationReader;
 use Psr\Log\LoggerInterface;
 
 /**
  * Resolves parent-scoped subagent artifacts and renders bounded, privacy-safe
- * retrieval output for the {@see \Ineersa\CodingAgent\Agent\Tool\AgentRetrieveTool}.
+ * retrieval output for the {@see AgentRetrieveTool}.
  */
 final class AgentArtifactRetrievalService
 {

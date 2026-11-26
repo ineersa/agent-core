@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred;
 
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Serializer\Attribute\SerializedName;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -14,7 +15,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  * Doctrine JSON column stores the Serializer-normalized shape of this DTO.
  * Launch model/reasoning are required non-empty identity seeded at preparation.
  * Optional enrichment fields are null when absent so
- * {@see \Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES}
+ * {@see AbstractObjectNormalizer::SKIP_NULL_VALUES}
  * omits them on write.
  */
 final readonly class DeferredChildRunLifecycleProjectionDTO

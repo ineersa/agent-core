@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Infrastructure\ProviderQuota;
 
+use Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -11,7 +12,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 /**
  * Deterministic provider-quota HTTP for APP_ENV=test.
  *
- * Keeps the real {@see \Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService}
+ * Keeps the real {@see ProviderQuotaProbeService}
  * while never contacting auth networks.
  */
 final class FakeProviderQuotaHttpClientFactory

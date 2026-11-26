@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
+use Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 
 /**
@@ -37,7 +38,7 @@ final readonly class DeferredSubagentBatchChildTurnHookSubscriber implements Ess
 
         $committedStatus = RunStatus::tryFrom($context->status) ?? RunStatus::Running;
 
-        return [new \Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO(
+        return [new DeferredAfterTurnCoordinationDTO(
             $context->runId, $predecessorSequence,
             new ObserveDeferredSubagentBatchChildTurnMessage(
                 batchLifecycleId: $child->batchLifecycleId, batchIndex: $child->batchIndex,

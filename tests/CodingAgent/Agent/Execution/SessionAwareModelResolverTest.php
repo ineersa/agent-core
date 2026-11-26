@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -39,6 +40,7 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ChatGPT\ChatGPTSymfonyAiProviderBuilder;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture;
+use Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -49,6 +51,8 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -57,7 +61,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 {
     private string $tempDir;
     private string $homeDir;
-    private \Doctrine\ORM\EntityManagerInterface $entityManager;
+    private EntityManagerInterface $entityManager;
     private string $sessionId;
     private AppConfig $config;
     private HatfieldSessionStore $sessions;
@@ -516,7 +520,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->invoke($messages, 'high');
         $em = static::getContainer()->get('doctrine.orm.default_entity_manager');
         $em->clear();
-        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $this->invoke($messages, 'max');
         $this->invoke($messages, 'low');
         $this->assertSame(['low', 'high', 'max', 'low'], array_column(array_column($this->bodies, 'reasoning'), 'effort'));
@@ -553,7 +557,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
                 cwd: $this->tempDir.'/project',
             ),
             entityManager: $this->entityManager,
-            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $sessionMetaStore = $hatfieldSessionStore;
 
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
@@ -693,7 +697,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $em->persist($entity);
         $em->flush();
         $this->sessionId = (string) $entity->id;
-        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
     }
 
     /** @param list<AgentMessage> $messages */
@@ -709,7 +713,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertNotNull($catalog);
         $resolver = new SessionAwareModelResolver($selection, $catalog, $this->sessions, static::getContainer()->get(DeferredSubagentChildRepository::class));
         $http = new MockHttpClient(function (string $method, string $url, array $options): MockResponse {
-            $this->bodies[] = \Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder::decode($options);
+            $this->bodies[] = HttpRequestBodyDecoder::decode($options);
 
             return new MockResponse("data: {\"type\":\"response.output_text.delta\",\"delta\":\"done\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n", ['response_headers' => ['content-type: text/event-stream']]);
         });

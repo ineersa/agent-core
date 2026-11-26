@@ -19,9 +19,12 @@ use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionDeletedHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\DTO\BackgroundSnapshotDTO;
+use Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
@@ -72,17 +75,17 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
         $this->cwd = $cwd ?? '';
     }
 
-    public function tools(): \Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface
+    public function tools(): RegisteredToolInvokerInterface
     {
         throw new \LogicException('Unused fixture capability.');
     }
 
-    public function notifyOwner(\Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO $notification): void
+    public function notifyOwner(OwnerNotificationDTO $notification): void
     {
         throw new \LogicException('Unused fixture capability.');
     }
 
-    public function registerRecurringJobSource(string $sourceId, \Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface $source): void
+    public function registerRecurringJobSource(string $sourceId, RecurringJobSourceInterface $source): void
     {
         throw new \LogicException('Unused fixture capability.');
     }

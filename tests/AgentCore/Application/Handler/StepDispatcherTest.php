@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -33,7 +34,7 @@ final class StepDispatcherTest extends TestCase
                 $received[] = [$message, $evidence];
             }],
         ]))]);
-        $dispatcher = new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), new EventDispatcher());
+        $dispatcher = new StepDispatcher($bus, $bus, new TestLogger(), new EventDispatcher());
         $dispatcher->dispatchCoordinationActions([$action], $verified);
         $this->assertSame([[$action, $verified]], $received);
     }
@@ -41,7 +42,7 @@ final class StepDispatcherTest extends TestCase
     public function testDispatchesCoordinationActionsOnCommandBusInOrder(): void
     {
         $commandBus = new TestMessageBus();
-        $dispatcher = new StepDispatcher($commandBus, $commandBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new EventDispatcher());
+        $dispatcher = new StepDispatcher($commandBus, $commandBus, new TestLogger(), events: new EventDispatcher());
 
         $advance = new AdvanceRun('run-1', 1, 'advance-1', 1, 'advance-key');
         $compact = new CompactRun('run-1', 1, 'compact-1', 1, 'compact-key');
@@ -73,7 +74,7 @@ final class StepDispatcherTest extends TestCase
 
             return new Envelope($message);
         });
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $logger = new TestLogger();
         $dispatcher = new StepDispatcher($bus, $bus, $logger, $events);
         $locks->synchronized('run-1', function () use ($locks, $dispatcher, $first, $second, &$outcomes): void {
             $locks->afterRelease('run-1', static fn () => $dispatcher->dispatchEffects([$first, $second]));

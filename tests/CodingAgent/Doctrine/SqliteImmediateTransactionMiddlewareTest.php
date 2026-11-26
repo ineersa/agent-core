@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\DependencyInjection\Container;
+use Symfony\Component\Filesystem\Path;
 
 /**
  * Regression: explicit transactions use BEGIN IMMEDIATE on state.sqlite
@@ -171,7 +172,7 @@ final class SqliteImmediateTransactionMiddlewareTest extends IsolatedKernelTestC
      */
     private function kernelWorkerEnv(): array
     {
-        $relativeDatabaseDir = \Symfony\Component\Filesystem\Path::makeRelative($this->workerDatabaseDir, ProjectDir::get().'/var/test');
+        $relativeDatabaseDir = Path::makeRelative($this->workerDatabaseDir, ProjectDir::get().'/var/test');
 
         return array_merge($_ENV, [
             'APP_ENV' => 'test',

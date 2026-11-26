@@ -6,8 +6,11 @@ namespace Ineersa\CodingAgent\Config\Tests;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\ToolsConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
@@ -74,9 +77,9 @@ final class PromptsConfigTest extends TestCase
     {
         $promptsConfig = new PromptsConfig(['a.md', 'b.md']);
         $appConfig = new AppConfig(
-            tui: new \Ineersa\CodingAgent\Config\TuiConfig('cyberpunk', []),
-            logging: new \Ineersa\CodingAgent\Config\LoggingConfig('.hatfield/logs', 'info', 14),
-            tools: new \Ineersa\CodingAgent\Config\ToolsConfig(),
+            tui: new TuiConfig('cyberpunk', []),
+            logging: new LoggingConfig('.hatfield/logs', 'info', 14),
+            tools: new ToolsConfig(),
             prompts: $promptsConfig,
         );
 

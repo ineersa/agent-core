@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Mcp\Handler;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogBuilder;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
+use Ineersa\CodingAgent\Mcp\Client\McpConnectionManager;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Mcp\Message\McpDisconnectSessionCommand;
@@ -42,7 +43,7 @@ final class McpInitializeSessionHandler
     /**
      * @param McpConnectionManagerInterface $connectionManager abstraction for
      *                                                         broker-owned client lifecycle; the concrete implementation
-     *                                                         is {@see \Ineersa\CodingAgent\Mcp\Client\McpConnectionManager}
+     *                                                         is {@see McpConnectionManager}
      */
     public function __construct(
         private readonly McpConfigLoader $configLoader,
@@ -312,12 +313,12 @@ final class McpInitializeSessionHandler
     /**
      * Produce a diagnostic-safe error message for log contexts.
      *
-     * Delegates to {@see \Ineersa\CodingAgent\Mcp\Client\McpConnectionManager::sanitizeLogMessage()}
+     * Delegates to {@see McpConnectionManager::sanitizeLogMessage()}
      * for consistent redaction. This is a thin pass-through to keep the
      * dependency direction clear (handler → connection manager static method).
      */
     private function sanitizeErrorMsg(\Throwable $e): string
     {
-        return \Ineersa\CodingAgent\Mcp\Client\McpConnectionManager::sanitizeLogMessage($e->getMessage());
+        return McpConnectionManager::sanitizeLogMessage($e->getMessage());
     }
 }

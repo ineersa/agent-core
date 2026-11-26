@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
+use Ineersa\Tui\Runtime\SubagentLiveCatalog;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -207,7 +208,7 @@ final class SubagentLiveAttentionTest extends TestCase
         );
     }
 
-    private static function firstNeeding(\Ineersa\Tui\Runtime\SubagentLiveCatalog $catalog): ?SubagentLiveChildDTO
+    private static function firstNeeding(SubagentLiveCatalog $catalog): ?SubagentLiveChildDTO
     {
         foreach ($catalog->all() as $child) {
             if ($child->needsAttention()) {

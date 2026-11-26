@@ -12,11 +12,14 @@ use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
@@ -30,6 +33,8 @@ use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Uid\Uuid;
@@ -82,7 +87,7 @@ final class ParentPromptUserContextRegressionTest extends PerMethodIsolatedKerne
         $agentsDefText = PromptContractTestSupport::messageText($canonical[2]);
         $this->assertStringContainsString('gf05-test-agent', $agentsDefText);
 
-        $capture = ProviderBoundaryCaptureSupport::create(self::getContainer()->get(\Symfony\AI\Agent\Toolbox\ToolboxInterface::class));
+        $capture = ProviderBoundaryCaptureSupport::create(self::getContainer()->get(ToolboxInterface::class));
         $capture->captureForRun($sessionId, $canonical);
         $providerMessages = $capture->capturedProviderMessages();
         $this->assertNotEmpty($providerMessages);
@@ -127,7 +132,7 @@ final class ParentPromptUserContextRegressionTest extends PerMethodIsolatedKerne
             'Parent with bare AGENTS.md: system → agents_context → skills_context → agents_definitions_context → user.',
         );
 
-        $capture = ProviderBoundaryCaptureSupport::create(self::getContainer()->get(\Symfony\AI\Agent\Toolbox\ToolboxInterface::class));
+        $capture = ProviderBoundaryCaptureSupport::create(self::getContainer()->get(ToolboxInterface::class));
         $capture->captureForRun($sessionId, $canonical);
         PromptContractTestSupport::assertProviderUserMessagesContainSentinelOnce($capture->capturedProviderMessages(), $sentinel);
     }
@@ -188,13 +193,13 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
             eventStore: $eventStore,
             logger: new NullLogger(),
             hookDispatcher: null,
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
         );
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
-            commands: new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(),
+            commands: new InMemoryCommandStore(),
             handlers: [
                 new StartRunHandler(new EventFactory(), TestSerializerFactory::normalizer()),
             ],
@@ -229,15 +234,15 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
     {
     }
 
-    public function steer(string $runId, \Ineersa\AgentCore\Domain\Message\AgentMessage $message): void
+    public function steer(string $runId, AgentMessage $message): void
     {
     }
 
-    public function followUp(string $runId, \Ineersa\AgentCore\Domain\Message\AgentMessage $message): void
+    public function followUp(string $runId, AgentMessage $message): void
     {
     }
 
-    public function appendMessage(string $runId, \Ineersa\AgentCore\Domain\Message\AgentMessage $message): void
+    public function appendMessage(string $runId, AgentMessage $message): void
     {
     }
 

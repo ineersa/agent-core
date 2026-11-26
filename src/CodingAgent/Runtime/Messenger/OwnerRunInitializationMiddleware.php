@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Messenger;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
+use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
@@ -16,6 +17,8 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\CompleteSubmissionDTO;
@@ -23,6 +26,7 @@ use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
 use Symfony\Component\Messenger\Middleware\StackInterface;
@@ -38,9 +42,9 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         private HatfieldSessionStore $sessions,
         private AgentChildRunDirectory $children,
         private RunLockManager $locks,
-        private \Psr\Log\LoggerInterface $logger,
-        private \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry $artifacts,
-        private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $transitionRecovery,
+        private LoggerInterface $logger,
+        private AgentArtifactRegistry $artifacts,
+        private PendingTransitionRecovery $transitionRecovery,
         private RunOperationalStatusReaderInterface $operationalStatus,
         private AgentResumeCommandReader $resumeCommands,
         private ?RunTracer $tracer = null,
@@ -85,7 +89,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
             if ($message instanceof StartRun && null !== $this->events->latestSequenceFor($runId)) {
                 $child = $this->children->locate($runId);
                 $status = $this->operationalStatus->findOperationalStatus($runId)?->status;
-                if (null !== $child && \Ineersa\AgentCore\Domain\Run\RunStatus::Running === $status) {
+                if (null !== $child && RunStatus::Running === $status) {
                     try {
                         $entry = $this->artifacts->promoteToRunningForwardOnly($child->parentRunId, $child->artifactId, new \DateTimeImmutable());
                         if (null !== $entry) {

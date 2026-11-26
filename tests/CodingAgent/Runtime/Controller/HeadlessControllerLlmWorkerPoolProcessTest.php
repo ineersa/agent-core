@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\ControllerReplayE2eTestCase;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\TestCase;
 
 /**
  * Topology-only proof: HeadlessController starts one llm Fiber consumer
@@ -27,11 +29,11 @@ final class HeadlessControllerLlmWorkerPoolProcessTest extends ControllerReplayE
     {
         $this->stopProcess();
         if (isset($this->tempDir) && '' !== $this->tempDir) {
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($this->tempDir);
+            TestDirectoryIsolation::removeDirectory($this->tempDir);
         }
         $this->tempDir = '';
         // Skip parent tearDown (would double-stop and re-delete).
-        \PHPUnit\Framework\TestCase::tearDown();
+        TestCase::tearDown();
     }
 
     public function testControllerProcessStartsSingleLlmFiberConsumer(): void

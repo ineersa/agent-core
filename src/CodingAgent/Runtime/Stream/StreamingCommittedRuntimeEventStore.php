@@ -6,12 +6,15 @@ namespace Ineersa\CodingAgent\Runtime\Stream;
 
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
-final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface
+final class StreamingCommittedRuntimeEventStore implements PreparedTransitionEventStoreInterface
 {
     /** @var array<string, list<RunEvent>> */
     private array $pendingEvents = [];
@@ -21,14 +24,14 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
         private readonly RuntimeEventMapper $mapper,
         private readonly RuntimeEventSinkInterface $stdoutSink,
         private readonly bool $streamCommittedEventsToStdout,
-        private readonly \Symfony\Component\EventDispatcher\EventDispatcherInterface $dispatcher,
+        private readonly EventDispatcherInterface $dispatcher,
         private readonly ?RunTracer $tracer = null,
     ) {
     }
 
     public function appendTransition(array $events, array $work): array
     {
-        if (!$this->inner instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+        if (!$this->inner instanceof PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
         $persisted = $this->inner->appendTransition($events, $work);
@@ -46,7 +49,7 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
     public function verifiedPendingTransition(string $runId): ?VerifiedTransitionDTO
     {
         $store = $this->inner;
-        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+        if (!$store instanceof PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
 
@@ -56,7 +59,7 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
     public function verifiedPendingBatch(string $runId, VerifiedTransitionDTO $verified): array
     {
         $store = $this->inner;
-        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+        if (!$store instanceof PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
 
@@ -65,7 +68,7 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
 
     public function assertVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
     {
-        if (!$this->inner instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+        if (!$this->inner instanceof PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
         $this->inner->assertVerifiedTransition($runId, $verified);
@@ -74,7 +77,7 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
     public function finalizeVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
     {
         $store = $this->inner;
-        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+        if (!$store instanceof PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
 
@@ -88,14 +91,14 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
         $this->probe('canonical_finalize', $runId, static fn () => $store->finalizeVerifiedTransition($runId, $verified));
         unset($this->pendingEvents[$runId]);
         foreach ($hotBatch as $event) {
-            $this->probe('listeners', $runId, fn () => $this->dispatcher->dispatch(new \Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent($event)));
+            $this->probe('listeners', $runId, fn () => $this->dispatcher->dispatch(new RunEventPublishedEvent($event)));
             $this->emitMapped($event);
         }
     }
 
     public function assertTransitionReady(string $runId): void
     {
-        if (!$this->inner instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+        if (!$this->inner instanceof PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
         $this->inner->assertTransitionReady($runId);

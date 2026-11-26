@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use Symfony\Component\Filesystem\Filesystem;
 
 /*
  * Shared bootstrap for the Claude Code entry points in claude/bin.
@@ -100,7 +101,7 @@ function observationalMemoryDependencies(string $pluginRoot, string $dataDir): s
     foreach (false === $installed ? [] : $installed as $file) {
         $url = json_decode((string) file_get_contents($file), true)['repositories'][0]['url'] ?? null;
         if (is_string($url) && !is_dir($url)) {
-            (new Symfony\Component\Filesystem\Filesystem())->remove(dirname($file));
+            (new Filesystem())->remove(dirname($file));
         }
     }
     flock($lock, \LOCK_UN);

@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 
@@ -17,7 +18,7 @@ final class AdvanceRunCoordinationFactoryTest extends TestCase
         $commandBus = new TestMessageBus();
 
         $callback = AdvanceRunCoordinationFactory::create('run-advance-1', 7, 'follow-up');
-        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, $commandBus);
+        CoordinationActionTestRunner::run($callback, $commandBus);
 
         $this->assertCount(1, $commandBus->messages);
         $advance = $commandBus->messages[0];
@@ -37,8 +38,8 @@ final class AdvanceRunCoordinationFactoryTest extends TestCase
         $commandBus = new TestMessageBus();
         $callback = AdvanceRunCoordinationFactory::create('run-advance-2', 3, 'post-cancel-advance');
 
-        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, $commandBus);
-        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, $commandBus);
+        CoordinationActionTestRunner::run($callback, $commandBus);
+        CoordinationActionTestRunner::run($callback, $commandBus);
 
         $this->assertCount(2, $commandBus->messages);
         $this->assertSame($commandBus->messages[0]->stepId(), $commandBus->messages[1]->stepId());

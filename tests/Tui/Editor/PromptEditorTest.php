@@ -8,6 +8,7 @@ use Ineersa\Tui\Editor\PromptEditor;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Widget\EditorWidget;
 
 #[CoversClass(PromptEditor::class)]
 final class PromptEditorTest extends TestCase
@@ -26,7 +27,7 @@ final class PromptEditorTest extends TestCase
     {
         $widget = $this->editor->getWidget();
 
-        $this->assertInstanceOf(\Symfony\Component\Tui\Widget\EditorWidget::class, $widget);
+        $this->assertInstanceOf(EditorWidget::class, $widget);
         $this->assertSame('', $widget->getText());
     }
 

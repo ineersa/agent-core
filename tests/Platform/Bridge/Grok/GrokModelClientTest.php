@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\Platform\Bridge\Grok\Tests;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\Platform\Bridge\Grok\GrokModelClient;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
+use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Model;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -227,14 +229,14 @@ final class GrokModelClientTest extends TestCase
         try {
             $client->request(new ResponsesModel('grok-build'), ['input' => []]);
             $this->fail('Expected an authentication failure.');
-        } catch (\Symfony\AI\Platform\Exception\AuthenticationException) {
+        } catch (AuthenticationException) {
             $this->assertSame(1, $requestCount);
         }
     }
 
     public function testFailedRefreshPreservesAuthenticationFailureForStringError(): void
     {
-        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $logger = new TestLogger();
         $failure = new \RuntimeException('Refresh failed', previous: new \RuntimeException('Underlying failure'));
         $httpClient = new MockHttpClient([
             new MockResponse('{"error":"unauthorized"}', ['http_code' => 401]),
@@ -250,7 +252,7 @@ final class GrokModelClientTest extends TestCase
         try {
             $client->request(new ResponsesModel('grok-build'), ['input' => []]);
             $this->fail('Expected an authentication failure.');
-        } catch (\Symfony\AI\Platform\Exception\AuthenticationException $e) {
+        } catch (AuthenticationException $e) {
             $this->assertSame('Grok authentication failed. Re-authenticate with Grok.', $e->getMessage());
             $this->assertSame(1, $httpClient->getRequestsCount());
             $this->assertCount(1, $logger->records);
@@ -280,7 +282,7 @@ final class GrokModelClientTest extends TestCase
         try {
             $client->request(new ResponsesModel('grok-build'), ['input' => []]);
             $this->fail('Expected an authentication failure.');
-        } catch (\Symfony\AI\Platform\Exception\AuthenticationException) {
+        } catch (AuthenticationException) {
             $this->assertSame(1, $refreshCalls);
             $this->assertSame(2, $httpClient->getRequestsCount());
         }

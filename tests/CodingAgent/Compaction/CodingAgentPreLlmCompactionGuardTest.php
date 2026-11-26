@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -28,11 +29,11 @@ use PHPUnit\Framework\TestCase;
 final class CodingAgentPreLlmCompactionGuardTest extends TestCase
 {
     private CodingAgentPreLlmCompactionGuard $guard;
-    /** @var EventStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
+    /** @var EventStoreInterface&MockObject */
     private $eventStore;
     private ProviderContextUsageResolver $providerUsageResolver;
     private CompactionConfig $compactionConfig;
-    /** @var RunModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
+    /** @var RunModelResolverInterface&MockObject */
     private $modelResolver;
     private StubRunRelationshipReader $metadataReader;
 

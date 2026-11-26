@@ -4,15 +4,24 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
 use Ineersa\Tui\ImagePaste\ClipboardImageReadResultDTO;
+use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
 use Ineersa\Tui\ImagePaste\PastedImageValidationService;
 use Ineersa\Tui\Listener\CompletionListener;
 use Ineersa\Tui\Listener\ImagePasteInputListener;
+use Ineersa\Tui\Listener\SubmitListener;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Tests\ImagePaste\DelayedFakeClipboardImageReader;
@@ -24,6 +33,9 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Event\TickEvent;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
@@ -201,44 +213,44 @@ final class ImagePasteInputVirtualTest extends TestCase
         $screen = $harness->screen();
         $blockFactory = new TranscriptBlockFactory();
 
-        $method = new \ReflectionMethod(\Ineersa\Tui\Listener\SubmitListener::class, 'promotePastedImagesInPrompt');
+        $method = new \ReflectionMethod(SubmitListener::class, 'promotePastedImagesInPrompt');
         $result = $method->invoke(
             null,
             $text,
             $state,
             $screen,
             $blockFactory,
-            new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
-                new \Ineersa\CodingAgent\Config\AppConfig(
-                    tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                    logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                    sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+            new HatfieldSessionStore(
+                new AppConfig(
+                    tui: new TuiConfig(theme: 'default'),
+                    logging: new LoggingConfig(),
+                    sessions: new SessionsConfig(),
                     cwd: $this->tempDir,
                 ),
-                $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore())),
-            new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
+                $this->createStub(EntityManagerInterface::class),
+                new EventDispatcher(), lockFactory: new LockFactory(new FlockStore())),
+            new PastedImageSubmissionService(
                 new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
-                new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
-                    new \Ineersa\CodingAgent\Config\AppConfig(
-                        tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                        logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                        sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                new HatfieldSessionStore(
+                    new AppConfig(
+                        tui: new TuiConfig(theme: 'default'),
+                        logging: new LoggingConfig(),
+                        sessions: new SessionsConfig(),
                         cwd: $this->tempDir,
                     ),
-                    $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                    new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore())),
-                new \Ineersa\CodingAgent\Config\AppConfig(
-                    tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                    logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                    sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                    $this->createStub(EntityManagerInterface::class),
+                    new EventDispatcher(), lockFactory: new LockFactory(new FlockStore())),
+                new AppConfig(
+                    tui: new TuiConfig(theme: 'default'),
+                    logging: new LoggingConfig(),
+                    sessions: new SessionsConfig(),
                     cwd: $this->tempDir,
                 ),
                 new TranscriptBlockFactory(),
                 new TestLogger(),
             ),
             new TestLogger(),
-            new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
+            new TuiSessionLifecycleDispatcher(),
         );
 
         $this->assertNull($result);

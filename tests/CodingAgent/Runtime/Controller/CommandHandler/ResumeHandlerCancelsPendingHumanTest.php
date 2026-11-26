@@ -4,28 +4,45 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler;
 use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ResumeHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery;
+use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
@@ -35,6 +52,7 @@ use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BashBackgroundRequestService;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
+use Psr\Log\NullLogger;
 
 /**
  * Production process resume path:
@@ -49,7 +67,7 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
 {
     protected function tearDown(): void
     {
-        self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery::class)->cancel();
+        self::getContainer()->get(SessionBootstrapDelivery::class)->cancel();
         parent::tearDown();
     }
 
@@ -138,11 +156,11 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $fixtureState = $active->requireLoaded($runId);
         $active = $container->get(ActiveRunContextInterface::class);
-        $canonical = [\Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($runId, 0, 'run_started', ['payload' => ['messages' => []]])];
+        $canonical = [RunEvent::forAppend($runId, 0, 'run_started', ['payload' => ['messages' => []]])];
         foreach ($fixtureState->pendingHumanInputRequests as $question) {
-            $canonical[] = \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($runId, 0, 'waiting_human', $question->waitingHumanEventPayload());
+            $canonical[] = RunEvent::forAppend($runId, 0, 'waiting_human', $question->waitingHumanEventPayload());
         }
-        $persisted = \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::appendMany($container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class), $canonical);
+        $persisted = PreparedEventStoreSeeder::appendMany($container->get(PreparedTransitionEventStoreInterface::class), $canonical);
         $active->loadRecovered($fixtureState->with(['lastSeq' => $persisted[\count($persisted) - 1]->seq]));
         $client = new InProcessAgentSessionClient(
             runner: $runner,
@@ -161,12 +179,12 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
             backgroundProcesses: self::getContainer()->get(BackgroundProcessManager::class),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
-            bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
-            bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
+            bootstrapSpools: self::getContainer()->get(SessionBootstrapSpoolStore::class),
+            bootstrapTransfer: self::getContainer()->get(SessionBootstrapTransfer::class),
         );
 
         $emitted = [];
-        $handler = new ResumeHandler($client, self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery::class));
+        $handler = new ResumeHandler($client, self::getContainer()->get(SessionBootstrapDelivery::class));
         $handler(new ControllerCommandEvent(
             new RuntimeCommand(id: 'cmd_resume_process', type: 'resume', runId: $runId),
             static function (RuntimeEvent $event) use (&$emitted): void {
@@ -174,17 +192,17 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
             },
         ));
 
-        $ownerAttach = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler(
-            $container->get(\Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface::class),
-            $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
-            $container->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class),
-            $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class),
-            false, new \Psr\Log\NullLogger(), $active, $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class),
-            $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
-            $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
-            $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
-            $container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer::class),
-            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+        $ownerAttach = new SessionMaintenanceHandler(
+            $container->get(HistorySelectionServiceInterface::class),
+            $container->get(SessionRepairServiceInterface::class),
+            $container->get(InMemoryRuntimeEventSink::class),
+            $container->get(StdoutRuntimeEventSink::class),
+            false, new NullLogger(), $active, $container->get(RunMessageProcessor::class),
+            $container->get(OwnerRunInitializationMiddleware::class),
+            $container->get(PendingTransitionRecovery::class),
+            $container->get(DeferredSubagentBatchRepository::class),
+            $container->get(SessionBootstrapProducer::class),
+            $container->get(RunLockManager::class),
         );
         $ownerAttach->attach($bus->messages[0]);
 
