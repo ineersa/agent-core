@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\TaskWorkflow\Store;
 
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
-
-use function Amp\delay;
+use Ineersa\HatfieldExt\TaskWorkflow\Clock\AmpClock;
+use Symfony\Component\Clock\ClockInterface;
 
 final class TaskBoardLock
 {
     public function __construct(
         private readonly string $lockPath,
+        // The host's clock: Hatfield yields to Revolt, the Claude MCP bridge sleeps natively.
+        private readonly ClockInterface $clock = new AmpClock(),
     ) {
     }
 
@@ -64,7 +66,7 @@ final class TaskBoardLock
                     break;
                 }
 
-                delay(0.05);
+                $this->clock->sleep(0.05);
             }
 
             // Re-check after acquire so a cancel that arrives between wait and

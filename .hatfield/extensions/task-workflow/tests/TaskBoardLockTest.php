@@ -13,6 +13,7 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardLock;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Clock\MockClock;
 
 use function Amp\Socket\listen;
 
@@ -47,6 +48,31 @@ final class TaskBoardLockTest extends TestCase
             $server->close();
             $holder->await(new TimeoutCancellation(4));
             $waiter?->await(new TimeoutCancellation(2));
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+    }
+
+    public function testContendedWaitUsesTheHostClockWithoutSuspendingAFiber(): void
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('tw-lock-clock');
+        $owner = fopen($dir.'/workflow.lock', 'c+b');
+        try {
+            $this->assertTrue(flock($owner, \LOCK_EX | \LOCK_NB));
+            $clock = new MockClock('2026-01-01T00:00:00Z');
+            $cancelAt = $clock->now()->modify('+200 milliseconds');
+            $token = $this->createStub(ToolCancellationTokenInterface::class);
+            $token->method('isCancellationRequested')->willReturnCallback(static fn (): bool => $clock->now() >= $cancelAt);
+            $lock = new TaskBoardLock($dir.'/workflow.lock', $clock);
+
+            // The Claude MCP server runs handlers in fibers it resumes itself and rejects any other suspension.
+            $fiber = new \Fiber(static fn (): mixed => $lock->withLock(static fn (): string => 'mutated', $token));
+            $fiber->start();
+
+            $this->assertTrue($fiber->isTerminated());
+            $this->assertTrue($fiber->getReturn()['cancelled'] ?? false);
+            $this->assertEquals($cancelAt, $clock->now());
+        } finally {
+            fclose($owner);
             TestDirectoryIsolation::removeDirectory($dir);
         }
     }

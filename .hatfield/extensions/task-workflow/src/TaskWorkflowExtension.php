@@ -79,7 +79,7 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
 
             return;
         }
-        $states = new WorkspaceStateStore($git, $primary);
+        $states = new WorkspaceStateStore($git, $primary, $this->clock);
         $store = new GitHubTaskStore($exec, $primary, $settings);
         $pr = new PrManager($exec, $primary, $settings, $this->clock);
         $api->registerPromptContributor(new WorkflowPrompt($primary, $settings->repository));
