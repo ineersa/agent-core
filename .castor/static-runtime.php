@@ -78,8 +78,10 @@ function distribution_runtime_fingerprint(string $target, array $pin): string
             throw new RuntimeException('Unable to fingerprint native host OS: '.$osRelease);
         }
     }
+    // ImageVersion is a runner rollout label. OS and toolchain probes above
+    // already capture build-relevant changes across image rollouts.
     $env = [];
-    foreach (['CC', 'CXX', 'AR', 'LD', 'RANLIB', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS', 'SDKROOT', 'DEVELOPER_DIR', 'MACOSX_DEPLOYMENT_TARGET', 'CMAKE_PREFIX_PATH', 'PKG_CONFIG_PATH', 'PKG_CONFIG_LIBDIR', 'CPATH', 'LIBRARY_PATH', 'ImageOS', 'ImageVersion', 'SPC_LIBC', 'SPC_TARGET', 'SPC_TOOLCHAIN', 'SPC_USE_LLVM', 'SPC_MUSL_DYNAMIC'] as $variable) {
+    foreach (['CC', 'CXX', 'AR', 'LD', 'RANLIB', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS', 'SDKROOT', 'DEVELOPER_DIR', 'MACOSX_DEPLOYMENT_TARGET', 'CMAKE_PREFIX_PATH', 'PKG_CONFIG_PATH', 'PKG_CONFIG_LIBDIR', 'CPATH', 'LIBRARY_PATH', 'ImageOS', 'SPC_LIBC', 'SPC_TARGET', 'SPC_TOOLCHAIN', 'SPC_USE_LLVM', 'SPC_MUSL_DYNAMIC'] as $variable) {
         $env[$variable] = getenv($variable);
     }
 

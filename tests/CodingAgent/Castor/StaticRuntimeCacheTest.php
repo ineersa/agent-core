@@ -66,7 +66,7 @@ final class StaticRuntimeCacheTest extends TestCase
         }
     }
 
-    public function testAppVersionDoesNotInvalidateRuntimeButBuildFlagsDo(): void
+    public function testAppAndImageVersionsDoNotInvalidateRuntimeButBuildFlagsDo(): void
     {
         require_once ProjectDir::get().'/.castor/distribution.php';
         try {
@@ -89,7 +89,15 @@ final class StaticRuntimeCacheTest extends TestCase
             putenv(false === $version ? 'HATFIELD_BUILD_VERSION' : 'HATFIELD_BUILD_VERSION='.$version);
         }
 
-        foreach (['SPC_TARGET', 'SPC_TOOLCHAIN', 'SPC_USE_LLVM', 'SPC_MUSL_DYNAMIC'] as $selector) {
+        $imageVersion = getenv('ImageVersion');
+        try {
+            putenv('ImageVersion='.$imageVersion.'-fingerprint-test');
+            $this->assertSame($original, distribution_runtime_fingerprint($target, $pin));
+        } finally {
+            putenv(false === $imageVersion ? 'ImageVersion' : 'ImageVersion='.$imageVersion);
+        }
+
+        foreach (['CFLAGS', 'SPC_TARGET', 'SPC_TOOLCHAIN', 'SPC_USE_LLVM', 'SPC_MUSL_DYNAMIC'] as $selector) {
             $originalValue = getenv($selector);
             try {
                 putenv($selector.'='.$originalValue.'-fingerprint-test');

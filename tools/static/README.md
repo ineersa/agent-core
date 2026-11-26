@@ -11,7 +11,7 @@ Release: [`docs/distribution.md`](../../docs/distribution.md).
 | Field | Purpose |
 |---|---|
 | `static_php_cli_commit` / `static_php_cli_repository` | SPC checkout |
-| `php_version` | Exact patch (`8.5.8`) |
+| `php_version` | Exact patch (`8.5.13`) |
 | `php_source_sha256` | Official `php-{version}.tar.xz` digest after SPC download |
 | `phpmicro_repository` / `phpmicro_commit` | Local checkout fed as `--custom-local=php-micro:<abs>` |
 | `phpmicro_patch` / `phpmicro_patch_sha256` | Tracked Linux self-path patch + content digest |
@@ -37,8 +37,8 @@ Remove once upstream no longer realpaths AT_EXECFN on Linux.
    built via `phar_ensure` for local standalone static.
 2. Look up the compiled runtime by fingerprint. On a miss, clone pinned SPC and
    phpmicro under `var/tmp/static-php-cli/` and apply the tracked Linux self-path patch.
-3. On a miss, run `spc download --with-php=8.5.8 --custom-local=php-micro:<path> …` then verify
-   `php-8.5.8.tar.xz` SHA-256 against the pin.
+3. On a miss, run `spc download --with-php=8.5.13 --custom-local=php-micro:<path> …` then verify
+   `php-8.5.13.tar.xz` SHA-256 against the pin.
 4. On a miss, run `spc build` with `--with-packages=libjpeg,libwebp,nghttp2` and
    `--no-smoke-test=micro` (upstream bare-micro segfault workaround).
    `nghttp2` enables cURL HTTP/2 support so Symfony selects cURL instead of Amp.
