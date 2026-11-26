@@ -17,6 +17,7 @@ use function Castor\run;
 use function CastorTasks\ensure_dead_code_symfony_container_xml;
 use function CastorTasks\project_root_dir;
 use function CastorTasks\regenerate_dead_code_baseline;
+use function CastorTasks\regenerate_phpstan_baseline;
 use function CastorTasks\run_quiet_command;
 use function CastorTasks\summarize_deptrac_json;
 use function CastorTasks\summarize_php_cs_fixer_json;
@@ -76,6 +77,24 @@ function phpstan(?string $path = null): void
     }
     if (0 !== $exitCode) {
         fail_quality(sprintf('PHPStan failed with exit code %d', $exitCode));
+    }
+}
+
+#[AsTask(name: 'phpstan:baseline', description: 'Regenerate the main PHPStan baseline')]
+function phpstan_baseline(): void
+{
+    try {
+        $result = regenerate_phpstan_baseline();
+    } catch (Throwable $e) {
+        fail_quality($e->getMessage());
+    }
+
+    echo $result['output'];
+    if ('' !== $result['output'] && !str_ends_with($result['output'], "\n")) {
+        echo \PHP_EOL;
+    }
+    if (0 !== $result['exitCode']) {
+        fail_quality(sprintf('PHPStan baseline generation failed with exit code %d', $result['exitCode']));
     }
 }
 

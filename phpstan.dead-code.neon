@@ -40,6 +40,8 @@ parameters:
         - var/*
         - vendor/*
         - .hatfield/extensions/vendor/*
+        # Intentional rule-test fixtures: analysed only by their RuleTestCase.
+        - tests/CodingAgent/Fixtures/PHPStan/*
     parallel:
         maximumNumberOfProcesses: 1
     shipmonkDeadCode:

@@ -1,10 +1,24 @@
 includes:
     - vendor/phpstan/phpstan-strict-rules/rules.neon
     - vendor/phpstan/phpstan-phpunit/extension.neon
+    - phpstan-baseline.neon
+
+rules:
+    - Ineersa\Tools\PHPStan\Rules\NoSilentCatchRule
+
+services:
+    -
+        class: Ineersa\Tools\PHPStan\Rules\NoNullableCollaboratorRule
+        arguments:
+            sourceDirectory: %currentWorkingDirectory%/src
+        tags:
+            - phpstan.rules.rule
 
 parameters:
     level: 6
     treatPhpDocTypesAsCertain: false
+    # Keep unmatched reporting on so the baseline shrinks as violations are fixed.
+    reportUnmatchedIgnoredErrors: true
     paths:
         - src/
         - tools/phpstan/
@@ -27,3 +41,10 @@ parameters:
         - .hatfield/extensions/observational-memory/tests/*
     parallel:
         maximumNumberOfProcesses: 1
+    ignoreErrors:
+        # Castor tasks are dev tooling without a PSR logger; console output is their
+        # failure channel, so the silent-catch rule targets production code only.
+        -
+            identifier: hatfield.silentCatch
+            path: .castor/*
+            reportUnmatched: false

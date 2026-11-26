@@ -2564,6 +2564,30 @@ function regenerate_dead_code_baseline(): array
     );
 }
 
+/**
+ * Regenerate phpstan-baseline.neon for the main PHPStan lane.
+ *
+ * Reuses the dead-code regeneration flow so reportUnmatchedIgnoredErrors stays
+ * on for ordinary runs while stale entries are replaced.
+ *
+ * @return array{exitCode: int, output: string}
+ */
+function regenerate_phpstan_baseline(): array
+{
+    $baselinePath = project_root_dir().'/phpstan-baseline.neon';
+
+    return regenerate_dead_code_baseline_at(
+        $baselinePath,
+        qa_observability_env_command().' '.
+            \PHP_BINARY.' vendor/bin/phpstan analyse -c '.
+            escapeshellarg(project_root_dir().'/phpstan.dist.neon').
+            ' --no-progress --generate-baseline '.
+            escapeshellarg($baselinePath).
+            ' --allow-empty-baseline --no-ansi',
+        project_root_dir(),
+    );
+}
+
 function build_idea_run_config_xml(string $commandName, string $description): string
 {
     $configurationName = 'castor '.$commandName;
