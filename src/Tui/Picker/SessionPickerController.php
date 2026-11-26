@@ -59,7 +59,7 @@ final class SessionPickerController
 
     private bool $exhausted = false;
 
-    /** Row the list returns to after the delete confirmation. */
+    /** Fallback row after the delete confirmation when the confirmed session is gone. */
     private int $returnIndex = 0;
 
     private bool $confirmingDelete = false;
@@ -403,6 +403,7 @@ final class SessionPickerController
 
     private function restoreSessionList(SelectListWidget $listWidget): void
     {
+        $confirmedSessionId = $this->pendingDeleteSessionId;
         $this->confirmingDelete = false;
         $this->pendingDeleteSessionId = null;
         // Reload as many rows as were already browsed so the restored list
@@ -415,7 +416,9 @@ final class SessionPickerController
         }
 
         $listWidget->setItems(self::buildItemsStatic($this->sessions));
-        $listWidget->setSelectedIndex($this->returnIndex);
+        // Other processes may add sessions meanwhile; follow the confirmed
+        // session by identity so Enter never targets a neighbour.
+        $listWidget->setSelectedIndex($this->positions[$confirmedSessionId ?? ''] ?? $this->returnIndex);
     }
 
     private function loadNextPageNear(SelectListWidget $listWidget, string $selectedSessionId): void

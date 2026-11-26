@@ -179,9 +179,13 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
             $this->assertSame($last, $values[99], 'The selection stays on the row the user reached.');
 
             $harness->sendInput('d');
+            // Another process creates a session while the confirmation is open; it sorts first.
+            $meanwhile = $this->store->createSession('Created meanwhile');
             $harness->sendInput("\x1b");
-            $this->assertSame($last, $list->getSelectedItem()['value'], 'Cancelling a delete returns to the same row.');
-            $this->assertCount(\count($values), $this->values($list));
+            $this->assertSame($last, $list->getSelectedItem()['value'], 'Cancelling a delete keeps the same session selected, not its old position.');
+            $restored = $this->values($list);
+            $this->assertSame($meanwhile, $restored[0], 'The refresh shifted every browsed row down by one.');
+            $this->assertCount(\count($values), $restored, 'The refresh reloads as many rows as were browsed.');
         } finally {
             $harness->stopInputLoop();
             $picker->closePicker();
