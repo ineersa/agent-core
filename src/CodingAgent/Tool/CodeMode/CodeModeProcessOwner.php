@@ -39,8 +39,7 @@ final readonly class CodeModeProcessOwner
             $this->filesystem->mkdir($workspace.'/replies', 0700);
             $admit?->__invoke();
             $launch = $this->lifecycle->launchProcess($command, $prefix.'.pid', $prefix.'.log', $prefix.'.status', $afterExit);
-            $exit = $this->lifecycle->readStatusFile($prefix.'.status');
-            $this->store->observeCodeModeBackgroundJob($runId, $invocationId, $this->lifecycle->hasObservedExit($exit, $launch['pid']));
+            $this->store->observeCodeModeBackgroundJob($runId, $invocationId, $this->lifecycle->observeExit($prefix.'.status', $launch['pid'])->exited);
         });
     }
 
@@ -85,11 +84,8 @@ final readonly class CodeModeProcessOwner
     public function hasExited(string $runId, string $id): bool
     {
         $status = $this->prefix($runId).hash('sha256', $id).'.status';
-        $pid = $this->lifecycle->readPidFile($status);
 
-        $exit = $this->lifecycle->readStatusFile($status);
-
-        return (null !== $exit && -1 !== $exit) || (null !== $pid && !$this->lifecycle->isAlive($pid));
+        return $this->lifecycle->observeExit($status, $this->lifecycle->readPidFile($status))->exited;
     }
 
     /** Serialize body creation against retirement, never hold the lock while sending to the broker. */
@@ -127,8 +123,9 @@ final readonly class CodeModeProcessOwner
             }
             $interruption = $invocation['interruption'] ?? $interruption;
             $pid = $this->lifecycle->readPidFile($status);
-            $exit = $this->lifecycle->readStatusFile($status);
-            $exited = $this->lifecycle->hasObservedExit($exit, $pid);
+            $observation = $this->lifecycle->observeExit($status, $pid);
+            $exit = $observation->exit?->exitCode;
+            $exited = $observation->exited;
             if (null !== $pid || $exited) {
                 $this->store->observeCodeModeBackgroundJob($runId, $id, $exited);
             }

@@ -44,6 +44,7 @@ final class BuildDistributionScriptTest extends TestCase
                 if ('./.github/actions/static-prerequisites' === $uses) {
                     $setup[] = 'prerequisites';
                 } elseif (str_starts_with($uses, 'shivammathur/setup-php@')) {
+                    $this->assertSame('8.5.13', $step['with']['php-version'], $job);
                     $this->assertSame('composer:v2', $step['with']['tools']);
                     $this->assertSame(5, $step['timeout-minutes']);
                     $this->assertTrue($step['env']['fail-fast']);
@@ -51,6 +52,7 @@ final class BuildDistributionScriptTest extends TestCase
                 } elseif ('Check clean PHP startup' === $step['name']) {
                     $this->assertStringContainsString("php -r '' 2>&1", $step['run']);
                     $this->assertStringContainsString('php --ini', $step['run']);
+                    $this->assertReleasePhpGuard($step['run'], $job);
                     $setup[] = 'startup';
                 } elseif (str_starts_with($step['run'] ?? '', 'composer install ')) {
                     $this->assertStringNotContainsString('--ignore-platform-req', $step['run']);
@@ -59,6 +61,17 @@ final class BuildDistributionScriptTest extends TestCase
             }
             $this->assertSame('static' === $job ? ['prerequisites', 'php', 'startup', 'composer'] : ['php', 'startup', 'composer'], $setup, $job);
         }
+    }
+
+    public function testNativeReleasePinsLinuxAmd64RunnerAndBoundsStaticBuild(): void
+    {
+        $workflow = \Symfony\Component\Yaml\Yaml::parseFile(ProjectDir::get().'/.github/workflows/release.yml');
+        $static = $workflow['jobs']['static'];
+        $runners = array_column($static['strategy']['matrix']['include'], 'runner', 'target');
+        $this->assertSame('ubuntu-26.04', $runners['linux-amd64']);
+        $this->assertSame('${{ matrix.runner }}', $static['runs-on']);
+        $steps = array_column($static['steps'], null, 'name');
+        $this->assertSame(45, $steps['Build static binary via Castor (exact PHAR handoff)']['timeout-minutes']);
     }
 
     public function testRuntimeRestoreRecoversOnlyAnExactDraftPrerelease(): void
@@ -313,6 +326,33 @@ BASH);
             } elseif (is_dir($lockDir)) {
                 @rmdir($lockDir);
             }
+            TestDirectoryIsolation::removeDirectory($work);
+        }
+    }
+
+    private function assertReleasePhpGuard(string $script, string $job): void
+    {
+        $work = TestDirectoryIsolation::createProjectTempDir('release-php');
+        try {
+            $directory = $work.'/tools/static';
+            TestDirectoryIsolation::ensureDirectory($directory);
+            $pin = $directory.'/pin.json';
+            $this->assertSame(realpath($work).'/tools/static', realpath($directory));
+            $this->assertFalse(is_link($pin));
+            $this->assertFileDoesNotExist($pin);
+
+            $command = ['bash', '-c', 'php() { "$TEST_PHP" "$@"; }'."\n".$script];
+            foreach ([\PHP_VERSION, '0.0.0'] as $version) {
+                $json = json_encode(['php_version' => $version], \JSON_THROW_ON_ERROR);
+                $this->assertSame(\strlen($json), file_put_contents($pin, $json));
+                $process = new Process($command, $work, ['TEST_PHP' => \PHP_BINARY]);
+                $matches = \PHP_VERSION === $version;
+                $this->assertSame($matches ? 0 : 1, $process->run(), $job.': '.$process->getErrorOutput());
+                if (!$matches) {
+                    $this->assertStringContainsString("Release PHP version mismatch: expected '0.0.0', got ".\PHP_VERSION, $process->getErrorOutput(), $job);
+                }
+            }
+        } finally {
             TestDirectoryIsolation::removeDirectory($work);
         }
     }

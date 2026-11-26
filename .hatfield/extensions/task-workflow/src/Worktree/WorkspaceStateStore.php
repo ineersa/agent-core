@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\TaskWorkflow\Worktree;
 
+use Ineersa\HatfieldExt\TaskWorkflow\Clock\AmpClock;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardLock;
+use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Filesystem\Filesystem;
 
 /** Small recovery checkpoints only; remote Workflow remains authoritative. Call under lock(). */
@@ -14,7 +16,7 @@ final class WorkspaceStateStore
     private readonly string $directory;
     private readonly Filesystem $filesystem;
 
-    public function __construct(GitExecutor $git, string $primaryRoot)
+    public function __construct(GitExecutor $git, string $primaryRoot, private readonly ClockInterface $clock = new AmpClock())
     {
         $result = $git->gitOk(['rev-parse', '--path-format=absolute', '--git-common-dir'], $primaryRoot);
         if ($result->cancelled || $result->timedOut) {
@@ -94,13 +96,13 @@ final class WorkspaceStateStore
 
     public function lock(string $repository, int $issue): TaskBoardLock
     {
-        return new TaskBoardLock($this->path($repository, $issue).'.lock');
+        return new TaskBoardLock($this->path($repository, $issue).'.lock', $this->clock);
     }
 
     /** Shared by all linked worktrees and issues, not just one repository identity. */
     public function primaryLock(): TaskBoardLock
     {
-        return new TaskBoardLock($this->directory.'/primary.lock');
+        return new TaskBoardLock($this->directory.'/primary.lock', $this->clock);
     }
 
     /** @return list<array<string, mixed>> */

@@ -29,8 +29,8 @@ final readonly class OwnedRunIdsProvider
                 WHERE batch.parent_run_id = :parent
                 SQL, ['parent' => $parent]);
             foreach ($this->artifacts->list($parent) as $entry) {
-                // Fresh owners must resolve nested child archives, not only the
-                // root registry that the directory's session-list scan can see.
+                // Warm the directory: owner-wide reads then resolve each child,
+                // nested ones included, without another lookup.
                 $this->children->register($entry);
                 $children[] = $entry->agentRunId;
             }

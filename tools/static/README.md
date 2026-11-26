@@ -11,13 +11,13 @@ Release: [`docs/distribution.md`](../../docs/distribution.md).
 | Field | Purpose |
 |---|---|
 | `static_php_cli_commit` / `static_php_cli_repository` | SPC checkout |
-| `php_version` | Exact patch (`8.5.8`) |
+| `php_version` | Exact patch (`8.5.13`) |
 | `php_source_sha256` | Official `php-{version}.tar.xz` digest after SPC download |
 | `phpmicro_repository` / `phpmicro_commit` | Local checkout fed as `--custom-local=php-micro:<abs>` |
 | `phpmicro_patch` / `phpmicro_patch_sha256` | Tracked Linux self-path patch + content digest |
 | `extensions` | SPC SFX set — **superset** of system-PHAR guards, not identical |
 | `micro_fake_cli` | Symfony CLI-friendly micro |
-| `runtime_revision` | Explicit rebuild when runtime inputs need refreshing without a pin or fingerprint change |
+| `runtime_revision` | Bump to rebuild the native runtime after an unpinned change (recipe, toolchain, runner image) |
 
 Libraries beyond PHP + phpmicro are **not** fully locked. Do not float SPC branches/tags
 from build tasks; change the pin and validate a host static build.
@@ -37,8 +37,8 @@ Remove once upstream no longer realpaths AT_EXECFN on Linux.
    built via `phar_ensure` for local standalone static.
 2. Look up the compiled runtime by fingerprint. On a miss, clone pinned SPC and
    phpmicro under `var/tmp/static-php-cli/` and apply the tracked Linux self-path patch.
-3. On a miss, run `spc download --with-php=8.5.8 --custom-local=php-micro:<path> …` then verify
-   `php-8.5.8.tar.xz` SHA-256 against the pin.
+3. On a miss, run `spc download --with-php=8.5.13 --custom-local=php-micro:<path> …` then verify
+   `php-8.5.13.tar.xz` SHA-256 against the pin.
 4. On a miss, run `spc build` with `--with-packages=libjpeg,libwebp,nghttp2` and
    `--no-smoke-test=micro` (upstream bare-micro segfault workaround).
    `nghttp2` enables cURL HTTP/2 support so Symfony selects cURL instead of Amp.
@@ -49,8 +49,9 @@ Remove once upstream no longer realpaths AT_EXECFN on Linux.
 7. `castor distribution:verify` (version/list + topology). Topology proves the same
    renamed fused binary launches broker, Amp SQLite worker, and messenger consumers.
 
-The fingerprint covers the target, pins (including `runtime_revision`), patch,
-SPC recipe, and host toolchain identity and selectors. It excludes the app PHAR
+The fingerprint is the target plus the build pins in `pin.json` (PHP version and
+source SHA-256, extensions, `micro_fake_cli`, SPC/phpmicro commits, patch SHA-256,
+`runtime_revision`). Bump `runtime_revision` to rebuild after an unpinned change. It excludes the app PHAR
 and `composer.lock`. Castor keeps `php`, `micro.sfx`, `sha256.json`, and
 `provenance.json` under `var/tmp/static-runtime/<fingerprint>/`. The release
 workflow retains the same files in a persistent `static-runtime-<fingerprint>`

@@ -5,8 +5,6 @@ declare(strict_types=1);
 use Castor\Attribute\AsOption;
 use Castor\Attribute\AsTask;
 use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\Process\ExecutableFinder;
-use Symfony\Component\Process\Process;
 
 /**
  * @param array{php_version: string, extensions: list<string>, micro_fake_cli: bool} $pin
@@ -37,59 +35,51 @@ function distribution_print_runtime_fingerprint(
     #[AsOption(description: 'Native target (default host)')]
     ?string $target = null,
 ): void {
-    echo distribution_runtime_fingerprint($target ?? distribution_host_target(), distribution_static_pin())."\n";
+    $inputs = distribution_runtime_fingerprint_inputs($target ?? distribution_host_target(), distribution_static_pin());
+    // Inputs go to stderr so a cache miss names what changed; stdout stays the bare key.
+    fwrite(\STDERR, json_encode($inputs, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR)."\n");
+    echo distribution_runtime_fingerprint_from_inputs($inputs)."\n";
 }
 
-/** @param array{php_version: string, extensions: list<string>, micro_fake_cli: bool, phpmicro_patch: string, phpmicro_patch_sha256: string, runtime_revision: int} $pin */
+/** @param array{runtime_revision: int, static_php_cli_commit: string, php_version: string, php_source_sha256: string, phpmicro_commit: string, phpmicro_patch_sha256: string, extensions: list<string>, micro_fake_cli: bool} $pin */
 function distribution_runtime_fingerprint(string $target, array $pin): string
 {
+    return distribution_runtime_fingerprint_from_inputs(distribution_runtime_fingerprint_inputs($target, $pin));
+}
+
+/** @param array<string, mixed> $inputs */
+function distribution_runtime_fingerprint_from_inputs(array $inputs): string
+{
+    return hash('sha256', serialize($inputs));
+}
+
+/**
+ * The runtime cache key: the target plus the pinned build inputs in pin.json.
+ *
+ * Only immutable pins belong here; host probes (tool binaries, OS files, env)
+ * vary across runner VMs and forced needless rebuilds. Bump runtime_revision to
+ * rebuild after an unpinned change such as a toolchain or runner image update.
+ *
+ * @param array{runtime_revision: int, static_php_cli_commit: string, php_version: string, php_source_sha256: string, phpmicro_commit: string, phpmicro_patch_sha256: string, extensions: list<string>, micro_fake_cli: bool} $pin
+ *
+ * @return array<string, mixed>
+ */
+function distribution_runtime_fingerprint_inputs(string $target, array $pin): array
+{
     distribution_assert_host_can_build($target);
-    $patch = hash_file('sha256', distribution_root().'/'.$pin['phpmicro_patch']);
-    if ($patch !== $pin['phpmicro_patch_sha256']) {
-        throw new RuntimeException('phpmicro patch SHA-256 mismatch: '.$pin['phpmicro_patch']);
-    }
 
-    $tools = [];
-    $finder = new ExecutableFinder();
-    foreach (['cc', 'gcc', 'g++', 'clang', 'clang++', 'ld', 'ldd', 'ar', 'ranlib', 'strip', 'make', 'cmake', 'pkg-config', 'autoconf', 'automake', 'libtool', 're2c', 'flex', 'gperf', 'bison'] as $tool) {
-        $path = $finder->find($tool);
-        if (null === $path) {
-            continue;
-        }
-        $digest = hash_file('sha256', $path);
-        if (false === $digest) {
-            throw new RuntimeException('Unable to fingerprint native build tool: '.$path);
-        }
-        // Apple ld/ar and other valid tools need not support --version.
-        $tools[$tool] = $digest;
-        if (in_array($tool, ['cc', 'gcc', 'g++', 'clang', 'clang++'], true)) {
-            $tools[$tool] = [$digest, trim((new Process([$path, '--version']))->mustRun()->getOutput())];
-        }
-    }
-    if (str_starts_with($target, 'darwin-')) {
-        // xcrun works with Command Line Tools alone; xcodebuild need not be installed.
-        $platform = array_map(static fn (array $probe): string => trim((new Process($probe))->mustRun()->getOutput()), [
-            ['xcrun', 'clang', '--version'], ['xcrun', '--show-sdk-version'], ['xcrun', '--show-sdk-build-version'], ['sw_vers'],
-        ]);
-    } else {
-        $osRelease = is_file('/etc/os-release') ? '/etc/os-release' : '/usr/lib/os-release';
-        $platform = file_get_contents($osRelease);
-        if (false === $platform) {
-            throw new RuntimeException('Unable to fingerprint native host OS: '.$osRelease);
-        }
-    }
-    $env = [];
-    foreach (['CC', 'CXX', 'AR', 'LD', 'RANLIB', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS', 'SDKROOT', 'DEVELOPER_DIR', 'MACOSX_DEPLOYMENT_TARGET', 'CMAKE_PREFIX_PATH', 'PKG_CONFIG_PATH', 'PKG_CONFIG_LIBDIR', 'CPATH', 'LIBRARY_PATH', 'ImageOS', 'ImageVersion', 'SPC_LIBC', 'SPC_TARGET', 'SPC_TOOLCHAIN', 'SPC_USE_LLVM', 'SPC_MUSL_DYNAMIC'] as $variable) {
-        $env[$variable] = getenv($variable);
-    }
-
-    return hash('sha256', serialize([
-        // Only runtime inputs belong here. In particular, neither the app PHAR
-        // nor its dependency lockfile contributes to this key.
-        'native-runtime-v1', $target, $pin['runtime_revision'], hash_file('sha256', distribution_root().'/tools/static/pin.json'), $patch,
-        hash_file('sha256', distribution_root().'/.github/actions/static-prerequisites/action.yml'),
-        distribution_runtime_recipe($pin, '<phpmicro>'), $tools, $platform, $env,
-    ]));
+    return [
+        'schema' => 'native-runtime-v3',
+        'target' => $target,
+        'php_version' => $pin['php_version'],
+        'php_source_sha256' => $pin['php_source_sha256'],
+        'extensions' => $pin['extensions'],
+        'micro_fake_cli' => $pin['micro_fake_cli'],
+        'static_php_cli_commit' => $pin['static_php_cli_commit'],
+        'phpmicro_commit' => $pin['phpmicro_commit'],
+        'phpmicro_patch_sha256' => $pin['phpmicro_patch_sha256'],
+        'runtime_revision' => $pin['runtime_revision'],
+    ];
 }
 
 function distribution_verify_runtime_cli(string $cli): void
@@ -100,8 +90,12 @@ function distribution_verify_runtime_cli(string $cli): void
     ));
 }
 
-/** @return array<string, mixed> */
-function distribution_runtime_provenance(string $spcCache, string $target, string $fingerprint, int $revision): array
+/**
+ * @param array<string, mixed> $fingerprintInputs
+ *
+ * @return array<string, mixed>
+ */
+function distribution_runtime_provenance(string $spcCache, array $fingerprintInputs): array
 {
     if (!is_file($spcCache)) {
         throw new RuntimeException('SPC download inventory is missing: '.$spcCache);
@@ -139,7 +133,10 @@ function distribution_runtime_provenance(string $spcCache, string $target, strin
         throw new RuntimeException('SPC inventory contains no recorded downloads.');
     }
 
-    return ['kind' => 'spc-download-inventory', 'target' => $target, 'fingerprint' => $fingerprint, 'runtime_revision' => $revision, 'downloads' => $downloads];
+    return [
+        'kind' => 'spc-download-inventory', 'target' => $fingerprintInputs['target'], 'fingerprint' => distribution_runtime_fingerprint_from_inputs($fingerprintInputs),
+        'runtime_revision' => $fingerprintInputs['runtime_revision'], 'fingerprint_inputs' => $fingerprintInputs, 'downloads' => $downloads,
+    ];
 }
 
 function distribution_cached_runtime_is_valid(string $cache, string $fingerprint): bool

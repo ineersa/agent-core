@@ -99,6 +99,27 @@ final class PrManagerTest extends TestCase
         $this->assertFileDoesNotExist($calls[0][array_search('--body-file', $calls[0], true) + 1]);
     }
 
+    public function testAwaitHeadWaitsOnlyUntilThePushedRevision(): void
+    {
+        $clock = new MockClock('2026-01-01T00:00:00Z');
+        $start = $clock->now();
+        $calls = [];
+        $manager = $this->manager([$this->response(['headRefOid' => 'old']), $this->response(['headRefOid' => 'old']), $this->response()], $calls, $clock);
+
+        $this->assertSame('accepted-sha', $manager->awaitHead(9, 'accepted-sha')->headSha);
+        $this->assertCount(3, $calls);
+        $this->assertEquals($start->modify('+3 seconds'), $clock->now());
+    }
+
+    public function testAwaitHeadRefusesAHeadThatNeverArrives(): void
+    {
+        $calls = [];
+        $manager = $this->manager(array_fill(0, 5, $this->response(['headRefOid' => 'old'])), $calls);
+
+        $this->expectExceptionMessage('PR #9 head has not reached the pushed revision accepted-sha yet; retry the same transition.');
+        $manager->awaitHead(9, 'accepted-sha');
+    }
+
     public function testFindStillRejectsUnlinkedPrWithoutPolling(): void
     {
         $calls = [];

@@ -36,13 +36,15 @@ final class StaticRuntimeCacheTest extends TestCase
             $filesystem->dumpFile($compiled.'/php', "#!/bin/sh\nexit 0\n");
             $filesystem->chmod($compiled.'/php', 0755);
             $filesystem->dumpFile($compiled.'/micro.sfx', 'compiled micro');
-            $fingerprint = str_repeat('a', 64);
+            $inputs = ['target' => 'linux-amd64', 'runtime_revision' => 1];
+            $fingerprint = distribution_runtime_fingerprint_from_inputs($inputs);
             $inventory = $work.'/downloads/.cache.json';
             $filesystem->dumpFile($inventory, json_encode(['curl' => ['source' => [
                 'cache_type' => 'archive', 'filename' => '/private/downloads/curl.tar.gz', 'version' => '1.0',
                 'hash' => str_repeat('b', 40), 'config' => ['private' => '/not-for-publication'],
             ]]], \JSON_THROW_ON_ERROR));
-            $provenance = distribution_runtime_provenance($inventory, 'linux-amd64', $fingerprint, 1);
+            $provenance = distribution_runtime_provenance($inventory, $inputs);
+            $this->assertSame($inputs, $provenance['fingerprint_inputs'], 'Provenance names the inputs behind its key.');
             $this->assertSame(['type' => 'archive', 'filename' => 'curl.tar.gz', 'version' => '1.0', 'hash_algorithm' => 'sha1', 'hash' => str_repeat('b', 40)], $provenance['downloads']['curl']['source']);
             $this->assertFalse(distribution_cached_runtime_is_valid($cache, $fingerprint));
             distribution_cache_runtime($cache, $compiled, $provenance);
@@ -66,7 +68,7 @@ final class StaticRuntimeCacheTest extends TestCase
         }
     }
 
-    public function testAppVersionDoesNotInvalidateRuntimeButBuildFlagsDo(): void
+    public function testKeyCoversPinsButNotHostProbes(): void
     {
         require_once ProjectDir::get().'/.castor/distribution.php';
         try {
@@ -79,23 +81,23 @@ final class StaticRuntimeCacheTest extends TestCase
         }
         $pin = distribution_static_pin();
         $original = distribution_runtime_fingerprint($target, $pin);
-        $version = getenv('HATFIELD_BUILD_VERSION');
-        try {
-            putenv('HATFIELD_BUILD_VERSION=app-only-change');
-            $this->assertSame($original, distribution_runtime_fingerprint($target, $pin));
-            $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['micro_fake_cli' => !$pin['micro_fake_cli']] + $pin));
-            $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['runtime_revision' => $pin['runtime_revision'] + 1] + $pin));
-        } finally {
-            putenv(false === $version ? 'HATFIELD_BUILD_VERSION' : 'HATFIELD_BUILD_VERSION='.$version);
-        }
 
-        foreach (['SPC_TARGET', 'SPC_TOOLCHAIN', 'SPC_USE_LLVM', 'SPC_MUSL_DYNAMIC'] as $selector) {
-            $originalValue = getenv($selector);
+        $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['php_version' => $pin['php_version'].'.1'] + $pin));
+        $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['extensions' => [...$pin['extensions'], 'bcmath']] + $pin));
+        $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['runtime_revision' => $pin['runtime_revision'] + 1] + $pin));
+        foreach (['static_php_cli_commit', 'phpmicro_commit', 'phpmicro_patch_sha256'] as $field) {
+            $this->assertNotSame($original, distribution_runtime_fingerprint($target, [$field => str_repeat('0', 40)] + $pin), $field);
+        }
+        $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['micro_fake_cli' => !$pin['micro_fake_cli']] + $pin));
+        // Host probes and labels rebuild only through runtime_revision.
+
+        foreach (['HATFIELD_BUILD_VERSION', 'ImageVersion', 'ImageOS', 'CFLAGS', 'PKG_CONFIG_PATH', 'SPC_TOOLCHAIN'] as $variable) {
+            $originalValue = getenv($variable);
             try {
-                putenv($selector.'='.$originalValue.'-fingerprint-test');
-                $this->assertNotSame($original, distribution_runtime_fingerprint($target, $pin), $selector);
+                putenv($variable.'='.$originalValue.'-fingerprint-test');
+                $this->assertSame($original, distribution_runtime_fingerprint($target, $pin), $variable);
             } finally {
-                putenv(false === $originalValue ? $selector : $selector.'='.$originalValue);
+                putenv(false === $originalValue ? $variable : $variable.'='.$originalValue);
             }
         }
     }

@@ -78,8 +78,9 @@ stdout/stderr tails independently (up to 2,000 characters each), not full stream
 Failed completion validation retains pending recovery
 and does not publish DONE; retry the same finalization, not implementation.
 
-For accepted review feedback, return to implementation, make the changes,
-refresh affected QA results, and resubmit. If a transition fails, use its
+For accepted review feedback, commit the changes in the task worktree,
+refresh affected QA results, and resubmit with `move_task` to CODE-REVIEW;
+never push review fixes outside the transition. If a transition fails, use its
 reported state and next action to recover; never reset unrelated work.
 
 Honor the requested planning-only, implementation-only, or delivery endpoint.

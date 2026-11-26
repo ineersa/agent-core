@@ -45,7 +45,7 @@ final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
             $references[] = $scoped->publish(new ExecuteToolCall($run, 1, 'tools', 1, 'key-'.$i, 'call-'.$i, 'echo', ['text' => 'hello'], $i));
         }
         $this->assertSame(1, $paths->calls);
-        $this->assertSame(13, $this->parentCounts($sql), 'One path resolution plus authoritative existence on every publication.');
+        $this->assertSame(12, $this->parentCounts($sql), 'Authoritative existence on every publication; path resolution reads only the child index.');
         $sql->records = [];
         foreach ($references as $i => $reference) {
             $this->assertSame('call-'.$i, $scoped->read($reference)->toolCallId);

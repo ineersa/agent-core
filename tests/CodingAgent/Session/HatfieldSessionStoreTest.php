@@ -24,6 +24,7 @@ use Ineersa\CodingAgent\Session\Event\SessionDeletedEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionToolPayloadStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
+use Ineersa\CodingAgent\Tests\Support\ChildRunFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Symfony\Component\Clock\Clock;
@@ -354,9 +355,9 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $foreign = $this->store->createSession('foreign owner');
         $child = 'payload-child-'.$owner;
         $grandchild = 'payload-grandchild-'.$owner;
-        $entry = $container->get(AgentArtifactRegistry::class)->create($owner, 'payload-child', $child, 'fork', AgentArtifactKindEnum::Fork);
+        $entry = ChildRunFixture::create($container, $owner, 'payload-child', $child, 'fork', AgentArtifactKindEnum::Fork);
         $container->get(AgentChildRunDirectory::class)->register($entry);
-        $nested = $container->get(AgentArtifactRegistry::class)->create($child, 'payload-grandchild', $grandchild, 'fork', AgentArtifactKindEnum::Fork);
+        $nested = ChildRunFixture::create($container, $child, 'payload-grandchild', $grandchild, 'fork', AgentArtifactKindEnum::Fork);
         $container->get(AgentChildRunDirectory::class)->register($nested);
         $batches = $container->get(ToolBatchStoreInterface::class);
         $payloads = $container->get(SessionToolPayloadStore::class);
@@ -437,7 +438,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
     {
         $sessionId = $this->store->createSession('delete-output-cap');
         $childRunId = 'child-output-cap-'.$sessionId;
-        static::getContainer()->get(AgentArtifactRegistry::class)->create(
+        ChildRunFixture::create(static::getContainer(),
             $sessionId,
             'output-cap-child-'.$sessionId,
             $childRunId,

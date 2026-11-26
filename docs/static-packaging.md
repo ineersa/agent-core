@@ -10,7 +10,7 @@ Related: [distribution.md](distribution.md) · [phar-packaging.md](phar-packagin
 
 | Artifact | Typical runner |
 |---|---|
-| `hatfield.linux-amd64` | `ubuntu-latest` |
+| `hatfield.linux-amd64` | `ubuntu-26.04` |
 | `hatfield.linux-arm64` | `ubuntu-24.04-arm` |
 | `hatfield.darwin-arm64` | `macos-15` |
 
@@ -48,10 +48,13 @@ Native binaries embed the same packaged resources as the PHAR (selected docs inc
 ## Compiled runtime cache
 
 `castor distribution:runtime-fingerprint` prints the key for the current host.
-The key covers the native target, pin and patch, SPC arguments and library
-recipes, static prerequisites, toolchain and SDK identities, and relevant build
-environment (including the CI runner image version). The app's PHAR, Composer
-lockfile and packaging task source do not contribute to it. SPC still resolves
+The key is the native target plus the build pins in `tools/static/pin.json`: PHP
+version and source SHA-256, extensions, `micro_fake_cli`, the SPC and phpmicro
+commits, the phpmicro patch SHA-256 and `runtime_revision`. Host probes (tool
+binaries, OS files, environment, runner image) are not part of it. Increment
+`runtime_revision` to rebuild after an unpinned change, such as the build recipe,
+toolchain or runner image. The task writes the key inputs as JSON to stderr, and
+the cached runtime's `provenance.json` stores them as `fingerprint_inputs`. SPC still resolves
 some dependency downloads without immutable source or binary hashes: this is
 reuse of a verified recipe, not a lock of all transitive native inputs.
 
@@ -76,8 +79,11 @@ run `bin/spc check-update --json` using the pinned SPC executable to compare
 its cached downloads with upstream versions where supported.
 
 Release jobs provision their separate system PHP using setup-php for bundled
-extensions and check for clean PHP startup before Composer. This does not
-change the native runtime inputs.
+extensions. The pinned setup-php action selects the minor series, not the
+exact patch. Before Composer, every release job checks for clean PHP startup
+and requires `PHP_VERSION` to match `tools/static/pin.json` exactly. A mismatch
+fails the release; reconcile the pin and the available host runtime before
+retrying. This check does not change the native runtime inputs.
 
 ## Runtime
 

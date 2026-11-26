@@ -26,6 +26,7 @@ use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\ChildRunFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
@@ -117,7 +118,7 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $parent = $this->reserve();
         $run = $this->childId();
-        $container->get(AgentArtifactRegistry::class)->create($parent, 'agent_resume_target', $run, 'scout', AgentArtifactKindEnum::Subagent);
+        ChildRunFixture::create($container, $parent, 'agent_resume_target', $run);
         $bus = $container->get('agent.command.bus');
         $receive = static fn (object $message) => $bus->dispatch(new Envelope($message, [new ReceivedStamp('run_control')]));
         $receive($this->childStart($run, $parent));
@@ -156,6 +157,7 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $parent = $this->reserve();
         $identity = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO($parent, $this->childId(), 'agent_fresh', 'scout', 'task', $kind);
+        ChildRunFixture::reserve($container, $parent, $identity->artifactId, $identity->childRunId);
         $lifecycle = $container->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
         $lifecycle->reservePending($identity);
         $input = new \Ineersa\AgentCore\Domain\Run\StartRunInput('instructions', [], $identity->childRunId, new RunMetadata(session: ['kind' => 'agent_child', 'parent_run_id' => $parent], model: 'test-model'));
@@ -163,7 +165,7 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
         $queued = $container->get('messenger.transport.run_control')->getSent()[0];
         $this->assertInstanceOf(StartRun::class, $queued->getMessage());
         $artifacts = $container->get(AgentArtifactRegistry::class);
-        $freshDirectory = new \Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory($container->get(HatfieldSessionStore::class), $artifacts, new \Psr\Log\NullLogger());
+        $freshDirectory = new \Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory($container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class), $artifacts);
         $this->assertSame(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Pending, $freshDirectory->locate($identity->childRunId)->status);
         $events = $container->get(EventStoreInterface::class);
         $this->assertNull($events->latestSequenceFor($identity->childRunId));
@@ -231,7 +233,7 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
     public function testReservedChildCancellationPreservesParentIdentityBeforeStart(): void
     {
         $parent = $this->reserve();
-        $entry = self::getContainer()->get(AgentArtifactRegistry::class)->create($parent, 'agent_reserved', $this->childId(), 'scout', AgentArtifactKindEnum::Subagent);
+        $entry = ChildRunFixture::create(self::getContainer(), $parent, 'agent_reserved', $this->childId());
         $this->consume(new ApplyCommand($entry->agentRunId, 0, 'cancel', 1, 'cancel', 'cancel'));
         $state = $this->registry()->requireLoaded($entry->agentRunId);
         $this->assertSame($parent, $state->parentRunId);
@@ -314,6 +316,7 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
             'task',
             AgentArtifactKindEnum::Subagent,
         );
+        ChildRunFixture::reserve($container, $parent, $identity->artifactId, $identity->childRunId);
         $lifecycle = $container->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
         $lifecycle->reservePending($identity);
 
@@ -381,7 +384,7 @@ final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
     {
         $container = self::getContainer();
         $parent = $this->reserve();
-        $entry = $container->get(AgentArtifactRegistry::class)->create($parent, 'agent_conflict', $this->childId(), 'scout', AgentArtifactKindEnum::Subagent);
+        $entry = ChildRunFixture::create($container, $parent, 'agent_conflict', $this->childId());
         $this->registry()->createNew($entry->agentRunId);
         PreparedEventStoreSeeder::append(
             $container->get(EventStoreInterface::class),

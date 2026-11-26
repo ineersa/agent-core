@@ -11,12 +11,13 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
-use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\ChildRunFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
@@ -82,8 +83,7 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
         $sessions = $container->get(HatfieldSessionStore::class);
         $run = $sessions->createSession('reserved parent');
         $this->assertNull($container->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->find($run));
-        $logger = new TestLogger();
-        $store = $this->router($logger);
+        $store = $this->router();
         $store->assertTransitionReady($run);
         $store->appendTransition([RunEvent::forAppend($run, 0, 'run_started', [])], [
             'run_id' => $run, 'predecessor_seq' => 0, 'effects' => [], 'actions' => [], 'post_commit_effects' => [],
@@ -102,11 +102,10 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
 
         // A fresh router has no positive child cache or operational projection.
         // Its cold archive reads must still select the parent without discovery.
-        $cold = $this->router($logger);
+        $cold = $this->router();
         $this->assertSame($run, $cold->firstFor($run)?->runId);
         $this->assertCount(1, $cold->allFor($run));
         $this->assertNull($container->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->find($run));
-        $this->assertSame([], $logger->records, 'Global discovery emits a scan record before reading registries.');
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('lateChildIdentities')]
@@ -118,20 +117,17 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
         if ($aliasParent) {
             $child = '0'.$parent;
         }
-        $logger = new TestLogger();
-        $store = $this->router($logger);
+        $store = $this->router();
         $this->assertSame([], $store->allFor($child));
-        $this->assertCount(1, $logger->records, 'The unknown identity must still attempt discovery.');
 
-        // The producer writes the durable reservation without registering it
-        // with the already-running reader's in-memory directory.
-        $container->get(AgentArtifactRegistry::class)->create($parent, 'agent_late', $child, 'scout', AgentArtifactKindEnum::Subagent);
+        // The producer reserves the child in its batch, then writes the artifact,
+        // without registering it with the already-running reader's directory.
+        ChildRunFixture::create($container, $parent, 'agent_late', $child, 'scout', AgentArtifactKindEnum::Subagent);
         PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 0, 'run_started', []));
-        $this->assertCount(2, $logger->records, 'The earlier miss must not suppress discovery of a later reservation.');
-        $this->assertSame($child, $store->firstFor($child)?->runId);
+        $this->assertSame($child, $store->firstFor($child)?->runId, 'The earlier miss must not suppress a later reservation.');
         $this->assertSame([], $store->allFor($parent));
         $this->assertFileExists($sessions->resolveSessionsBasePath().'/'.$parent.'/artifacts/agents/agent_late/events.jsonl');
-        $this->assertSame($child, $this->router(new TestLogger())->firstFor($child)?->runId);
+        $this->assertSame($child, $this->router()->firstFor($child)?->runId);
     }
 
     public static function lateChildIdentities(): iterable
@@ -141,14 +137,14 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
         yield 'leading-zero alias is not a canonical parent' => ['', true];
     }
 
-    private function router(TestLogger $logger): ChildAwareEventStore
+    private function router(): ChildAwareEventStore
     {
         $container = self::getContainer();
 
         return new ChildAwareEventStore(
             $container->get(\Ineersa\CodingAgent\Session\SessionRunEventStore::class),
             $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory::class),
-            new AgentChildRunDirectory($container->get(HatfieldSessionStore::class), $container->get(AgentArtifactRegistry::class), $logger),
+            new AgentChildRunDirectory($container->get(DeferredSubagentChildRepository::class), $container->get(AgentArtifactRegistry::class)),
         );
     }
 }

@@ -11,6 +11,7 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Widget\SelectListKeybindings;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
+use Symfony\Component\Tui\Event\SelectionChangeEvent;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Style\StyleSheet;
 use Symfony\Component\Tui\Tui;
@@ -31,7 +32,9 @@ use Symfony\Component\Tui\Widget\TextWidget;
  * Arrow keys navigate; Enter confirms; Escape cancels.
  *
  * Sessions are fetched fresh from HatfieldSessionStore on each
- * open so the picker always reflects the latest DB state.
+ * open so the picker always reflects the latest DB state. They load in
+ * pages of {@see PAGE_SIZE}; moving the selection within one visible
+ * window of the last loaded row appends the next page in place.
  *
  * While open, resume mode may hold picker-scoped confirm state
  * ({@see $confirmingDelete}, {@see $pendingDeleteSessionId}) for the
@@ -43,12 +46,21 @@ final class SessionPickerController
     private const string RESUME_HEADER = 'Resume session — arrows move, Enter resumes, d deletes, Esc cancels';
     private const string CONFIRM_YES = 'yes';
     private const string CONFIRM_NO = 'no';
+    private const int PAGE_SIZE = 100;
 
     private ?PickerOverlay $overlay = null;
     private ?TextWidget $headerWidget = null;
 
     /** @var list<array{sessionId: string, displayTitle: string, name: string, ...}> */
     private array $sessions = [];
+
+    /** @var array<string, int> sessionId → position in {@see} */
+    private array $positions = [];
+
+    private bool $exhausted = false;
+
+    /** Fallback row after the delete confirmation when the confirmed session is gone. */
+    private int $returnIndex = 0;
 
     private bool $confirmingDelete = false;
     private ?string $pendingDeleteSessionId = null;
@@ -64,7 +76,7 @@ final class SessionPickerController
     /**
      * Open the interactive session picker on the TUI (resume mode).
      *
-     * Fetches sessions from HatfieldSessionStore::listSessions(),
+     * Fetches the first page of sessions from HatfieldSessionStore::listSessions(),
      * builds a SelectListWidget with session display titles and IDs,
      * and mounts it via PickerOverlay.
      *
@@ -199,6 +211,9 @@ final class SessionPickerController
         $this->overlay = null;
         $this->headerWidget = null;
         $this->sessions = [];
+        $this->positions = [];
+        $this->exhausted = false;
+        $this->returnIndex = 0;
         $this->confirmingDelete = false;
         $this->pendingDeleteSessionId = null;
         $this->screen->setStatus('error', null);
@@ -222,9 +237,9 @@ final class SessionPickerController
             return;
         }
 
-        $sessions = $this->sessionStore->listSessions();
+        $this->loadSessions(self::PAGE_SIZE);
 
-        if ([] === $sessions) {
+        if ([] === $this->sessions) {
             $this->screen->setStatus('session', 'No sessions found');
             $this->screen->refresh();
 
@@ -233,7 +248,6 @@ final class SessionPickerController
 
         $tui = $this->tui;
         $screen = $this->screen;
-        $this->sessions = $sessions;
         $this->confirmingDelete = false;
         $this->pendingDeleteSessionId = null;
 
@@ -253,7 +267,7 @@ final class SessionPickerController
         ]));
 
         $listWidget = new SelectListWidget(
-            items: self::buildItemsStatic($sessions),
+            items: self::buildItemsStatic($this->sessions),
             maxVisible: SelectListKeybindings::MAX_VISIBLE,
             keybindings: $kb,
         );
@@ -264,6 +278,10 @@ final class SessionPickerController
         // ── Enter → call the on-select callback ──
         $listWidget->onSelect(static function (SelectEvent $event) use ($onSelect): void {
             $onSelect($event);
+        });
+
+        $listWidget->onSelectionChange(static function (SelectionChangeEvent $event) use ($picker, $listWidget): void {
+            $picker->loadNextPageNear($listWidget, (string) $event->getItem()['value']);
         });
 
         // ── Escape / Ctrl+C → cancel confirm or close without change ──
@@ -322,6 +340,7 @@ final class SessionPickerController
 
         $this->confirmingDelete = true;
         $this->pendingDeleteSessionId = $sessionId;
+        $this->returnIndex = $this->positions[$sessionId] ?? 0;
 
         $header = $this->headerWidget;
         if (null !== $header) {
@@ -384,9 +403,12 @@ final class SessionPickerController
 
     private function restoreSessionList(SelectListWidget $listWidget): void
     {
+        $confirmedSessionId = $this->pendingDeleteSessionId;
         $this->confirmingDelete = false;
         $this->pendingDeleteSessionId = null;
-        $this->sessions = $this->sessionStore->listSessions();
+        // Reload as many rows as were already browsed so the restored list
+        // keeps the confirmed row's position instead of jumping to the top.
+        $this->loadSessions(max(self::PAGE_SIZE, \count($this->sessions)));
 
         $header = $this->headerWidget;
         if (null !== $header) {
@@ -394,5 +416,37 @@ final class SessionPickerController
         }
 
         $listWidget->setItems(self::buildItemsStatic($this->sessions));
+        // Other processes may add sessions meanwhile; follow the confirmed
+        // session by identity so Enter never targets a neighbour.
+        $listWidget->setSelectedIndex($this->positions[$confirmedSessionId ?? ''] ?? $this->returnIndex);
+    }
+
+    private function loadNextPageNear(SelectListWidget $listWidget, string $selectedSessionId): void
+    {
+        $index = $this->positions[$selectedSessionId] ?? null;
+        if ($this->confirmingDelete || $this->exhausted || null === $index
+            || $index < \count($this->sessions) - SelectListKeybindings::MAX_VISIBLE) {
+            return;
+        }
+
+        $page = $this->sessionStore->listSessions(limit: self::PAGE_SIZE, offset: \count($this->sessions));
+        $this->exhausted = \count($page) < self::PAGE_SIZE;
+        // Offsets shift when another process creates a session meanwhile; skip rows already shown.
+        foreach ($page as $session) {
+            if (!isset($this->positions[$session['sessionId']])) {
+                $this->positions[$session['sessionId']] = \count($this->sessions);
+                $this->sessions[] = $session;
+            }
+        }
+
+        $listWidget->setItems(self::buildItemsStatic($this->sessions));
+        $listWidget->setSelectedIndex($index);
+    }
+
+    private function loadSessions(int $limit): void
+    {
+        $this->sessions = $this->sessionStore->listSessions(limit: $limit);
+        $this->exhausted = \count($this->sessions) < $limit;
+        $this->positions = array_flip(array_column($this->sessions, 'sessionId'));
     }
 }

@@ -22,6 +22,7 @@ use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
+use Ineersa\CodingAgent\Tests\Support\ChildRunFixture;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -35,7 +36,7 @@ final class BackgroundWorkSnapshotProviderTest extends IsolatedKernelTestCase
         $root = $sessions->createSession('inventory');
         $foreign = $sessions->createSession('foreign');
         $child = Uuid::v7()->toRfc4122();
-        $container->get(AgentArtifactRegistry::class)->create($root, 'owned', $child, 'scout', AgentArtifactKindEnum::Subagent);
+        ChildRunFixture::create($container, $root, 'owned', $child, 'scout', AgentArtifactKindEnum::Subagent);
         // A running child publishes persisted ownership before executing tools;
         // registry files are not needed to discover an active invocation.
         $container->get(RunOperationalProjectionRepository::class)->replace(new RunState($child, RunStatus::Running, parentRunId: $root));
