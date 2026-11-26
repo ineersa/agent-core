@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\SessionEventRecorder;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionSelectedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionTitleChangedEvent;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
@@ -17,6 +21,8 @@ use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
+use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * Uses IsolatedKernelTestCase because HatfieldSessionStore now routes
@@ -27,6 +33,8 @@ use PHPUnit\Framework\Attributes\Test;
 final class RenameSessionCommandHandlerTest extends IsolatedKernelTestCase
 {
     private HatfieldSessionStore $sessionStore;
+    private SessionEventRecorder $recorder;
+    private ExtensionSessionEventPublisher $publisher;
 
     protected function setUp(): void
     {
@@ -35,6 +43,29 @@ final class RenameSessionCommandHandlerTest extends IsolatedKernelTestCase
         /** @var HatfieldSessionStore $sessionStore */
         $sessionStore = self::getContainer()->get(HatfieldSessionStore::class);
         $this->sessionStore = $sessionStore;
+        $dispatcher = new EventDispatcher();
+        $this->recorder = new SessionEventRecorder();
+        $dispatcher->addSubscriber($this->recorder);
+        $this->publisher = new ExtensionSessionEventPublisher($dispatcher, new NullLogger());
+    }
+
+    #[Test]
+    public function testRenamePublishesTheNewTitleOnlyForTheSelectedSession(): void
+    {
+        $selected = $this->sessionStore->createSession('Selected');
+        $other = $this->sessionStore->createSession('Other');
+        $this->publisher->select($selected, true);
+        $handler = $this->createHandler();
+
+        foreach (['abc New', '999999 New', $selected, $selected.'   ', $other.' Renamed other', $selected.' Renamed selected', '00'.$selected.' Padded ID'] as $args) {
+            $handler->handle(new SlashCommand('rename', $args, '/rename '.$args));
+        }
+
+        $this->assertEquals([
+            new SessionSelectedEvent($selected, true),
+            new SessionTitleChangedEvent($selected, 'Renamed selected'),
+            new SessionTitleChangedEvent($selected, 'Padded ID'),
+        ], $this->recorder->events, 'Failed renames and other sessions publish nothing; a padded ID publishes the canonical one.');
     }
 
     #[Test]
@@ -162,6 +193,6 @@ final class RenameSessionCommandHandlerTest extends IsolatedKernelTestCase
             $switch,
         );
 
-        return new RenameSessionCommandHandler($this->sessionStore, $pickerController);
+        return new RenameSessionCommandHandler($this->sessionStore, $pickerController, $this->publisher);
     }
 }

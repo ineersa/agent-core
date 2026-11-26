@@ -12,7 +12,7 @@ declare(strict_types=1);
  *   castor test:controller
  *
  * Lanes (typical shell timeouts):
- *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),
+ *   deptrac (30s), test ParaTest (180s), test:controller-replay (150s),
  *   test:tui (210s), test:llm-real (210s), phpstan (90s), lsp:check (110s),
  *   dead-code (150s), cs-check (30s), docs:validate (30s).
  *   Absolute castor check wall clock: castor_test_runner_max_seconds() (210s)
@@ -31,6 +31,11 @@ declare(strict_types=1);
  * fixture waits remain fixture-local; Castor lane hard-stop is the shell
  * budget clamped to remaining wall (no +15s pad). Do not treat exact case
  * counts in older comments as current — count the `controller-replay` group.
+ *
+ * Budget for test ParaTest (120s → 180s): the unit lane runs with 4 workers
+ * beside the other lanes. About 575s of summed test time (mostly kernel-booting
+ * tests) needs ~145s on 4 workers, past the old 120s cap; 180s is headroom until
+ * the suite is trimmed, clamped to remaining wall like every lane.
  *
  * Budget for test:tui (120s → 180s → 210s): the replay TUI lane uses ParaTest
  * (default 2 workers under check). Healthy gate runs used to sit near the old
@@ -197,7 +202,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
             'cmd' => timeout_check_command(
                 // ParaTest unit/integration; PHAR excluded (opt-in, not part of deterministic gate).
                 build_check_paratest_command(),
-                120,
+                180,
             ),
         ],
         'test:controller-replay' => [

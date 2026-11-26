@@ -13,6 +13,7 @@ use Ineersa\Hatfield\ExtensionApi\Session\Event\InputRequestedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\InputResolvedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionClosingEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionSelectedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionTitleChangedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\ToolFinishedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\ToolStartedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnCancelledEvent;
@@ -30,7 +31,7 @@ final class SessionEventRecorder implements EventSubscriberInterface
     public static function getSubscribedEvents(): array
     {
         return array_fill_keys([
-            SessionSelectedEvent::class, SessionClosingEvent::class, TurnStartedEvent::class, TurnCompletedEvent::class,
+            SessionSelectedEvent::class, SessionClosingEvent::class, SessionTitleChangedEvent::class, TurnStartedEvent::class, TurnCompletedEvent::class,
             TurnFailedEvent::class, TurnCancelledEvent::class, AssistantMessageCompletedEvent::class, ToolStartedEvent::class,
             ToolFinishedEvent::class, InputRequestedEvent::class, InputResolvedEvent::class, ChildExecutionStartedEvent::class,
             ChildExecutionEndedEvent::class, BackgroundJobStartedEvent::class, BackgroundJobEndedEvent::class,

@@ -81,7 +81,9 @@ loop returns; reload and switch already cleared the selection through `shutdown(
 An attach publishes nothing until its `session.ready`, so bootstrap frames and the
 catch-up suffix are not replayed; a recovery bootstrap suspends publishing again.
 Canonical events below the published sequence are skipped after a controller
-restart. The TUI does not dispatch extension events. Extensions keep its context
+restart. Changes that bypass the controller, such as `/rename`, call the publisher
+directly (`titleChanged()`), which publishes only for the selected session.
+The TUI does not dispatch extension events itself. Extensions keep its context
 for UI only and read the selected session through `ExtensionSessionContext`.
 The in-process transport, which the controller also uses internally, publishes
 nothing.

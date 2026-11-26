@@ -25,6 +25,7 @@ use Ineersa\Hatfield\ExtensionApi\Session\Event\InputRequestTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\InputResolvedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionClosingEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionSelectedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionTitleChangedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\ToolFinishedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\ToolStartedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnCancelledEvent;
@@ -102,6 +103,7 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, Even
         return [
             SessionSelectedEvent::class => 'onSessionSelected',
             SessionClosingEvent::class => 'onSessionClosing',
+            SessionTitleChangedEvent::class => 'onSessionTitleChanged',
             TurnStartedEvent::class => 'onTurnStarted',
             TurnCompletedEvent::class => 'onTurnCompleted',
             TurnFailedEvent::class => 'onTurnFailed',
@@ -220,6 +222,16 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, Even
             $this->discardPending();
             $this->logDrop($sessionId);
         }
+    }
+
+    /** Only the title changes: turn and attention state, and so completion, stay as they are. */
+    public function onSessionTitleChanged(SessionTitleChangedEvent $event): void
+    {
+        if (!$this->observes($event->sessionId)) {
+            return;
+        }
+        $this->title = self::title($event->title);
+        $this->snapshot(deduplicate: true);
     }
 
     public function onTurnStarted(TurnStartedEvent $event): void
@@ -403,9 +415,12 @@ final class Hatfield360Extension implements ConfigurableExtensionInterface, Even
 
             return;
         }
-        if (null !== $title && mb_check_encoding($title, 'UTF-8')) {
-            $this->title = mb_substr($title, 0, 1024, 'UTF-8');
-        }
+        $this->title = self::title($title);
+    }
+
+    private static function title(?string $title): ?string
+    {
+        return null !== $title && mb_check_encoding($title, 'UTF-8') ? mb_substr($title, 0, 1024, 'UTF-8') : null;
     }
 
     /** Keeps the end of the final message, where the answer usually is. */

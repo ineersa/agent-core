@@ -35,6 +35,7 @@ use Ineersa\Hatfield\ExtensionApi\Session\Event\ChildExecutionStartedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\InputRequestedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\InputRequestTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\InputResolvedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionTitleChangedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnCompletedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnFailedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnStartedEvent;
@@ -115,6 +116,32 @@ final class Hatfield360ExtensionTest extends TestCase
         $extension->onAssistantMessageCompleted(new AssistantMessageCompletedEvent('42', 11, 'Partial answer'));
         $extension->onTurnFailed(new TurnFailedEvent('42', 12));
         $this->assertSame(['id' => '10', 'status' => 'failed'], $this->snapshot($extension)['turn']);
+    }
+
+    public function testTitleChangeResendsOnlyTheTitle(): void
+    {
+        $this->title = 'Old';
+        $extension = $this->extension();
+        $this->poll($extension);
+        $extension->onTurnStarted(new TurnStartedEvent('42', 1, null));
+        $pending = (new \ReflectionProperty($extension, 'pending'));
+        foreach (['working' => static function (): void {}, 'completed' => static function () use ($extension): void {
+            $extension->onAssistantMessageCompleted(new AssistantMessageCompletedEvent('42', 2, 'Done'));
+            $extension->onTurnCompleted(new TurnCompletedEvent('42', 3));
+        }] as $status => $advance) {
+            $advance();
+            $before = $pending->getValue($extension);
+            $extension->onSessionTitleChanged(new SessionTitleChangedEvent('other', 'Not this one'));
+            $this->assertSame($before, $pending->getValue($extension), 'Another session is ignored.');
+
+            $extension->onSessionTitleChanged(new SessionTitleChangedEvent('42', 'Renamed while '.$status));
+            $after = $pending->getValue($extension);
+            $this->assertSame(array_column($before, 0), array_column($after, 0), 'A rename queues no notice.');
+            [, , , $epoch, $fields] = $after[array_key_last($after)];
+            $this->assertSame($before[array_key_last($before)][3], $epoch, 'A rename stays in the same epoch.');
+            $this->assertSame(array_replace($before[array_key_last($before)][4], ['title' => 'Renamed while '.$status]), $fields);
+            $this->assertSame($status, $fields['turn']['status']);
+        }
     }
 
     public function testAstralResponseFitsWithoutEscaping(): void

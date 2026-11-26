@@ -87,6 +87,7 @@ live event stream of the selected session's main run:
 |---|---|
 | `SessionSelectedEvent` | A new or resumed session is selected, or a draft obtains its session ID. A new run in the selected session does not select again. |
 | `SessionClosingEvent` | Final graceful interactive quit of the selected session. Not for drafts, switches, reloads or abrupt exits. |
+| `SessionTitleChangedEvent` | The selected session's display title changed outside a turn, e.g. by `/rename`. Carries the new title. |
 | `TurnStartedEvent` | A main turn started; internal model or tool steps of one response also start turns. `trigger` is `schedule` for scheduled work. |
 | `TurnCompletedEvent` / `TurnFailedEvent` / `TurnCancelledEvent` | The main run completed, or a main turn or run failed or was cancelled. |
 | `AssistantMessageCompletedEvent` | A main assistant message completed. `text` is its full visible text, with separate text blocks joined by a blank line; empty for tool-only messages. |

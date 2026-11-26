@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
@@ -19,6 +20,8 @@ use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Tui;
 
 final class SessionCommandRegistrarTest extends TestCase
@@ -44,7 +47,7 @@ final class SessionCommandRegistrarTest extends TestCase
         [$catalog, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
         $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
-        $registrar = new SessionCommandRegistrar();
+        $registrar = new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger()));
         $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
@@ -64,7 +67,7 @@ final class SessionCommandRegistrarTest extends TestCase
         [$catalog, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
         $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
-        $registrar = new SessionCommandRegistrar();
+        $registrar = new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger()));
         $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
@@ -84,7 +87,7 @@ final class SessionCommandRegistrarTest extends TestCase
         [$catalog, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
         $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
-        $registrar = new SessionCommandRegistrar();
+        $registrar = new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger()));
         $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
@@ -106,7 +109,7 @@ final class SessionCommandRegistrarTest extends TestCase
         [$catalog, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
         $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
-        $registrar = new SessionCommandRegistrar();
+        $registrar = new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger()));
         $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
@@ -124,7 +127,7 @@ final class SessionCommandRegistrarTest extends TestCase
         [$catalog, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
         $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
-        $registrar = new SessionCommandRegistrar();
+        $registrar = new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger()));
         $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
@@ -139,7 +142,7 @@ final class SessionCommandRegistrarTest extends TestCase
         [$catalog, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
         $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
-        $registrar = new SessionCommandRegistrar();
+        $registrar = new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger()));
         $registrar->registerCatalog($catalog);
 
         // First session iteration
