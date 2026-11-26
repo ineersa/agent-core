@@ -57,14 +57,15 @@ final class RenameSessionCommandHandlerTest extends IsolatedKernelTestCase
         $this->publisher->select($selected, true);
         $handler = $this->createHandler();
 
-        foreach (['abc New', '999999 New', $selected, $selected.'   ', $other.' Renamed other', $selected.' Renamed selected'] as $args) {
+        foreach (['abc New', '999999 New', $selected, $selected.'   ', $other.' Renamed other', $selected.' Renamed selected', '00'.$selected.' Padded ID'] as $args) {
             $handler->handle(new SlashCommand('rename', $args, '/rename '.$args));
         }
 
         $this->assertEquals([
             new SessionSelectedEvent($selected, true),
             new SessionTitleChangedEvent($selected, 'Renamed selected'),
-        ], $this->recorder->events, 'Failed renames and other sessions publish nothing.');
+            new SessionTitleChangedEvent($selected, 'Padded ID'),
+        ], $this->recorder->events, 'Failed renames and other sessions publish nothing; a padded ID publishes the canonical one.');
     }
 
     #[Test]

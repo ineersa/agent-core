@@ -87,8 +87,9 @@ final class RenameSessionCommandHandler implements SlashCommandHandler
         $session = $this->sessionStore->findSession($sessionId);
         $persistedName = null !== $session ? $session->name : trim($newName);
         $title = $this->sessionStore->findDisplayTitle($sessionId);
-        if (null !== $title) {
-            $this->extensionEvents->titleChanged($sessionId, $title);
+        if (null !== $session && null !== $title) {
+            // The store accepts "0042" for session 42; extensions see the canonical ID.
+            $this->extensionEvents->titleChanged((string) $session->id, $title);
         }
 
         return new TranscriptMessage(
