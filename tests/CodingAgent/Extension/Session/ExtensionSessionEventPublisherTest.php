@@ -16,6 +16,7 @@ use Ineersa\Hatfield\ExtensionApi\Session\Event\InputRequestTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\InputResolvedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionClosingEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionSelectedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionTitleChangedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\ToolFinishedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\ToolStartedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnCompletedEvent;
@@ -106,6 +107,25 @@ final class ExtensionSessionEventPublisherTest extends TestCase
             new SessionSelectedEvent('s', true),
             new TurnStartedEvent('s', 1, null),
             new SessionClosingEvent('s'),
+        ], $recorder->events);
+    }
+
+    public function testTitleChangeIsPublishedOnlyForTheSelectedSession(): void
+    {
+        $dispatcher = new EventDispatcher();
+        $recorder = new SessionEventRecorder();
+        $dispatcher->addSubscriber($recorder);
+        $publisher = new ExtensionSessionEventPublisher($dispatcher, new NullLogger());
+        $publisher->titleChanged('s', 'Before selection');
+        $publisher->select('s', true);
+        $publisher->titleChanged('other', 'Other session');
+        $publisher->titleChanged('s', 'Renamed');
+        $publisher->clear();
+        $publisher->titleChanged('s', 'After clear');
+
+        $this->assertEquals([
+            new SessionSelectedEvent('s', true),
+            new SessionTitleChangedEvent('s', 'Renamed'),
         ], $recorder->events);
     }
 

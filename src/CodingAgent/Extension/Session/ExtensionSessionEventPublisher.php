@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Extension\Session;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionClosingEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionSelectedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionTitleChangedEvent;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
@@ -66,6 +67,14 @@ final class ExtensionSessionEventPublisher
     public function resumeAfter(int $sequence): void
     {
         $this->sequence = max($this->sequence, $sequence);
+    }
+
+    /** A title change of another session, or without a selection, is not observed. */
+    public function titleChanged(string $sessionId, string $title): void
+    {
+        if ('' !== $sessionId && $sessionId === $this->sessionId) {
+            $this->dispatch($sessionId, new SessionTitleChangedEvent($sessionId, $title));
+        }
     }
 
     public function publish(RuntimeEvent $event): void

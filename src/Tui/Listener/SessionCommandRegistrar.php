@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -17,6 +18,10 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  */
 final class SessionCommandRegistrar implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
 {
+    public function __construct(private readonly ExtensionSessionEventPublisher $extensionEvents)
+    {
+    }
+
     public function registerCatalog(SlashCommandCatalog $catalog): void
     {
         $catalog->registerMetadata(new CommandMetadata(
@@ -65,6 +70,7 @@ final class SessionCommandRegistrar implements TuiListenerRegistrar, SlashComman
         $registry->bind('rename', new RenameSessionCommandHandler(
             $context->sessionStore,
             $pickerController,
+            $this->extensionEvents,
         ));
 
         // ── Bind /reload slash command ──

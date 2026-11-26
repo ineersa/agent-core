@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\NoOp;
@@ -17,7 +18,8 @@ use Ineersa\Tui\Picker\SessionPickerController;
  *
  * With a session ID and a new name: validates the session exists,
  * updates its name via HatfieldSessionStore::updateMetadata(), and
- * returns a success message with the sanitised name.
+ * returns a success message with the sanitised name. Extensions observe
+ * the new display title of the selected session through CodingAgent.
  *
  * With only a session ID (no name): returns an error with a hint
  * showing the correct usage for that specific session.
@@ -32,6 +34,7 @@ final class RenameSessionCommandHandler implements SlashCommandHandler
     public function __construct(
         private readonly HatfieldSessionStore $sessionStore,
         private readonly SessionPickerController $pickerController,
+        private readonly ExtensionSessionEventPublisher $extensionEvents,
     ) {
     }
 
@@ -83,6 +86,10 @@ final class RenameSessionCommandHandler implements SlashCommandHandler
         // sanitise/truncate the requested name).
         $session = $this->sessionStore->findSession($sessionId);
         $persistedName = null !== $session ? $session->name : trim($newName);
+        $title = $this->sessionStore->findDisplayTitle($sessionId);
+        if (null !== $title) {
+            $this->extensionEvents->titleChanged($sessionId, $title);
+        }
 
         return new TranscriptMessage(
             \sprintf('Session %s renamed to "%s"', $sessionId, $persistedName),

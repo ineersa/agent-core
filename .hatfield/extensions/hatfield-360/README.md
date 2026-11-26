@@ -20,7 +20,8 @@ TUI no longer ticks. `session.ended` requires an already
 live epoch and does not imply process exit.
 
 Hatfield reads the selected conversation’s picker title on selection and at
-the next foreground turn after a rename; it does not watch rename-only updates.
+each foreground turn. A `/rename` of the selected conversation sends its new
+title right away without changing the turn.
 
 ## Send an additional notification
 
