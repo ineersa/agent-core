@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\CLI;
 
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
@@ -57,6 +58,7 @@ final class AgentCommand
         private InProcessAgentSessionClient $inProcessClient,
         private JsonlProcessAgentSessionClient $processClient,
         private InteractiveMode $interactiveMode,
+        private ExtensionSessionEventPublisher $extensionEvents,
         private HatfieldSessionStore $sessionStore,
         private ModelSelectionService $modelSelectionService,
         private SkillsConfig $skillsConfig,
@@ -218,11 +220,16 @@ final class AgentCommand
             $this->applyResumeSelectionOverrides($sessionId, $model, $reasoning);
         }
 
-        return $this->interactiveMode->run(
+        $exitCode = $this->interactiveMode->run(
             client: $client,
             request: self::buildInitialRequest($prompt, $model, $reasoning),
             sessionId: $sessionId,
         );
+        // Reload and session switches shut the client down, which clears the
+        // selection, so only a final quit of a selected session closes it.
+        $this->extensionEvents->close();
+
+        return $exitCode;
     }
 
     /**

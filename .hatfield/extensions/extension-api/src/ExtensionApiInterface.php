@@ -17,6 +17,7 @@ use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
@@ -210,6 +211,12 @@ interface ExtensionApiInterface
      * AfterTurnCommit committed batch instead.
      */
     public function sessionEvents(): SessionEventReaderInterface;
+
+    /**
+     * Session selected in the interactive process, for listeners of the
+     * `Session\Event` events and for commands.
+     */
+    public function session(): SessionContextInterface;
 
     /**
      * Register a process-local asynchronous extension-agent job handler.

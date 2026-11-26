@@ -15,10 +15,6 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -47,11 +43,6 @@ final class RuntimeEventPoller
     /** A settled deferred submission remains retryable even after its event is consumed. */
     private bool $deferredInputReady = false;
 
-    /** @var list<TuiRunObserverInterface> */
-    private array $runObservers = [];
-    /** @var list<TuiBackgroundJobObserverInterface> */
-    private array $backgroundJobObservers = [];
-
     /**
      * Scalar boundaries from events that finished apply in the latest poll.
      * Cleared at the start of each poll and by {@see consumeAppliedMemoryBoundaryObservation()}.
@@ -65,16 +56,6 @@ final class RuntimeEventPoller
         private readonly SessionTranscriptProviderInterface $sessionTranscriptProvider,
     ) {
         $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation();
-    }
-
-    public function observeBackgroundJob(TuiBackgroundJobObserverInterface $observer): void
-    {
-        $this->backgroundJobObservers[] = $observer;
-    }
-
-    public function observeRun(TuiRunObserverInterface $observer): void
-    {
-        $this->runObservers[] = $observer;
     }
 
     /**
@@ -236,17 +217,9 @@ final class RuntimeEventPoller
                     continue;
                 }
 
-                if (\in_array($runtimeEvent->type, [RuntimeEventTypeEnum::BackgroundJobStarted->value, RuntimeEventTypeEnum::BackgroundJobEnded->value], true)) {
-                    if (0 === $seq && $state->sessionReady && $runtimeEvent->runId === $state->sessionId) {
-                        $this->notifyBackgroundJobObservers($runtimeEvent);
-                    }
-                    continue;
-                }
-
-                if (\in_array($runtimeEvent->type, [RuntimeEventTypeEnum::ChildExecutionStarted->value, RuntimeEventTypeEnum::ChildExecutionEnded->value, RuntimeEventTypeEnum::ChildInputObserved->value], true)) {
-                    if (0 === $seq && $state->sessionReady && $runtimeEvent->runId === $state->sessionId) {
-                        $this->notifyRunObservers($runtimeEvent);
-                    }
+                // Extension observations only; the transcript does not project them.
+                if (\in_array($runtimeEvent->type, [RuntimeEventTypeEnum::BackgroundJobStarted->value, RuntimeEventTypeEnum::BackgroundJobEnded->value,
+                    RuntimeEventTypeEnum::ChildExecutionStarted->value, RuntimeEventTypeEnum::ChildExecutionEnded->value, RuntimeEventTypeEnum::ChildInputObserved->value], true)) {
                     continue;
                 }
 
@@ -265,11 +238,6 @@ final class RuntimeEventPoller
                     $this->eventApplier->apply($state, $runtimeEvent);
                     $activityAfterApply = $state->activity;
                     $compactingAfterApply = $state->isCompacting;
-
-                    // Catch-up suffix can contain historical events, not just live work.
-                    if ($state->sessionReady && $runtimeEvent->runId === $state->sessionId) {
-                        $this->notifyRunObservers($runtimeEvent);
-                    }
 
                     if (null === $boundaryActivityBefore) {
                         $boundaryActivityBefore = $activityBeforeApply->value;
@@ -544,49 +512,6 @@ final class RuntimeEventPoller
         $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation();
 
         return $observation;
-    }
-
-    private function notifyBackgroundJobObservers(RuntimeEvent $event): void
-    {
-        $jobId = $event->payload['job_id'] ?? null;
-        $ownerRunId = $event->payload['owner_run_id'] ?? null;
-        if (!\is_string($ownerRunId) || '' === $ownerRunId || !\is_string($jobId) || 1 !== preg_match('/\A[a-zA-Z0-9_.:-]{1,128}\z/', $jobId)) {
-            return;
-        }
-        $observation = new TuiBackgroundJobObservationDTO($event->runId, $ownerRunId, $jobId, RuntimeEventTypeEnum::BackgroundJobStarted->value === $event->type
-            ? TuiBackgroundJobObservationTypeEnum::Started : TuiBackgroundJobObservationTypeEnum::Ended);
-        foreach ($this->backgroundJobObservers as $observer) {
-            try {
-                $observer->onTuiBackgroundJobObserved($observation);
-            } catch (\Throwable $exception) {
-                $this->logger->warning('extension.tui_background_job_observer_failed', [
-                    'component' => 'tui_extension', 'event_type' => 'tui_background_job_observer_failed',
-                    'run_id' => $event->runId, 'session_id' => $event->runId, 'exception_class' => $exception::class,
-                ]);
-            }
-        }
-    }
-
-    private function notifyRunObservers(RuntimeEvent $event): void
-    {
-        if ([] === $this->runObservers || null === ($observation = TuiRunObservationMapper::map($event))) {
-            return;
-        }
-
-        foreach ($this->runObservers as $observer) {
-            try {
-                $observer->onTuiRunObserved($observation);
-            } catch (\Throwable $exception) {
-                $this->logger->warning('extension.tui_run_observer_failed', [
-                    'component' => 'tui_extension',
-                    'event_type' => 'tui_run_observer_failed',
-                    'run_id' => $observation->sessionId,
-                    'session_id' => $observation->sessionId,
-                    'extension' => $observer::class,
-                    'exception_class' => $exception::class,
-                ]);
-            }
-        }
     }
 
     private function applyProjectedChanges(TuiSessionState $state): ?TranscriptChangeSet

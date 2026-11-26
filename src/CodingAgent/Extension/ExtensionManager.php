@@ -10,12 +10,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedExtensionItemDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundSnapshotObserverInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionCloseObserverInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionObserverInterface;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -50,7 +45,7 @@ final class ExtensionManager
     /** @var list<LoadedExtensionItemDTO> */
     private array $loadOutcomes = [];
 
-    /** @var list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface|TuiSessionCloseObserverInterface|TuiBackgroundJobObserverInterface|TuiBackgroundSnapshotObserverInterface> */
+    /** @var list<TuiExtensionInterface> */
     private array $tuiExtensions = [];
 
     private bool $loaded = false;
@@ -65,7 +60,7 @@ final class ExtensionManager
     }
 
     /**
-     * @return list<TuiExtensionInterface|TuiSessionObserverInterface|TuiRunObserverInterface|TuiSessionCloseObserverInterface|TuiBackgroundJobObserverInterface|TuiBackgroundSnapshotObserverInterface>
+     * @return list<TuiExtensionInterface>
      */
     public function getTuiExtensions(): array
     {
@@ -305,7 +300,7 @@ final class ExtensionManager
         }
 
         $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, true);
-        if ($instance instanceof TuiExtensionInterface || $instance instanceof TuiSessionObserverInterface || $instance instanceof TuiRunObserverInterface || $instance instanceof TuiSessionCloseObserverInterface || $instance instanceof TuiBackgroundJobObserverInterface || $instance instanceof TuiBackgroundSnapshotObserverInterface) {
+        if ($instance instanceof TuiExtensionInterface) {
             $this->tuiExtensions[] = $instance;
         }
 

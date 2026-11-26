@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
@@ -18,11 +19,15 @@ use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\ControlledJsonlControllerFixture;
+use Ineersa\CodingAgent\Tests\Support\RecordingEventDispatcher;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Support\UnusedBackgroundProcessManagerFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionSelectedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnCompletedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnStartedEvent;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
@@ -74,6 +79,51 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
 
         $secondDrain = iterator_to_array($client->events($runId));
         $this->assertSame([], $secondDrain, 'Buffered post-start events must be delivered exactly once');
+    }
+
+    public function testStartPublishesLiveMainEventsToExtensionsUntilShutdown(): void
+    {
+        $runId = 'extension-run-'.bin2hex(random_bytes(4));
+        $dispatcher = new RecordingEventDispatcher();
+        $publisher = new ExtensionSessionEventPublisher($dispatcher, new TestLogger());
+        $client = $this->createStartBatchFakeControllerClient(extensionEvents: $publisher);
+
+        $client->start(new StartRunRequest(prompt: 'hello', runId: $runId));
+        iterator_to_array($client->events($runId));
+        iterator_to_array($client->events($runId));
+
+        $this->assertEquals([
+            new SessionSelectedEvent($runId, false),
+            new TurnStartedEvent($runId, 2, null),
+            new TurnCompletedEvent($runId, 3),
+        ], $dispatcher->events);
+        $client->shutdown();
+        $this->assertSame('', $publisher->sessionId(), 'Reload and switch shut the client down without a graceful close.');
+        $this->assertCount(3, $dispatcher->events);
+    }
+
+    public function testAttachPublishesOnlyEventsAfterSessionReady(): void
+    {
+        $dispatcher = new RecordingEventDispatcher();
+        $publisher = new ExtensionSessionEventPublisher($dispatcher, new TestLogger());
+        $client = $this->createIdleClient(extensionEvents: $publisher);
+        $descriptor = new \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO('parent-run', str_repeat('a', 32), 2, 50, 100, 1, 1, 1, str_repeat('0', 64));
+        $reflection = new \ReflectionClass($client);
+        $reflection->getProperty('bootstrapDescriptor')->setValue($client, $descriptor);
+        $reflection->getProperty('suffixCursor')->setValue($client, 50);
+        $reflection->getProperty('bootstrapAcknowledged')->setValue($client, true);
+        $ready = ['bootstrap_id' => $descriptor->bootstrapId, 'view_epoch' => 2, 'canonical_seq' => 50, 'end_offset' => 100];
+        $this->injectStdoutJsonlLines($client, [
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', 49),
+            json_encode(['type' => RuntimeEventTypeEnum::SessionReady->value, 'runId' => 'parent-run', 'seq' => 0, 'payload' => $ready], \JSON_THROW_ON_ERROR),
+            $this->jsonlEvent(RuntimeEventTypeEnum::RunCompleted->value, 'parent-run', 51),
+        ]);
+        iterator_to_array($client->events('parent-run'));
+
+        $this->assertEquals([
+            new SessionSelectedEvent('parent-run', true),
+            new TurnCompletedEvent('parent-run', 51),
+        ], $dispatcher->events, 'Catch-up before session.ready is history, not a live event.');
     }
 
     public function testRuntimeReadyBuffersLaterEventsFromSameStdoutReadChunk(): void
@@ -960,7 +1010,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
         $this->assertSame('Broker died; uncertain deliveries must not be replayed.', $events[0]->payload['error']);
     }
 
-    private function createStartBatchFakeControllerClient(?string $generatedRunId = null): JsonlProcessAgentSessionClient
+    private function createStartBatchFakeControllerClient(?string $generatedRunId = null, ?ExtensionSessionEventPublisher $extensionEvents = null): JsonlProcessAgentSessionClient
     {
         $fakeScript = $this->tmpDir.'/start-batch-controller.php';
         $generatedLiteral = null === $generatedRunId ? 'null' : var_export($generatedRunId, true);
@@ -995,7 +1045,7 @@ exit(0);
 PHP);
         chmod($fakeScript, 0o755);
 
-        return $this->createClientWithFakeScript($fakeScript);
+        return $this->createClientWithFakeScript($fakeScript, extensionEvents: $extensionEvents);
     }
 
     private function createRuntimeReadyBatchFakeControllerClient(string $runId): JsonlProcessAgentSessionClient
@@ -1033,7 +1083,7 @@ PHP);
         return $this->createClientWithFakeScript($fakeScript);
     }
 
-    private function createClientWithFakeScript(string $fakeScript, ?TestLogger $logger = null): JsonlProcessAgentSessionClient
+    private function createClientWithFakeScript(string $fakeScript, ?TestLogger $logger = null, ?ExtensionSessionEventPublisher $extensionEvents = null): JsonlProcessAgentSessionClient
     {
         $locator = new class($fakeScript) implements AppExecutableLocator {
             public function __construct(private string $script)
@@ -1065,6 +1115,7 @@ PHP);
             sessionStore: \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tmpDir),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
+            extensionEvents: $extensionEvents ?? self::getContainer()->get(ExtensionSessionEventPublisher::class),
         );
     }
 
@@ -1084,12 +1135,12 @@ PHP);
         }
     }
 
-    private function createIdleClient(?TestLogger $logger = null): JsonlProcessAgentSessionClient
+    private function createIdleClient(?TestLogger $logger = null, ?ExtensionSessionEventPublisher $extensionEvents = null): JsonlProcessAgentSessionClient
     {
         $fakeScript = $this->tmpDir.'/idle.php';
         file_put_contents($fakeScript, '<?php fwrite(STDOUT, json_encode(["type"=>"runtime.ready","runId"=>"","seq"=>0,"payload"=>[]])."\n"); fflush(STDOUT); while(fgets(STDIN)!==false){} exit(0);');
         chmod($fakeScript, 0o755);
-        $client = $this->createClientWithFakeScript($fakeScript, $logger);
+        $client = $this->createClientWithFakeScript($fakeScript, $logger, $extensionEvents);
         $client->attach('parent-run');
 
         return $client;

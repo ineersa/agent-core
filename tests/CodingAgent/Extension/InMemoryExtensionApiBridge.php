@@ -19,6 +19,8 @@ use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionDeletedHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\DTO\BackgroundSnapshotDTO;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
@@ -226,6 +228,27 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
             public function readRange(string $runId, int $startSeq, int $endSeq): iterable
             {
                 return [];
+            }
+        };
+    }
+
+    public function session(): SessionContextInterface
+    {
+        // Registration-only processes have no selected session.
+        return new class implements SessionContextInterface {
+            public function getSessionId(): string
+            {
+                return '';
+            }
+
+            public function getSessionDisplayTitle(): ?string
+            {
+                return null;
+            }
+
+            public function getBackgroundSnapshot(): BackgroundSnapshotDTO
+            {
+                return new BackgroundSnapshotDTO('', null, null);
             }
         };
     }

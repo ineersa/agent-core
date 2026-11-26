@@ -18,6 +18,7 @@ use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
@@ -167,6 +168,11 @@ final class ClaudeExtensionHost implements ExtensionApiInterface
     }
 
     public function sessionEvents(): SessionEventReaderInterface
+    {
+        throw UnsupportedHostCapabilityException::for(__FUNCTION__);
+    }
+
+    public function session(): SessionContextInterface
     {
         throw UnsupportedHostCapabilityException::for(__FUNCTION__);
     }

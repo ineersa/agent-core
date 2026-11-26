@@ -433,9 +433,6 @@ final readonly class InteractiveMode
                 $state->subagentLiveView->active,
             ) + ProcessMemorySnapshotLogger::transcriptScalars($state->transcript),
         );
-        if (null === $reloadIntent && null === $switchTarget && '' !== $state->sessionId) {
-            $lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionGracefullyClosing);
-        }
         $lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
     }
 

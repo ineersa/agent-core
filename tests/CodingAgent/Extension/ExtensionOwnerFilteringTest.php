@@ -196,6 +196,7 @@ final class ExtensionOwnerFilteringTest extends TestCase
             commandBus: $this->createStub(MessageBusInterface::class),
             runRelationships: $this->createStub(RunRelationshipReaderInterface::class),
             sessions: $this->emptySessionRepository(),
+            sessionContext: $this->createStub(\Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface::class),
         );
     }
 

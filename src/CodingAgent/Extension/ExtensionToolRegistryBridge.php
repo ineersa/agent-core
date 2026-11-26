@@ -28,6 +28,7 @@ use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
@@ -75,6 +76,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         #[Autowire(service: 'agent.command.bus')] private MessageBusInterface $commandBus,
         private RunRelationshipReaderInterface $runRelationships,
         private HatfieldSessionRepository $sessions,
+        private SessionContextInterface $sessionContext,
     ) {
     }
 
@@ -223,6 +225,11 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function sessionEvents(): SessionEventReaderInterface
     {
         return $this->sessionEventReader;
+    }
+
+    public function session(): SessionContextInterface
+    {
+        return $this->sessionContext;
     }
 
     public function isChildRun(string $runId): bool

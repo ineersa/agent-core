@@ -24,9 +24,6 @@ enum TuiSessionLifecycleEventTypeEnum: string
     /** A lazy draft session was activated (no DB row yet). */
     case SessionDraftStarted = 'session_draft_started';
 
-    /** A selected session is closing on final interactive quit. */
-    case SessionGracefullyClosing = 'session_gracefully_closing';
-
     /** A session ended (quit or switch). */
     case SessionEnded = 'session_ended';
 }

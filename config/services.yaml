@@ -307,6 +307,9 @@ services:
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge
 
+  Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface:
+    alias: Ineersa\CodingAgent\Extension\Session\ExtensionSessionContext
+
   Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber:
     arguments:
       $cwd: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").cwd'

@@ -329,12 +329,12 @@ or copy them into a shell profile. Wrappers must preserve the launch-supplied
 environment and access to the socket.
 
 The extension reports conversation selection, foreground work and correlated
-approval or question waits observed by the TUI. Linux managed shells can also
+approval or question waits of the interactive session. Linux managed shells can also
 attempt registration using the running Hatfield process identity. Outside a
 managed launch it does nothing. Windows transport is not supported.
 
 Hatfield 360 can show a completion notice after Hatfield confirms that the
 response has been complete for at least five seconds with no active subagents
-or pending input. Background scripts are shown
+or pending input. The notice includes the end of the final response. Background scripts are shown
 separately. Delivery is best effort: a disconnected app does not block editing,
 and missed events are not replayed.

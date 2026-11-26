@@ -4,32 +4,23 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Query;
 
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
 
 /**
- * Holds the live public TUI context for current-session slash commands.
+ * Resolves the selected session for current-session slash commands.
  *
- * session_id is lazy: never cache the string returned by getSessionId().
- * Call getSessionId() on every /om-view invocation because
- * BridgeTuiExtensionContext resolves mutable runtime state. Re-registering
- * TUI may replace the bound context object.
+ * The selection changes on resume, switch and draft promotion, so never cache
+ * the session ID: read it on every /om-view invocation.
  */
-final class OmSessionContext
+final readonly class OmSessionContext
 {
-    private ?TuiExtensionContextInterface $tui = null;
-
-    public function bindTui(TuiExtensionContextInterface $context): void
+    public function __construct(private SessionContextInterface $session)
     {
-        $this->tui = $context;
     }
 
     public function sessionIdOrNull(): ?string
     {
-        if (null === $this->tui) {
-            return null;
-        }
-
-        $sessionId = trim($this->tui->getSessionId());
+        $sessionId = trim($this->session->getSessionId());
 
         return '' !== $sessionId ? $sessionId : null;
     }
@@ -38,7 +29,7 @@ final class OmSessionContext
     {
         $sessionId = $this->sessionIdOrNull();
         if (null === $sessionId) {
-            throw new \RuntimeException('No active TUI session is available for observational memory commands.');
+            throw new \RuntimeException('No selected session is available for observational memory commands.');
         }
 
         return $sessionId;

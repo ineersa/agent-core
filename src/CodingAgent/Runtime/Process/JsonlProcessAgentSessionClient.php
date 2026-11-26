@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Process;
 
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
@@ -157,6 +158,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private array $restartTimestamps = [];
 
+    // Extension events are live only: an attach publishes nothing before its
+    // session.ready, so bootstrap catch-up is never replayed to extensions.
+    private bool $extensionEventsLive = false;
+
     public function __construct(
         private readonly RuntimeProcessConfig $runtimeConfig,
         private readonly PromptTemplatesRuntimeConfig $promptTemplatesConfig,
@@ -166,6 +171,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         private readonly BackgroundProcessManager $backgroundProcesses,
         private readonly ChildInvocationBackgroundService $childBackground,
         private readonly BackgroundWorkSnapshotProvider $backgroundWork,
+        private readonly ExtensionSessionEventPublisher $extensionEvents,
     ) {
         $this->compactEventBuffer = new RuntimeEventPerRunCompactBuffer();
         $this->eventBufferWatermarkActive = false;
@@ -253,6 +259,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->sessionId = $runId;
         $this->activeRunId = $runId;
         $this->primaryRunId = $runId;
+        $this->extensionEvents->select($runId, false);
+        $this->extensionEventsLive = true;
 
         $this->ensureProcessRunning();
 
@@ -380,6 +388,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->sessionId = $runId;
         $this->activeRunId = $runId;
         $this->primaryRunId = $runId;
+        $this->extensionEvents->select($runId, true);
+        $this->extensionEventsLive = false;
         $this->ensureProcessRunning();
 
         // Symmetric with start(): wait for runtime.ready before sending
@@ -622,6 +632,11 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->activeRunId = $sessionId;
         $this->sessionId = $sessionId;
         $this->primaryRunId = $sessionId;
+        if ($sessionId !== $this->extensionEvents->sessionId()) {
+            // A first shell command selects a new session without a bootstrap.
+            $this->extensionEvents->select($sessionId, false);
+            $this->extensionEventsLive = true;
+        }
         $this->ensureProcessRunning();
         $this->waitForRuntimeReady();
 
@@ -1178,6 +1193,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 }
                 $this->bootstrapDescriptor = $descriptor;
                 $this->bootstrapEnded = false;
+                $this->extensionEventsLive = false;
                 $this->resetSuffix();
                 $this->suffixCursor = $descriptor->canonicalSeq;
             } elseif (\in_array($event->type, [RuntimeEventTypeEnum::BootstrapFrame->value, RuntimeEventTypeEnum::BootstrapEnd->value, RuntimeEventTypeEnum::SessionReady->value], true)) {
@@ -1199,12 +1215,16 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                         throw new RuntimeTransportException('Session readiness does not match the delivered suffix.');
                     }
                     $this->suffixCursor = $event->payload['canonical_seq'];
+                    $this->extensionEventsLive = true;
                 }
             } elseif (RuntimeEventTypeEnum::BootstrapSuffix->value === $event->type) {
                 $event = $this->decodeSuffix($event);
                 if (null === $event) {
                     continue;
                 }
+            }
+            if ($this->extensionEventsLive) {
+                $this->extensionEvents->publish($event);
             }
             yield $event;
         }
@@ -1381,5 +1401,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->eventBufferWatermarkLastLoggedAt = null;
         $this->eventBufferCapacityActive = false;
         $this->eventBufferCapacityLastLoggedAt = null;
+        $this->extensionEventsLive = false;
+        $this->extensionEvents->clear();
     }
 }

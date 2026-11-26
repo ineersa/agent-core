@@ -19,9 +19,6 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -147,13 +144,8 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertSame(5, $this->state->lastSeq);
     }
 
-    public function testIdleSelectedSessionObservesOnlyLiveOwnedBackgroundJobs(): void
+    public function testBackgroundJobObservationsAreNotProjected(): void
     {
-        $observer = $this->createMock(TuiBackgroundJobObserverInterface::class);
-        $observer->expects($this->once())->method('onTuiBackgroundJobObserved')->with(
-            new TuiBackgroundJobObservationDTO('test-run', 'child-run', 'bash:3', TuiBackgroundJobObservationTypeEnum::Ended),
-        );
-        $this->poller->observeBackgroundJob($observer);
         $this->state->sessionId = 'test-run';
         $this->state->activity = RunActivityStateEnum::Idle;
         $this->state->lastSeq = 9;

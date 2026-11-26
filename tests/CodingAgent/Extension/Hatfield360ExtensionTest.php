@@ -23,167 +23,203 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiScheduleDTO;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum as Observation;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiSessionActivityContextInterface;
+use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\DTO\BackgroundSnapshotDTO;
+use Ineersa\Hatfield\ExtensionApi\Session\DTO\ScheduleDTO;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\AssistantMessageCompletedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\BackgroundJobEndedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\ChildExecutionEndedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\ChildExecutionStartedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\InputRequestedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\InputRequestTypeEnum;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\InputResolvedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnCompletedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnFailedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnStartedEvent;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
-use Ineersa\Tui\Runtime\TuiRunObservationMapper;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class Hatfield360ExtensionTest extends TestCase
 {
+    private string $selection = '42';
+    private ?int $children = 0;
+    private ?int $jobs = 0;
+    /** @var list<ScheduleDTO>|null */
+    private ?array $schedules = null;
+    private int $reads = 0;
+    private ?\Closure $tick = null;
+
     public function testLiveDuplicateRequestsRetainTheSecondOccurrenceAfterOneAnswer(): void
     {
         $extension = $this->extension();
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::TurnStarted));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::QuestionRequested, 'same'));
+        $extension->onTurnStarted(new TurnStartedEvent('42', 1, null));
+        $extension->onInputRequested(new InputRequestedEvent('42', 2, 'same', InputRequestTypeEnum::Question));
         $first = $this->attention($extension);
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 3, Observation::ApprovalRequested, 'same'));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 4, Observation::InputResolved, 'same'));
+        $extension->onInputRequested(new InputRequestedEvent('42', 3, 'same', InputRequestTypeEnum::Approval));
+        $extension->onInputResolved(new InputResolvedEvent('42', 4, 'same'));
         $second = $this->attention($extension);
         $this->assertSame('permission', $second['reason']);
         $this->assertNotSame($first['id'], $second['id']);
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 5, Observation::InputResolved, 'same'));
+        $extension->onInputResolved(new InputResolvedEvent('42', 5, 'same'));
         $this->assertNull($this->attention($extension));
     }
 
     public function testLiveDuplicatesAndOverflowDoNotEraseUnknownOrChildAttention(): void
     {
         $extension = $this->extension();
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::TurnStarted));
+        $extension->onTurnStarted(new TurnStartedEvent('42', 1, null));
         for ($i = 0; $i < 2001; ++$i) {
-            $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2 + $i, Observation::QuestionRequested, 'same'));
+            $extension->onInputRequested(new InputRequestedEvent('42', 2 + $i, 'same', InputRequestTypeEnum::Question));
         }
         for ($i = 0; $i < 2001; ++$i) {
-            $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 3000 + $i, Observation::InputResolved, 'same'));
+            $extension->onInputResolved(new InputResolvedEvent('42', 3000 + $i, 'same'));
         }
         $this->assertNotNull($this->attention($extension), 'Overflow must not be resolved by an uncorrelated answer.');
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::ApprovalRequested, 'child-question', 'child'));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 6000, Observation::TurnCompleted));
+        $extension->onInputRequested(new InputRequestedEvent('42', 1, 'child-question', InputRequestTypeEnum::Approval, 'child'));
+        $extension->onTurnCompleted(new TurnCompletedEvent('42', 6000));
         $this->assertSame('permission', $this->attention($extension)['reason']);
+    }
+
+    public function testCompletedTurnCarriesTheTailOfTheLastAssistantMessage(): void
+    {
+        $extension = $this->extension();
+        $extension->onTurnStarted(new TurnStartedEvent('42', 1, null));
+        $extension->onAssistantMessageCompleted(new AssistantMessageCompletedEvent('42', 2, 'Looking at the files.'));
+        $final = str_repeat('🦊', 600).str_repeat('b', 600);
+        $extension->onAssistantMessageCompleted(new AssistantMessageCompletedEvent('other', 3, 'Another session'));
+        $extension->onAssistantMessageCompleted(new AssistantMessageCompletedEvent('42', 3, $final));
+        $this->assertSame(['id' => '1', 'status' => 'working'], $this->snapshot($extension)['turn'], 'A working turn has no response.');
+        $extension->onTurnCompleted(new TurnCompletedEvent('42', 4));
+        $response = '…'.mb_substr($final, -999, null, 'UTF-8');
+        $this->assertSame(['id' => '1', 'status' => 'completed', 'response' => $response], $this->snapshot($extension)['turn']);
+        $this->assertSame(1000, mb_strlen($response, 'UTF-8'));
+        $extension->onAssistantMessageCompleted(new AssistantMessageCompletedEvent('42', 5, 'Late message'));
+        $this->poll($extension);
+        $this->assertSame($response, $this->snapshot($extension)['turn']['response'], 'Settling snapshots resend the same response.');
+
+        $extension->onTurnStarted(new TurnStartedEvent('42', 6, null));
+        $this->assertSame(['id' => '6', 'status' => 'working'], $this->snapshot($extension)['turn']);
+        $extension->onAssistantMessageCompleted(new AssistantMessageCompletedEvent('42', 7, 'Short answer'));
+        $extension->onAssistantMessageCompleted(new AssistantMessageCompletedEvent('42', 8, ''));
+        $extension->onTurnCompleted(new TurnCompletedEvent('42', 9));
+        $this->assertSame(['id' => '6', 'status' => 'completed'], $this->snapshot($extension)['turn'], 'A final tool-only message leaves no response.');
+
+        $extension->onTurnStarted(new TurnStartedEvent('42', 10, null));
+        $extension->onAssistantMessageCompleted(new AssistantMessageCompletedEvent('42', 11, 'Partial answer'));
+        $extension->onTurnFailed(new TurnFailedEvent('42', 12));
+        $this->assertSame(['id' => '10', 'status' => 'failed'], $this->snapshot($extension)['turn']);
     }
 
     public function testCompletionRefreshesInventoryInEitherSettlementOrder(): void
     {
         $clock = new MockClock();
         $extension = $this->extension($clock);
-        $context = $this->createStub(TuiSessionActivityContextInterface::class);
-        $context->method('getSessionId')->willReturn('42');
-        $active = true;
-        $children = 1;
-        $jobs = 1;
-        $reads = [];
-        $context->method('isMainActive')->willReturnCallback(static function () use (&$active): bool {
-            return $active;
-        });
-        $context->method('getBackgroundSnapshot')->willReturnCallback(static function (bool $refresh) use (&$children, &$jobs, &$reads): TuiBackgroundSnapshotDTO {
-            $reads[] = $refresh;
+        $this->children = 1;
+        $this->jobs = 1;
 
-            return new TuiBackgroundSnapshotDTO('42', $children, $jobs);
-        });
-        $extension->registerTui($context);
-
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::TurnStarted));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::QuestionRequested, 'question'));
-        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 1));
-        $this->assertSame([false, false], $reads, 'Ordinary observations use the host sample; poll callbacks already have it.');
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::ChildExecutionStarted, childRunId: 'child'));
+        $extension->onTurnStarted(new TurnStartedEvent('42', 1, null));
+        $extension->onInputRequested(new InputRequestedEvent('42', 2, 'question', InputRequestTypeEnum::Question));
+        $this->assertSame(1, $this->reads, 'Ordinary events reuse the latest sample.');
+        $this->poll($extension, 0, 1);
+        $this->assertSame(2, $this->reads);
+        $this->children = 1;
+        $extension->onChildExecutionStarted(new ChildExecutionStartedEvent('42', 1, 'child'));
         $this->assertSame(1, $this->snapshot($extension)['activeSubagents']);
-        $active = false;
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::TurnCompleted));
+        $extension->onTurnCompleted(new TurnCompletedEvent('42', 2));
         $this->assertSame(1, $this->snapshot($extension)['activeSubagents']);
         $completed = ['id' => '1', 'status' => 'completed'];
         $this->assertSame($completed, $this->snapshot($extension)['turn']);
-        $children = 0;
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::ChildExecutionEnded, childRunId: 'child'));
+        $this->children = 0;
+        $extension->onChildExecutionEnded(new ChildExecutionEndedEvent('42', 1, 'child'));
         $this->assertNull($this->snapshot($extension)['activeSubagents']);
         $this->assertSame(1, $this->snapshot($extension)['backgroundScripts']);
         $this->assertSame($completed, $this->snapshot($extension)['turn']);
         $clock->modify('+4 seconds');
-        $jobs = 0;
-        $extension->onTuiBackgroundJobObserved(new TuiBackgroundJobObservationDTO('42', '42', 'bash:1', TuiBackgroundJobObservationTypeEnum::Ended));
+        $this->jobs = 0;
+        $extension->onBackgroundJob(new BackgroundJobEndedEvent('42', '42', 'bash:1'));
         $this->assertSame(0, $this->snapshot($extension)['backgroundScripts']);
-        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0));
+        $this->poll($extension, 0, 0);
         $this->assertNull($this->snapshot($extension)['activeSubagents']);
         $clock->modify('+1 second');
-        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0));
+        $this->poll($extension, 0, 0);
         $this->assertSame(0, $this->snapshot($extension)['activeSubagents']);
         $this->assertSame($completed, $this->snapshot($extension)['turn'], 'Script changes neither restart the delay nor mint another completion identity.');
 
-        $children = 1;
-        $active = true;
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 3, Observation::TurnStarted));
-        $children = 0;
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::ChildExecutionEnded, childRunId: 'child'));
+        $this->children = 1;
+        $extension->onTurnStarted(new TurnStartedEvent('42', 3, null));
+        $this->children = 0;
+        $extension->onChildExecutionEnded(new ChildExecutionEndedEvent('42', 2, 'child'));
         $this->assertSame(0, $this->snapshot($extension)['activeSubagents']);
         $this->assertSame('working', $this->snapshot($extension)['turn']['status']);
-        $active = false;
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 4, Observation::TurnCompleted));
+        $extension->onTurnCompleted(new TurnCompletedEvent('42', 4));
         $this->assertSame(['id' => '3', 'status' => 'completed'], $this->snapshot($extension)['turn']);
         $this->assertNull($this->snapshot($extension)['activeSubagents']);
         $clock->modify('+5 seconds');
-        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0));
+        $this->poll($extension, 0, 0);
         $this->assertSame(0, $this->snapshot($extension)['activeSubagents']);
-        $this->assertSame([false, false, true, true, true, true, true, false, true, true, true], $reads);
     }
 
-    public function testUnknownStateAndMainReactivationCannotSettleOldCompletion(): void
+    public function testPollsAreThrottledToTheIdleSampleInterval(): void
     {
-        $extension = $this->extension();
-        $context = $this->createStub(TuiSessionActivityContextInterface::class);
-        $selection = '42';
-        $active = null;
-        $context->method('getSessionId')->willReturnCallback(static function () use (&$selection): string {
-            return $selection;
-        });
-        $context->method('isMainActive')->willReturnCallback(static function () use (&$active): ?bool {
-            return $active;
-        });
-        $context->method('getBackgroundSnapshot')->willReturn(new TuiBackgroundSnapshotDTO('42', 0, 0));
-        $extension->registerTui($context);
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::TurnStarted));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::TurnCompleted));
+        $clock = new MockClock();
+        $this->extension($clock);
+        $tick = $this->tick;
+        $this->assertNotNull($tick);
+        $tick();
+        $tick();
+        $this->assertSame(1, $this->reads);
+        $clock->modify('+499 milliseconds');
+        $tick();
+        $this->assertSame(1, $this->reads);
+        $clock->modify('+1 millisecond');
+        $tick();
+        $this->assertSame(2, $this->reads);
+    }
+
+    public function testSelectionMismatchCannotSettleOldCompletion(): void
+    {
+        $clock = new MockClock();
+        $extension = $this->extension($clock);
+        $extension->onTurnStarted(new TurnStartedEvent('42', 1, null));
+        $extension->onTurnCompleted(new TurnCompletedEvent('42', 2));
         $incomplete = $this->snapshot($extension);
         $this->assertNull($incomplete['activeSubagents']);
-        $selection = 'other';
-        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 1));
+        $this->selection = 'other';
+        $clock->modify('+5 seconds');
+        $this->poll($extension, 0, 1);
         $this->assertSame($incomplete, $this->snapshot($extension));
-        $selection = '42';
-        $active = true; // The TUI accepted new input before its canonical opening event arrived.
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::ChildExecutionEnded, childRunId: 'child'));
-        $this->assertNull($this->snapshot($extension)['turn']);
-        $active = false;
-        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 1));
-        $this->assertNull($this->snapshot($extension)['turn']);
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 3, Observation::TurnStarted));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 4, Observation::TurnFailed));
+        $this->selection = '42';
+        $extension->onTurnStarted(new TurnStartedEvent('42', 3, null));
+        $extension->onTurnFailed(new TurnFailedEvent('42', 4));
         $this->assertSame(['id' => '3', 'status' => 'failed'], $this->snapshot($extension)['turn']);
     }
 
     public function testScheduleSnapshotsAndAppliedTurnTrigger(): void
     {
         $extension = $this->extension();
-        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0));
+        $this->poll($extension);
         $this->assertArrayNotHasKey('schedules', $this->snapshot($extension));
         $next = new \DateTimeImmutable('2026-01-01T00:00:00.123Z');
-        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0, [new TuiScheduleDTO('id', 'Every minute', true, $next)]));
+        $this->schedules = [new ScheduleDTO('id', 'Every minute', true, $next)];
+        $this->poll($extension);
         $this->assertSame([['id' => 'id', 'label' => 'Every minute', 'recurring' => true, 'nextRunAt' => 1767225600123]], $this->snapshot($extension)['schedules']);
 
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber($extension);
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
         $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec($serializer), $serializer);
-        $observe = static function (RunEvent $event) use ($translator, $extension): void {
+        $observe = static function (RunEvent $event) use ($translator, $dispatcher): void {
             $runtime = $translator->translate($event);
             self::assertNotNull($runtime);
-            $observation = TuiRunObservationMapper::map($runtime);
-            self::assertNotNull($observation);
-            $extension->onTuiRunObserved($observation);
+            $mapped = ExtensionSessionEventMapper::map($runtime);
+            self::assertNotNull($mapped);
+            $dispatcher->dispatch($mapped);
         };
         $seq = 1;
         foreach ([['schedule:job'], ['user'], ['child-result'], ['schedule:job', 'user']] as $identities) {
@@ -211,15 +247,17 @@ final class Hatfield360ExtensionTest extends TestCase
             $observe(new RunEvent('42', $seq, $start->turnNo, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']));
             $this->assertSame(['id' => (string) $start->seq, 'status' => 'completed'] + $trigger, $this->snapshot($extension)['turn']);
             if ([] !== $trigger) {
-                $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0, [new TuiScheduleDTO('id', 'Every minute', true, $next->modify('+1 minute'))]));
+                $this->schedules = [new ScheduleDTO('id', 'Every minute', true, $next->modify('+1 minute'))];
+                $this->poll($extension);
                 $this->assertSame([['id' => 'id', 'label' => 'Every minute', 'recurring' => true, 'nextRunAt' => 1767225660123]], $this->snapshot($extension)['schedules']);
             }
         }
 
-        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0, []));
+        $this->schedules = [];
+        $this->poll($extension);
         $this->assertArrayNotHasKey('schedules', $this->snapshot($extension));
-        $overflow = array_map(static fn (int $i): TuiScheduleDTO => new TuiScheduleDTO((string) $i, 'Every minute', true, null), range(1, 17));
-        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', 0, 0, $overflow));
+        $this->schedules = array_map(static fn (int $i): ScheduleDTO => new ScheduleDTO((string) $i, 'Every minute', true, null), range(1, 17));
+        $this->poll($extension);
         $this->assertArrayNotHasKey('schedules', $this->snapshot($extension));
     }
 
@@ -227,105 +265,104 @@ final class Hatfield360ExtensionTest extends TestCase
     {
         $clock = new MockClock();
         $extension = $this->extension($clock);
-        $context = $this->createStub(TuiSessionActivityContextInterface::class);
-        $context->method('getSessionId')->willReturn('42');
-        $active = false;
-        $children = 0;
-        $context->method('isMainActive')->willReturnCallback(static function () use (&$active): bool {
-            return $active;
-        });
-        $context->method('getBackgroundSnapshot')->willReturnCallback(static function () use (&$children): TuiBackgroundSnapshotDTO {
-            return new TuiBackgroundSnapshotDTO('42', $children, 0);
-        });
-        $extension->registerTui($context);
-        $zero = new TuiBackgroundSnapshotDTO('42', 0, 0);
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::TurnStarted));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::TurnCompleted));
-        $children = null;
+        $extension->onTurnStarted(new TurnStartedEvent('42', 1, null));
+        $extension->onTurnCompleted(new TurnCompletedEvent('42', 2));
         $clock->modify('+5 seconds');
-        $extension->onTuiBackgroundSnapshot($zero);
-        $this->assertNull($this->snapshot($extension)['activeSubagents'], 'Unknown inventory invalidates the pending completion, even if the poll reported zero.');
+        $this->poll($extension, null, 0);
+        $this->assertNull($this->snapshot($extension)['activeSubagents'], 'Unknown inventory invalidates the pending completion.');
 
-        $children = 0;
-        $extension->onTuiBackgroundSnapshot($zero);
+        $this->poll($extension, 0, 0);
         $clock->modify('+4 seconds');
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::ChildExecutionStarted, childRunId: 'child'));
+        $extension->onChildExecutionStarted(new ChildExecutionStartedEvent('42', 1, 'child'));
         $clock->modify('+1 second');
-        $extension->onTuiBackgroundSnapshot($zero);
+        $this->poll($extension, 0, 0);
         $this->assertNull($this->snapshot($extension)['activeSubagents'], 'A child opening invalidates the old deadline even when inventory still reports zero.');
 
         $clock->modify('+3 seconds');
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::ApprovalRequested, 'child-question', 'child'));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 3, Observation::InputResolved, 'child-question', 'child'));
+        $extension->onInputRequested(new InputRequestedEvent('42', 2, 'child-question', InputRequestTypeEnum::Approval, 'child'));
+        $extension->onInputResolved(new InputResolvedEvent('42', 3, 'child-question', 'child'));
         $clock->modify('+1 second');
-        $extension->onTuiBackgroundSnapshot($zero);
+        $this->poll($extension, 0, 0);
         $this->assertNull($this->snapshot($extension)['activeSubagents'], 'Even transient attention restarts the delay.');
 
-        // The handoff activates main before the new canonical turn begins.
-        $active = true;
+        $extension->onTurnStarted(new TurnStartedEvent('42', 3, null));
         $clock->modify('+4 seconds');
-        $extension->onTuiBackgroundSnapshot($zero);
-        $this->assertNull($this->snapshot($extension)['turn']);
-        $active = false;
-        $extension->onTuiBackgroundSnapshot($zero);
-        $this->assertNull($this->snapshot($extension)['turn'], 'A later idle sample cannot resurrect the superseded response.');
+        $this->poll($extension, 0, 0);
+        $this->assertSame(['id' => '3', 'status' => 'working'], $this->snapshot($extension)['turn'], 'A later idle sample cannot resurrect the superseded response.');
     }
 
     public function testInvalidationAfterReleaseRequiresAnotherQuietWindow(): void
     {
         $clock = new MockClock();
         $extension = $this->extension($clock);
-        $zero = new TuiBackgroundSnapshotDTO('42', 0, 0);
-        $selection = '42';
-        $context = $this->createStub(TuiSessionActivityContextInterface::class);
-        $context->method('getSessionId')->willReturnCallback(static function () use (&$selection): string {
-            return $selection;
-        });
-        $context->method('isMainActive')->willReturn(false);
-        $context->method('getBackgroundSnapshot')->willReturn($zero);
-        $extension->registerTui($context);
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::TurnStarted, trigger: 'schedule'));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::TurnCompleted));
+        $extension->onTurnStarted(new TurnStartedEvent('42', 1, 'schedule'));
+        $extension->onTurnCompleted(new TurnCompletedEvent('42', 2));
         $completed = ['id' => '1', 'status' => 'completed', 'trigger' => 'schedule'];
         $this->assertSame($completed, $this->snapshot($extension)['turn']);
         $clock->modify('+5 seconds');
-        $extension->onTuiBackgroundSnapshot($zero);
+        $this->poll($extension, 0, 0);
         $this->assertSame(0, $this->snapshot($extension)['activeSubagents']);
 
-        $assertNewWindow = function (string $reason) use ($extension, $clock, $zero, $completed): void {
-            $extension->onTuiBackgroundSnapshot($zero);
+        $assertNewWindow = function (string $reason) use ($extension, $clock, $completed): void {
+            $this->poll($extension, 0, 0);
             $this->assertNull($this->snapshot($extension)['activeSubagents'], $reason);
             $clock->modify('+4 seconds');
-            $extension->onTuiBackgroundSnapshot($zero);
+            $this->poll($extension, 0, 0);
             $this->assertNull($this->snapshot($extension)['activeSubagents']);
             $clock->modify('+1 second');
-            $extension->onTuiBackgroundSnapshot($zero);
+            $this->poll($extension, 0, 0);
             $this->assertSame(0, $this->snapshot($extension)['activeSubagents']);
             $this->assertSame($completed, $this->snapshot($extension)['turn']);
         };
 
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 1, Observation::ChildExecutionStarted, childRunId: 'child'));
+        $extension->onChildExecutionStarted(new ChildExecutionStartedEvent('42', 1, 'child'));
         $assertNewWindow('Child start invalidates release even if refreshed inventory still says zero.');
-        $extension->onTuiBackgroundSnapshot(new TuiBackgroundSnapshotDTO('42', null, 0));
+        $this->poll($extension, null, 0);
         $assertNewWindow('Recovering from unknown inventory requires reconfirmation.');
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 2, Observation::ApprovalRequested, 'request', 'child'));
-        $extension->onTuiRunObserved(new TuiRunObservationDTO('42', 3, Observation::InputResolved, 'request', 'child'));
+        $extension->onInputRequested(new InputRequestedEvent('42', 2, 'request', InputRequestTypeEnum::Approval, 'child'));
+        $extension->onInputResolved(new InputResolvedEvent('42', 3, 'request', 'child'));
         $assertNewWindow('Resolving transient child attention requires reconfirmation.');
-        $selection = 'other';
-        $extension->onTuiBackgroundSnapshot($zero);
-        $selection = '42';
+        $this->selection = 'other';
+        $this->poll($extension, 0, 0);
+        $this->selection = '42';
         $assertNewWindow('A session context mismatch invalidates release.');
     }
 
     private function extension(?MockClock $clock = null): Hatfield360Extension
     {
         $extension = new Hatfield360Extension($clock ?? new MockClock());
+        $session = $this->createStub(SessionContextInterface::class);
+        $session->method('getSessionId')->willReturnCallback(fn (): string => $this->selection);
+        $session->method('getBackgroundSnapshot')->willReturnCallback(function (): BackgroundSnapshotDTO {
+            ++$this->reads;
+
+            return new BackgroundSnapshotDTO($this->selection, $this->children, $this->jobs, $this->schedules);
+        });
+        $api = $this->createStub(ExtensionApiInterface::class);
+        $api->method('session')->willReturn($session);
+        $ui = $this->createStub(TuiExtensionContextInterface::class);
+        $ui->method('onTick')->willReturnCallback(function (\Closure $listener): void {
+            $this->tick = $listener;
+        });
+        $extension->register($api);
+        $extension->registerTui($ui);
         (new \ReflectionProperty($extension, 'sessionId'))->setValue($extension, '42');
-        // Hold the outbound queue locally: exercise real live observations
-        // without registration, credentials, sockets, or an asynchronous delivery race.
+        // Hold the outbound queue locally: exercise real live events without
+        // registration, credentials, sockets, or an asynchronous delivery race.
         (new \ReflectionProperty($extension, 'drain'))->setValue($extension, Future::complete());
 
         return $extension;
+    }
+
+    /** One idle-tick poll; resets the throttle covered by testPollsAreThrottledToTheIdleSampleInterval. */
+    private function poll(Hatfield360Extension $extension, ?int $children = 0, ?int $jobs = 0): void
+    {
+        $this->children = $children;
+        $this->jobs = $jobs;
+        (new \ReflectionProperty($extension, 'pollAt'))->setValue($extension, null);
+        $tick = $this->tick;
+        $this->assertNotNull($tick);
+        $tick();
     }
 
     /** @return array{id: string, reason: string}|null */

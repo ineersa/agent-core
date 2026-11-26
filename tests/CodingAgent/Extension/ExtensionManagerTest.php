@@ -520,29 +520,6 @@ PHP
         $this->assertSame(1, $extensionReflection->getStaticPropertyValue('subscriberCalls'));
     }
 
-    public function testDiscoversBackgroundSnapshotObserverWithoutOtherTuiCapabilities(): void
-    {
-        $observer = new class implements HatfieldExtensionInterface, \Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundSnapshotObserverInterface {
-            public function register(\Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface $api): void
-            {
-            }
-
-            public function onTuiBackgroundSnapshot(\Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO $snapshot): void
-            {
-            }
-        };
-        $manager = new ExtensionManager(
-            $this->createAppConfig($this->extensionsDir, [$observer::class]),
-            new InMemoryExtensionApiBridge(),
-            new TestLogger(),
-            new \Symfony\Component\EventDispatcher\EventDispatcher(),
-            new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'),
-        );
-        $this->assertSame([], $manager->loadExtensions());
-        $this->assertCount(1, $manager->getTuiExtensions());
-        $this->assertInstanceOf($observer::class, $manager->getTuiExtensions()[0]);
-    }
-
     public function testLifecycleFailuresDoNotPreventLaterExtensionsOrRepeatLoading(): void
     {
         foreach (['construct', 'logger', 'register', 'subscribe'] as $stage) {

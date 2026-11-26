@@ -17,8 +17,6 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
  */
 interface TuiExtensionContextInterface
 {
-    public function getSessionId(): string;
-
     public function requestRender(bool $force = false): void;
 
     /**

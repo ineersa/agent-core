@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
-use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundSnapshotDTO;
-
 /**
  * Per-iteration session lifecycle event dispatcher.
  *
@@ -23,22 +21,6 @@ final class TuiSessionLifecycleDispatcher
 {
     /** @var list<callable(TuiSessionLifecycleEventTypeEnum): void> */
     private array $subscribers = [];
-
-    /** @var list<callable(TuiBackgroundSnapshotDTO): void> */
-    private array $backgroundSubscribers = [];
-
-    /** @param callable(TuiBackgroundSnapshotDTO): void $handler */
-    public function subscribeBackgroundSnapshot(callable $handler): void
-    {
-        $this->backgroundSubscribers[] = $handler;
-    }
-
-    public function dispatchBackgroundSnapshot(TuiBackgroundSnapshotDTO $snapshot): void
-    {
-        foreach ($this->backgroundSubscribers as $subscriber) {
-            $subscriber($snapshot);
-        }
-    }
 
     /**
      * Register a lifecycle event handler.
