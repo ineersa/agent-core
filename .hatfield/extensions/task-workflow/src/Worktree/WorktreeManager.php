@@ -162,13 +162,19 @@ final class WorktreeManager
         return false === @lstat($path);
     }
 
-    public function fastForwardBase(string $primaryRoot, string $baseBranch, string $remote = 'origin', ?InvocationControl $control = null): void
+    public function assertPrimaryOnBase(string $primaryRoot, string $baseBranch, ?InvocationControl $control = null): void
     {
         $primaryRoot = $this->primaryRoot($primaryRoot, $control);
         $this->run(['check-ref-format', '--branch', $baseBranch], $primaryRoot, $control);
         if (!$this->isClean($primaryRoot, $control) || trim($this->run(['symbolic-ref', '--short', 'HEAD'], $primaryRoot, $control)) !== $baseBranch) {
             throw new \RuntimeException('Primary checkout must be clean and on the configured base branch.');
         }
+    }
+
+    public function fastForwardBase(string $primaryRoot, string $baseBranch, string $remote = 'origin', ?InvocationControl $control = null): void
+    {
+        $this->assertPrimaryOnBase($primaryRoot, $baseBranch, $control);
+        $primaryRoot = $this->primaryRoot($primaryRoot, $control);
         // The caller holds the shared primary-checkout lock across this update.
         $ref = 'refs/hatfield/base-update/'.hash('sha256', $remote."\0".$baseBranch);
         $this->run(['fetch', '--', $remote, 'refs/heads/'.$baseBranch.':'.$ref], $primaryRoot, $control);

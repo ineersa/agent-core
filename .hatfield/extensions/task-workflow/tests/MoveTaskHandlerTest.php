@@ -74,6 +74,55 @@ final class MoveTaskHandlerTest extends TestCase
         $this->assertCount(1, $creates);
     }
 
+    public function testReviewWaitsForGitHubToMoveThePrHead(): void
+    {
+        $this->move('IN-PROGRESS');
+        $this->move('CODE-REVIEW');
+        $path = $this->fixture->record()['worktree'];
+        $this->fixture->workspace->git->gitOk(['commit', '--allow-empty', '-m', 'Review fix'], $path);
+        $head = trim($this->fixture->workspace->git->gitOk(['rev-parse', 'HEAD'], $path)->stdout);
+        $this->fixture->stalePrHeadViews = 3;
+        $started = $this->fixture->clock->now();
+
+        $this->move('CODE-REVIEW');
+
+        $this->assertSame('CODE-REVIEW', $this->fixture->status);
+        $this->assertSame($head, $this->fixture->record()['submitted_sha']);
+        $this->assertSame($head, $this->fixture->pr['headRefOid']);
+        // One stale view is consumed while resolving the PR before validation.
+        $this->assertEquals($started->modify('+3 seconds'), $this->fixture->clock->now());
+        $this->assertSame(['setup', 'validate', 'validate'], array_column($this->fixture->hookCalls, 0));
+    }
+
+    public function testFailedResubmissionKeepsThePreviousSubmission(): void
+    {
+        $this->move('IN-PROGRESS');
+        $this->move('CODE-REVIEW');
+        $submitted = $this->fixture->record()['submitted_sha'];
+        $path = $this->fixture->record()['worktree'];
+        $this->fixture->workspace->git->gitOk(['commit', '--allow-empty', '-m', 'Broken fix'], $path);
+        $this->fixture->hookResults['validate'] = new ExecResultDTO('', 'validation failed', 1);
+
+        $this->assertStringContainsString('validation failed', $this->move('CODE-REVIEW'));
+
+        $this->assertSame('CODE-REVIEW', $this->fixture->status);
+        $this->assertSame($submitted, $this->fixture->record()['submitted_sha']);
+        $this->assertSame($submitted, $this->fixture->pr['headRefOid']);
+    }
+
+    public function testDirtyPrimaryCheckoutRefusesDoneBeforeMerging(): void
+    {
+        $this->move('IN-PROGRESS');
+        $this->move('CODE-REVIEW');
+        file_put_contents($this->fixture->workspace->root.'/local-edit', 'keep');
+
+        $this->refused(fn () => $this->move('DONE'));
+
+        $this->assertSame('OPEN', $this->fixture->pr['state']);
+        $this->assertSame('CODE-REVIEW', $this->fixture->status);
+        $this->assertNull($this->fixture->record()['pending_operation']);
+    }
+
     public function testTaskStartReviewAndDone(): void
     {
         $this->move('IN-PROGRESS');
