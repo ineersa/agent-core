@@ -170,11 +170,13 @@ final class ProcessStore
             if (null !== $row['finished_at'] || null !== $row['backgrounded_at']) {
                 return false;
             }
-            $exit = $lifecycle->readNativeExit((string) $row['status_path']);
-            $exitCode = $exit?->exitCode;
             $pid = $this->resolveObservedPid($row, $lifecycle);
+            $observation = $lifecycle->observeExit((string) $row['status_path'], $pid);
+            $exit = $observation->exit;
+            $exitCode = $exit?->exitCode;
             // Missing PID evidence means not-yet-known, never finished/dead.
-            if (null !== $exitCode || (null !== $pid && !$lifecycle->isAlive($pid))) {
+            // A stop marker here also settles: the request was already stopped.
+            if ($observation->exited || null !== $exitCode) {
                 $status = BackgroundProcessStatusEnum::Stopped->value === $row['status']
                     ? BackgroundProcessStatusEnum::Stopped
                     : (null !== $exit && 0 === $exit->logWriterExitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean);
@@ -322,9 +324,10 @@ final class ProcessStore
             $signalRequired = false;
             $pid = $this->resolveObservedPid($row, $lifecycle);
             if (!$finished) {
-                $exit = $lifecycle->readNativeExit((string) $row['status_path']);
+                $observation = $lifecycle->observeExit((string) $row['status_path'], $pid);
+                $exit = $observation->exit;
                 $exitCode = $exit?->exitCode;
-                $nativeExit = $lifecycle->hasObservedExit($exitCode, $pid);
+                $nativeExit = $observation->exited;
                 $accepted = null !== $row['backgrounded_at'];
                 $settledForegroundStop = !$accepted && ((BashProcessActionEnum::SettleStop === $action && (bool) $row['stopped_by_user'])
                     || (BashProcessActionEnum::SettleTimeout === $action && BackgroundProcessStatusEnum::Stopped === $status));

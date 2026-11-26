@@ -141,6 +141,34 @@ PHP;
     }
 
     #[Test]
+    public function observeExitTrustsStatusOnlyOnceTheWrapperIsGone(): void
+    {
+        $status = $this->tmpDir.'/observe.status';
+        $wrapper = proc_open(['cat'], [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes);
+        $this->assertIsResource($wrapper);
+        $pid = proc_get_status($wrapper)['pid'];
+        try {
+            $this->assertFalse($this->lifecycle->observeExit($status, $pid)->exited, 'A live wrapper without status is running.');
+            file_put_contents($status, '-1');
+            $this->assertFalse($this->lifecycle->observeExit($status, $pid)->exited, 'A stop marker on a live wrapper is only a signal attempt.');
+            $this->assertFalse($this->lifecycle->observeExit($status, null)->exited, 'Missing PID evidence is not exit.');
+        } finally {
+            array_map(fclose(...), $pipes); // EOF ends cat; proc_close reaps it.
+            proc_close($wrapper);
+        }
+
+        file_put_contents($status, '0 0');
+        $finished = $this->lifecycle->observeExit($status, $pid);
+        $this->assertTrue($finished->exited);
+        $this->assertSame(0, $finished->exit?->exitCode, 'A dead wrapper reports the status it wrote before exiting.');
+
+        unlink($status);
+        $unknown = $this->lifecycle->observeExit($status, $pid);
+        $this->assertTrue($unknown->exited, 'A wrapper killed before writing status has exited.');
+        $this->assertNull($unknown->exit, 'Its outcome stays unknown.');
+    }
+
+    #[Test]
     public function isAliveRejectsNonPositivePids(): void
     {
         $this->assertFalse($this->lifecycle->isAlive(0));

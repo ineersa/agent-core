@@ -934,10 +934,11 @@ final class BackgroundProcessManager
 
     private function observeNative(NativeBashLaunchDTO $native): NativeBashObservationDTO
     {
-        $exit = $this->lifecycle->readNativeExit($native->statusPath);
+        $observation = $this->lifecycle->observeExit($native->statusPath, $native->pid);
+        $exit = $observation->exit;
         $exitCode = $exit?->exitCode;
         $writerExitCode = $exit->logWriterExitCode ?? 0;
-        $finished = $this->lifecycle->hasObservedExit($exitCode, $native->pid);
+        $finished = $observation->exited;
         $stoppedByUser = false;
         $status = BackgroundProcessStatusEnum::Running;
         $finishedAt = null;
@@ -988,15 +989,15 @@ final class BackgroundProcessManager
 
             return;
         }
-        $exit = $this->lifecycle->readNativeExit($record->statusPath);
-        $exitCode = $exit?->exitCode;
         if (null === $record->pid || null === $record->startedAt) {
             return;
         }
-        $finished = $this->lifecycle->hasObservedExit($exitCode, $record->pid);
-        if (!$finished) {
+        $observation = $this->lifecycle->observeExit($record->statusPath, $record->pid);
+        if (!$observation->exited) {
             return;
         }
+        $exit = $observation->exit;
+        $exitCode = $exit?->exitCode;
         $status = -1 === $exitCode
             ? BackgroundProcessStatusEnum::Stopped
             : (null !== $exit && 0 === $exit->logWriterExitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean);
