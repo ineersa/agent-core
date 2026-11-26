@@ -29,7 +29,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
 use Symfony\AI\Platform\Platform;
@@ -43,12 +43,37 @@ use Symfony\Component\PropertyAccess\PropertyAccess;
  * immutable worker input; session metadata remains the resume-time authority
  * for model and reasoning selection.
  */
-final class TraceReplayTest extends PerMethodIsolatedKernelTestCase
+final class TraceReplayTest extends IsolatedKernelTestCase
 {
-    private string $homeDir;
+    private string $settingsDirectory;
     private HatfieldSessionStore $sessionMetaStore;
 
     private \Doctrine\ORM\EntityManagerInterface $entityManager;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->entityManager = self::getContainer()->get('doctrine.orm.default_entity_manager');
+        // Settings writes must not survive into the next method or target the actual HOME.
+        $this->settingsDirectory = TestDirectoryIsolation::createProjectTempDir('trace-replay-settings');
+        TestDirectoryIsolation::createHatfieldTree($this->settingsDirectory);
+        TestDirectoryIsolation::createHatfieldTree($this->settingsDirectory.'/home');
+        $this->sessionMetaStore = new HatfieldSessionStore(
+            appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->isolatedCwd()),
+            entityManager: $this->entityManager,
+            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+    }
+
+    protected function tearDown(): void
+    {
+        try {
+            if (isset($this->settingsDirectory)) {
+                TestDirectoryIsolation::removeDirectory($this->settingsDirectory);
+            }
+        } finally {
+            parent::tearDown();
+        }
+    }
 
     public function testReplayFixtureResolvesSessionModelAndConsumesImmutableInvocationMessages(): void
     {
@@ -166,18 +191,6 @@ final class TraceReplayTest extends PerMethodIsolatedKernelTestCase
         $this->assertSame($fixture['usage']['total_tokens'], $result->usage['total_tokens']);
     }
 
-    protected function afterKernelBoot(): void
-    {
-        $this->entityManager = self::getContainer()->get('doctrine.orm.default_entity_manager');
-        $this->homeDir = $this->isolatedCwd().'/home';
-        TestDirectoryIsolation::ensureDirectory($this->homeDir);
-        TestDirectoryIsolation::createHatfieldTree($this->homeDir);
-        $this->sessionMetaStore = new HatfieldSessionStore(
-            appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->isolatedCwd()),
-            entityManager: $this->entityManager,
-            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
-    }
-
     /** @return array<string, mixed> */
     private function loadFixture(string $name): array
     {
@@ -235,7 +248,7 @@ final class TraceReplayTest extends PerMethodIsolatedKernelTestCase
     private function createSessionAwareResolver(array $aiData): SessionAwareModelResolver
     {
         $config = $this->makeAppConfig($aiData);
-        $writer = new SettingsOverrideWriter(new SettingsPathResolver($this->isolatedCwd(), $this->homeDir), PropertyAccess::createPropertyAccessor(), new Filesystem());
+        $writer = new SettingsOverrideWriter(new SettingsPathResolver($this->settingsDirectory, $this->settingsDirectory.'/home'), PropertyAccess::createPropertyAccessor(), new Filesystem());
         $selection = new ModelSelectionService($config, new ModelResolver($config, $this->sessionMetaStore, new NullLogger()), $writer, $this->sessionMetaStore);
         $catalog = $config->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
@@ -246,7 +259,7 @@ final class TraceReplayTest extends PerMethodIsolatedKernelTestCase
     private function createSelectionService(array $aiData): ModelSelectionService
     {
         $config = $this->makeAppConfig($aiData);
-        $writer = new SettingsOverrideWriter(new SettingsPathResolver($this->isolatedCwd(), $this->homeDir), PropertyAccess::createPropertyAccessor(), new Filesystem());
+        $writer = new SettingsOverrideWriter(new SettingsPathResolver($this->settingsDirectory, $this->settingsDirectory.'/home'), PropertyAccess::createPropertyAccessor(), new Filesystem());
 
         return new ModelSelectionService($config, new ModelResolver($config, $this->sessionMetaStore, new NullLogger()), $writer, $this->sessionMetaStore);
     }

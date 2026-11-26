@@ -7,14 +7,14 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversionCacheIdleSubscriber;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Event\WorkerRunningEvent;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Worker;
 
-final class ConversionCacheIdleSubscriberTest extends IsolatedKernelTestCase
+final class ConversionCacheIdleSubscriberTest extends TestCase
 {
     public function testIdleEventEvictsExpiredCacheButBusyEventDoesNot(): void
     {
@@ -34,12 +34,5 @@ final class ConversionCacheIdleSubscriberTest extends IsolatedKernelTestCase
         $clock->sleep(60);
         $dispatcher->dispatch(new WorkerRunningEvent($worker, true));
         $this->assertNotSame($bag, $converter->toMessageBagForTarget($messages, 'target'));
-    }
-
-    public function testContainerRegistersIdleSubscriber(): void
-    {
-        $dispatcher = self::getContainer()->get('event_dispatcher');
-        $listeners = $dispatcher->getListeners(WorkerRunningEvent::class);
-        $this->assertNotEmpty(array_filter($listeners, static fn (mixed $listener): bool => \is_array($listener) && $listener[0] instanceof ConversionCacheIdleSubscriber));
     }
 }

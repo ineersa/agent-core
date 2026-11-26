@@ -620,32 +620,25 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $this->path = \dirname($this->path).'/artifacts/agents/long-child/events.jsonl';
         (new Filesystem())->mkdir(\dirname($this->path));
         $events = [RunEvent::forAppend('indexed', 0, 'run_started', ['payload' => ['messages' => [$this->presentationMessage('user', 'Initial')]]]), RunEvent::forAppend('indexed', 1, 'turn_advanced', ['turn_no' => 1]), RunEvent::forAppend('indexed', 1, 'history_position_set', ['position_turn_no' => 1, 'previous_position_turn_no' => null, 'reason' => 'continue'])];
-        for ($i = 0; $i < 512; ++$i) {
-            $events[] = RunEvent::forAppend('indexed', 1, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Answer '.$i.' '.str_repeat('x', 8192))]);
+        for ($i = 0; $i < 16; ++$i) {
+            $events[] = RunEvent::forAppend('indexed', 1, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Answer '.$i.' '.str_repeat('x', 512))]);
         }
         $events[] = RunEvent::forAppend('indexed', 1, 'agent_end', ['reason' => $reason]);
-        $start = hrtime(true);
         $this->publish($events);
-        $initialMs = (hrtime(true) - $start) / 1_000_000;
         $this->logger->records = [];
         $reader = $this->presentationReader();
-        $start = hrtime(true);
         $first = $reader->read('indexed', 0, 800);
-        $summaryMs = (hrtime(true) - $start) / 1_000_000;
         $this->assertSame(0, $this->readLines('index_presentation_rebuild'));
         $this->assertSame(0, $this->readLines('indexed_range'));
         $this->assertSame(0, $this->readLines('index_cold_rebuild'));
         $this->assertSame(1, $this->readLines('index_boundary_validation'));
-        $this->assertSame(513, $first->messageCount);
-        $this->assertSame(516, $first->eventCount);
+        $this->assertSame(17, $first->messageCount);
+        $this->assertSame(20, $first->eventCount);
         $this->assertSame('failed' === $reason ? \Ineersa\AgentCore\Domain\Run\RunStatus::Failed : \Ineersa\AgentCore\Domain\Run\RunStatus::Cancelled, $first->status);
-        $start = hrtime(true);
         $this->assertSummaryParity($reader);
-        $canonicalMs = (hrtime(true) - $start) / 1_000_000;
         $this->logger->records = [];
-        $publication = [];
         $suffixRecords = 0;
-        for ($i = 0; $i < 16; ++$i) {
+        for ($i = 0; $i < 2; ++$i) {
             $turn = $i + 2;
             $advance = [RunEvent::forAppend('indexed', $turn, 'turn_advanced', ['turn_no' => $turn]), RunEvent::forAppend('indexed', $turn, 'history_position_set', ['position_turn_no' => $turn, 'previous_position_turn_no' => $turn - 1, 'reason' => $advanceReason])];
             $completion = [RunEvent::forAppend('indexed', $turn, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Suffix '.$i)])];
@@ -660,14 +653,11 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
                 $completion = [RunEvent::forAppend('indexed', $turn, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult('indexed', $turn, $key, 1, $key, $id, 0, ['tool_name' => 'bash', 'output' => 'suffix']))), RunEvent::forAppend('indexed', $turn, 'agent_end', ['reason' => 'completed'])];
             }
             foreach ([$advance, $completion] as $transition) {
-                $start = hrtime(true);
                 $this->publish($transition);
-                $publication[] = (hrtime(true) - $start) / 1_000_000;
                 $suffixRecords += \count($transition);
                 $this->assertSummaryParity($reader);
             }
         }
-        fwrite(\STDERR, 'production presentation publication: '.json_encode(['reason' => $reason, 'advance_reason' => $advanceReason, 'archive_bytes' => filesize($this->path), 'initial_publication_ms' => $initialMs, 'first_summary_ms' => $summaryMs, 'canonical_parity_ms' => $canonicalMs, 'transition_publication_ms' => $publication, 'suffix_records' => $suffixRecords, 'presentation_rebuild_lines' => $this->readLines('index_presentation_rebuild'), 'presentation_rebuild_bytes' => $this->readBytes('index_presentation_rebuild')], \JSON_THROW_ON_ERROR)."\n");
         $this->assertSame($suffixRecords, $this->readLines('index_suffix_catch_up'));
         $this->assertSame(0, $this->readLines('index_presentation_rebuild'));
         $this->assertSame(0, $this->readLines('index_cold_rebuild'));

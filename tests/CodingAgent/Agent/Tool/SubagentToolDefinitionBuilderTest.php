@@ -6,25 +6,18 @@ namespace Ineersa\CodingAgent\Tests\Agent\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionBuilder;
-use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\TestCase;
 
-final class SubagentToolDefinitionBuilderTest extends IsolatedKernelTestCase
+final class SubagentToolDefinitionBuilderTest extends TestCase
 {
-    public function testBuildDoesNotSetToolExecutorTimeout(): void
+    public function testBuildDefinesSingleChildCallsWithoutToolExecutorTimeout(): void
     {
-        $handler = self::getContainer()->get(SubagentToolHandler::class);
+        $handler = new \stdClass();
         $def = SubagentToolDefinitionBuilder::build($handler);
 
         $this->assertNull($def->timeoutSeconds);
         $this->assertSame($handler, $def->handler);
         $this->assertStringContainsString('wait for completion and return its handoff', $def->description);
-    }
-
-    public function testGuidanceUsesIndependentSingleChildCallsAndSerializesDependencies(): void
-    {
-        $handler = self::getContainer()->get(SubagentToolHandler::class);
-        $def = SubagentToolDefinitionBuilder::build($handler);
 
         $this->assertNull($def->parametersJsonSchema);
         $this->assertSame(ToolExecutionMode::Parallel, $def->executionMode);

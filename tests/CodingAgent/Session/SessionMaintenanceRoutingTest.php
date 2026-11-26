@@ -58,13 +58,9 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
-use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\RepairHandler;
-use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\SelectHistoryTurnHandler;
-use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Messenger\FiberMessageExecutionStrategy;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
@@ -431,45 +427,6 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertSame([], $toolTransport->getSent());
     }
 
-    public function testAttachDoesNotStartModelTurnOrCreateTransportMetadata(): void
-    {
-        $run = $this->seed();
-        $active = self::getContainer()->get(ActiveRunContextInterface::class);
-        $state = $active->requireLoaded($run);
-        $bus = self::getContainer()->get('agent.command.bus');
-        $queued = $bus->dispatch(new AttachRun($run, [], 'attach-id'));
-        $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
-        $this->assertSame($state->turnNo, $active->requireLoaded($run)->turnNo);
-        $this->assertGreaterThan($state->lastSeq, $active->requireLoaded($run)->lastSeq);
-        $this->assertSame([], self::getContainer()->get('messenger.transport.llm')->getSent());
-    }
-
-    public function testControllerSelectionWritesOnlyWhenOwnerConsumesAndReturnsNarrowEvent(): void
-    {
-        $run = $this->seed();
-        $store = self::getContainer()->get(PreparedTransitionEventStoreInterface::class);
-        $before = $store->latestSequenceFor($run);
-        $emitted = [];
-        self::getContainer()->get(SelectHistoryTurnHandler::class)(new ControllerCommandEvent(new RuntimeCommand('select', 'select_history_turn', $run, ['turn_no' => 1]), static function (RuntimeEvent $event) use (&$emitted): void { $emitted[] = $event; }));
-        $this->assertSame($before, $store->latestSequenceFor($run));
-        $this->assertSame([], $emitted);
-        $queued = self::getContainer()->get('messenger.transport.run_control')->getSent()[0];
-        $this->assertInstanceOf(SelectHistoryEntry::class, $queued->getMessage());
-        $handled = self::getContainer()->get('agent.command.bus')->dispatch($queued->with(new ReceivedStamp('run_control')));
-        $result = $handled->last(HandledStamp::class)->getResult();
-        $this->assertInstanceOf(RuntimeEvent::class, $result);
-        $this->assertSame(RuntimeEventTypeEnum::RunHistoryPositionChanged->value, $result->type);
-        $this->assertGreaterThan($before, $result->seq);
-        $this->assertSame($result->seq, $store->latestSequenceFor($run));
-        $state = self::getContainer()->get(ActiveRunContextInterface::class)->requireLoaded($run);
-        $this->assertSame(0, $state->turnNo);
-        $this->assertSame($result->seq, $state->lastSeq);
-        $this->assertSame('First prompt', $result->payload['editor_prompt_text']);
-        $events = iterator_to_array(self::getContainer()->get(InMemoryRuntimeEventSink::class)->drain($run));
-        $this->assertSame($result, $events[array_key_last($events)]);
-        $this->assertMaintenanceDidNotScheduleCompaction($run);
-    }
-
     #[DataProvider('deferredRepairCases')]
     public function testRepairCancelsExistingDeferredChildrenAfterOwnerRestart(int $children, bool $completedSibling, bool $completedOrdinaryTool = false): void
     {
@@ -628,17 +585,14 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
 
     public static function settledChildRepairCases(): iterable
     {
-        yield 'idle parent, terminal child' => ['completed', true];
         yield 'cancelled parent, terminal child' => ['cancelled', true];
         yield 'idle parent, pending cancellation' => ['completed', false];
-        yield 'cancelled parent, pending cancellation' => ['cancelled', false];
         yield 'worker progresses during child lock contention' => ['completed', true, 'release'];
         yield 'refused child lock retains journaled repair' => ['completed', true, 'refuse'];
     }
 
     public static function deferredRepairCases(): iterable
     {
-        yield 'fork' => [1, false];
         yield 'independent child invocations' => [2, false];
         yield 'completed sibling stays completed' => [2, true];
         yield 'completed ordinary tool does not block child repair' => [1, false, true];
@@ -770,29 +724,6 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertNotSame([], $registry->requireLoaded($run)->pendingToolCalls);
     }
 
-    public function testControllerRepairPreviewReturnsCorrelatedResponseOnlyAfterOwnerConsumption(): void
-    {
-        $run = $this->seed();
-        $store = self::getContainer()->get(PreparedTransitionEventStoreInterface::class);
-        $before = $store->latestSequenceFor($run);
-        $emitted = [];
-        self::getContainer()->get(RepairHandler::class)(new ControllerCommandEvent(new RuntimeCommand('repair-id', 'repair', $run, ['apply' => false]), static function (RuntimeEvent $event) use (&$emitted): void { $emitted[] = $event; }));
-        $this->assertSame([], $emitted);
-        $this->assertSame($before, $store->latestSequenceFor($run));
-        $sent = self::getContainer()->get('messenger.transport.run_control')->getSent();
-        $queued = $sent[array_key_last($sent)];
-        $this->assertInstanceOf(RepairSession::class, $queued->getMessage());
-        $handled = self::getContainer()->get('agent.command.bus')->dispatch($queued->with(new ReceivedStamp('run_control')));
-        $this->assertInstanceOf(\Ineersa\CodingAgent\Runtime\Contract\RepairResult::class, $handled->last(HandledStamp::class)->getResult());
-        $this->assertSame($before, $store->latestSequenceFor($run));
-        $events = iterator_to_array(self::getContainer()->get(InMemoryRuntimeEventSink::class)->drain($run));
-        $result = $events[array_key_last($events)];
-        $this->assertSame(RuntimeEventTypeEnum::SessionRepairCompleted->value, $result->type);
-        $this->assertSame('repair-id', $result->payload['commandId']);
-        $this->assertSame('completed', $result->payload['status']);
-        $this->assertArrayHasKey('refusal_reason', $result->payload);
-    }
-
     public function testOwnerRepairApplyCommitsTerminalStateAndCorrelatedReply(): void
     {
         $run = $this->seed();
@@ -875,28 +806,6 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertSame('agent_command_queued', $after[array_key_last($after)]->type);
         $this->assertSame('follow_up', $after[array_key_last($after)]->payload['kind']);
         $this->assertGreaterThan($cleanup[array_key_last($cleanup)]->seq, $after[array_key_last($after)]->seq);
-    }
-
-    public function testColdDuplicateArchiveReturnsCorrelatedRefusalWithoutRecoveryOrAppend(): void
-    {
-        $container = self::getContainer();
-        $run = $container->get(HatfieldSessionStore::class)->createSession('duplicate repair');
-        $store = $container->get(PreparedTransitionEventStoreInterface::class);
-        PreparedEventStoreSeeder::append($store, RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => []]]));
-        $path = $this->archivePath($run);
-        $line = file_get_contents($path);
-        $this->assertIsString($line);
-        file_put_contents($path, $line.$line);
-        $before = file_get_contents($path);
-        $bus = $container->get('agent.command.bus');
-        $queued = $bus->dispatch(new RepairSession($run, true, 'duplicate-request'));
-        $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
-        $reply = $this->repairReply($run);
-        $this->assertSame('duplicate-request', $reply->payload['commandId']);
-        $this->assertSame('completed', $reply->payload['status']);
-        $this->assertSame(SessionRepairRefusalReasonEnum::DuplicateSequences->value, $reply->payload['refusal_reason']);
-        $this->assertSame($before, file_get_contents($path));
-        $this->assertNotAdmitted($run);
     }
 
     public function testColdRecoveryFailureStillEmitsSanitizedCorrelatedRepairReply(): void

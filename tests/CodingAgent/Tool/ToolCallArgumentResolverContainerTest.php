@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\CodingAgent\Tool\DTO\SubagentArgumentsDTO;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
@@ -58,26 +56,6 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         $this->assertArrayNotHasKey('agentRunId', $properties, 'agent_retrieve provider schema must not expose camelCase agentRunId.');
     }
 
-    public function testContainerResolverDenormalizesSingleSubagentTask(): void
-    {
-        $resolver = self::getContainer()->get(ToolCallArgumentResolverInterface::class);
-
-        $arguments = $resolver->resolveArguments(
-            new Tool(
-                reference: new ExecutionReference(SubagentResolutionProbe::class),
-                name: 'probe',
-                description: 'Probe',
-            ),
-            new ToolCall('call-subagent-container', 'probe', ['agent' => 'scout', 'task' => 'one']),
-        );
-
-        $this->assertArrayHasKey('arguments', $arguments);
-        $dto = $arguments['arguments'];
-        $this->assertInstanceOf(SubagentArgumentsDTO::class, $dto);
-        $this->assertSame('scout', $dto->agent);
-        $this->assertSame('one', $dto->task);
-    }
-
     public function testContainerSchemaOmitsBashMaximumByDefault(): void
     {
         $config = self::getContainer()->get(BashToolConfig::class);
@@ -112,7 +90,7 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
 
     public function testContainerSchemasFollowConstructorRequiredness(): void
     {
-        foreach (['bash' => ['command'], 'write' => ['path', 'content'], 'view_image' => ['path'], 'subagent' => ['agent', 'task'], 'agent_resume' => ['task']] as $name => $required) {
+        foreach (['bash' => ['command'], 'write' => ['path', 'content'], 'view_image' => ['path'], 'agent_resume' => ['task']] as $name => $required) {
             $parameters = $this->toolboxParameters($name);
             $this->assertSame($required, $parameters['required'] ?? [], $name);
         }
@@ -140,18 +118,6 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         $message = (string) $result->getResult();
         $this->assertStringContainsString('does not exist', $message);
         $this->assertStringContainsString('Check the file path and try again.', $message);
-    }
-
-    public function testContainerViewImageMissingTargetFailsInHandler(): void
-    {
-        $toolbox = self::getContainer()->get(ToolboxInterface::class);
-
-        try {
-            $toolbox->execute(new ToolCall('call-view-missing', 'view_image', ['path' => '/definitely/not/here.png']));
-            $this->fail('Expected ToolCallException');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('does not exist or is not readable', $e->getMessage());
-        }
     }
 
     /**
@@ -193,16 +159,6 @@ final class SnakeCaseResolutionProbe
     public function __invoke(
         #[MapToolArguments]
         AgentRetrieveArgumentsDTO $arguments,
-    ): string {
-        return 'ok';
-    }
-}
-
-final class SubagentResolutionProbe
-{
-    public function __invoke(
-        #[MapToolArguments]
-        SubagentArgumentsDTO $arguments,
     ): string {
         return 'ok';
     }

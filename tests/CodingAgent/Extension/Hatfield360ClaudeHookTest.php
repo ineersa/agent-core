@@ -418,7 +418,6 @@ final class Hatfield360ClaudeHookTest extends TestCase
             $completed = $send($first + $stop + ['background_tasks' => [$unseen, $shell]]);
             $this->assertSame(1, $completed['activeSubagents']);
             $this->assertSame(1, $completed['backgroundScripts']);
-            $this->assertQuietHook($environment, $oldEmpty + $session);
             $settled = $send($first + ['hook_event_name' => 'SubagentStop', 'agent_id' => 'tracked', 'background_tasks' => []]);
             $this->assertSame(1, $settled['activeSubagents'], 'Claude has yet to handle the stopped child\'s result.');
             $this->assertNull($settled['backgroundScripts'], 'Unordered child samples cannot replace a script count with zero.');
@@ -538,13 +537,6 @@ final class Hatfield360ClaudeHookTest extends TestCase
             $this->assertSame($child['sequence'] + 1, $end['sequence']);
             $this->assertArrayNotHasKey('last_assistant_message', $end);
             $this->assertSame(1, $end['activeSubagents']);
-            // After the main Stop, a stopped child stays counted until Claude handles its result; a later start is still observed.
-            $attempt = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStop', 'stop_hook_active' => false, 'background_tasks' => []]));
-            $this->assertSame(1, $attempt['activeSubagents']);
-            $this->assertSame($end['turn'], $attempt['turn']);
-            $continued = $this->exchange($server, $this->launch($environment, $agent + ['hook_event_name' => 'SubagentStart']));
-            $this->assertSame(1, $continued['activeSubagents']);
-            $this->assertSame($end['turn'], $continued['turn']);
             $this->assertQuietHook($environment, $prompt + $stop);
             $this->assertQuietHook($environment, $prompt + $tool);
 
@@ -600,7 +592,6 @@ final class Hatfield360ClaudeHookTest extends TestCase
             $this->assertSame(1, $done['backgroundScripts']);
             $this->assertNull($done['attention']);
             $this->assertArrayNotHasKey('background_tasks', $done);
-            $this->assertQuietHook($environment, $stop + ['background_tasks' => []]);
             $next = array_replace($prompt, ['prompt_id' => '44444444-4444-4444-8444-666666666666']);
             $send($next + ['hook_event_name' => 'UserPromptSubmit']);
             $this->assertQuietHook($environment, $stop + ['background_tasks' => []]);

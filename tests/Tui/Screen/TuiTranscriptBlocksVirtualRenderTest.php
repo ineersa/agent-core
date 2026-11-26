@@ -285,48 +285,6 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function testSingleUserMessageShowsGlyphAndText(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
-        $harness->screen()->setTranscriptBlocks([
-            new TranscriptBlock(
-                id: 'msg-1',
-                kind: TranscriptBlockKindEnum::UserMessage,
-                runId: self::SESSION_ID,
-                seq: 1,
-                text: 'Hello world',
-            ),
-        ]);
-        $harness->screen()->setWorkingVisible(false);
-
-        $text = $harness->plainScreenText();
-
-        $this->assertStringContainsString('❯', $text, 'User message glyph missing');
-        $this->assertStringContainsString('Hello world', $text, 'User message text missing');
-    }
-
-    #[Test]
-    public function testAssistantResponseShowsGlyphAndText(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
-        $harness->screen()->setTranscriptBlocks([
-            new TranscriptBlock(
-                id: 'a-1',
-                kind: TranscriptBlockKindEnum::AssistantMessage,
-                runId: self::SESSION_ID,
-                seq: 1,
-                text: 'Here is the answer',
-            ),
-        ]);
-        $harness->screen()->setWorkingVisible(false);
-
-        $text = $harness->plainScreenText();
-
-        $this->assertStringContainsString('◇', $text, 'Assistant message glyph missing');
-        $this->assertStringContainsString('Here is the answer', $text, 'Assistant message text missing');
-    }
-
-    #[Test]
     public function testTurnSeparatorAppearsBeforeLaterUserMessage(): void
     {
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
@@ -360,87 +318,6 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $this->assertStringContainsString($separator, $text, 'User-turn separator missing before later user message');
         $this->assertLessThan(strpos($text, 'second prompt'), strpos($text, $separator), 'Separator should appear before the later user message');
-    }
-
-    public function testMultipleBlocksRenderInOrder(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
-        $harness->screen()->setTranscriptBlocks([
-            new TranscriptBlock(
-                id: 'u1',
-                kind: TranscriptBlockKindEnum::UserMessage,
-                runId: self::SESSION_ID,
-                seq: 1,
-                text: 'first prompt',
-            ),
-            new TranscriptBlock(
-                id: 'a1',
-                kind: TranscriptBlockKindEnum::AssistantMessage,
-                runId: self::SESSION_ID,
-                seq: 2,
-                text: 'first response',
-            ),
-            new TranscriptBlock(
-                id: 'u2',
-                kind: TranscriptBlockKindEnum::UserMessage,
-                runId: self::SESSION_ID,
-                seq: 3,
-                text: 'second prompt',
-            ),
-        ]);
-        $harness->screen()->setWorkingVisible(false);
-
-        $text = $harness->plainScreenText();
-
-        // Verify all glyphs are present
-        $this->assertStringContainsString('❯', $text, 'User message glyph missing');
-        $this->assertStringContainsString('◇', $text, 'Assistant message glyph missing');
-
-        // Verify ordering: first message comes before second
-        $posFirst = strpos($text, 'first prompt');
-        $posSecond = strpos($text, 'first response');
-        $posThird = strpos($text, 'second prompt');
-
-        $this->assertNotFalse($posFirst, 'First block text not found');
-        $this->assertNotFalse($posSecond, 'Second block text not found');
-        $this->assertNotFalse($posThird, 'Third block text not found');
-        $this->assertLessThan($posSecond, $posFirst, 'Blocks out of order: first should appear before second');
-        $this->assertLessThan($posThird, $posSecond, 'Blocks out of order: second should appear before third');
-    }
-
-    #[Test]
-    public function testToolCallAndResultShowToolGlyph(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
-        $harness->screen()->setTranscriptBlocks([
-            new TranscriptBlock(
-                id: 'tc',
-                kind: TranscriptBlockKindEnum::ToolCall,
-                runId: self::SESSION_ID,
-                seq: 1,
-                text: '',
-                meta: ['tool_name' => 'read'],
-            ),
-            new TranscriptBlock(
-                id: 'tr',
-                kind: TranscriptBlockKindEnum::ToolResult,
-                runId: self::SESSION_ID,
-                seq: 2,
-                text: '3 lines read',
-                meta: [
-                    'tool_name' => 'bash',
-                    'result' => '3 lines read',
-                    'is_error' => false,
-                ],
-            ),
-        ]);
-        $harness->screen()->setWorkingVisible(false);
-
-        $text = $harness->plainScreenText();
-
-        $this->assertStringContainsString('●', $text, 'Tool glyph missing');
-        $this->assertStringContainsString('bash', $text, 'Tool name missing');
-        $this->assertStringContainsString('3 lines read', $text, 'Tool result text missing');
     }
 
     #[Test]

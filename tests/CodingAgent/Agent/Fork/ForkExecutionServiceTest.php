@@ -68,6 +68,7 @@ use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\ProviderInterface;
 
+// Cases replace compaction and runner services (and the resume case replaces the command bus) before resolution.
 #[Group('db')]
 final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
 {

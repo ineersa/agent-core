@@ -7,88 +7,21 @@ namespace Ineersa\CodingAgent\Tests\CLI;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
-/**
- * @covers \Ineersa\CodingAgent\CLI\AgentCommand
- *
- * Tests that the agent command exposes --prompt-template and
- * --no-prompt-templates options, and that PromptTemplatesRuntimeConfig
- * (the shared mutable config populated by AgentCommand) is wired into
- * the container and can accept values.
- */
+/** @covers \Ineersa\CodingAgent\CLI\AgentCommand */
 final class AgentCommandPromptTemplatesOptionsTest extends IsolatedKernelTestCase
 {
-    // ── Option existence ───────────────────────────────────────────
-
-    public function testCommandHasPromptTemplateOption(): void
+    public function testCommandExposesRepeatablePromptTemplateAndDisableOptions(): void
     {
-        $app = $this->getApplication();
-        $command = $app->find('agent');
+        $application = new \Symfony\Bundle\FrameworkBundle\Console\Application(self::$kernel);
+        $definition = $application->find('agent')->getDefinition();
 
-        $this->assertTrue($command->getDefinition()->hasOption('prompt-template'));
-        $this->assertTrue($command->getDefinition()->hasOption('no-prompt-templates'));
-    }
-
-    public function testPromptTemplateOptionIsRepeatableArray(): void
-    {
-        $app = $this->getApplication();
-        $command = $app->find('agent');
-
-        $option = $command->getDefinition()->getOption('prompt-template');
-        $this->assertTrue($option->isArray(), '--prompt-template should accept array values');
-    }
-
-    public function testNoPromptTemplatesHasNoShortcut(): void
-    {
-        $app = $this->getApplication();
-        $command = $app->find('agent');
-
-        $option = $command->getDefinition()->getOption('no-prompt-templates');
-        $this->assertSame('', $option->getShortcut() ?? '', '--no-prompt-templates should have no shortcut');
-    }
-
-    // ── Config population (simulating what AgentCommand does) ──────
-
-    public function testConfigDefaultsToEmpty(): void
-    {
-        /** @var PromptTemplatesRuntimeConfig $config */
-        $config = self::getContainer()->get(PromptTemplatesRuntimeConfig::class);
-        $this->assertSame([], $config->promptTemplatePaths);
-        $this->assertFalse($config->noPromptTemplates);
-    }
-
-    public function testCanPopulatePromptTemplatePaths(): void
-    {
-        /** @var PromptTemplatesRuntimeConfig $config */
-        $config = self::getContainer()->get(PromptTemplatesRuntimeConfig::class);
-        $config->promptTemplatePaths = ['/one.md', '/two.md'];
-
-        $this->assertSame(['/one.md', '/two.md'], $config->promptTemplatePaths);
-    }
-
-    public function testCanSetNoPromptTemplates(): void
-    {
-        /** @var PromptTemplatesRuntimeConfig $config */
-        $config = self::getContainer()->get(PromptTemplatesRuntimeConfig::class);
-        $config->noPromptTemplates = true;
-
-        $this->assertTrue($config->noPromptTemplates);
-    }
-
-    public function testCombinedConfig(): void
-    {
-        /** @var PromptTemplatesRuntimeConfig $config */
-        $config = self::getContainer()->get(PromptTemplatesRuntimeConfig::class);
-        $config->promptTemplatePaths = ['/a.md'];
-        $config->noPromptTemplates = true;
-
-        $this->assertSame(['/a.md'], $config->promptTemplatePaths);
-        $this->assertTrue($config->noPromptTemplates);
+        $this->assertTrue($definition->getOption('prompt-template')->isArray());
+        $this->assertNull($definition->getOption('no-prompt-templates')->getShortcut());
     }
 
     public function testControllerArgsOutputOrder(): void
     {
-        /** @var PromptTemplatesRuntimeConfig $config */
-        $config = self::getContainer()->get(PromptTemplatesRuntimeConfig::class);
+        $config = new PromptTemplatesRuntimeConfig();
         $config->noPromptTemplates = true;
         $config->promptTemplatePaths = ['/first.md', '/second.md'];
 
@@ -98,14 +31,5 @@ final class AgentCommandPromptTemplatesOptionsTest extends IsolatedKernelTestCas
             '--prompt-template=/first.md',
             '--prompt-template=/second.md',
         ], $args);
-    }
-
-    // ── Helpers ────────────────────────────────────────────────────
-
-    private function getApplication(): \Symfony\Component\Console\Application
-    {
-        $kernel = self::$kernel;
-
-        return new \Symfony\Bundle\FrameworkBundle\Console\Application($kernel);
     }
 }

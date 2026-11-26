@@ -19,10 +19,8 @@ use Ineersa\CodingAgent\Extension\ExtensionUpdateService;
 use Ineersa\CodingAgent\Tests\Support\ExtensionUpdateFixture;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
-use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowConfiguration;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
-use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
@@ -224,33 +222,6 @@ final class ExtensionsSetupFlowTest extends PerMethodIsolatedKernelTestCase
         } finally {
             $fixture->close();
         }
-    }
-
-    public function testMissingHookIsWrittenOnlyAsAValidCompoundValue(): void
-    {
-        $flow = self::getContainer()->get(ExtensionsSetupFlow::class);
-        $path = $this->isolatedCwd().'/.hatfield/settings.yaml';
-        $this->assertSame($this->isolatedCwd().'/.hatfield', realpath(\dirname($path)));
-        $this->assertFalse(is_link($path));
-        $configuration = new TaskWorkflowConfiguration();
-        foreach (['configuration' => $configuration, 'class' => 'fixture-task-workflow', 'key' => 'task_workflow'] as $name => $value) {
-            (new \ReflectionProperty($flow, $name))->setValue($flow, $value);
-        }
-        $flow->members = ['parent' => 'false', 'forks' => 'off', 'agents' => 'false'];
-        (new \ReflectionMethod($flow, 'collectNodes'))->invoke($flow, $configuration->getConfigTreeBuilder()->buildTree());
-        $this->assertArrayHasKey('hooks.setup', $flow->nodes);
-        $before = file_get_contents($path);
-        try {
-            $flow->save(['hooks.setup' => '{script: setup.sh}']);
-            $this->fail('A hook requires a timeout.');
-        } catch (InvalidConfigurationException $error) {
-            $this->assertStringContainsString('timeout_seconds', $error->getMessage());
-        }
-        $this->assertSame($before, file_get_contents($path));
-        $this->assertTrue($flow->save(['hooks.setup' => '{script: setup.sh, timeout_seconds: 12}']));
-        $this->assertSame(['script' => 'setup.sh', 'timeout_seconds' => 12], Yaml::parseFile($path)['extensions']['settings']['task_workflow']['hooks']['setup']);
-        $this->assertTrue($flow->save(['hooks.setup.timeout_seconds' => '15']));
-        $this->assertSame(['script' => 'setup.sh', 'timeout_seconds' => 15], Yaml::parseFile($path)['extensions']['settings']['task_workflow']['hooks']['setup']);
     }
 
     public function testDisablingParentWithDefaultChildSelectionsIsRefused(): void

@@ -4,30 +4,46 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
-use Ineersa\CodingAgent\Runtime\Protocol\HistoryEntryView;
-use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
-use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Listener\HistoryCommandHandler;
-use Ineersa\Tui\Picker\HistoryPickerController;
-use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Native picker input selects canonical history and restores the transcript and editor.
  */
-final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTestCase
+final class TuiHistoryPickerOverlayVirtualTest extends IsolatedKernelTestCase
 {
+    private ?string $ownedRun = null;
+
+    protected function tearDown(): void
+    {
+        try {
+            if (null !== $this->ownedRun) {
+                $container = static::getContainer();
+                $container->get(SessionBootstrapSpoolStore::class)->cancel($this->ownedRun);
+                $container->get(ActiveRunContextInterface::class)->release($this->ownedRun);
+                iterator_to_array($container->get(InMemoryRuntimeEventSink::class)->drain($this->ownedRun));
+                $container->get('messenger.transport.run_control')->reset();
+                $container->get('messenger.transport.llm')->reset();
+            }
+        } finally {
+            parent::tearDown();
+        }
+    }
+
     #[DataProvider('coldHistorySelections')]
     public function testColdAttachRestoresFollowingPromptIntoANewEditor(int $turn, string $role, bool $mutate): void
     {
         $container = static::getContainer();
-        $run = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('cold editor selection');
+        $run = $this->ownedRun = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('cold editor selection');
         $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
         $next = str_repeat('Full canonical U2 to edit. ', 24);
         $message = static fn (string $role, string $text): array => ['role' => $role, 'content' => [['type' => 'text', 'text' => $text]]];
@@ -57,8 +73,8 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         }
         // Release the old execution owner and every client/TUI object. The new
         // attach must derive editor text from canonical storage, not the reply.
-        $container->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class)->release($run);
-        iterator_to_array($container->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class)->drain($run));
+        $container->get(ActiveRunContextInterface::class)->release($run);
+        iterator_to_array($container->get(InMemoryRuntimeEventSink::class)->drain($run));
         unset($oldTui, $oldState, $oldTicks, $oldClient);
         gc_collect_cycles();
         [$freshTui, $freshState, $freshTicks, $freshClient] = $this->virtualSession($run);
@@ -95,7 +111,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
     public function testNativeInputAfterAttachKeepsDraftWhenBootstrapMounts(int $turn, string $keys, string $expectedDraft, bool $pressEnter): void
     {
         $container = static::getContainer();
-        $run = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('delayed bootstrap draft');
+        $run = $this->ownedRun = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('delayed bootstrap draft');
         $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
         $next = str_repeat('Full canonical U2 to edit. ', 24);
         $message = static fn (string $role, string $text): array => ['role' => $role, 'content' => [['type' => 'text', 'text' => $text]]];
@@ -117,8 +133,8 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         $this->consumeMaintenance();
         $oldTicks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
         $this->assertSame(1 === $turn ? $next : '', $oldTui->screen()->editorText());
-        $container->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class)->release($run);
-        iterator_to_array($container->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class)->drain($run));
+        $container->get(ActiveRunContextInterface::class)->release($run);
+        iterator_to_array($container->get(InMemoryRuntimeEventSink::class)->drain($run));
         unset($oldTui, $oldState, $oldTicks, $oldClient);
         gc_collect_cycles();
 
@@ -169,7 +185,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
     {
         $container = static::getContainer();
         $sessions = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class);
-        $run = $sessions->createSession('answer history');
+        $run = $this->ownedRun = $sessions->createSession('answer history');
         $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
         $nextPrompt = str_repeat('U2: edit this next prompt. ', 20);
         $message = static fn (string $role, string $text): array => ['role' => $role, 'content' => [['type' => 'text', 'text' => $text]]];
@@ -250,7 +266,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         $visible = $visibleTranscript();
         $this->assertStringContainsString('A1_FINAL_ANSWER', $visible);
         $this->assertStringNotContainsString('A2_LAST_ANSWER', $visible);
-        $registry = $container->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class);
+        $registry = $container->get(ActiveRunContextInterface::class);
         $selected = $registry->requireLoaded($run);
         $this->assertSame(100, $selected->turnNo);
         $replay = $container->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class);
@@ -299,87 +315,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         $this->assertContains('history_tail_discarded', array_column($store->allFor($run), 'type'));
     }
 
-    #[Test]
-    public function testHistoryPickerRendersUserPromptsAndFinalAnswers(): void
-    {
-        $sessionId = 'history-overlay-session';
-        $harness = new VirtualTuiHarness(sessionId: $sessionId);
-        $provider = $this->createStub(HistoryProviderInterface::class);
-        $provider->method('forSession')->willReturn($this->sampleHistory());
-        $picker = new HistoryPickerController($harness->tui(), $harness->screen(), new TuiSessionState($sessionId), $provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
-
-        (new HistoryCommandHandler($picker))->handle(new SlashCommand('history', '', '/history'));
-
-        $screen = $harness->plainScreenText();
-        $this->assertSame(1, substr_count($screen, 'Session history — Enter to select position (Esc to close)'));
-        $this->assertSame(1, substr_count($screen, 'hello'));
-        $this->assertSame(1, substr_count($screen, 'Can you create file'));
-        $this->assertSame(1, substr_count($screen, 'Done! Created file'));
-        $this->assertStringContainsString('assistant: Done! Created file', $screen);
-    }
-
-    #[Test]
-    public function testHistoryPickerRemountDoesNotDuplicateRows(): void
-    {
-        $sessionId = 'history-remount-session';
-        $harness = new VirtualTuiHarness(sessionId: $sessionId);
-        $provider = $this->createStub(HistoryProviderInterface::class);
-        $provider->method('forSession')->willReturn($this->sampleHistory());
-        $picker = new HistoryPickerController($harness->tui(), $harness->screen(), new TuiSessionState($sessionId), $provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
-
-        (new HistoryCommandHandler($picker))->handle(new SlashCommand('history', '', '/history'));
-        $picker->closePicker();
-        $picker->open();
-        $screen = $harness->plainScreenText();
-        $this->assertSame(1, substr_count($screen, 'Session history — Enter to select position (Esc to close)'));
-        $this->assertSame(1, substr_count($screen, 'hello'));
-    }
-
-    #[Test]
-    public function testIndexedPagesNavigateBothDirectionsAndSelectSparsePromptsThroughNativeInput(): void
-    {
-        $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('history-picker-pages');
-        try {
-            $sessionId = 'paged-history';
-            $sessionStore = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
-                new \Ineersa\CodingAgent\Config\AppConfig(tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), logging: new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
-                $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
-            $events = [];
-            for ($i = 70; $i >= 1; --$i) {
-                $events[] = \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($sessionId, $i, 'agent_command_applied', ['kind' => 'follow_up', 'text' => 'Prompt number '.$i]);
-                $events[] = \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($sessionId, $i, 'turn_advanced', ['turn_no' => $i]);
-            }
-            $store = \Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory::create($sessionStore, $events);
-            $provider = new \Ineersa\CodingAgent\Session\SessionHistoryProvider($store, new \Ineersa\CodingAgent\Session\RunHistoryIndex(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new \Psr\Log\NullLogger()));
-            $harness = new VirtualTuiHarness(sessionId: $sessionId);
-            $switcher = $this->createMock(TuiSessionSwitchServiceInterface::class);
-            $switcher->expects($this->once())->method('selectHistoryTurn')->with(33);
-            $picker = new HistoryPickerController($harness->tui(), $harness->screen(), new TuiSessionState($sessionId), $provider, $switcher);
-            (new HistoryCommandHandler($picker))->handle(new SlashCommand('history', '', '/history'));
-            $this->assertStringContainsString('Prompt number 1', $harness->plainScreenText());
-            for ($i = 0; $i < 32; ++$i) {
-                $harness->tui()->handleInput("\x1b[A");
-            }
-            $this->assertStringContainsString('Older entries...', $harness->plainScreenText());
-            $harness->tui()->handleInput("\n");
-            $this->assertStringContainsString('Prompt number 33', $harness->plainScreenText());
-            $this->assertStringContainsString('Newer entries...', $harness->plainScreenText());
-            $harness->tui()->handleInput("\x1b[B");
-            $harness->tui()->handleInput("\n");
-            $this->assertStringContainsString('Prompt number 1', $harness->plainScreenText());
-            for ($i = 0; $i < 32; ++$i) {
-                $harness->tui()->handleInput("\x1b[A");
-            }
-            $harness->tui()->handleInput("\n");
-            $harness->tui()->handleInput("\n");
-            $this->assertStringNotContainsString('Session history', $harness->plainScreenText());
-        } finally {
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
-        }
-    }
-
-    protected function afterKernelBoot(): void
+    protected static function configureBootedClassContainer(): void
     {
         $container = static::getContainer();
         // This test drives the real in-process client. Maintenance replies must use
@@ -387,11 +323,11 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         $container->set(\Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler::class, new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler(
             $container->get(\Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface::class),
             $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
-            $container->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class),
+            $container->get(InMemoryRuntimeEventSink::class),
             $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class),
             false,
             new \Psr\Log\NullLogger(),
-            $container->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class),
+            $container->get(ActiveRunContextInterface::class),
             $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class),
             $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
             $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
@@ -447,17 +383,5 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         } else {
             $this->assertSame('run.history_position_changed', $reply->type, json_encode($reply->payload, \JSON_THROW_ON_ERROR));
         }
-    }
-
-    private function sampleHistory(): HistoryView
-    {
-        return new HistoryView(
-            entries: [
-                new HistoryEntryView(1, 'hello', 1),
-                new HistoryEntryView(2, 'Can you create file', 2),
-                new HistoryEntryView(2, 'Done! Created file', 2, 'assistant'),
-            ],
-            selectedAnchor: 2,
-        );
     }
 }

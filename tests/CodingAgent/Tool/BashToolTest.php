@@ -153,21 +153,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertSame(30, $config->defaultTimeoutSeconds);
     }
 
-    /* ── Successful completion ── */
-
-    public function testSuccessfulCommandWithNewlines(): void
-    {
-        $this->createManager();
-
-        $result = $this->withContext($this->sessionId, function () {
-            return ($this->makeBashTool())(new BashArgumentsDTO(command: "printf 'line1\\nline2\\nline3\\n'"));
-        });
-
-        $this->assertStringContainsString('line1', $result);
-        $this->assertStringContainsString('line2', $result);
-        $this->assertStringContainsString('line3', $result);
-    }
-
     /* ── Non-zero exit code ── */
 
     #[DataProvider('commandOutcomes')]
@@ -277,28 +262,6 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     /* ── Timeout ── */
 
-    public function testTimeoutStopsProcess(): void
-    {
-        $this->createManager();
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 1,
-            pollIntervalMicros: 50_000,
-            logTailChars: 20000,
-        );
-
-        try {
-            $result = $this->withContext($this->sessionId, function () {
-                return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "partial" && sleep 10 && echo "should not see"'));
-            });
-            $this->fail('Expected native command failure.');
-        } catch (ToolCallException $exception) {
-            $result = $exception->getMessage();
-        }
-
-        $this->assertStringContainsString('timed out', $result);
-        $this->assertStringContainsString('partial', $result);
-    }
-
     public function testTimeoutReapsProcessGroupDescendants(): void
     {
         $this->createManager();
@@ -314,14 +277,14 @@ final class BashToolTest extends IsolatedKernelTestCase
         $command = \sprintf(
             'bash -c %s',
             escapeshellarg(\sprintf(
-                'touch %1$s; (while [ -f %1$s ]; do sleep 0.05; done) & sleep 10; echo should-not-see',
+                'echo partial; touch %1$s; (while [ -f %1$s ]; do sleep 0.05; done) & sleep 10; echo should-not-see',
                 escapeshellarg($aliveMarker),
             )),
         );
 
         try {
             $result = $this->withContext($this->sessionId, function () use ($command) {
-                return ($this->makeBashTool())(new BashArgumentsDTO(command: $command, timeout: 1));
+                return ($this->makeBashTool())(new BashArgumentsDTO(command: $command));
             });
             $this->fail('Expected native timeout.');
         } catch (ToolCallException $exception) {
@@ -329,6 +292,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         }
 
         $this->assertStringContainsString('timed out', $result);
+        $this->assertStringContainsString('partial', $result);
         $this->assertStringNotContainsString('should-not-see', $result);
 
         @unlink($aliveMarker);

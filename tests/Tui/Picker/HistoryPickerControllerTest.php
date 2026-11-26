@@ -7,11 +7,14 @@ namespace Ineersa\Tui\Tests\Picker;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryEntryView;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
+use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\HistoryCommandHandler;
 use Ineersa\Tui\Picker\HistoryPickerController;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -144,6 +147,98 @@ final class HistoryPickerControllerTest extends TestCase
     }
 
     /** Provider contract: HistoryView turns are already user prompts only. */
+    #[Test]
+    public function testHistoryPickerRendersUserPromptsAndFinalAnswers(): void
+    {
+        $sessionId = 'history-overlay-session';
+        $harness = new VirtualTuiHarness(sessionId: $sessionId);
+        $provider = $this->createStub(HistoryProviderInterface::class);
+        $provider->method('forSession')->willReturn($this->sampleHistory());
+        $picker = new HistoryPickerController($harness->tui(), $harness->screen(), new TuiSessionState($sessionId), $provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
+
+        (new HistoryCommandHandler($picker))->handle(new SlashCommand('history', '', '/history'));
+
+        $screen = $harness->plainScreenText();
+        $this->assertSame(1, substr_count($screen, 'Session history — Enter to select position (Esc to close)'));
+        $this->assertSame(1, substr_count($screen, 'hello'));
+        $this->assertSame(1, substr_count($screen, 'Can you create file'));
+        $this->assertSame(1, substr_count($screen, 'Done! Created file'));
+        $this->assertStringContainsString('assistant: Done! Created file', $screen);
+    }
+
+    #[Test]
+    public function testHistoryPickerRemountDoesNotDuplicateRows(): void
+    {
+        $sessionId = 'history-remount-session';
+        $harness = new VirtualTuiHarness(sessionId: $sessionId);
+        $provider = $this->createStub(HistoryProviderInterface::class);
+        $provider->method('forSession')->willReturn($this->sampleHistory());
+        $picker = new HistoryPickerController($harness->tui(), $harness->screen(), new TuiSessionState($sessionId), $provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
+
+        (new HistoryCommandHandler($picker))->handle(new SlashCommand('history', '', '/history'));
+        $picker->closePicker();
+        $picker->open();
+        $screen = $harness->plainScreenText();
+        $this->assertSame(1, substr_count($screen, 'Session history — Enter to select position (Esc to close)'));
+        $this->assertSame(1, substr_count($screen, 'hello'));
+    }
+
+    #[Test]
+    public function testIndexedPagesNavigateBothDirectionsAndSelectSparsePromptsThroughNativeInput(): void
+    {
+        $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('history-picker-pages');
+        try {
+            $sessionId = 'paged-history';
+            $sessionStore = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
+                new \Ineersa\CodingAgent\Config\AppConfig(tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), logging: new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
+                $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+                new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            $events = [];
+            for ($i = 70; $i >= 1; --$i) {
+                $events[] = \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($sessionId, $i, 'agent_command_applied', ['kind' => 'follow_up', 'text' => 'Prompt number '.$i]);
+                $events[] = \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($sessionId, $i, 'turn_advanced', ['turn_no' => $i]);
+            }
+            $store = \Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory::create($sessionStore, $events);
+            $provider = new \Ineersa\CodingAgent\Session\SessionHistoryProvider($store, new \Ineersa\CodingAgent\Session\RunHistoryIndex(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new \Psr\Log\NullLogger()));
+            $harness = new VirtualTuiHarness(sessionId: $sessionId);
+            $switcher = $this->createMock(TuiSessionSwitchServiceInterface::class);
+            $switcher->expects($this->once())->method('selectHistoryTurn')->with(33);
+            $picker = new HistoryPickerController($harness->tui(), $harness->screen(), new TuiSessionState($sessionId), $provider, $switcher);
+            (new HistoryCommandHandler($picker))->handle(new SlashCommand('history', '', '/history'));
+            $this->assertStringContainsString('Prompt number 1', $harness->plainScreenText());
+            for ($i = 0; $i < 32; ++$i) {
+                $harness->tui()->handleInput("\x1b[A");
+            }
+            $this->assertStringContainsString('Older entries...', $harness->plainScreenText());
+            $harness->tui()->handleInput("\n");
+            $this->assertStringContainsString('Prompt number 33', $harness->plainScreenText());
+            $this->assertStringContainsString('Newer entries...', $harness->plainScreenText());
+            $harness->tui()->handleInput("\x1b[B");
+            $harness->tui()->handleInput("\n");
+            $this->assertStringContainsString('Prompt number 1', $harness->plainScreenText());
+            for ($i = 0; $i < 32; ++$i) {
+                $harness->tui()->handleInput("\x1b[A");
+            }
+            $harness->tui()->handleInput("\n");
+            $harness->tui()->handleInput("\n");
+            $this->assertStringNotContainsString('Session history', $harness->plainScreenText());
+        } finally {
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    private function sampleHistory(): HistoryView
+    {
+        return new HistoryView(
+            entries: [
+                new HistoryEntryView(1, 'hello', 1),
+                new HistoryEntryView(2, 'Can you create file', 2),
+                new HistoryEntryView(2, 'Done! Created file', 2, 'assistant'),
+            ],
+            selectedAnchor: 2,
+        );
+    }
+
     private function createUserPromptHistory(int $positionTurnNo = 3): HistoryView
     {
         return new HistoryView(

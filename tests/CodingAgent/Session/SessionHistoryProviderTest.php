@@ -43,7 +43,7 @@ use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTNativeReplayFixture;
 use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
-use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Factory;
@@ -55,7 +55,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
-final class SessionHistoryProviderTest extends PerMethodIsolatedKernelTestCase
+final class SessionHistoryProviderTest extends IsolatedKernelTestCase
 {
     /** @param list<array<string, mixed>> $expected */
     #[\PHPUnit\Framework\Attributes\DataProvider('nativeOutputProvider')]
@@ -129,7 +129,7 @@ final class SessionHistoryProviderTest extends PerMethodIsolatedKernelTestCase
         $second = $items[2];
         $second['summary'] = [['type' => 'summary_text', 'text' => 'C'], ['type' => 'summary_text', 'text' => 'D']];
 
-        return ['empty summaries' => [$items, false], 'R M announced' => [[$reasoning, $items[4]], false], 'R M terminal message' => [[$reasoning, $items[4]], true], 'R C R M announced' => [[$reasoning, $items[1], $second, $items[5]], false], 'R C R M terminal message' => [[$reasoning, $items[1], $second, $items[5]], true]];
+        return ['empty summaries' => [$items, false], 'R M announced' => [[$reasoning, $items[4]], false], 'R C R M terminal message' => [[$reasoning, $items[1], $second, $items[5]], true]];
     }
 
     private function adapter(MockHttpClient $http, HatfieldSessionStore $sessions): LlmPlatformAdapter

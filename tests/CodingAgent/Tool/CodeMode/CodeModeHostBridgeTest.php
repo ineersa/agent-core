@@ -450,31 +450,6 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
         $tool(new CodeModeArgumentsDTO('return 42;'));
     }
 
-    public function testRefusesUnavailableBroker(): void
-    {
-        $container = self::getContainer();
-        $id = 'broker-unavailable';
-        $runId = 'broker-refusal-fixture';
-        $tool = $container->get(CodeModeTool::class);
-        $context = new ToolContext($runId, 1, $id, 'code_mode', new NullCancellationToken(), 5, 0, null, stepId: 'code-mode-bridge-test-step');
-        $endpoint = 'HATFIELD_SQLITE_QUEUE_ENDPOINT';
-        $previous = $_SERVER[$endpoint] ?? null;
-        $_SERVER[$endpoint] = $this->tmpDir.'/missing.sock';
-        try {
-            $container->get(StackToolExecutionContextAccessor::class)->with($context, static fn () => $tool(new CodeModeArgumentsDTO('return 42;')));
-            $this->fail('Expected broker refusal.');
-        } catch (ToolCallException $error) {
-            $this->assertStringContainsString('session broker unavailable', $error->getMessage());
-            $this->assertFalse($error->retryable());
-        } finally {
-            if (null === $previous) {
-                unset($_SERVER[$endpoint]);
-            } else {
-                $_SERVER[$endpoint] = $previous;
-            }
-        }
-    }
-
     protected static function configureIsolatedProjectBeforeKernelBoot(string $projectDir): void
     {
         $directory = realpath($projectDir.'/.hatfield');

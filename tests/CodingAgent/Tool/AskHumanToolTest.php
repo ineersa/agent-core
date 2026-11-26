@@ -131,44 +131,21 @@ final class AskHumanToolTest extends IsolatedKernelTestCase
 
     /* ── definition() tests ── */
 
-    public function testDefinitionNameIsAskHuman(): void
-    {
-        $definition = $this->tool->definition();
-
-        $this->assertSame('ask_human', $definition->name);
-    }
-
-    public function testDefinitionExecutionModeIsInterrupt(): void
-    {
-        $definition = $this->tool->definition();
-
-        $this->assertSame(\Ineersa\AgentCore\Domain\Tool\ToolExecutionMode::Interrupt, $definition->executionMode);
-    }
-
-    public function testDefinitionHasRequiredQuestionProperty(): void
+    public function testDefinitionExposesInterruptContractAndNativeQuestionSchema(): void
     {
         $definition = $this->tool->definition();
         // Typed DTO tool: schema is generated natively from AskHumanArgumentsDTO.
-        $this->assertNull($definition->parametersJsonSchema);
-
         $schema = NativeToolSchemaProbe::for($this->tool);
         $args = $schema['properties'];
 
+        $this->assertSame('ask_human', $definition->name);
+        $this->assertSame(\Ineersa\AgentCore\Domain\Tool\ToolExecutionMode::Interrupt, $definition->executionMode);
+        $this->assertNull($definition->parametersJsonSchema);
         $this->assertSame('object', $schema['type']);
         $this->assertArrayHasKey('question', $args);
         $this->assertArrayNotHasKey('prompt', $args);
         $this->assertContains('question', $schema['required']);
         $this->assertFalse($schema['additionalProperties']);
-    }
-
-    public function testDefinitionSchemaHasNoSchemaProperty(): void
-    {
-        $definition = $this->tool->definition();
-        $this->assertNull($definition->parametersJsonSchema);
-
-        $schema = NativeToolSchemaProbe::for($this->tool);
-        $args = $schema['properties'];
-
         $this->assertArrayNotHasKey('schema', $args);
         $this->assertArrayHasKey('kind', $args);
         $this->assertSame(['confirm'], $args['kind']['enum']);
@@ -178,32 +155,10 @@ final class AskHumanToolTest extends IsolatedKernelTestCase
         $this->assertArrayNotHasKey('question_id', $args);
         $this->assertArrayHasKey('header', $args);
         $this->assertArrayNotHasKey('allow_other', $args);
-    }
-
-    public function testDefinitionChoicesItemsIsStringOnly(): void
-    {
-        $definition = $this->tool->definition();
-        $this->assertNull($definition->parametersJsonSchema);
-
-        $schema = NativeToolSchemaProbe::for($this->tool);
-        $items = $schema['properties']['choices']['items'];
-
-        $this->assertSame(['type' => 'string'], $items);
-    }
-
-    public function testDefinitionHasPromptLine(): void
-    {
-        $definition = $this->tool->definition();
-
         $this->assertNotEmpty($definition->promptLine);
         $this->assertStringContainsString('ask_human', $definition->promptLine);
-    }
-
-    public function testDefinitionHasGuidelines(): void
-    {
-        $definition = $this->tool->definition();
-
         $this->assertNotEmpty($definition->promptGuidelines);
+        $this->assertSame(['type' => 'string'], $args['choices']['items']);
     }
 
     /* ── __invoke() returns immediately with interrupt payload ── */

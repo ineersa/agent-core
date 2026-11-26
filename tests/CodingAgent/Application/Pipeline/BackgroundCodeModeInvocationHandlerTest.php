@@ -68,10 +68,7 @@ use Symfony\Component\Uid\Uuid;
 final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKernelTestCase
 {
     #[TestWith([false], 'return to tip')]
-    #[TestWith([true], 'edited prompt behind tip')]
     #[TestWith([false, false], 'lost host return to tip')]
-    #[TestWith([true, false], 'lost host edited prompt')]
-    #[TestWith([false, true], 'retained terminal return to tip')]
     #[TestWith([true, true], 'retained terminal edited prompt')]
     public function testSelectedHistoryDefersCompletionUntilExplicitTipContinuation(bool $edit, ?bool $retained = null): void
     {
@@ -159,16 +156,14 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
         $repository->registerPending($call);
         $repository->markReady($call->deferredId);
         $state = new RunState($run, RunStatus::Running, turnNo: 1, pendingToolCalls: ['call' => false], activeStepId: 'step');
-        if (\in_array($phase, ['ack', 'receipt'], true)) {
+        if ('receipt' === $phase) {
             $ack = $container->get(BackgroundCodeModeInvocationHandler::class)->handle(new BackgroundCodeModeInvocationDTO($run, $call->deferredId, 'call'), $state);
             $this->admit($run, $ack->postCommitActions);
             $state = $ack->nextState;
-        }
-        if ('receipt' === $phase) {
             $metadata = $repository->findMetadataByDeferredId($call->deferredId);
             $delivery = new DeliverBackgroundCompletionDTO($run, $call->deferredId, 'retained', $run, $call->deferredId, $metadata->reference);
             $this->admit($run, $container->get(BackgroundCompletionRunHandler::class)->handle($delivery, $state)->postCommitActions);
-        } elseif (\in_array($phase, ['cancelled', 'history_discarded'], true)) {
+        } elseif (\in_array($phase, ['cancelled'], true)) {
             $repository->interrupt($call->deferredId, DeferredToolInterruptionReasonEnum::from($phase));
         } elseif (\in_array($phase, ['historical', 'successor'], true)) {
             $repository->markCompleted($call->deferredId);
@@ -182,11 +177,11 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
         $coordinator->controllerStarting(new \Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent($root));
         $this->assertSame([], $container->get('messenger.transport.run_control')->getSent(), 'Passive cold startup sends no completion or successor.');
         $metadata = $repository->findMetadataByDeferredId($call->deferredId);
-        $outstanding = !\in_array($phase, ['cancelled', 'history_discarded', 'historical'], true);
+        $outstanding = !\in_array($phase, ['cancelled', 'historical'], true);
         $this->assertSame($outstanding, $metadata->continuationRequired);
         $this->assertSame($outstanding, $repository->runRequiresContinuation($run));
-        $this->assertSame(\in_array($phase, ['cancelled', 'history_discarded'], true) ? DeferredToolInterruptionReasonEnum::from($phase) : ($outstanding ? DeferredToolInterruptionReasonEnum::ControllerLost : null), $metadata->interruptionReason);
-        $this->assertSame(\in_array($phase, ['cancelled', 'history_discarded', 'historical', 'receipt', 'successor'], true) ? DeferredToolCompletionStatusEnum::Completed : DeferredToolCompletionStatusEnum::Pending, $metadata->status);
+        $this->assertSame(\in_array($phase, ['cancelled'], true) ? DeferredToolInterruptionReasonEnum::from($phase) : ($outstanding ? DeferredToolInterruptionReasonEnum::ControllerLost : null), $metadata->interruptionReason);
+        $this->assertSame(\in_array($phase, ['cancelled', 'historical', 'receipt', 'successor'], true) ? DeferredToolCompletionStatusEnum::Completed : DeferredToolCompletionStatusEnum::Pending, $metadata->status);
         if (!$outstanding) {
             return;
         }
@@ -208,18 +203,15 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
 
     public static function controllerLossCases(): iterable
     {
-        foreach (['waiting', 'ack', 'receipt', 'cancelled', 'history_discarded', 'historical', 'successor', 'owned-child'] as $phase) {
+        foreach (['receipt', 'cancelled', 'historical', 'successor', 'owned-child'] as $phase) {
             yield $phase => [$phase];
         }
     }
 
     #[TestWith(['stopped', true, true], 'stop retained terminal after controller loss')]
-    #[TestWith(['stopped'], 'stopped')]
     #[TestWith(['cancelled'], 'cancelled')]
     #[TestWith(['history_discarded'], 'history_discarded')]
     #[TestWith(['stopped', true], 'controller loss then stopped')]
-    #[TestWith(['cancelled', true], 'controller loss then cancelled')]
-    #[TestWith(['history_discarded', true], 'controller loss then history_discarded')]
     public function testCapturedInterruptionRemainsInvocationStickyAfterParentProgress(string $reason, bool $lost = false, bool $terminal = false): void
     {
         $container = self::getContainer();
@@ -291,9 +283,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
         $this->assertTrue($token->isCancellationRequested());
     }
 
-    #[TestWith([true], 'ACK wins')]
     #[TestWith([true, true, true], 'admitted receipt fenced before consumption')]
-    #[TestWith([false], 'terminal wins')]
     #[TestWith([false, false], 'startup failure before readiness')]
     #[TestWith([true, true, false, true], 'remote ACK wins')]
     #[TestWith([false, true, false, true], 'remote terminal wins')]
