@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Tests\Tool\BackgroundProcess;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
+use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Support\TestProcessRuntime;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -267,6 +269,69 @@ PHP;
         } finally {
             if ($this->lifecycle->isAlive($launch['pid'])) {
                 $this->lifecycle->withSidecarLock($statusPath, fn () => $this->lifecycle->sendKill($launch['pid'], $launch['pgid'], $statusPath));
+            }
+        }
+    }
+
+    #[Test]
+    #[TestWith([0, false])]
+    #[TestWith([3, false])]
+    #[TestWith([0, true])]
+    public function boundedOutputRecordsWriterExitAndCleansFifo(int $writerExit, bool $failFifo): void
+    {
+        $this->assertSame($this->tmpDir, realpath($this->tmpDir));
+        $shim = $this->tmpDir.'/runtime.php';
+        if ($failFifo) {
+            file_put_contents($this->tmpDir.'/mkfifo', "#!/bin/sh\nexit 1\n");
+            chmod($this->tmpDir.'/mkfifo', 0700);
+        }
+        // Run the real wrapper synchronously in place of detaching it, so
+        // launch returns after status publication without polling or signals.
+        file_put_contents($shim, str_replace('WRITER_EXIT', (string) $writerExit, <<<'PHP'
+<?php
+if ($argv[1] === '--internal-bash-log-writer') {
+    stream_copy_to_stream(STDIN, STDOUT);
+    exit(WRITER_EXIT);
+}
+putenv('PATH='.__DIR__.':'.getenv('PATH'));
+passthru(escapeshellarg($argv[2]).' -c '.escapeshellarg($argv[3]));
+PHP));
+        $locator = new class($shim) implements AppExecutableLocator {
+            public function __construct(private readonly string $shim)
+            {
+            }
+
+            public function command(): array
+            {
+                return [\PHP_BINARY, $this->shim];
+            }
+
+            public function path(): string
+            {
+                return $this->shim;
+            }
+        };
+        $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $this->tmpDir), new TestLogger(), new LockFactory(new FlockStore()), new RuntimeProcessConfig($locator, $this->tmpDir));
+        $pid = $this->tmpDir.'/command.pid';
+        $log = $this->tmpDir.'/command.log';
+        $status = $this->tmpDir.'/command.status';
+        if ($failFifo) {
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('readiness: writer-setup-failed');
+        }
+        try {
+            $lifecycle->launchProcess('printf "stdout"; printf "stderr" >&2; exit 7', $pid, $log, $status, boundBashOutput: true);
+            $exit = $lifecycle->readNativeExit($status);
+            $this->assertNotNull($exit);
+            $this->assertSame(7, $exit->exitCode);
+            $this->assertSame($writerExit, $exit->logWriterExitCode);
+            $this->assertSame('stdoutstderr', file_get_contents($log));
+        } finally {
+            $this->assertSame([], glob($this->tmpDir.'/.bash-writer.*'));
+            if ($failFifo) {
+                $this->assertFileDoesNotExist($pid);
+                $this->assertFileDoesNotExist($status);
+                $this->assertSame('', file_get_contents($log));
             }
         }
     }

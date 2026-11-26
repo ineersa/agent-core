@@ -1373,7 +1373,7 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
         $bin = $tmp.'/bin';
         mkdir($bin, 0700);
         $finder = new Symfony\Component\Process\ExecutableFinder();
-        foreach (['bash', 'ps', 'grep'] as $name) {
+        foreach (['bash', 'ps', 'grep', 'mktemp', 'mkfifo', 'rm', 'rmdir'] as $name) {
             $path = $finder->find($name);
             if (null === $path || !symlink($path, $bin.'/'.$name)) {
                 throw new RuntimeException('Unable to prepare isolated Bash smoke PATH: '.$name);
