@@ -265,8 +265,9 @@ as a separate ceremony or inferring permission to merge.
 | TODO → IN-PROGRESS | Recover/create native `task/issue-N`, record owned path, create workspace, setup, publish last |
 | IN-PROGRESS → IN-PROGRESS | Resume this machine's workspace; completed setup is reused for the same existing workspace |
 | CODE-REVIEW → IN-PROGRESS | Return for changes using native PR head/base; provision/setup only if needed |
-| IN-PROGRESS → CODE-REVIEW | Require committed clean workspace, validate actual SHA, recheck HEAD/cleanliness, push without force, verify remote and PR SHA, publish last |
-| CODE-REVIEW → DONE | Protected GitHub merge/head guard, require confirmed MERGED, fast-forward actual merged base, cleanup, verified removal, validate merged base in primary checkout, close completed, publish last |
+| IN-PROGRESS → CODE-REVIEW | Require committed clean workspace, validate actual SHA, recheck HEAD/cleanliness, push without force, verify remote SHA, wait briefly for the PR head to reach it, publish last |
+| CODE-REVIEW → CODE-REVIEW | Resubmit review fixes with the same checks; records the new submitted SHA |
+| CODE-REVIEW → DONE | Require a clean primary checkout on the base branch before merging, protected GitHub merge/head guard, require confirmed MERGED, fast-forward actual merged base, cleanup, verified removal, validate merged base in primary checkout, close completed, publish last |
 | TODO / IN-PROGRESS / CODE-REVIEW → CANCELLED | Reject merged PR, close/verify unmerged PR, cleanup even if never started, verified removal, recheck PR, close not planned, publish last |
 | DONE → DONE / CANCELLED → CANCELLED | Reconcile unfinished local/remote finalization rather than returning early |
 

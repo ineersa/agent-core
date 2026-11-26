@@ -84,7 +84,8 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             }
             $allowed = match ($to) {
                 TaskStatusEnum::IN_PROGRESS => \in_array($current->status, [TaskStatusEnum::TODO, TaskStatusEnum::IN_PROGRESS, TaskStatusEnum::CODE_REVIEW], true),
-                TaskStatusEnum::CODE_REVIEW => TaskStatusEnum::IN_PROGRESS === $current->status,
+                // CODE-REVIEW again resubmits accepted review fixes at a new head.
+                TaskStatusEnum::CODE_REVIEW => \in_array($current->status, [TaskStatusEnum::IN_PROGRESS, TaskStatusEnum::CODE_REVIEW], true),
                 TaskStatusEnum::DONE => \in_array($current->status, [TaskStatusEnum::CODE_REVIEW, TaskStatusEnum::DONE], true) || 'cancel' === $pending,
                 TaskStatusEnum::CANCELLED => \in_array($current->status, [TaskStatusEnum::TODO, TaskStatusEnum::IN_PROGRESS, TaskStatusEnum::CODE_REVIEW, TaskStatusEnum::CANCELLED], true),
                 default => false,
@@ -222,7 +223,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             $pr = $matches[0] ?? $this->pr->create($task->number, $state['branch'], $base, $input->prTitle ?? $task->title, $input->prBody ?? $task->body, $control);
         }
         $this->pr->assertIdentity($pr, $state['branch'], $base, $task->number);
-        $pr = $this->pr->view($pr->number, $control);
+        $pr = $this->pr->awaitHead($pr->number, $sha, $control);
         if ('OPEN' !== $pr->state || $sha !== $pr->headSha) {
             throw new TaskTransitionException('PR is not open at the validated head.');
         }
@@ -268,6 +269,8 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             if ($accepted !== $pr->headSha) {
                 throw new TaskTransitionException('Accepted/submitted SHA differs from the current PR head. Review before retrying.');
             }
+            // Refuse before the irreversible merge, not after it.
+            $this->worktrees->assertPrimaryOnBase($this->primaryRoot, $pr->baseBranch, $control);
             $state['pending_operation'] = 'done';
             $state['submitted_sha'] = $accepted;
             $state['pr_url'] = $pr->url;

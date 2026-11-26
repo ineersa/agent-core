@@ -35,6 +35,8 @@ final class TransitionFixture implements ExecInterface
     public ?string $closeReason = null;
     public ?array $pr = null;
     public int $unlinkedPrViews = 0;
+    /** PR views that still report the previous head after a push, as GitHub may. */
+    public int $stalePrHeadViews = 0;
     public MockClock $clock;
     public array $calls = [];
     public array $hookResults = [];
@@ -96,10 +98,20 @@ final class TransitionFixture implements ExecInterface
         }
         if ('pr' === $args[0]) {
             if ('view' === $args[1]) {
+                if ('OPEN' === ($this->pr['state'] ?? null)) {
+                    // An open PR follows its head branch, as on GitHub.
+                    $this->pr['headRefOid'] = trim($this->workspace->git->gitOk(['rev-parse', 'refs/heads/task/issue-7'], $this->workspace->directory.'/remote.git')->stdout);
+                }
                 if ($this->unlinkedPrViews > 0) {
                     --$this->unlinkedPrViews;
 
                     return $this->json(array_replace($this->pr ?? throw new \LogicException('No fixture PR'), ['closingIssuesReferences' => []]));
+                }
+
+                if ($this->stalePrHeadViews > 0) {
+                    --$this->stalePrHeadViews;
+
+                    return $this->json(array_replace($this->pr ?? throw new \LogicException('No fixture PR'), ['headRefOid' => 'previous-head']));
                 }
 
                 return $this->json($this->pr ?? throw new \LogicException('No fixture PR'));

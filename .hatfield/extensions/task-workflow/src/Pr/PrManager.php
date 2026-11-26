@@ -99,7 +99,7 @@ final readonly class PrManager
                 if (null === $delay) {
                     throw new TaskTransitionException(\sprintf('PR #%d created but GitHub has not linked it to issue #%d yet; retry with pr: %d.', $pr->number, $issue, $pr->number));
                 }
-                $this->waitForLink($delay, $control);
+                $this->wait($delay, 'Interrupted while waiting for GitHub to link the created PR to its issue.', $control);
                 $pr = $this->view($url, $control);
             }
 
@@ -107,6 +107,26 @@ final readonly class PrManager
         } finally {
             $filesystem->remove($file);
         }
+    }
+
+    /**
+     * GitHub moves a PR head asynchronously after a push. The caller has verified
+     * the remote branch at $sha, so only waiting for the PR to catch up is safe.
+     */
+    public function awaitHead(int $number, string $sha, ?InvocationControl $control = null): PullRequestDTO
+    {
+        $pr = $this->view($number, $control);
+        $delays = [1, 2, 4, 8];
+        while ('OPEN' === $pr->state && $sha !== $pr->headSha) {
+            $delay = array_shift($delays);
+            if (null === $delay) {
+                throw new TaskTransitionException(\sprintf('PR #%d head has not reached the pushed revision %s yet; retry the same transition.', $pr->number, $sha));
+            }
+            $this->wait($delay, 'Interrupted while waiting for GitHub to update the PR head.', $control);
+            $pr = $this->view($number, $control);
+        }
+
+        return $pr;
     }
 
     public function merge(PullRequestDTO $pr, string $acceptedHead, ?InvocationControl $control = null): PullRequestDTO
@@ -147,13 +167,13 @@ final readonly class PrManager
         $this->gh(['issue', 'develop', (string) $issue, '--name', $branch, '--base', $base], $control);
     }
 
-    private function waitForLink(int $seconds, ?InvocationControl $control): void
+    private function wait(int $seconds, string $interrupted, ?InvocationControl $control): void
     {
         // Yield in short slices so both hosts observe cancellation/deadlines
         // throughout backoff, not only when launching the next GitHub request.
         for ($slice = 0; $slice < $seconds * 10; ++$slice) {
             if (null !== $control?->interrupted()) {
-                throw new TaskTransitionException('Interrupted while waiting for GitHub to link the created PR to its issue.');
+                throw new TaskTransitionException($interrupted);
             }
             $this->clock->sleep($control?->remainingTimeoutSeconds(0.1) ?? 0.1);
         }
