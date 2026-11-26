@@ -36,6 +36,7 @@ final class BuildDistributionScriptTest extends TestCase
                     ++$phpSetups;
                     $hasPhpSetup = true;
                     $this->assertNotContains('zstd', array_map('trim', explode(',', $step['with']['extensions'])));
+                    $this->assertStringContainsString("runner.os == 'Linux' && ', :zstd'", $step['with']['extensions']);
                     $this->assertStringContainsString('pie:1.6.0@sha256:', $step['with']['tools']);
                 }
                 if ('./.github/actions/setup-zstd' === ($step['uses'] ?? null)) {
@@ -50,8 +51,10 @@ final class BuildDistributionScriptTest extends TestCase
         $action = (string) file_get_contents($root.'/.github/actions/setup-zstd/action.yml');
         $this->assertStringContainsString('kjdev/zstd:0.19.1', $action);
         $this->assertStringContainsString('phpversion("zstd") !== "0.19.1"', $action);
-        $this->assertStringContainsString('phpdismod -v "$ver" -s ALL zstd', $action);
-        $this->assertLessThan(strpos($action, '"$pie" install'), strpos($action, 'phpdismod'));
+        $this->assertStringNotContainsString('phpdismod', $action);
+        $this->assertStringContainsString('if (extension_loaded("zstd"))', $action);
+        $this->assertLessThan(strpos($action, '"$pie" install'), strpos($action, 'if (extension_loaded("zstd"))'));
+        $this->assertSame(2, substr_count($action, 'if ! startup_output='));
         $this->assertStringContainsString('if ! startup_output="$("$php_bin" -r \'\' 2>&1)" || [[ -n "$startup_output" ]]', $action);
     }
 

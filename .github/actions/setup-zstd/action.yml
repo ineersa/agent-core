@@ -10,10 +10,13 @@ runs:
         # PIE needs write access to PHP's ini and extension directories on Linux.
         php_bin="$(command -v php)"
         php_config="$(command -v php-config)"
+        if ! startup_output="$("$php_bin" -r '' 2>&1)" || [[ -n "$startup_output" ]]; then
+          printf '%s\n' "$startup_output" >&2
+          "$php_bin" --ini
+          exit 1
+        fi
+        "$php_bin" -r 'if (extension_loaded("zstd")) { fwrite(STDERR, "zstd must be disabled before PIE installation\n"); exit(1); }'
         if [[ "$RUNNER_OS" == Linux ]]; then
-          # Disable the distro INI before PIE enables its rebuilt module once.
-          ver="$("$php_bin" -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
-          sudo --non-interactive phpdismod -v "$ver" -s ALL zstd
           sudo --non-interactive env "PATH=$PATH" "$pie" install --no-interaction --with-php-config="$php_config" kjdev/zstd:0.19.1
         else
           "$pie" install --no-interaction --with-php-config="$php_config" kjdev/zstd:0.19.1

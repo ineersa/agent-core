@@ -39,7 +39,7 @@ jobs:
         with:
           # Exact patch from tools/static/pin.json (setup-php accepts patch values).
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip${{ runner.os == 'Linux' && ', :zstd' || '' }}
           coverage: none
           tools: composer:v2, pie:1.6.0@sha256:81041b276f4e23dfdfa6dc941e5745f9adec824a1bcf6141e226181ef43f519e
 
@@ -102,7 +102,7 @@ jobs:
           fail-fast: true
         with:
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip${{ runner.os == 'Linux' && ', :zstd' || '' }}
           coverage: none
           tools: composer:v2, pie:1.6.0@sha256:81041b276f4e23dfdfa6dc941e5745f9adec824a1bcf6141e226181ef43f519e
 
@@ -250,7 +250,7 @@ jobs:
           fail-fast: true
         with:
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip${{ runner.os == 'Linux' && ', :zstd' || '' }}
           coverage: none
           tools: composer:v2, pie:1.6.0@sha256:81041b276f4e23dfdfa6dc941e5745f9adec824a1bcf6141e226181ef43f519e
 
