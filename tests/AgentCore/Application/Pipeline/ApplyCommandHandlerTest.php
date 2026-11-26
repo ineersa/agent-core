@@ -45,31 +45,9 @@ use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 
 final class ApplyCommandHandlerTest extends TestCase
 {
-    public function testLegacyExtensionDeliveryIsDecodedAndRejectedWithoutEnqueueing(): void
-    {
-        $command = new ApplyCommand('legacy', 1, 'step', 1, 'key', 'ext:obsolete');
-        $serialized = serialize($command);
-        $legacy = str_replace(':7:{', ':8:{', substr($serialized, 0, -1))
-            .serialize('options').serialize(['cancel_safe' => true]).'}';
-        $payload = addslashes(str_replace($serialized, $legacy, serialize(new Envelope($command))));
-        $decoded = (new PhpSerializer())->decode(['body' => $payload])->getMessage();
-        $this->assertEquals($command, $decoded);
-
-        $store = new InMemoryCommandStore();
-        $handler = new ApplyCommandHandler($store, new EventFactory(), new AgentMessageNormalizer());
-        $result = $handler->handle($decoded, RunState::queued('legacy'));
-
-        $this->assertCount(1, $result->events);
-        $this->assertSame(RunEventTypeEnum::AgentCommandRejected->value, $result->events[0]->type);
-        $this->assertSame('Unknown command kind "ext:obsolete".', $result->events[0]->payload['reason']);
-        $this->assertSame([], $store->pending('legacy'));
-    }
-
     public function testFollowUpAllowedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();

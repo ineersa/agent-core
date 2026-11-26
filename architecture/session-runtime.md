@@ -55,8 +55,7 @@ attempt, batch/call identity and operation key before committing. Completed/stal
 messages are no-ops where that lifecycle provides a guard; the pending-only
 command mailbox is not a completed-command receipt ledger. Command admission is
 core-only. Replay ignores the obsolete `options` field on historical command
-events; native pending rows and in-flight command messages can still be decoded
-without applying those options.
+events.
 
 Tool execution can reuse stored same-call outcomes, but that does not exclude
 concurrent duplicate side effects. Bash also has native launch evidence. Child

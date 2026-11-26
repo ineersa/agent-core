@@ -18,14 +18,4 @@ final readonly class PendingCommand
         public array $payload = [],
     ) {
     }
-
-    /** @param array{runId: string, kind: string, idempotencyKey: string, payload: array<string, mixed>} $data */
-    public function __unserialize(array $data): void
-    {
-        // Pending rows can outlive an upgrade. Ignore the old cancellation options.
-        $this->runId = $data['runId'];
-        $this->kind = $data['kind'];
-        $this->idempotencyKey = $data['idempotencyKey'];
-        $this->payload = $data['payload'];
-    }
 }

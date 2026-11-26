@@ -4,13 +4,6 @@ includes:
 
 parameters:
     level: 6
-    ignoreErrors:
-        # Native deserialization initializes a fresh instance via the parent constructor.
-        -
-            message: '#^Static call to __construct\(\) is only allowed on a parent class in the constructor\.$#'
-            identifier: constructor.call
-            path: src/AgentCore/Domain/Message/ApplyCommand.php
-            count: 1
     treatPhpDocTypesAsCertain: false
     paths:
         - src/

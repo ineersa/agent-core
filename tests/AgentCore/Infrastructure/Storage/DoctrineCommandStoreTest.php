@@ -9,11 +9,9 @@ use Doctrine\DBAL\Exception;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
-use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Infrastructure\Storage\DoctrineCommandStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 
 final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
@@ -42,26 +40,6 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $this->assertTrue($other->enqueue($first));
         $this->assertTrue($other->enqueue($second));
         $this->assertFalse($other->has('other-run', 'first'));
-    }
-
-    public function testLegacyPendingRowDecodesWithoutCommandOptions(): void
-    {
-        $store = self::getContainer()->get(CommandStoreInterface::class);
-        $command = new PendingCommand('legacy', 'steer', 'key', ['text' => 'kept']);
-        $store->enqueue($command);
-        // Reconstruct the former native DTO shape inside the Messenger envelope.
-        $serialized = serialize($command);
-        $optionsClass = CommandCancellationOptions::class;
-        $options = \sprintf('O:%d:"%s":1:{s:4:"safe";b:1;}', \strlen($optionsClass), $optionsClass);
-        $legacy = str_replace(':4:{', ':5:{', substr($serialized, 0, -1))
-            .serialize('options').$options.'}';
-        $payload = addslashes(str_replace($serialized, $legacy, serialize(new Envelope($command))));
-        self::getContainer()->get(Connection::class)->executeStatement(
-            'UPDATE run_command SET payload = ?, payload_hash = ? WHERE run_id = ?',
-            [$payload, hash('sha256', $payload), 'legacy'],
-        );
-
-        $this->assertEquals([$command], $this->freshStore()->pending('legacy'));
     }
 
     public function testFinalizationWithoutEnqueueLeavesNoIdentityMarkers(): void
