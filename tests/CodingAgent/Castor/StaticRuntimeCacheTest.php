@@ -36,13 +36,15 @@ final class StaticRuntimeCacheTest extends TestCase
             $filesystem->dumpFile($compiled.'/php', "#!/bin/sh\nexit 0\n");
             $filesystem->chmod($compiled.'/php', 0755);
             $filesystem->dumpFile($compiled.'/micro.sfx', 'compiled micro');
-            $fingerprint = str_repeat('a', 64);
+            $inputs = ['target' => 'linux-amd64', 'runtime_revision' => 1];
+            $fingerprint = distribution_runtime_fingerprint_from_inputs($inputs);
             $inventory = $work.'/downloads/.cache.json';
             $filesystem->dumpFile($inventory, json_encode(['curl' => ['source' => [
                 'cache_type' => 'archive', 'filename' => '/private/downloads/curl.tar.gz', 'version' => '1.0',
                 'hash' => str_repeat('b', 40), 'config' => ['private' => '/not-for-publication'],
             ]]], \JSON_THROW_ON_ERROR));
-            $provenance = distribution_runtime_provenance($inventory, 'linux-amd64', $fingerprint, 1);
+            $provenance = distribution_runtime_provenance($inventory, $inputs);
+            $this->assertSame($inputs, $provenance['fingerprint_inputs'], 'Provenance names the inputs behind its key.');
             $this->assertSame(['type' => 'archive', 'filename' => 'curl.tar.gz', 'version' => '1.0', 'hash_algorithm' => 'sha1', 'hash' => str_repeat('b', 40)], $provenance['downloads']['curl']['source']);
             $this->assertFalse(distribution_cached_runtime_is_valid($cache, $fingerprint));
             distribution_cache_runtime($cache, $compiled, $provenance);
@@ -66,7 +68,7 @@ final class StaticRuntimeCacheTest extends TestCase
         }
     }
 
-    public function testAppAndImageVersionsDoNotInvalidateRuntimeButBuildFlagsDo(): void
+    public function testOnlyRuntimeInputsChangeTheKey(): void
     {
         require_once ProjectDir::get().'/.castor/distribution.php';
         try {
@@ -89,12 +91,15 @@ final class StaticRuntimeCacheTest extends TestCase
             putenv(false === $version ? 'HATFIELD_BUILD_VERSION' : 'HATFIELD_BUILD_VERSION='.$version);
         }
 
-        $imageVersion = getenv('ImageVersion');
-        try {
-            putenv('ImageVersion='.$imageVersion.'-fingerprint-test');
-            $this->assertSame($original, distribution_runtime_fingerprint($target, $pin));
-        } finally {
-            putenv(false === $imageVersion ? 'ImageVersion' : 'ImageVersion='.$imageVersion);
+        // Runner labels and search paths vary across VMs with identical toolchains.
+        foreach (['ImageVersion', 'ImageOS', 'PKG_CONFIG_PATH', 'CMAKE_PREFIX_PATH', 'LIBRARY_PATH'] as $label) {
+            $originalValue = getenv($label);
+            try {
+                putenv($label.'='.$originalValue.'-fingerprint-test');
+                $this->assertSame($original, distribution_runtime_fingerprint($target, $pin), $label);
+            } finally {
+                putenv(false === $originalValue ? $label : $label.'='.$originalValue);
+            }
         }
 
         foreach (['CFLAGS', 'SPC_TARGET', 'SPC_TOOLCHAIN', 'SPC_USE_LLVM', 'SPC_MUSL_DYNAMIC'] as $selector) {

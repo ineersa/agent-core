@@ -50,7 +50,8 @@ Remove once upstream no longer realpaths AT_EXECFN on Linux.
    renamed fused binary launches broker, Amp SQLite worker, and messenger consumers.
 
 The fingerprint covers the target, pins (including `runtime_revision`), patch,
-SPC recipe, and host toolchain identity and selectors. It excludes the app PHAR
+SPC recipe, OS identity, compiler version line and explicit build selectors.
+`castor distribution:runtime-fingerprint` prints its inputs to stderr. It excludes the app PHAR
 and `composer.lock`. Castor keeps `php`, `micro.sfx`, `sha256.json`, and
 `provenance.json` under `var/tmp/static-runtime/<fingerprint>/`. The release
 workflow retains the same files in a persistent `static-runtime-<fingerprint>`

@@ -384,7 +384,8 @@ function distribution_assert_php_source_sha256(string $workDir, string $phpVersi
 function distribution_build_micro_sfx(string $target, bool $requireCachedRuntime = false): array
 {
     $pin = distribution_static_pin();
-    $fingerprint = distribution_runtime_fingerprint($target, $pin);
+    $fingerprintInputs = distribution_runtime_fingerprint_inputs($target, $pin);
+    $fingerprint = distribution_runtime_fingerprint_from_inputs($fingerprintInputs);
     $cacheRoot = distribution_root().'/var/tmp/static-runtime';
     $filesystem = new Filesystem();
     $filesystem->mkdir($cacheRoot);
@@ -407,7 +408,7 @@ function distribution_build_micro_sfx(string $target, bool $requireCachedRuntime
         echo "Building native runtime {$fingerprint}\n";
         $workDir = distribution_root().'/var/tmp/static-build/'.$fingerprint;
         distribution_compile_runtime($workDir, $spcBin, $pin);
-        distribution_cache_runtime($cache, $workDir.'/buildroot/bin', distribution_runtime_provenance($workDir.'/downloads/.cache.json', $target, $fingerprint, $pin['runtime_revision']));
+        distribution_cache_runtime($cache, $workDir.'/buildroot/bin', distribution_runtime_provenance($workDir.'/downloads/.cache.json', $fingerprintInputs));
 
         return ['spc' => $spcBin, 'micro_sfx' => $cache.'/micro.sfx', 'work_dir' => $cache];
     } finally {

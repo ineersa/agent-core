@@ -48,11 +48,17 @@ Native binaries embed the same packaged resources as the PHAR (selected docs inc
 ## Compiled runtime cache
 
 `castor distribution:runtime-fingerprint` prints the key for the current host.
+It also writes each key input as JSON to stderr, and the same inputs are stored
+as `fingerprint_inputs` in the cached runtime's `provenance.json`, so a cache miss
+shows what changed.
 The key covers the native target, pin and patch, SPC arguments and library
-recipes, static prerequisites, OS, toolchain and SDK identities, and relevant
-build environment (including `ImageOS`). It excludes `ImageVersion`, a runner
-rollout label that can change even when those build inputs do not. The app's PHAR, Composer
-lockfile and packaging task source do not contribute to it. SPC still resolves
+recipes, static prerequisites, the OS identity (Linux `ID`/`VERSION_ID`; macOS
+major version and SDK), the compiler's version line, and explicit build selectors
+(`CC`, `CFLAGS`, `SPC_*` and similar). Tool binary digests, full OS release files,
+search paths and runner labels such as `ImageVersion` are excluded: they vary
+across runner VMs with identical toolchains. Increment `runtime_revision` after a
+toolchain change that the compiler version line does not show. The app's PHAR,
+Composer lockfile and packaging task source do not contribute to the key. SPC still resolves
 some dependency downloads without immutable source or binary hashes: this is
 reuse of a verified recipe, not a lock of all transitive native inputs.
 
