@@ -44,6 +44,7 @@ final class BuildDistributionScriptTest extends TestCase
                 if ('./.github/actions/static-prerequisites' === $uses) {
                     $setup[] = 'prerequisites';
                 } elseif (str_starts_with($uses, 'shivammathur/setup-php@')) {
+                    $this->assertSame('8.5.13', $step['with']['php-version'], $job);
                     $this->assertSame('composer:v2', $step['with']['tools']);
                     $this->assertSame(5, $step['timeout-minutes']);
                     $this->assertTrue($step['env']['fail-fast']);
@@ -59,6 +60,17 @@ final class BuildDistributionScriptTest extends TestCase
             }
             $this->assertSame('static' === $job ? ['prerequisites', 'php', 'startup', 'composer'] : ['php', 'startup', 'composer'], $setup, $job);
         }
+    }
+
+    public function testNativeReleasePinsLinuxAmd64RunnerAndBoundsStaticBuild(): void
+    {
+        $workflow = \Symfony\Component\Yaml\Yaml::parseFile(ProjectDir::get().'/.github/workflows/release.yml');
+        $static = $workflow['jobs']['static'];
+        $runners = array_column($static['strategy']['matrix']['include'], 'runner', 'target');
+        $this->assertSame('ubuntu-26.04', $runners['linux-amd64']);
+        $this->assertSame('${{ matrix.runner }}', $static['runs-on']);
+        $steps = array_column($static['steps'], null, 'name');
+        $this->assertSame(45, $steps['Build static binary via Castor (exact PHAR handoff)']['timeout-minutes']);
     }
 
     public function testRuntimeRestoreRecoversOnlyAnExactDraftPrerelease(): void
