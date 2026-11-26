@@ -5,6 +5,16 @@ description: Skill discovery, model catalog, /skill commands, and on-demand-only
 
 # Skills
 
+The **Skills** tab in `hatfield setup` lists definitions with their source path
+and shadowing information. Use **F2** to switch to the owning scope before
+editing frontmatter or deleting a definition. Custom-path and managed definitions
+are read-only. Setup preserves the Markdown body and asks for confirmation before
+deletion, showing the exact target and any definition that would become active.
+Deleting a skill removes its entire directory including assets. Setup does not
+materialize built-in skills on a fresh home; they appear here after normal skill
+discovery. You can edit them in their owning scope, but normal discovery can overwrite edits. You cannot delete them in
+setup.
+
 Skills are Markdown packages (`SKILL.md` + optional references) that teach the
 agent specialized workflows. Hatfield discovers them from bundled, project, and
 user locations, injects a model-visible catalog of discoverable skills, and

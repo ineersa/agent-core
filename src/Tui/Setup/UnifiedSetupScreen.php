@@ -27,7 +27,7 @@ final readonly class UnifiedSetupScreen
     {
     }
 
-    /** @param \Closure(SettingsLayerEnum): array{string, CoreSettingsScreen, ProvidersSetupFlowInterface, SetupScreen, ExtensionsSetupScreen} $build */
+    /** @param \Closure(SettingsLayerEnum): array{string, CoreSettingsScreen, ProvidersSetupFlowInterface, SetupScreen, ExtensionsSetupScreen, DefinitionSetupScreen, DefinitionSetupScreen} $build */
     public function mount(Tui $tui, SettingsLayerEnum $layer, \Closure $build): void
     {
         $body = new ContainerWidget();
@@ -54,12 +54,12 @@ final readonly class UnifiedSetupScreen
         $focus = [];
         $providerInputPending = static fn (): bool => false;
         $load = function (?int $index) use ($tui, $tabSlot, $target, $notice, $build, $removeHint, &$layer, &$tabs, &$focus, &$providerInputPending): void {
-            [$path, $settings, $flow, $providers, $extensions] = $build($layer);
+            [$path, $settings, $flow, $providers, $extensions, $skills, $agents] = $build($layer);
             $providerInputPending = $providers->hasUnsubmittedInput(...);
             $exit = $tui->stop(...);
             $target->setText($this->theme->color(ThemeColorEnum::Accent, $layer->name).' scope  ·  '.$path);
             $notice->setText('');
-            $panes = [new ContainerWidget(), new ContainerWidget(), new ContainerWidget()];
+            $panes = array_map(static fn (): ContainerWidget => new ContainerWidget(), range(1, 5));
             foreach ($panes as $pane) {
                 $pane->setStyle(new Style(padding: Padding::xy(2, 1), gap: 1));
             }
@@ -67,15 +67,19 @@ final readonly class UnifiedSetupScreen
                 new TabItem('settings', 'Settings', $panes[0]),
                 new TabItem('providers', 'Providers', $panes[1]),
                 new TabItem('extensions', 'Extensions', $panes[2]),
+                new TabItem('skills', 'Skills', $panes[3]),
+                new TabItem('agents', 'Agents', $panes[4]),
             ]);
             $tabSlot->clear()->add($tabs);
             // Mount each pane while attached so the native focus manager can accept its control.
-            for ($i = 0; $i < 3; ++$i) {
+            for ($i = 0; $i < 5; ++$i) {
                 $tabs->setActiveTab($i);
                 match ($i) {
                     0 => $settings->mount($tui, $panes[0], $layer, $flow, $exit, $this->heading(...), $this->theme, $removeHint),
                     1 => $providers->mount($tui, $panes[1], $exit),
                     2 => $extensions->mount($tui, $panes[2], $exit),
+                    3 => $skills->mount($tui, $panes[3], $exit),
+                    4 => $agents->mount($tui, $panes[4], $exit),
                 };
                 $focus[$i] = $tui->getFocus();
             }
@@ -105,7 +109,7 @@ final readonly class UnifiedSetupScreen
             } else {
                 $notice->setText('');
                 $focus[$index] = $current;
-                $index = ($index + ($next ? 1 : 2)) % 3;
+                $index = ($index + ($next ? 1 : 4)) % 5;
                 $tabs->setActiveTab($index);
                 $tui->setFocus($focus[$index]);
             }

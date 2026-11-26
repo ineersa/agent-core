@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Yaml\Yaml;
 
@@ -121,6 +122,17 @@ final class AppConfigLoader
      */
     public function resolveLayers(string $cwd, array $defaultsRaw, array $userRaw, array $projectRaw): SettingsResolutionDTO
     {
+        $userExtensions = $userRaw['extensions'] ?? [];
+        if (\is_array($userExtensions) && \array_key_exists('project_extensions', $userExtensions)) {
+            throw new InvalidConfigurationException('extensions.project_extensions is only allowed in project settings.');
+        }
+        $projectExtensions = $projectRaw['extensions'] ?? [];
+        $additions = \is_array($projectExtensions) && \array_key_exists('project_extensions', $projectExtensions)
+            ? $projectExtensions['project_extensions'] : [];
+        if (!\is_array($additions) || !array_is_list($additions) || $additions !== array_filter($additions, static fn (mixed $class): bool => \is_string($class) && '' !== trim($class))) {
+            throw new InvalidConfigurationException('extensions.project_extensions must be a list of non-empty extension class names.');
+        }
+
         $merged = $defaultsRaw;
         if ([] !== $userRaw) {
             $merged = $this->overlayConfig($merged, $userRaw);

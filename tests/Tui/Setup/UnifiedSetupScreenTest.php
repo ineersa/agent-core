@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Setup;
 
 use Ineersa\CodingAgent\CLI\Extensions\ExtensionsSetupFlow;
 use Ineersa\CodingAgent\CLI\Providers\ProvidersSetupFlow;
+use Ineersa\CodingAgent\CLI\Setup\DefinitionSetupService;
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
@@ -13,12 +14,14 @@ use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SetupSettingsService;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\Tui\Setup\CoreSettingsScreen;
+use Ineersa\Tui\Setup\DefinitionSetupScreen;
 use Ineersa\Tui\Setup\ExtensionsSetupScreen;
 use Ineersa\Tui\Setup\SetupScreen;
 use Ineersa\Tui\Setup\UnifiedSetupScreen;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
@@ -49,7 +52,14 @@ final class UnifiedSetupScreenTest extends PerMethodIsolatedKernelTestCase
         $originalUser = is_file($userPath) ? file_get_contents($userPath) : null;
         $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
         $provider = null;
+        $agentDir = $cwd.'/.hatfield/agents';
+        $agent = $agentDir.'/fixture.md';
+        $rawAgent = "---\nname: fixture\ndescription: Original\n---\nBody\n";
         foreach ([90, 48] as $width) {
+            $this->assertFalse(is_link($agentDir));
+            $this->assertFalse(is_link($agent));
+            $this->assertTrue(!file_exists($agentDir) || realpath($agentDir) === $agentDir);
+            (new Filesystem())->dumpFile($agent, $rawAgent);
             $terminal = new VirtualTerminal(columns: $width, rows: 30);
             $tui = new Tui(terminal: $terminal);
             (new UnifiedSetupScreen($theme))->mount($tui, SettingsLayerEnum::User, static function (SettingsLayerEnum $scope) use ($container, $writer, $cwd, $theme, &$provider): array {
@@ -57,7 +67,10 @@ final class UnifiedSetupScreenTest extends PerMethodIsolatedKernelTestCase
                 $extension = clone $container->get(ExtensionsSetupFlow::class);
                 $extension->layer = $scope;
 
-                return [$writer->layerPath($scope, $cwd), $container->get(CoreSettingsScreen::class), $provider, new SetupScreen($provider), new ExtensionsSetupScreen($extension, $theme, new NullLogger())];
+                $service = $container->get(DefinitionSetupService::class);
+                $app = $container->get(AppConfig::class);
+
+                return [$writer->layerPath($scope, $cwd), $container->get(CoreSettingsScreen::class), $provider, new SetupScreen($provider), new ExtensionsSetupScreen($extension, $theme, new NullLogger()), new DefinitionSetupScreen($service, $scope, $app, new NullLogger(), $theme, skill: true), new DefinitionSetupScreen($service, $scope, $app, new NullLogger(), $theme, skill: false)];
             });
             $tui->start();
             $this->assertStringContainsString('Preferences', $this->render($tui, $terminal));
@@ -74,7 +87,38 @@ final class UnifiedSetupScreenTest extends PerMethodIsolatedKernelTestCase
                     $this->assertMatchesRegularExpression('/Observational Memory[^\r\n]*(Available|Installed)/', $extensions);
                 }
                 $this->assertStringNotContainsString('→ Back', $extensions);
-                $terminal->simulateInput("\t");
+                $terminal->simulateInput("\t"); // Skills.
+                $this->assertStringContainsString('No definitions found', $this->render($tui, $terminal));
+                $terminal->simulateInput("\t"); // Agents.
+                $this->assertStringContainsString('fixture · project · read-only', $this->render($tui, $terminal));
+                if ($width >= 90) {
+                    $terminal->simulateInput("\x1bOQ"); // Project.
+                    $this->select($tui, $agent);
+                    $this->select($tui, 'edit');
+                    $this->field($tui, 'name');
+                    $terminal->simulateInput('!');
+                    $terminal->simulateInput("\t");
+                    $this->assertStringContainsString('Confirm or cancel the open editor first', $this->render($tui, $terminal));
+                    $terminal->simulateInput("\x1bOQ");
+                    $this->assertStringContainsString('Project scope', $this->render($tui, $terminal));
+                    $terminal->simulateInput("\r");
+                    $this->assertStringContainsString('Not saved', $this->render($tui, $terminal));
+                    $this->assertSame($rawAgent, file_get_contents($agent));
+                    $this->field($tui, 'description');
+                    $terminal->simulateInput(' updated');
+                    $terminal->simulateInput("\r");
+                    $this->assertStringContainsString('Original updated', (string) file_get_contents($agent));
+                    $terminal->simulateInput("\x1b");
+                    $this->select($tui, 'delete');
+                    $this->assertStringContainsString('Confirm deletion', $this->render($tui, $terminal));
+                    $this->select($tui, 'cancel');
+                    $this->assertFileExists($agent);
+                    $this->select($tui, 'delete');
+                    $this->select($tui, 'confirm');
+                    $this->assertFileDoesNotExist($agent);
+                    $terminal->simulateInput("\x1bOQ"); // User.
+                }
+                $terminal->simulateInput("\t"); // Settings.
                 $terminal->simulateInput("\x1bOQ");
                 $this->assertStringContainsString('Project scope', $this->render($tui, $terminal));
                 $this->select($tui, 'sessions');
@@ -153,7 +197,7 @@ final class UnifiedSetupScreenTest extends PerMethodIsolatedKernelTestCase
                 $provider->removeCustom('live-fixture');
                 $before = file_get_contents($path);
                 $terminal->simulateInput("\x1b");
-                $terminal->simulateInput("\x1b[Z"); // Extensions.
+                $terminal->simulateInput("\x1b[Z\x1b[Z\x1b[Z"); // Agents → Skills → Extensions.
                 $this->select($tui, 'safe_guard');
                 $terminal->simulateInput("\x1b"); // Browsing and cancelling do not write.
                 $this->assertSame($before, file_get_contents($path));

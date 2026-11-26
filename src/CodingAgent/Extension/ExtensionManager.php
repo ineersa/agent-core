@@ -182,7 +182,7 @@ final class ExtensionManager
     private function getEnabledClasses(): array
     {
         /* @var list<class-string> */
-        return array_values(array_filter($this->config->extensions->enabled, \is_string(...)));
+        return array_values(array_filter($this->config->extensions->enabledClasses(), \is_string(...)));
     }
 
     /**

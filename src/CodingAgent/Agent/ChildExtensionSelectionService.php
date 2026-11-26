@@ -68,7 +68,7 @@ final readonly class ChildExtensionSelectionService
         $this->extensionManager->loadExtensions();
 
         $globallyEnabled = array_fill_keys(
-            array_values(array_filter($this->appConfig->extensions->enabled, \is_string(...))),
+            array_values(array_filter($this->appConfig->extensions->enabledClasses(), \is_string(...))),
             true,
         );
 
@@ -79,7 +79,7 @@ final readonly class ChildExtensionSelectionService
 
         foreach ($selected as $className) {
             if (!isset($globallyEnabled[$className])) {
-                throw new \RuntimeException(\sprintf('%s: selected extension "%s" is not in extensions.enabled (not available to this process).', $context, $className));
+                throw new \RuntimeException(\sprintf('%s: selected extension "%s" is not enabled in the parent via extensions.enabled or extensions.project_extensions (not available to this process).', $context, $className));
             }
 
             if (!class_exists($className)) {

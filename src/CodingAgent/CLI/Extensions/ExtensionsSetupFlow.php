@@ -43,6 +43,8 @@ final class ExtensionsSetupFlow
     public array $settings = [];
     /** @var array<string, string> */
     public array $members = [];
+
+    public string $parentLabel = 'Enabled for parent';
     private ConfigurationInterface $configuration;
     private string $class;
     private string $key;
@@ -131,7 +133,7 @@ final class ExtensionsSetupFlow
                 }
             }
             $changes = [];
-            foreach (['extensions.enabled', 'forks.extensions.enabled', 'forks.extensions.always_on', 'agents.extensions.always_on'] as $listPath) {
+            foreach (['extensions.enabled', 'extensions.project_extensions', 'forks.extensions.enabled', 'forks.extensions.always_on', 'agents.extensions.always_on'] as $listPath) {
                 $list = $this->value($local, $listPath);
                 if (null === $list) {
                     continue;
@@ -175,6 +177,7 @@ final class ExtensionsSetupFlow
         $this->class = $class;
         $this->key = $root->getName();
         try {
+            $layers = $this->loader->load($this->resources->getDefaultsPath(), $this->app->cwd);
             $effective = $this->snapshot();
         } catch (\Throwable $error) {
             throw new ExtensionSetupRefusalException('Cannot read settings for this scope. Check its settings.yaml and any inherited settings.', previous: $error);
@@ -187,11 +190,18 @@ final class ExtensionsSetupFlow
         $this->nodes = [];
         $this->collectNodes($root);
         $in = fn (string $path): bool => \in_array($class, $this->value($effective, $path) ?? [], true);
+        $local = SettingsLayerEnum::Project === $this->layer ? $layers->projectRaw : $layers->userRaw;
+        $this->parentLabel = null === $this->value($local, 'extensions.enabled')
+            ? 'Base enablement (inherited; editing creates a replacement)'
+            : 'Base enablement (replacement in this scope)';
         $this->members = [
             'parent' => $in('extensions.enabled') ? 'true' : 'false',
             'forks' => $in('forks.extensions.always_on') ? 'always_on' : ($in('forks.extensions.enabled') ? 'enabled' : 'off'),
             'agents' => $in('agents.extensions.always_on') ? 'true' : 'false',
         ];
+        if (SettingsLayerEnum::Project === $this->layer) {
+            $this->members['addition'] = $in('extensions.project_extensions') ? 'true' : 'false';
+        }
     }
 
     /** @return list<string> */
@@ -245,7 +255,11 @@ final class ExtensionsSetupFlow
             'forks.extensions.enabled' => 'enabled' === $this->members['forks'],
             'agents.extensions.always_on' => 'true' === $this->members['agents'],
         ];
-        if (!$membership['extensions.enabled'] && ($membership['forks.extensions.always_on'] || $membership['forks.extensions.enabled'] || $membership['agents.extensions.always_on'])) {
+        if (SettingsLayerEnum::Project === $this->layer) {
+            $membership['extensions.project_extensions'] = 'true' === $this->members['addition'];
+        }
+        $parentEnabled = $membership['extensions.enabled'] || ($membership['extensions.project_extensions'] ?? false);
+        if (!$parentEnabled && ($membership['forks.extensions.always_on'] || $membership['forks.extensions.enabled'] || $membership['agents.extensions.always_on'])) {
             throw new \RuntimeException('Enable the parent extension before selecting it for forks or agents.');
         }
         foreach ($membership as $path => $enabled) {
@@ -276,7 +290,7 @@ final class ExtensionsSetupFlow
             $accessor->setValue($local, '['.implode('][', $parts).']', $value);
         }
         $candidate = $this->snapshot($local)['extensions']['settings'][$this->key] ?? [];
-        if ([] !== $edits || $membership['extensions.enabled']) {
+        if ([] !== $edits || $parentEnabled) {
             (new Processor())->processConfiguration($this->configuration, [$candidate]);
         }
         if ([] !== $edits) {
@@ -287,9 +301,11 @@ final class ExtensionsSetupFlow
                 // An empty array would replace inherited mappings as a list; remove the override instead.
                 $remove[] = 'extensions';
             }
-            if (isset($changes['extensions'], $changes['extensions.enabled'])) {
-                $changes['extensions']['enabled'] = $changes['extensions.enabled'];
-                unset($changes['extensions.enabled']);
+            foreach (['enabled', 'project_extensions'] as $key) {
+                if (isset($changes['extensions'], $changes['extensions.'.$key])) {
+                    $changes['extensions'][$key] = $changes['extensions.'.$key];
+                    unset($changes['extensions.'.$key]);
+                }
             }
         }
         if ([] !== $changes || [] !== $remove) {

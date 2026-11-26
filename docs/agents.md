@@ -5,6 +5,15 @@ description: Agent definitions, discovery, subagent execution, retrieval, and li
 
 # Agent Definitions
 
+The **Agents** tab in `hatfield setup` lists definitions with their source path
+and shadowing information. Use **F2** to switch to the owning scope before
+editing frontmatter or deleting a definition. Custom-path and managed definitions
+are read-only. Setup preserves the Markdown body and asks for confirmation before
+deletion, showing the exact target and any definition that would become active.
+Deleting an agent removes only its definition file.
+Bundled agents installed by `agents:init` can be edited in User scope, but not
+deleted from setup. Running `agents:init --force` can overwrite those edits.
+
 Named child-agent roles live in Markdown files with YAML frontmatter. The
 model-visible `subagent` tool launches one child per call. Submit independent
 calls together for concurrent execution through the normal tool scheduler.
@@ -49,6 +58,13 @@ System prompt body for the child agent…
 | `systemPromptMode` | `replace` or `append` body vs parent system prompt | `replace` |
 
 MCP entries inside `tools` use `mcp:` selectors — see [mcp.md](mcp.md).
+
+In setup, press Enter on **Model**, **Thinking**, or **System prompt mode** to
+open a picker. Model and thinking can inherit the parent/default value. The
+thinking picker shows levels for the selected model, or the configured default
+model when there is no override. In **Extensions**, Space toggles an optional
+extension and Enter applies the selection. The list uses parent-enabled classes;
+agent always-on extensions are resolved separately.
 
 Body after frontmatter is the child system prompt content.
 

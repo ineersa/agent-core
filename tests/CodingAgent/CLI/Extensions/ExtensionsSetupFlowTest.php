@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
+use Ineersa\CodingAgent\Config\SetupSettingsService;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
 use Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
@@ -224,11 +225,32 @@ final class ExtensionsSetupFlowTest extends PerMethodIsolatedKernelTestCase
         }
     }
 
+    public function testProjectAdditionLeavesInheritedEnablementAndUserSettingsUntouched(): void
+    {
+        $flow = self::getContainer()->get(ExtensionsSetupFlow::class);
+        $writer = self::getContainer()->get(SettingsOverrideWriter::class);
+        $cwd = $this->isolatedCwd();
+        foreach ([$cwd, $this->isolatedHome()] as $base) {
+            $this->assertSame($base.'/.hatfield', realpath($base.'/.hatfield'));
+            $this->assertFalse(is_link($base.'/.hatfield/settings.yaml'));
+        }
+        $writer->setMany(SettingsLayerEnum::User, $cwd, ['extensions.enabled' => [SafeGuardExtension::class]]);
+        $flow->select('scheduling');
+        $flow->members['addition'] = 'true';
+        $this->assertTrue($flow->save([]));
+        $loader = self::getContainer()->get(AppConfigLoader::class);
+        $resources = self::getContainer()->get(AppResourceLocator::class);
+        $layers = $loader->load($resources->getDefaultsPath(), $cwd);
+        $this->assertSame(['enabled' => [SafeGuardExtension::class]], $layers->userRaw['extensions']);
+        $this->assertSame(['project_extensions' => [SchedulingExtension::class]], $layers->projectRaw['extensions']);
+        $this->assertSame([SafeGuardExtension::class, SchedulingExtension::class], self::getContainer()->get(SetupSettingsService::class)->loadConfig()->extensions->enabledClasses());
+    }
+
     public function testDisablingParentWithDefaultChildSelectionsIsRefused(): void
     {
         $flow = self::getContainer()->get(ExtensionsSetupFlow::class);
         $flow->select('safe_guard');
-        $this->assertSame(['parent' => 'true', 'forks' => 'always_on', 'agents' => 'true'], $flow->members);
+        $this->assertSame(['parent' => 'true', 'forks' => 'always_on', 'agents' => 'true', 'addition' => 'false'], $flow->members);
         $flow->members['parent'] = 'false';
 
         $this->expectException(\RuntimeException::class);

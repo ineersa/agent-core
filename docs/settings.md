@@ -10,7 +10,7 @@ in home or project settings. Hatfield does **not** copy defaults into your home 
 
 ## Interactive setup
 
-Run `hatfield setup` for Settings, Providers, and Extensions. It defaults to user
+Run `hatfield setup` for Settings, Providers, Extensions, Skills, and Agents. It defaults to user
 settings; `hatfield setup --project` opens in project scope. Press **F2** to switch
 scope, **Tab** or **Shift+Tab** to switch tabs, and **Esc** to go back or exit.
 In Settings, confirming a valid edit saves it to the selected scope immediately.
@@ -269,6 +269,14 @@ SQLite files are neither opened nor deleted by the thin client.
 ## `.hatfield/` policy
 
 Open the Extensions tab in `hatfield setup` to install and configure extensions.
+`extensions.enabled` replaces the inherited list when set. In project
+`.hatfield/settings.yaml`, use `extensions.project_extensions` to add classes to
+the resolved list without copying it. This also works when the project explicitly
+replaces `extensions.enabled`. Classes are deduplicated in first-seen order.
+User settings reject `extensions.project_extensions`. In project setup,
+**Add to project** changes only the additions list; base enablement indicates
+whether it is inherited or replaced. Removing an addition does not turn off an
+extension enabled in the base list. Fork and named-agent selection stay separate.
 Use **F2** to switch between user and project scope. Installation alone does
 not enable an extension: use Configure and Save. Extension packages provide
 their own Symfony Config definitions.

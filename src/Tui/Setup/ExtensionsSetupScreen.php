@@ -159,10 +159,13 @@ final class ExtensionsSetupScreen
     private function showForm(string $package): void
     {
         $items = [
-            new SettingItem('parent', 'Enabled for parent', $this->flow->members['parent'], values: ['true', 'false']),
+            new SettingItem('parent', $this->flow->parentLabel, $this->flow->members['parent'], values: ['true', 'false']),
             new SettingItem('forks', 'Fork selection', $this->flow->members['forks'], values: ['off', 'enabled', 'always_on']),
             new SettingItem('agents', 'Always on for agents', $this->flow->members['agents'], values: ['true', 'false']),
         ];
+        if (isset($this->flow->members['addition'])) {
+            array_splice($items, 1, 0, [new SettingItem('addition', 'Add to project (keeps base enablement)', $this->flow->members['addition'], values: ['true', 'false'])]);
+        }
         $initial = [];
         $hidden = [];
         $clearActions = [];
@@ -239,7 +242,7 @@ final class ExtensionsSetupScreen
                 $edits = [];
                 if (isset($members[$path])) {
                     $this->flow->members[$path] = $value;
-                    if ('parent' === $path && 'false' === $value) {
+                    if (\in_array($path, ['parent', 'addition'], true) && 'false' === $this->flow->members['parent'] && 'true' !== ($this->flow->members['addition'] ?? null)) {
                         // Child-selected extensions must also be available in the parent.
                         $this->flow->members['forks'] = 'off';
                         $this->flow->members['agents'] = 'false';
