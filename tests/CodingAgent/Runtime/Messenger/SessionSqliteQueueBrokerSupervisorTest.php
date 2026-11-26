@@ -49,8 +49,6 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-1');
 
-        $owner = null;
-        $other = null;
         try {
             $previousEnv = $_ENV;
             $_ENV = [];
@@ -91,7 +89,28 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
                 }
             }
             $this->assertTrue($workerSeen, 'Amp SQLite worker must relaunch through --internal-sqlite-worker');
+        } finally {
+            $supervisor->shutdownUntil(microtime(true) + 5.0);
+        }
 
+        foreach ($driverTree as $driver) {
+            $this->assertFalse(OwnedProcessTree::stillAlive($driver), 'Entire Amp worker tree must exit after normal shutdown');
+        }
+        $this->assertFalse($this->brokerProcessAlive($supervisor));
+        clearstatcache(true, $paths->endpointPath);
+        $this->assertFalse(file_exists($paths->endpointPath), 'normal shutdown must remove owned socket');
+        $this->assertFileExists($paths->databasePath, 'queue database must survive ordinary shutdown');
+    }
+
+    public function testClientSendRenewAndAckWithoutSecondClaim(): void
+    {
+        $supervisor = new SessionSqliteQueueBrokerSupervisor(new TestLogger(), $this->runtimeConfig(), readyTimeoutSeconds: 15.0);
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-claims');
+        $owner = null;
+        $other = null;
+
+        try {
+            $supervisor->start($paths);
             $owner = Client::connect($paths->endpointPath);
             $other = Client::connect($paths->endpointPath);
 
@@ -108,14 +127,6 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $other?->close();
             $supervisor->shutdownUntil(microtime(true) + 5.0);
         }
-
-        foreach ($driverTree as $driver) {
-            $this->assertFalse(OwnedProcessTree::stillAlive($driver), 'Entire Amp worker tree must exit after normal shutdown');
-        }
-        $this->assertFalse($this->brokerProcessAlive($supervisor));
-        clearstatcache(true, $paths->endpointPath);
-        $this->assertFalse(file_exists($paths->endpointPath), 'normal shutdown must remove owned socket');
-        $this->assertFileExists($paths->databasePath, 'queue database must survive ordinary shutdown');
     }
 
     public function testForcedBrokerDeathStopsOwnedDriverChildren(): void
