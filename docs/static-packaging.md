@@ -10,7 +10,7 @@ Related: [distribution.md](distribution.md) · [phar-packaging.md](phar-packagin
 
 | Artifact | Typical runner |
 |---|---|
-| `hatfield.linux-amd64` | `ubuntu-latest` |
+| `hatfield.linux-amd64` | `ubuntu-26.04` |
 | `hatfield.linux-arm64` | `ubuntu-24.04-arm` |
 | `hatfield.darwin-arm64` | `macos-15` |
 
@@ -49,8 +49,9 @@ Native binaries embed the same packaged resources as the PHAR (selected docs inc
 
 `castor distribution:runtime-fingerprint` prints the key for the current host.
 The key covers the native target, pin and patch, SPC arguments and library
-recipes, static prerequisites, toolchain and SDK identities, and relevant build
-environment (including the CI runner image version). The app's PHAR, Composer
+recipes, static prerequisites, OS, toolchain and SDK identities, and relevant
+build environment (including `ImageOS`). It excludes `ImageVersion`, a runner
+rollout label that can change even when those build inputs do not. The app's PHAR, Composer
 lockfile and packaging task source do not contribute to it. SPC still resolves
 some dependency downloads without immutable source or binary hashes: this is
 reuse of a verified recipe, not a lock of all transitive native inputs.

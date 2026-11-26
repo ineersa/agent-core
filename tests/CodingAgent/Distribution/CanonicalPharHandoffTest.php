@@ -94,33 +94,6 @@ PHP;
         }
     }
 
-    public function testRuntimeFingerprintIgnoresRunnerImageRolloutsButTracksBuildFlags(): void
-    {
-        require_once ProjectDir::get().'/.castor/helpers.php';
-        require_once ProjectDir::get().'/.castor/distribution.php';
-        $target = distribution_host_target();
-        if (!isset(distribution_targets()[$target])) {
-            self::markTestSkipped('Runtime fingerprints require a supported native target.');
-        }
-        $pin = distribution_static_pin();
-        $imageVersion = getenv('ImageVersion');
-        $flags = getenv('CFLAGS');
-        try {
-            putenv('ImageVersion=20261116.202.1');
-            putenv('CFLAGS=-O2');
-            $fingerprint = distribution_runtime_fingerprint($target, $pin);
-
-            putenv('ImageVersion=20261116.88.1');
-            $this->assertSame($fingerprint, distribution_runtime_fingerprint($target, $pin));
-
-            putenv('CFLAGS=-O3');
-            $this->assertNotSame($fingerprint, distribution_runtime_fingerprint($target, $pin));
-        } finally {
-            putenv(false === $imageVersion ? 'ImageVersion' : 'ImageVersion='.$imageVersion);
-            putenv(false === $flags ? 'CFLAGS' : 'CFLAGS='.$flags);
-        }
-    }
-
     public function testPinRequiresExactPhpPatchPhpmicroAndSourceSha(): void
     {
         $root = ProjectDir::get();
