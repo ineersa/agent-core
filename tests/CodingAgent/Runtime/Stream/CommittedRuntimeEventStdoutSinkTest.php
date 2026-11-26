@@ -7,14 +7,28 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Stream;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink
  */
-final class CommittedRuntimeEventStdoutSinkTest extends IsolatedKernelTestCase
+final class CommittedRuntimeEventStdoutSinkTest extends TestCase
 {
+    private string $directory;
+
+    protected function setUp(): void
+    {
+        $this->directory = TestDirectoryIsolation::createProjectTempDir('stdout-sink');
+        TestDirectoryIsolation::createHatfieldTree($this->directory);
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->directory);
+    }
+
     /**
      * Proves the wire bytes: emitting into a real stdout pipe (subprocess) produces exactly
      * JsonlCodec::encodeEvent() — slash-sensitive payload unescaped, exactly one newline.
@@ -40,7 +54,7 @@ final class CommittedRuntimeEventStdoutSinkTest extends IsolatedKernelTestCase
                 seq: 3,
                 payload: ['url' => 'https://example.com/path/to', 'text' => 'héllo'],
             ));
-            PHP, \dirname(__DIR__, 4)], getcwd(), ['HATFIELD_SESSION_ID' => false]);
+            PHP, \dirname(__DIR__, 4)], $this->directory, ['HATFIELD_SESSION_ID' => false]);
         $process->mustRun();
 
         $output = $process->getOutput();

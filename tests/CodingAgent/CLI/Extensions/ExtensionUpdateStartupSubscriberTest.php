@@ -138,12 +138,21 @@ final class ExtensionUpdateStartupSubscriberTest extends TestCase
 
     public function testWorkersChildrenAndNoninteractiveInvocationsNeverCheckOrPrompt(): void
     {
+        // Any check must fail before Composer can run; the escape stays wholly
+        // inside the disposable fixture and is never used for a file write.
+        $root = $this->fixture->root('project');
+        $this->fixture->filesystem->mkdir($root);
+        $this->fixture->filesystem->symlink($this->fixture->directory, $root.'/vendor');
         $this->assertSame('', $this->dispatch('', commandName: 'messenger:consume'));
         $this->assertSame('', $this->dispatch('', options: ['--headless' => true]));
         $this->assertSame('', $this->dispatch('', options: ['--controller' => true]));
         $this->assertSame('', $this->dispatch('', interactive: false));
         putenv('HATFIELD_SESSION_ID=owned-child');
         $this->assertSame('', $this->dispatch(''));
+
+        $this->expectException(ExtensionUpdateException::class);
+        $this->expectExceptionMessage('Composer path escapes the extension installation');
+        $this->updates->prepare($this->fixture->project());
     }
 
     /** @param array<string, bool> $options */

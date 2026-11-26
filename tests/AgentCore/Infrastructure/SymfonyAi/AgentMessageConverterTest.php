@@ -8,11 +8,10 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
-use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
-use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Contract\ChatGPTContract;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\OpenResponsesContract;
@@ -31,13 +30,13 @@ use Symfony\Component\Clock\MockClock;
 use Symfony\Component\DependencyInjection\ServicesResetterInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
-final class AgentMessageConverterTest extends TestCase
+final class AgentMessageConverterTest extends IsolatedKernelTestCase
 {
     private AgentMessageConverter $converter;
 
     protected function setUp(): void
     {
-        parent::setUp();
+        // Only the service-reset wiring case boots the isolated kernel.
         $this->converter = new AgentMessageConverter();
     }
 
@@ -1091,33 +1090,25 @@ final class AgentMessageConverterTest extends TestCase
 
     public function testContainerServiceSurvivesServicesResetter(): void
     {
-        $kernel = new Kernel('test', false);
-        try {
-            $kernel->boot();
-            $container = $kernel->getContainer()->get('test.service_container');
-            $converter = $container->get(AgentMessageConverter::class);
-            $this->assertInstanceOf(AgentMessageConverter::class, $converter);
-            $this->assertNotInstanceOf(ResetInterface::class, $converter);
+        parent::setUp();
+        $container = static::getContainer();
+        $converter = $container->get(AgentMessageConverter::class);
+        $this->assertInstanceOf(AgentMessageConverter::class, $converter);
+        $this->assertNotInstanceOf(ResetInterface::class, $converter);
 
-            $messages = [
-                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'persist across reset']]),
-            ];
-            $before = $converter->toMessageBagForTarget($messages, 'openai/gpt-test');
+        $messages = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'persist across reset']]),
+        ];
+        $before = $converter->toMessageBagForTarget($messages, 'openai/gpt-test');
 
-            $resetter = $container->get('services_resetter');
-            $this->assertInstanceOf(ServicesResetterInterface::class, $resetter);
-            $resetter->reset();
+        $resetter = $container->get('services_resetter');
+        $this->assertInstanceOf(ServicesResetterInterface::class, $resetter);
+        $resetter->reset();
 
-            $after = $converter->toMessageBagForTarget($messages, 'openai/gpt-test');
-            $this->assertSame($before, $after);
-            $this->assertSame($before->getMessages()[0]->asText(), $after->getMessages()[0]->asText());
-            $this->assertSame(
-                $container->get(AgentMessageConverter::class),
-                $converter,
-            );
-        } finally {
-            $kernel->shutdown();
-        }
+        $after = $converter->toMessageBagForTarget($messages, 'openai/gpt-test');
+        $this->assertSame($before, $after);
+        $this->assertSame($before->getMessages()[0]->asText(), $after->getMessages()[0]->asText());
+        $this->assertSame($container->get(AgentMessageConverter::class), $converter);
     }
 
     #[Group('performance')]

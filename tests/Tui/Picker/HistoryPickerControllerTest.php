@@ -4,9 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Picker;
 
+use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryEntryView;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\RunHistoryIndex;
+use Ineersa\CodingAgent\Session\SessionHistoryProvider;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\HistoryCommandHandler;
@@ -20,6 +30,10 @@ use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Tui;
 
 #[CoversClass(HistoryPickerController::class)]
@@ -186,20 +200,20 @@ final class HistoryPickerControllerTest extends TestCase
     #[Test]
     public function testIndexedPagesNavigateBothDirectionsAndSelectSparsePromptsThroughNativeInput(): void
     {
-        $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('history-picker-pages');
+        $directory = TestDirectoryIsolation::createProjectTempDir('history-picker-pages');
         try {
             $sessionId = 'paged-history';
-            $sessionStore = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
-                new \Ineersa\CodingAgent\Config\AppConfig(tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), logging: new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
-                $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+            $sessionStore = new HatfieldSessionStore(
+                new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $directory),
+                $this->createStub(EntityManagerInterface::class),
+                new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
             $events = [];
             for ($i = 70; $i >= 1; --$i) {
-                $events[] = \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($sessionId, $i, 'agent_command_applied', ['kind' => 'follow_up', 'text' => 'Prompt number '.$i]);
-                $events[] = \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($sessionId, $i, 'turn_advanced', ['turn_no' => $i]);
+                $events[] = RunEvent::forAppend($sessionId, $i, 'agent_command_applied', ['kind' => 'follow_up', 'text' => 'Prompt number '.$i]);
+                $events[] = RunEvent::forAppend($sessionId, $i, 'turn_advanced', ['turn_no' => $i]);
             }
-            $store = \Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory::create($sessionStore, $events);
-            $provider = new \Ineersa\CodingAgent\Session\SessionHistoryProvider($store, new \Ineersa\CodingAgent\Session\RunHistoryIndex(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new \Psr\Log\NullLogger()));
+            $store = HistoryEventStoreFactory::create($sessionStore, $events);
+            $provider = new SessionHistoryProvider($store, new RunHistoryIndex(new LockFactory(new FlockStore()), new NullLogger()));
             $harness = new VirtualTuiHarness(sessionId: $sessionId);
             $switcher = $this->createMock(TuiSessionSwitchServiceInterface::class);
             $switcher->expects($this->once())->method('selectHistoryTurn')->with(33);
@@ -223,7 +237,7 @@ final class HistoryPickerControllerTest extends TestCase
             $harness->tui()->handleInput("\n");
             $this->assertStringNotContainsString('Session history', $harness->plainScreenText());
         } finally {
-            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+            TestDirectoryIsolation::removeDirectory($directory);
         }
     }
 

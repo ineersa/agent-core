@@ -122,7 +122,10 @@ final class SessionListCommandTest extends IsolatedKernelTestCase
             ], cwd: $this->project, env: ['HOME' => $this->root.'/home', 'GIT_CONFIG_GLOBAL' => '/dev/null', 'GIT_CONFIG_NOSYSTEM' => '1'], timeout: 3))->mustRun();
         }
         $db = $this->seedStore($other, "(2, '/past/worktree', '2026-11-25 04:00:00', '2026-11-25 04:00:00', 'External store', NULL)");
-        $this->seedStore($this->project, "(2, '/past/worktree', '2026-11-25 04:00:00', '2026-11-25 04:00:00', 'Project store', NULL)");
+        $projectDb = $this->seedStore($this->project, "(2, '/past/worktree', '2026-11-25 04:00:00', '2026-11-25 04:00:00', 'Project store', NULL)");
+        $before = hash_file('sha256', $db);
+        $projectBefore = hash_file('sha256', $projectDb);
+        $this->assertDirectoryDoesNotExist($this->project.'/.hatfield/sessions');
         $settings = $other.'/.hatfield/settings.yaml';
         $this->assertSame($this->root.'/worktree/.hatfield', realpath(\dirname($settings)));
         $this->assertFileDoesNotExist($settings);
@@ -137,6 +140,10 @@ final class SessionListCommandTest extends IsolatedKernelTestCase
         $this->assertSame(['External store'], array_column($external['sessions'], 'displayTitle'));
         $this->assertSame(['2'], array_column($project['sessions'], 'sessionId'));
         $this->assertSame(['2'], array_column($external['sessions'], 'sessionId'));
+        $this->assertSame($projectBefore, hash_file('sha256', $projectDb));
+        $this->assertSame($before, hash_file('sha256', $db));
+        $this->assertDirectoryDoesNotExist($this->project.'/.hatfield/sessions');
+        $this->assertDirectoryDoesNotExist($this->project.'/.hatfield/extensions');
 
         $override = $this->root.'/catalog with spaces.sqlite';
         $this->assertTrue(rename($db, $override));
@@ -147,6 +154,7 @@ final class SessionListCommandTest extends IsolatedKernelTestCase
         $this->assertSame(['/past/worktree'], array_column($external['sessions'], 'cwd'));
         $this->assertSame(['External store'], array_column($external['sessions'], 'displayTitle'));
         $this->assertFileDoesNotExist($db);
+        $this->assertSame($before, hash_file('sha256', $override));
         $this->assertDirectoryDoesNotExist($other.'/elsewhere');
         $this->assertSame($config, file_get_contents($settings));
     }
@@ -175,6 +183,7 @@ final class SessionListCommandTest extends IsolatedKernelTestCase
         $output = $this->createMock(ConsoleOutputInterface::class);
         $output->method('getErrorOutput')->willReturn($errors);
         $output->expects($this->never())->method('writeln');
+        $output->expects($this->never())->method('write');
         $this->assertSame(Command::INVALID, $command($output, ...(['json' => true] + $options)));
         $this->assertNotSame('', $errors->fetch());
     }
