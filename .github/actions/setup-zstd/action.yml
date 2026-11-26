@@ -17,13 +17,20 @@ runs:
         fi
         "$php_bin" -r 'if (extension_loaded("zstd")) { fwrite(STDERR, "zstd must be disabled before PIE installation\n"); exit(1); }'
         if [[ "$RUNNER_OS" == Linux ]]; then
-          sudo --non-interactive env "PATH=$PATH" "$pie" install --no-interaction --with-php-config="$php_config" kjdev/zstd:0.19.1
+          ver="$("$php_bin" -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
+          sudo --non-interactive env "PATH=$PATH" "$pie" install --no-interaction --skip-enable-extension --with-php-config="$php_config" kjdev/zstd:0.19.1
+          # Own one CLI enable directive; phpenmod needs this file to exist.
+          printf '%s\n' 'extension=zstd.so' | sudo --non-interactive tee "/etc/php/${ver}/mods-available/zstd.ini" >/dev/null
+          sudo --non-interactive phpenmod -v "$ver" -s cli zstd
         else
           "$pie" install --no-interaction --with-php-config="$php_config" kjdev/zstd:0.19.1
         fi
         if ! startup_output="$("$php_bin" -r '' 2>&1)" || [[ -n "$startup_output" ]]; then
           printf '%s\n' "$startup_output" >&2
           "$php_bin" --ini
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            sudo --non-interactive grep -rn zstd "/etc/php/${ver}" || printf '%s\n' 'zstd INI diagnostic grep found no matches or failed' >&2
+          fi
           exit 1
         fi
         "$php_bin" -r 'if (phpversion("zstd") !== "0.19.1") { fwrite(STDERR, "Expected zstd 0.19.1 to be loaded\n"); exit(1); }'

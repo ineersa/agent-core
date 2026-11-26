@@ -56,6 +56,10 @@ final class BuildDistributionScriptTest extends TestCase
         $this->assertLessThan(strpos($action, '"$pie" install'), strpos($action, 'if (extension_loaded("zstd"))'));
         $this->assertSame(2, substr_count($action, 'if ! startup_output='));
         $this->assertStringContainsString('if ! startup_output="$("$php_bin" -r \'\' 2>&1)" || [[ -n "$startup_output" ]]', $action);
+        $this->assertSame(1, substr_count($action, '--skip-enable-extension'));
+        $this->assertStringContainsString('phpenmod -v "$ver" -s cli zstd', $action);
+        $this->assertLessThan(strpos($action, 'phpenmod -v'), strpos($action, 'tee "/etc/php/${ver}/mods-available/zstd.ini"'));
+        $this->assertStringContainsString('grep -rn zstd "/etc/php/${ver}"', $action);
     }
 
     public function testStaticPrerequisitesRunBeforePhpZstdAndComposer(): void
