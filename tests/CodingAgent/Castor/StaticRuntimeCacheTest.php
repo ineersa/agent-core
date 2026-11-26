@@ -68,7 +68,7 @@ final class StaticRuntimeCacheTest extends TestCase
         }
     }
 
-    public function testOnlyRuntimeInputsChangeTheKey(): void
+    public function testKeyCoversPinsButNotHostProbes(): void
     {
         require_once ProjectDir::get().'/.castor/distribution.php';
         try {
@@ -81,34 +81,23 @@ final class StaticRuntimeCacheTest extends TestCase
         }
         $pin = distribution_static_pin();
         $original = distribution_runtime_fingerprint($target, $pin);
-        $version = getenv('HATFIELD_BUILD_VERSION');
-        try {
-            putenv('HATFIELD_BUILD_VERSION=app-only-change');
-            $this->assertSame($original, distribution_runtime_fingerprint($target, $pin));
-            $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['micro_fake_cli' => !$pin['micro_fake_cli']] + $pin));
-            $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['runtime_revision' => $pin['runtime_revision'] + 1] + $pin));
-        } finally {
-            putenv(false === $version ? 'HATFIELD_BUILD_VERSION' : 'HATFIELD_BUILD_VERSION='.$version);
-        }
 
-        // Runner labels and search paths vary across VMs with identical toolchains.
-        foreach (['ImageVersion', 'ImageOS', 'PKG_CONFIG_PATH', 'CMAKE_PREFIX_PATH', 'LIBRARY_PATH'] as $label) {
-            $originalValue = getenv($label);
-            try {
-                putenv($label.'='.$originalValue.'-fingerprint-test');
-                $this->assertSame($original, distribution_runtime_fingerprint($target, $pin), $label);
-            } finally {
-                putenv(false === $originalValue ? $label : $label.'='.$originalValue);
-            }
+        $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['php_version' => $pin['php_version'].'.1'] + $pin));
+        $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['extensions' => [...$pin['extensions'], 'bcmath']] + $pin));
+        $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['runtime_revision' => $pin['runtime_revision'] + 1] + $pin));
+        foreach (['static_php_cli_commit', 'phpmicro_commit', 'phpmicro_patch_sha256'] as $field) {
+            $this->assertNotSame($original, distribution_runtime_fingerprint($target, [$field => str_repeat('0', 40)] + $pin), $field);
         }
+        $this->assertNotSame($original, distribution_runtime_fingerprint($target, ['micro_fake_cli' => !$pin['micro_fake_cli']] + $pin));
+        // Host probes and labels rebuild only through runtime_revision.
 
-        foreach (['CFLAGS', 'SPC_TARGET', 'SPC_TOOLCHAIN', 'SPC_USE_LLVM', 'SPC_MUSL_DYNAMIC'] as $selector) {
-            $originalValue = getenv($selector);
+        foreach (['HATFIELD_BUILD_VERSION', 'ImageVersion', 'ImageOS', 'CFLAGS', 'PKG_CONFIG_PATH', 'SPC_TOOLCHAIN'] as $variable) {
+            $originalValue = getenv($variable);
             try {
-                putenv($selector.'='.$originalValue.'-fingerprint-test');
-                $this->assertNotSame($original, distribution_runtime_fingerprint($target, $pin), $selector);
+                putenv($variable.'='.$originalValue.'-fingerprint-test');
+                $this->assertSame($original, distribution_runtime_fingerprint($target, $pin), $variable);
             } finally {
-                putenv(false === $originalValue ? $selector : $selector.'='.$originalValue);
+                putenv(false === $originalValue ? $variable : $variable.'='.$originalValue);
             }
         }
     }

@@ -5,7 +5,6 @@ declare(strict_types=1);
 use Castor\Attribute\AsOption;
 use Castor\Attribute\AsTask;
 use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\Process\Process;
 
 /**
  * @param array{php_version: string, extensions: list<string>, micro_fake_cli: bool} $pin
@@ -42,7 +41,7 @@ function distribution_print_runtime_fingerprint(
     echo distribution_runtime_fingerprint_from_inputs($inputs)."\n";
 }
 
-/** @param array{php_version: string, extensions: list<string>, micro_fake_cli: bool, phpmicro_patch: string, phpmicro_patch_sha256: string, runtime_revision: int} $pin */
+/** @param array{runtime_revision: int, static_php_cli_commit: string, php_version: string, php_source_sha256: string, phpmicro_commit: string, phpmicro_patch_sha256: string, extensions: list<string>, micro_fake_cli: bool} $pin */
 function distribution_runtime_fingerprint(string $target, array $pin): string
 {
     return distribution_runtime_fingerprint_from_inputs(distribution_runtime_fingerprint_inputs($target, $pin));
@@ -55,58 +54,31 @@ function distribution_runtime_fingerprint_from_inputs(array $inputs): string
 }
 
 /**
- * Inputs that determine the compiled runtime, readable enough to diff two misses.
+ * The runtime cache key: the target plus the pinned build inputs in pin.json.
  *
- * Deliberately excluded: tool binary digests, full OS release files and runner
- * image labels. Those vary across runner VMs with identical toolchains and used
- * to force needless rebuilds. Bump runtime_revision after a toolchain change the
- * compiler identity below does not capture.
+ * Only immutable pins belong here; host probes (tool binaries, OS files, env)
+ * vary across runner VMs and forced needless rebuilds. Bump runtime_revision to
+ * rebuild after an unpinned change such as a toolchain or runner image update.
  *
- * @param array{php_version: string, extensions: list<string>, micro_fake_cli: bool, phpmicro_patch: string, phpmicro_patch_sha256: string, runtime_revision: int} $pin
+ * @param array{runtime_revision: int, static_php_cli_commit: string, php_version: string, php_source_sha256: string, phpmicro_commit: string, phpmicro_patch_sha256: string, extensions: list<string>, micro_fake_cli: bool} $pin
  *
  * @return array<string, mixed>
  */
 function distribution_runtime_fingerprint_inputs(string $target, array $pin): array
 {
     distribution_assert_host_can_build($target);
-    $patch = hash_file('sha256', distribution_root().'/'.$pin['phpmicro_patch']);
-    if ($patch !== $pin['phpmicro_patch_sha256']) {
-        throw new RuntimeException('phpmicro patch SHA-256 mismatch: '.$pin['phpmicro_patch']);
-    }
-    $probe = static fn (string ...$command): string => trim((new Process($command))->mustRun()->getOutput());
 
-    if (str_starts_with($target, 'darwin-')) {
-        // xcrun works with Command Line Tools alone; xcodebuild need not be installed.
-        $os = ['macos' => explode('.', $probe('sw_vers', '-productVersion'))[0], 'sdk' => $probe('xcrun', '--show-sdk-version')];
-        $compiler = $probe('xcrun', 'clang', '--version');
-    } else {
-        $release = parse_ini_file(is_file('/etc/os-release') ? '/etc/os-release' : '/usr/lib/os-release');
-        if (false === $release || !isset($release['ID'], $release['VERSION_ID'])) {
-            throw new RuntimeException('Unable to identify the native host OS.');
-        }
-        $os = ['id' => $release['ID'], 'version_id' => $release['VERSION_ID']];
-        $compiler = $probe('cc', '--version');
-    }
-    // Only explicit build selectors; search paths and runner labels are excluded.
-    $env = [];
-    foreach (['CC', 'CXX', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS', 'MACOSX_DEPLOYMENT_TARGET', 'SPC_LIBC', 'SPC_TARGET', 'SPC_TOOLCHAIN', 'SPC_USE_LLVM', 'SPC_MUSL_DYNAMIC'] as $variable) {
-        $env[$variable] = getenv($variable);
-    }
-
-    // Only runtime inputs belong here. In particular, neither the app PHAR
-    // nor its dependency lockfile contributes to this key.
     return [
-        'schema' => 'native-runtime-v2',
+        'schema' => 'native-runtime-v3',
         'target' => $target,
+        'php_version' => $pin['php_version'],
+        'php_source_sha256' => $pin['php_source_sha256'],
+        'extensions' => $pin['extensions'],
+        'micro_fake_cli' => $pin['micro_fake_cli'],
+        'static_php_cli_commit' => $pin['static_php_cli_commit'],
+        'phpmicro_commit' => $pin['phpmicro_commit'],
+        'phpmicro_patch_sha256' => $pin['phpmicro_patch_sha256'],
         'runtime_revision' => $pin['runtime_revision'],
-        'pin_sha256' => hash_file('sha256', distribution_root().'/tools/static/pin.json'),
-        'phpmicro_patch_sha256' => $patch,
-        'prerequisites_sha256' => hash_file('sha256', distribution_root().'/.github/actions/static-prerequisites/action.yml'),
-        'recipe' => distribution_runtime_recipe($pin, '<phpmicro>'),
-        'os' => $os,
-        // First line names the compiler and its version, e.g. "cc (Ubuntu 15.2.0-4ubuntu4) 15.2.0".
-        'compiler' => strtok($compiler, "\n"),
-        'env' => $env,
     ];
 }
 

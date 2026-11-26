@@ -17,7 +17,7 @@ Release: [`docs/distribution.md`](../../docs/distribution.md).
 | `phpmicro_patch` / `phpmicro_patch_sha256` | Tracked Linux self-path patch + content digest |
 | `extensions` | SPC SFX set — **superset** of system-PHAR guards, not identical |
 | `micro_fake_cli` | Symfony CLI-friendly micro |
-| `runtime_revision` | Explicit rebuild when runtime inputs need refreshing without a pin or fingerprint change |
+| `runtime_revision` | Bump to rebuild the native runtime after an unpinned change (recipe, toolchain, runner image) |
 
 Libraries beyond PHP + phpmicro are **not** fully locked. Do not float SPC branches/tags
 from build tasks; change the pin and validate a host static build.
@@ -49,9 +49,9 @@ Remove once upstream no longer realpaths AT_EXECFN on Linux.
 7. `castor distribution:verify` (version/list + topology). Topology proves the same
    renamed fused binary launches broker, Amp SQLite worker, and messenger consumers.
 
-The fingerprint covers the target, pins (including `runtime_revision`), patch,
-SPC recipe, OS identity, compiler version line and explicit build selectors.
-`castor distribution:runtime-fingerprint` prints its inputs to stderr. It excludes the app PHAR
+The fingerprint is the target plus the build pins in `pin.json` (PHP version and
+source SHA-256, extensions, `micro_fake_cli`, SPC/phpmicro commits, patch SHA-256,
+`runtime_revision`). Bump `runtime_revision` to rebuild after an unpinned change. It excludes the app PHAR
 and `composer.lock`. Castor keeps `php`, `micro.sfx`, `sha256.json`, and
 `provenance.json` under `var/tmp/static-runtime/<fingerprint>/`. The release
 workflow retains the same files in a persistent `static-runtime-<fingerprint>`
