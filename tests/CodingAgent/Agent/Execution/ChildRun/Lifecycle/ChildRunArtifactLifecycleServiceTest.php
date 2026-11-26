@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -70,9 +71,8 @@ final class ChildRunArtifactLifecycleServiceTest extends IsolatedKernelTestCase
         );
 
         $this->childRunDirectory = new AgentChildRunDirectory(
-            $this->hatfieldSessionStore,
+            self::getContainer()->get(DeferredSubagentChildRepository::class),
             $this->registry,
-            self::getContainer()->get('logger'),
         );
 
         $this->adapter = new ChildRunArtifactLifecycleService($this->registry, $this->childRunDirectory);

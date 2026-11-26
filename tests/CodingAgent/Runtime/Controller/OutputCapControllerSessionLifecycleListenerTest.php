@@ -7,12 +7,12 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\OutputCapControllerSessionLifecycleListener;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
+use Ineersa\CodingAgent\Tests\Support\ChildRunFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\OutputCap;
@@ -60,7 +60,7 @@ final class OutputCapControllerSessionLifecycleListenerTest extends IsolatedKern
     #[Test]
     public function startAndShutdownCleanParentAndChildScopesWithoutTouchingForeignScope(): void
     {
-        static::getContainer()->get(AgentArtifactRegistry::class)->create(
+        ChildRunFixture::create(static::getContainer(),
             'parent-run',
             'child-artifact',
             'child-run',

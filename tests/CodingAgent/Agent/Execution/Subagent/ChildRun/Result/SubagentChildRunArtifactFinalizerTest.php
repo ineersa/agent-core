@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunArtifactFinalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Tests\Support\ChildRunFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Filesystem\Filesystem;
@@ -158,7 +159,7 @@ final class SubagentChildRunArtifactFinalizerTest extends IsolatedKernelTestCase
 
     private function reserve(AgentArtifactStatusEnum $status): ChildRunTerminalOutcomeDTO
     {
-        self::getContainer()->get(AgentArtifactRegistry::class)->create('parent', 'artifact', 'child', 'worker', AgentArtifactKindEnum::Subagent);
+        ChildRunFixture::create(self::getContainer(), 'parent', 'artifact', 'child', 'worker', AgentArtifactKindEnum::Subagent);
 
         return new ChildRunTerminalOutcomeDTO(new ChildRunIdentityDTO('parent', 'child', 'artifact', 'worker', 'task', AgentArtifactKindEnum::Subagent), $status, 'summary', terminalEventCursor: 1);
     }

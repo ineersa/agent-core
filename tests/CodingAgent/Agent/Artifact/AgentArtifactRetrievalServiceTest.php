@@ -20,6 +20,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\RunPresentationReader;
@@ -73,9 +74,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         );
 
         $this->directory = new AgentChildRunDirectory(
-            hatfieldSessionStore: $this->hatfieldSessionStore,
+            children: self::getContainer()->get(DeferredSubagentChildRepository::class),
             artifactRegistry: $this->registry,
-            logger: self::getContainer()->get('logger'),
         );
     }
 
