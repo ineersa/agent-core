@@ -86,8 +86,8 @@ YAML);
     public function testReadOnlyLoadUsesBundledCatalogWithoutCreatingUserCopy(): void
     {
         $catalog = new AiCatalog($this->catalogPath, $this->homeDir, bootstrapUserCatalog: false);
-        self::assertArrayHasKey('zai', AiConfig::fromArray($catalog->loadProviders()['ai'])->providers);
-        self::assertFileDoesNotExist($catalog->userCatalogPath());
+        $this->assertArrayHasKey('zai', AiConfig::fromArray($catalog->loadProviders()['ai'])->providers);
+        $this->assertFileDoesNotExist($catalog->userCatalogPath());
     }
 
     public function testBundledGpt62ModelsPreserveCuratedMetadata(): void
