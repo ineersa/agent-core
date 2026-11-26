@@ -24,6 +24,7 @@ final class AiCatalog
         private readonly string $catalogPath,
         private readonly string $homeDir,
         private readonly ?LoggerInterface $logger = null,
+        private readonly bool $bootstrapUserCatalog = true,
     ) {
     }
 
@@ -35,7 +36,9 @@ final class AiCatalog
      */
     public function loadProviders(): array
     {
-        $this->ensureUserCatalog();
+        if ($this->bootstrapUserCatalog) {
+            $this->ensureUserCatalog();
+        }
 
         $user = $this->readCatalogFile($this->userCatalogPath());
         $bundled = $this->readCatalogFile($this->catalogPath);

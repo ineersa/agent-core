@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
-use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Path;
@@ -16,8 +15,6 @@ use Symfony\Component\Yaml\Yaml;
  * Provides process lifecycle (proc_open), JSONL I/O, event collection,
  * diagnostics dumping, session artifact assertions, and isolated test
  * directory creation. Concrete tests only define setUp/test/tearDown.
- *
- * @group llm-real
  */
 abstract class ControllerE2eTestCase extends TestCase
 {
@@ -51,36 +48,6 @@ abstract class ControllerE2eTestCase extends TestCase
 
     // ── Lifecycle ──
 
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (false === getenv('LLAMA_CPP_SMOKE_TEST') || '' === getenv('LLAMA_CPP_SMOKE_TEST')) {
-            $this->markTestSkipped(
-                'LLAMA_CPP_SMOKE_TEST is not set. Run `castor test:llm-real` or set '
-                .'LLAMA_CPP_SMOKE_TEST=1 to enable the real llama.cpp smoke test.'
-            );
-        }
-
-        $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
-
-        // Ephemeral live E2E runs must not use all-digit ids: SessionAwareModelResolver treats
-        // ctype_digit session ids as persisted Hatfield sessions and fails when metadata is missing.
-        $this->sessionId = 'e2e-'.substr(bin2hex(random_bytes(16)), 0, 12);
-        $this->tempDir = TestDirectoryIsolation::createProjectTempDir($this->tempDirPrefix());
-
-        $this->createIsolatedProjectDir();
-
-        $this->process = null;
-        $this->pipes = [];
-        $this->trackedControllerPids = [];
-        $this->stdoutBuf = '';
-        $this->pendingEvents = [];
-        $this->stderrBuf = '';
-        $this->runId = '';
-        $this->parentRunIdForCollection = null;
-    }
-
     protected function tearDown(): void
     {
         $this->stopProcess();
@@ -93,11 +60,6 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     // ── Overridable hooks ──
-
-    /**
-     * Prefix for the temp directory name (e.g. 'test-controller').
-     */
-    abstract protected function tempDirPrefix(): string;
 
     /**
      * @return array{input: string[], tool_calling: bool}
@@ -164,90 +126,10 @@ abstract class ControllerE2eTestCase extends TestCase
         return $env;
     }
 
-    /**
-     * Wall-clock budget for a single-turn live LLM run (start_run → terminal state).
-     * Under full castor check, ParaTest llm-real defaults to 1 worker (standalone full
-     * uses 2); concurrent gate lanes still compete for CPU/proxy, so 8s can expire after
-     * run.started before the first LLM response reaches stdout (collectEvents exits on
-     * run.completed only when seen).
-     */
-    protected function liveLlmRunWaitTimeout(): float
+    /** Safety cap; readiness is synchronized by the runtime.ready frame. */
+    protected function controllerReadyTimeout(): float
     {
         return 12.0;
-    }
-
-    /**
-     * Wall-clock budget for controller subprocess to emit runtime.ready.
-     * Under full castor check, ParaTest llm-real defaults to 1 worker (standalone full
-     * uses 2); concurrent gate load still competes with other parallel lanes, so 5s
-     * flakes while standalone llm-real passes. Early-exit on event — does not slow
-     * passing tests.
-     */
-    protected function liveControllerReadyTimeout(): float
-    {
-        return 12.0;
-    }
-
-    // ── Process lifecycle ──
-
-    protected function spawnController(): void
-    {
-        [$php, $script] = AgentTestExecutable::sourceConsoleCommand();
-        $this->assertFileExists($script, 'Agent executable not found at '.$script);
-
-        $descriptors = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
-
-        // APP_ENV=test loads services_test.yaml (5s HttpClient when replay is off).
-        // Source bin/console is required — the PHAR excludes dev/test-only bundles.
-        // APP_DEBUG=1 keeps Symfony verbose errors in subprocess stderr on failure.
-        $env = [
-            'APP_ENV' => 'test',
-            'APP_DEBUG' => '1',
-            // Hermetic home: skill materialization and user settings must not touch
-            // the real developer HOME (proc_open env arrays do not inherit).
-            'HOME' => $this->tempDir,
-            'HATFIELD_CONTROLLER_TEST_DATABASE_PATH' => $this->tempDir.'/app_test-live-'.$this->sessionId.'.sqlite',
-            'HATFIELD_SESSION_ID' => $this->sessionId,
-            'LLAMA_CPP_SMOKE_TEST' => '1',
-            ...\Ineersa\CodingAgent\Tests\Support\SessionSqliteQueueTestEnv::forSession(
-                $this->tempDir.'/.hatfield/sessions',
-                $this->sessionId,
-            ),
-        ];
-        $env = array_merge($env, $this->controllerSubprocessEnv());
-
-        $pipes = [];
-        // Isolate the controller (and its inherited session) via setsid -w so
-        // the proc_open child is the session/process-group leader. Descendants
-        // that later create their own PGIDs still share this SID for teardown.
-        $process = @proc_open(
-            array_merge(
-                ['setsid', '-w', $php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
-                $this->controllerExtraArgs(),
-            ),
-            $descriptors,
-            $pipes,
-            $this->tempDir,
-            $env,
-        );
-
-        if (!\is_resource($process)) {
-            throw new \RuntimeException('Failed to spawn controller process.');
-        }
-
-        $this->process = $process;
-        $this->pipes = $pipes;
-
-        stream_set_blocking($pipes[0], true);
-        stream_set_blocking($pipes[1], false);
-        stream_set_blocking($pipes[2], false);
-
-        $this->sqliteQueueDatabasePath = (string) ($env['HATFIELD_SQLITE_QUEUE_DATABASE'] ?? '');
-        $this->trackControllerProcessTree($process);
     }
 
     protected function stopProcess(): void
@@ -366,40 +248,6 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
-     * Check whether any command.ack event references the given command ID.
-     *
-     * @param list<array<string, mixed>> $events
-     */
-    protected function foundAck(array $events, string $cmdId): bool
-    {
-        foreach ($events as $event) {
-            if (($event['type'] ?? '') !== 'command.ack') {
-                continue;
-            }
-            $payload = $event['payload'] ?? [];
-            if (($payload['commandId'] ?? '') === $cmdId) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Assert that the start_run command was acknowledged.
-     *
-     * @param list<array<string, mixed>> $events
-     */
-    protected function assertStartRunAcked(array $events, string $cmdId): void
-    {
-        $this->assertTrue(
-            $this->foundAck($events, $cmdId),
-            'Expected command.ack for start_run (cmdId='.$cmdId.'). '
-            .$this->collectDiagnostics($events),
-        );
-    }
-
-    /**
      * @return array<string, mixed>
      */
     protected function waitForEvent(string $type, float $timeout): array
@@ -422,14 +270,6 @@ abstract class ControllerE2eTestCase extends TestCase
             'Timed out waiting for '.$type.' after '.$timeout.'s. '
             .$this->collectDiagnostics($events),
         );
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    protected function collectEvents(float $timeout): array
-    {
-        return $this->collectEventsUntil(null, $timeout);
     }
 
     /**
@@ -626,33 +466,6 @@ abstract class ControllerE2eTestCase extends TestCase
         return implode("\n", $lines);
     }
 
-    /**
-     * @param list<array<string, mixed>> $events
-     */
-    protected function assertSessionArtifactsExist(string $sessionDir, array $events): void
-    {
-        $missing = [];
-
-        if (!is_dir($sessionDir)) {
-            $missing[] = 'session dir ('.$sessionDir.')';
-        } else {
-            foreach (['events.jsonl'] as $file) {
-                $path = $sessionDir.'/'.$file;
-                if (!is_file($path)) {
-                    $missing[] = $file;
-                } elseif (0 === filesize($path)) {
-                    $missing[] = $file.' (empty)';
-                }
-            }
-        }
-
-        $this->assertEmpty(
-            $missing,
-            'Missing or empty session artifacts: '.implode(', ', $missing)."\n"
-            .$this->collectDiagnostics($events),
-        );
-    }
-
     // ── Filesystem ──
 
     protected function createIsolatedProjectDir(): void
@@ -666,12 +479,7 @@ abstract class ControllerE2eTestCase extends TestCase
         ));
         $toolCalling = $modelConfig['tool_calling'] ? 'true' : 'false';
 
-        // Live llm-real / controller E2Es run concurrently under ParaTest and
-        // assert one scenario per isolated controller. Production default
-        // now launches one llm Fiber consumer. Replay subclasses inherit that
-        // single-consumer topology; process-local FIFO fixtures also require
-        // one consumer. HeadlessControllerLlmWorkerPoolProcessTest proves the
-        // controller starts that Fiber consumer command.
+        // Keep one LLM consumer. HeadlessControllerLlmWorkerPoolProcessTest proves the topology.
         // Likewise force tools.execution.max_parallelism=1: these E2Es use at
         // most one active generic tool; production default 4 tool consumers is
         // contention-only overhead. Multi-tool worker topology remains covered
@@ -687,7 +495,7 @@ ai:
         llama_cpp_test:
             type: generic
             enabled: true
-            base_url: http://10.0.0.89:9052/v1
+            base_url: https://model.invalid/v1
             api: openai-completions
             api_key: dummy
             completions_path: /chat/completions
@@ -739,7 +547,10 @@ YAML;
             );
         }
 
-        file_put_contents($this->tempDir.'/.hatfield/settings.yaml', $settings);
+        $target = $this->tempDir.'/.hatfield/settings.yaml';
+        $this->assertSame($target, realpath($target));
+        $this->assertFalse(is_link($target));
+        file_put_contents($target, $settings);
         file_put_contents($this->tempDir.'/.hatfield/.gitignore', "*\n");
     }
 

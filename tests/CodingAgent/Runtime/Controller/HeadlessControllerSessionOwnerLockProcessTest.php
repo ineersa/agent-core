@@ -120,14 +120,6 @@ final class HeadlessControllerSessionOwnerLockProcessTest extends ControllerRepl
         }
     }
 
-    /**
-     * @return list<array<string, mixed>>
-     */
-    protected function replayFixtures(): array
-    {
-        return [];
-    }
-
     protected function tempDirPrefix(): string
     {
         return 'controller-session-owner-lock';

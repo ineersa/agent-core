@@ -19,7 +19,7 @@ final class HeadlessControllerTest extends ControllerReplayE2eTestCase
     public function testNoRegisteredJobsOmitsOnlyExtensionConsumer(): void
     {
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->waitForEvent('runtime.ready', $this->controllerReadyTimeout());
         $this->assertLaunchCount('extension_agent', 0);
         $this->assertLaunchCount('mcp', 1);
     }
@@ -45,11 +45,6 @@ final class HeadlessControllerTest extends ControllerReplayE2eTestCase
     protected function tempDirPrefix(): string
     {
         return 'optional-consumers';
-    }
-
-    protected function replayFixtures(): array
-    {
-        return [];
     }
 
     private function assertLaunchCount(string $transport, int $expected): void

@@ -21,6 +21,12 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
 {
     private string $databasePath;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->databasePath = $this->tempDir.'/app_test-replay-'.$this->sessionId.'.sqlite';
+    }
+
     protected function tearDown(): void
     {
         parent::tearDown();
@@ -36,7 +42,7 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
     {
         $this->sessionId = trim($this->queryRuntime()->getOutput());
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->waitForEvent('runtime.ready', $this->controllerReadyTimeout());
         $this->writeCommand(['v' => 1, 'id' => 'stop-missing', 'type' => 'stop_bash', 'runId' => $this->sessionId,
             'payload' => ['record_id' => 2147483647]]);
         $events = $this->collectEventsUntil('bg_process.stop.completed', 5);
@@ -50,13 +56,6 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
     protected function tempDirPrefix(): string
     {
         return 'test-controller-background-bash';
-    }
-
-    protected function replayFixtures(): array
-    {
-        $this->databasePath = $this->tempDir.'/app_test-replay-'.$this->sessionId.'.sqlite';
-
-        return [];
     }
 
     protected function replayExtraEnv(): array

@@ -5,8 +5,8 @@ Prove TUI behavior at the **lowest correct layer** through Castor only. Authorit
 ## Layers
 
 1. **Virtual / in-process** (`castor test`) — widgets, editor, local slash commands on `ScreenBuffer` / harnesses under `tests/Tui/`. Source PHP; no PHAR.
-2. **Controller replay** (`castor test:controller-replay`) — runtime protocol + event ordering without live LLM. Source `bin/console` with `APP_ENV=test`; no packaged artifact required for the behavioral path.
-3. **Minimal tmux replay** (`castor test:tui`) — real TTY/process smoke for the `tui-e2e-replay` group. Behavioral journey/snapshot cases still drive source `bin/console`. Separately, `TuiArtifactBootE2eTest` boots a packaged artifact.
+2. **Controller process** (`castor test:controller-replay`) — runtime protocol + event ordering without live LLM. Source `bin/console` with `APP_ENV=test`; no packaged artifact required for the behavioral path.
+3. **Minimal tmux** (`castor test:tui`) — real TTY/process smoke for the `tui-e2e-replay` group. Behavioral journey/snapshot cases still drive source `bin/console`. Separately, `TuiArtifactBootE2eTest` boots a packaged artifact.
 
 Do not default every change to tmux. Service-only DTO tests or manual notes are not sole proof for TUI product behavior.
 
@@ -18,7 +18,7 @@ Do not default every change to tmux. Service-only DTO tests or manual notes are 
 | `castor check` (TUI lane) | Same builder as `test:tui` | Same PHAR ensure as above |
 | `castor test:tui-update` | Snapshot refresh for `tui-e2e-replay` | Does **not** call `phar:ensure`. Ensure or build a PHAR first if artifact boot must pass |
 
-Artifact boot is a packaging/boot contract, not proof of interactive behavior. Interactive journeys stay on source + replay fixtures.
+Artifact boot is a packaging/boot contract, not proof of interactive behavior. Interactive journeys use source and isolated session evidence.
 
 ## Commands
 
@@ -39,5 +39,5 @@ castor check             # full gate; TUI lane includes PHAR ensure
 ## Related
 
 - Standards: `tests/AGENTS.md`, `.agents/skills/testing/SKILL.md`
-- LLM fixtures: [llm-replay.md](llm-replay.md)
+- Provider HTTP cassettes: [llm-replay.md](llm-replay.md)
 - Architecture: [TUI architecture](../architecture/tui.md)

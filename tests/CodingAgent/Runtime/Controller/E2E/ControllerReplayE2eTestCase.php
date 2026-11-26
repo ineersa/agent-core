@@ -7,50 +7,12 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplaySourceMessengerConsole;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 
-/**
- * Deterministic controller replay E2E test case.
- *
- * Extends the live-LLM ControllerE2eTestCase but overrides the
- * controller spawning to use pre-recorded LLM replay fixtures via
- * HATFIELD_LLM_REPLAY_FIXTURE_PATH instead of a live llama.cpp
- * endpoint.
- *
- * The replay seam is entirely in the test layer:
- *   - ControllerReplayHttpClientFactory (tests/) checks the env var
- *     and returns a MockHttpClient with fixture-driven SSE.
- *   - config/services_test.yaml wires it as the default HttpClient.
- *   - The controller subprocess is spawned with APP_ENV=test so
- *     services_test.yaml is loaded and SymfonyAiProviderFactory
- *     receives the injected replay client through its existing
- *     constructor DI path.
- *   - No production code in src/ checks HATFIELD_LLM_REPLAY_FIXTURE_PATH.
- *
- * Replay tests do NOT require LLAMA_CPP_SMOKE_TEST, llama.cpp on
- * port 9052, or any live AI provider.  They exercise the full
- * async runtime pipeline (controller event loop, Messenger consumers,
- * tool execution, event serialization) with deterministic fixture
- * data.
- *
- * Process ownership: the controller and its Messenger consumer
- * children are spawned under setsid so the controller is the session
- * / process-group leader, then tracked via process-tree PID discovery.
- * Teardown terminates the owned tree deterministically and asserts no
- * children remain.
- *
- * MAINT-05D foundation.  This is the replay seam for controller
- * E2E tests; MAINT-05E will add similar support for TUI E2E.
- */
+/** Offline source-controller harness for protocol and process lifecycle tests. */
 abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
 {
-    /** @var list<array<string, mixed>> One fixture per expected LLM call */
-    protected array $replayFixtures = [];
-    // ── Lifecycle ──
-
     protected function setUp(): void
     {
-        // Skip the parent setUp() which requires LLAMA_CPP_SMOKE_TEST.
-        // Instead, run our own lightweight setup without live LLM.
-        \PHPUnit\Framework\TestCase::setUp();
+        parent::setUp();
 
         $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
 
@@ -67,16 +29,12 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         $this->stderrBuf = '';
         $this->runId = '';
         $this->trackedControllerPids = [];
-
-        // Resolve fixtures from subclass AFTER tempDir is set (fixtures
-        // may reference tempDir-relative paths).
-        $this->replayFixtures = $this->replayFixtures();
     }
 
     protected function tearDown(): void
     {
         $this->stopProcess();
-        // Keep failing fixtures when debugging controller-replay failures.
+        // Keep failing isolated controller artifacts when requested.
         // Parent tearDown always removes tempDir; clear it first when keeping
         // so the parent lifecycle cannot delete retained artifacts.
         $keepTmp = false !== getenv('HATFIELD_KEEP_TMP') && '' !== getenv('HATFIELD_KEEP_TMP');
@@ -87,17 +45,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         parent::tearDown();
     }
 
-    // Single-llm isolation for process-local FIFO fixtures is applied in
-    // ControllerE2eTestCase::createIsolatedProjectDir() (one llm Fiber consumer).
-    // Replay inherits that base seam; do not re-write settings here (duplicate keys
-    // / post-parse YAML dump would only obscure the shared isolation contract).
-
-    /**
-     * Subclasses MUST override to return at least one fixture.
-     *
-     * @return list<array<string, mixed>>
-     */
-    abstract protected function replayFixtures(): array;
+    abstract protected function tempDirPrefix(): string;
 
     /**
      * @return array<string, string> extra env vars passed to the
@@ -110,48 +58,19 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
 
     // ── Process lifecycle with ownership ─────────────────────────
 
-    /**
-     * Spawn the controller subprocess in replay mode with APP_ENV=test.
-     *
-     * The subprocess uses APP_ENV=test so config/services_test.yaml is
-     * loaded.  That config wires Symfony\Contracts\HttpClient\HttpClientInterface
-     * through ControllerReplayHttpClientFactory (tests/).  When
-     * HATFIELD_LLM_REPLAY_FIXTURE_PATH is set, the factory returns a
-     * MockHttpClient serving fixture-driven SSE; otherwise it returns
-     * the normal 5s-timeout real HttpClient.
-     *
-     * No production code in src/ checks the replay env var.
-     *
-     * Process group tracking: after spawn we discover child PIDs so
-     * teardown can kill the entire group.
-     */
+    /** Start the source controller with the isolated test container. */
     protected function spawnController(): void
     {
         // Controller replay E2E MUST use the source bin/console, not a
         // PHAR: the controller boots with APP_ENV=test which loads
         // config/packages/test/ bundles (e.g. DAMA\DoctrineTestBundle).
-        // These test-only bundles are not included in the PHAR.  Live
-        // controller smoke (castor test:controller, APP_ENV=dev, PHAR)
-        // is unaffected.
+        // These test-only bundles are not included in the PHAR.
         $php = \PHP_BINARY;
         $projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
         $script = $projectDir.'/bin/console';
         \PHPUnit\Framework\Assert::assertFileExists(
             $script, 'Agent executable not found at '.$script,
         );
-
-        // Write all replay fixtures to temp files and produce the
-        // semicolon-separated env path consumed by
-        // ControllerReplayHttpClientFactory in services_test.yaml.
-        $fixturePaths = [];
-        foreach ($this->replayFixtures as $i => $fixture) {
-            $fixturePath = $this->tempDir.'/.replay-fixture-'.($i + 1).'.json';
-            file_put_contents(
-                $fixturePath,
-                json_encode($fixture, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT),
-            );
-            $fixturePaths[] = $fixturePath;
-        }
 
         // ConsumerSupervisor relaunches messenger:consume via HATFIELD_BINARY_PATH.
         // Point it at a test-only source wrapper that preserves omitted --sleep so
@@ -169,9 +88,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         ];
 
         $env = [
-            // APP_ENV=test ensures services_test.yaml is loaded ->
-            // ControllerReplayHttpClientFactory wires the replay
-            // MockHttpClient via Symfony DI.
             'APP_ENV' => 'test',
             'APP_DEBUG' => '1',
             // Hermetic home: skill materialization and user settings must not touch
@@ -188,11 +104,8 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
                 $this->tempDir.'/.hatfield/sessions',
                 $this->sessionId,
             ),
-            // Replay activation — consumed by ControllerReplayHttpClientFactory
-            'HATFIELD_LLM_REPLAY_FIXTURE_PATH' => implode(';', $fixturePaths),
             // Inherited by ConsumerSupervisor children; ConfigExecutableLocator wins.
             'HATFIELD_BINARY_PATH' => $messengerConsole,
-            // Explicitly NOT setting LLAMA_CPP_SMOKE_TEST.
         ];
 
         $env = array_merge($env, $this->controllerSubprocessEnv());
@@ -238,7 +151,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         $ownershipLines = [
             'Tracked PIDs: '.('' !== implode(', ', $this->trackedControllerPids)
                 ? implode(', ', $this->trackedControllerPids) : '(none)'),
-            'Fixture count: '.\count($this->replayFixtures),
         ];
 
         return $parentDiag."\n".implode("\n", $ownershipLines)."\n";

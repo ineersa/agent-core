@@ -83,6 +83,13 @@ YAML);
         $this->assertSame('https://api.z.ai/api/coding/paas/v4', $ai->providers['zai']->baseUrl);
     }
 
+    public function testReadOnlyLoadUsesBundledCatalogWithoutCreatingUserCopy(): void
+    {
+        $catalog = new AiCatalog($this->catalogPath, $this->homeDir, bootstrapUserCatalog: false);
+        $this->assertArrayHasKey('zai', AiConfig::fromArray($catalog->loadProviders()['ai'])->providers);
+        $this->assertFileDoesNotExist($catalog->userCatalogPath());
+    }
+
     public function testBundledGpt62ModelsPreserveCuratedMetadata(): void
     {
         $ai = AiConfig::fromArray((new AiCatalog(\dirname(__DIR__, 4).'/config/ai-catalog.yaml', $this->homeDir))->loadProviders()['ai']);

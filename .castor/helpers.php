@@ -479,7 +479,7 @@ function qa_test_home_shell_prefix(): string
         throw new \RuntimeException('QA system temporary allocation has uncertain ownership.');
     }
 
-    return 'HOME='.escapeshellarg($home)
+    return 'HATFIELD_PRIVATE_CASSETTE_DIR= HOME='.escapeshellarg($home)
         .' HATFIELD_QA_TEST_HOME='.escapeshellarg($home)
         .' HATFIELD_CACHE_DIR='.escapeshellarg($cache)
         .(null === $temporary ? '' : ' TMPDIR='.escapeshellarg($temporary))
@@ -2041,19 +2041,6 @@ function xml_escape(string $value): string
     return htmlspecialchars($value, \ENT_XML1 | \ENT_QUOTES, 'UTF-8');
 }
 
-/**
- * Fail-fast check: verify the test LLM (llama_cpp_test/test on port 9052)
- * can actually complete a tiny generation request.
- *
- * Health-only checks are insufficient — the server can report /health and
- * /v1/models while generation is stuck (e.g. corrupted model load, all
- * slots busy).  This sends a minimal chat completion and fails within 5s
- * if no valid response arrives, preventing 90s+ timeouts in
- * test:tui / test:llm-real / test:controller.
- *
- * Called before any E2E step that depends on real LLM generation.
- */
-
 // ─── QA check run leak detection and artifact integrity ───────────────
 
 /**
@@ -2269,7 +2256,7 @@ function cleanup_exact_qa_run_cache_roots(string $qaRunId, ?string $projectRoot 
 
     $primaryBase = 'cache-'.$segment;
     $legacyWorkerPattern = '/^'.preg_quote($primaryBase, '/').'-paraT[A-Za-z0-9._-]+$/';
-    $laneWorkerPattern = '/^'.preg_quote($primaryBase, '/').'-(?:unit|tui|llm-real)-T[A-Za-z0-9._-]+$/';
+    $laneWorkerPattern = '/^'.preg_quote($primaryBase, '/').'-(?:unit|tui)-T[A-Za-z0-9._-]+$/';
     $removed = [];
 
     $entries = @scandir($hatfieldDir);
@@ -2328,16 +2315,11 @@ function cleanup_exact_qa_run_cache_roots(string $qaRunId, ?string $projectRoot 
 
 /**
  * ParaTest worker budget for check E2E lanes (conservative under parallel castor check).
- *
- * Under castor check, llm-real defaults to 1 worker to avoid process contention with
- * unit/TUI lanes. Standalone castor test:llm-real defaults to 2 workers against the
- * shared llama-proxy endpoint.
  */
 function check_lane_paratest_processes(string $lane, int $default, int $max = 4): int
 {
     $envMap = [
         'tui' => 'HATFIELD_CHECK_TUI_PARATEST_PROCESSES',
-        'llm-real' => 'HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES',
         'unit' => 'HATFIELD_CHECK_UNIT_PARATEST_PROCESSES',
     ];
     $envName = $envMap[$lane] ?? null;
@@ -2346,17 +2328,7 @@ function check_lane_paratest_processes(string $lane, int $default, int $max = 4)
         $raw = getenv($envName);
     }
     if (false === $raw || '' === trim((string) $raw)) {
-        $inCheck = false !== getenv('HATFIELD_QA_RUN_ID') && '' !== trim((string) getenv('HATFIELD_QA_RUN_ID'));
-        if ($inCheck) {
-            // Live LLM under concurrent gate load: one worker avoids ParaTest
-            // process crashes seen when llm-real raced unit workers.
-            $processes = 'llm-real' === $lane ? 1 : $default;
-        } else {
-            // Standalone llm-real still shares one llama-proxy/model endpoint.
-            // Two workers keep some parallelism without the 4-worker contention
-            // that previously produced flaky multi-hop tool completions.
-            $processes = 'llm-real' === $lane ? 2 : $default;
-        }
+        $processes = $default;
     } else {
         $processes = (int) $raw;
     }
@@ -2397,227 +2369,6 @@ function assert_castor_check_lane_artifacts_integrity(array $laneSteps): void
     }
 
     fail_quality("QA artifact integrity FAILED:\n".implode("\n", $missing));
-}
-
-// ─── llama-proxy cache guard (castor check only) ───────────────────────
-
-function llama_proxy_admin_base_url(): string
-{
-    $override = getenv('HATFIELD_LLM_PROXY_ADMIN_URL');
-    if (false !== $override && '' !== trim((string) $override)) {
-        return rtrim((string) $override, '/');
-    }
-
-    return 'http://127.0.0.1:9052';
-}
-
-/**
- * Optional admin token header for llama-proxy stats (when LLAMA_PROXY_ADMIN_TOKEN is set).
- *
- * @return list<string>
- */
-function llama_proxy_admin_curl_headers(): array
-{
-    $token = getenv('LLAMA_PROXY_ADMIN_TOKEN');
-    if (false === $token || '' === trim((string) $token)) {
-        return [];
-    }
-
-    return ['-H', 'X-Llama-Proxy-Token: '.(string) $token];
-}
-
-function llama_proxy_cache_guard_enabled(): bool
-{
-    $raw = getenv('HATFIELD_LLM_CACHE_GUARD');
-    if (false === $raw) {
-        return true;
-    }
-    $normalized = strtolower(trim((string) $raw));
-
-    return !\in_array($normalized, ['0', 'false', 'no', 'off'], true);
-}
-
-/**
- * @param float|null $checkWallDeadline absolute hrtime-seconds deadline from check() entry
- *
- * @return array{entries: int, bytes: ?int, raw: array<string, mixed>}
- */
-function fetch_llama_proxy_cache_stats(?float $checkWallDeadline = null): array
-{
-    $url = llama_proxy_admin_base_url().'/__llama_proxy/cache/stats';
-    $headerArgs = llama_proxy_admin_curl_headers();
-    $headerShell = '';
-    foreach ($headerArgs as $part) {
-        $headerShell .= ' '.escapeshellarg($part);
-    }
-
-    $shellTimeout = 8;
-    $curlMax = 5;
-    if (null !== $checkWallDeadline) {
-        $remaining = $checkWallDeadline - (hrtime(true) / 1e9);
-        if ($remaining <= 0.0) {
-            throw new \RuntimeException('castor check exceeded absolute wall clock before llama-proxy cache stats');
-        }
-        $shellTimeout = max(1, min($shellTimeout, (int) floor($remaining)));
-        $curlMax = max(1, min($curlMax, $shellTimeout));
-    }
-
-    $cmd = 'timeout --kill-after=3s '.$shellTimeout.'s curl -sS -m '.$curlMax.' -f'.$headerShell.' '.escapeshellarg($url);
-    $process = run_quiet_command($cmd);
-    if (0 !== $process->getExitCode()) {
-        throw new \RuntimeException('llama-proxy cache stats unavailable at '.$url.' (curl exit '.$process->getExitCode().'). Full `castor check` requires llama-proxy on port 9052 with /__llama_proxy/cache/stats. '.trim($process->getErrorOutput().$process->getOutput()));
-    }
-
-    $body = trim($process->getOutput());
-    $decoded = json_decode($body, true);
-    if (!\is_array($decoded)) {
-        throw new \RuntimeException('llama-proxy cache stats returned non-JSON from '.$url.': '.$body);
-    }
-
-    if (!\array_key_exists('entries', $decoded)) {
-        throw new \RuntimeException('llama-proxy cache stats JSON missing "entries" key from '.$url.': '.$body);
-    }
-
-    $entries = $decoded['entries'];
-    if (!\is_int($entries) && !(\is_string($entries) && ctype_digit($entries))) {
-        throw new \RuntimeException('llama-proxy cache stats "entries" is not an integer from '.$url.': '.$body);
-    }
-
-    $bytes = null;
-    if (\array_key_exists('bytes', $decoded)) {
-        $bytesRaw = $decoded['bytes'];
-        if (\is_int($bytesRaw) || (\is_string($bytesRaw) && ctype_digit($bytesRaw))) {
-            $bytes = (int) $bytesRaw;
-        }
-    }
-
-    return [
-        'entries' => (int) $entries,
-        'bytes' => $bytes,
-        'raw' => $decoded,
-    ];
-}
-
-/**
- * Capture baseline cache entries for `castor check` (before generation preflight).
- *
- * @param float|null $checkWallDeadline absolute hrtime-seconds deadline from check() entry
- */
-function begin_castor_check_llama_proxy_cache_guard(?float $checkWallDeadline = null): ?int
-{
-    if (!llama_proxy_cache_guard_enabled()) {
-        echo "llama-proxy cache guard: disabled (HATFIELD_LLM_CACHE_GUARD=0)\n";
-
-        return null;
-    }
-
-    $stats = fetch_llama_proxy_cache_stats($checkWallDeadline);
-    $entries = $stats['entries'];
-    echo 'llama-proxy cache guard: baseline entries='.$entries."\n";
-
-    return $entries;
-}
-
-function assert_castor_check_llama_proxy_cache_unchanged(?int $baselineEntries, ?float $checkWallDeadline = null): void
-{
-    if (null === $baselineEntries) {
-        return;
-    }
-
-    $stats = fetch_llama_proxy_cache_stats($checkWallDeadline);
-    $after = $stats['entries'];
-    if ($after > $baselineEntries) {
-        throw new \RuntimeException(\sprintf("llama-proxy cache grew from %d to %d entries during `castor check` — uncached live LLM request(s) occurred.\nWarm the proxy cache first: run `castor test:llm-real`, verify `curl %s/__llama_proxy/cache/stats`, then rerun `castor check`.\n".'After clearing the proxy cache you must warm again before the gate passes.', $baselineEntries, $after, llama_proxy_admin_base_url()));
-    }
-
-    echo 'llama-proxy cache guard: ok (entries '.$baselineEntries.' → '.$after.")\n";
-}
-
-/**
- * @param float|null $checkWallDeadline absolute hrtime-seconds deadline from check() entry
- */
-function check_llm_generation_ready(?float $checkWallDeadline = null): void
-{
-    $tmpDir = getenv('HATFIELD_QA_TMP_DIR');
-    if (false !== $tmpDir && '' !== trim((string) $tmpDir)) {
-        $cacheFile = rtrim((string) $tmpDir, '/').'/llm-generation-ready.cache';
-    } else {
-        $cacheFile = 'var/tmp/llm-generation-ready.cache';
-    }
-    $envTtl = getenv('HATFIELD_LLM_READY_TTL');
-    $ttlSeconds = (int) (false !== $envTtl && '' !== $envTtl ? $envTtl : 120);
-    if ($ttlSeconds > 0 && is_file($cacheFile)) {
-        $mtime = filemtime($cacheFile);
-        if (false !== $mtime && (time() - $mtime) < $ttlSeconds) {
-            echo 'llama.cpp generation: ok (cached, ttl='.$ttlSeconds.'s)
-';
-
-            return;
-        }
-    }
-
-    $baseUrl = 'http://10.0.0.89:9052';
-    $model = 'test';
-    $url = $baseUrl.'/v1/chat/completions';
-    // Use a realistic smoke-test prompt with enough max_tokens to avoid
-    // truncating reasoning mid-stream, which can crash llama.cpp during
-    // slot cleanup (ggml_abort in common_context_seq_rm).  The old 1-token
-    // preflight would cut off reasoning models and trigger server aborts.
-    $payload = '{"model":"'.$model.'","messages":[{"role":"user","content":"Respond with exactly one word: hello."}],"max_tokens":512,"temperature":0,"stream":false}';
-
-    $shellTimeout = 15;
-    $curlMax = 10;
-    if (null !== $checkWallDeadline) {
-        $remaining = $checkWallDeadline - (hrtime(true) / 1e9);
-        if ($remaining <= 0.0) {
-            throw new \RuntimeException('castor check exceeded absolute wall clock before llm generation preflight');
-        }
-        $shellTimeout = max(1, min($shellTimeout, (int) floor($remaining)));
-        $curlMax = max(1, min($curlMax, $shellTimeout));
-    }
-
-    $cmd = qa_check_run_env_command().' timeout --kill-after=5s '.$shellTimeout.'s curl -sS -m '.$curlMax.' -o /dev/null -w "%{http_code}"'
-        .' -H "Content-Type: application/json"'
-        .' -d '.escapeshellarg($payload)
-        .' '.escapeshellarg($url);
-
-    $process = run_quiet_command($cmd);
-
-    $httpCode = (int) trim($process->getOutput());
-
-    if (200 === $httpCode && 0 === $process->getExitCode()) {
-        $cacheParent = \dirname($cacheFile);
-        if ('' !== $cacheParent && '.' !== $cacheParent && !is_dir($cacheParent)) {
-            @mkdir($cacheParent, 0o777, true);
-        }
-        @touch($cacheFile);
-        echo 'llama.cpp generation: ok'."\n";
-
-        return;
-    }
-
-    $diagnostic = \sprintf(
-        "\n".
-        "llama.cpp generation readiness check FAILED\n".
-        "  Endpoint: %s\n".
-        "  Model: %s\n".
-        "  Sent: %s\n".
-        "  HTTP status: %d (curl exit: %d)\n".
-        "\n".
-        "  The server responds to /health and /v1/models but cannot complete a\n".
-        "  minimal generation request.  Make sure llama.cpp is running, the\n".
-        "  model is loaded correctly, and no generation slots are stuck.\n".
-        "  Check manually: curl -sS -m 5 -d '%s' %s\n",
-        $url,
-        $model,
-        $payload,
-        $httpCode,
-        $process->getExitCode(),
-        $payload,
-        $url,
-    );
-
-    throw new \RuntimeException($diagnostic);
 }
 
 /**

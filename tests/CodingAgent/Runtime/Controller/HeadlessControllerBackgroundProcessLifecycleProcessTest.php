@@ -37,20 +37,12 @@ final class HeadlessControllerBackgroundProcessLifecycleProcessTest extends Cont
         $startup = $this->seedAcceptedFinished('startup');
 
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->waitForEvent('runtime.ready', $this->controllerReadyTimeout());
         $this->assertSeedRetained($startup);
 
         $shutdown = $this->seedAcceptedFinished('shutdown');
         $this->signalOwnedControllerAndWaitForExit();
         $this->assertSeedRetained($shutdown);
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    protected function replayFixtures(): array
-    {
-        return [];
     }
 
     protected function tempDirPrefix(): string

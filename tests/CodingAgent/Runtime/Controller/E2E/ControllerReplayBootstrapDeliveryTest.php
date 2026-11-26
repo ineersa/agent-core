@@ -186,11 +186,6 @@ final class ControllerReplayBootstrapDeliveryTest extends ControllerReplayE2eTes
         return ['HATFIELD_REPLAY_SESSION_ID' => $this->runId];
     }
 
-    protected function replayFixtures(): array
-    {
-        return [];
-    }
-
     protected function tempDirPrefix(): string
     {
         return 'test-controller-bootstrap';
