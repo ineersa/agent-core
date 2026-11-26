@@ -74,18 +74,30 @@ final class ProcessLifecycle
         // Bash uses a seekable log (not O_APPEND) and drains its pipe before
         // publishing status. Code mode keeps its existing direct redirection.
         $writer = implode(' ', array_map(escapeshellarg(...), [...$this->runtime->executableCommand(), BashLogWriter::FLAG]));
-        $redirect = $boundBashOutput
-            ? 'exec </dev/null >/dev/null 2>&1; exec 5> >('.$writer.' >&4 4>&-); WRITER_PID=$!; exec 4>&-; '
-            : 'exec </dev/null >&4 2>&1 4>&-; ';
+        // Bash 3.2 cannot wait for process substitution. Use an ordinary child
+        // and hold both FIFO ends on FD 6 while opening the separate endpoints,
+        // so a failed open cannot leave the other side blocked before readiness.
+        $prepareOutput = $boundBashOutput
+            ? 'writer_setup_failed() { rm -f '.escapeshellarg($pidFile).'; echo writer-setup-failed; exit 74; }; '
+                .'WRITER_DIR=$(mktemp -d '.escapeshellarg(\dirname($statusFile).'/.bash-writer.XXXXXXXX').') || writer_setup_failed; '
+                .'WRITER_FIFO="$WRITER_DIR/output"; '
+                .'cleanup_writer_fifo() { rm -f "$WRITER_FIFO" && rmdir "$WRITER_DIR"; }; '
+                .'mkfifo -m 600 "$WRITER_FIFO" && exec 6<>"$WRITER_FIFO" && exec 7<"$WRITER_FIFO" || { cleanup_writer_fifo; writer_setup_failed; }; '
+                .$writer.' <&7 >&4 2>/dev/null 4>&- 6>&- 7<&- & WRITER_PID=$!; '
+                .'exec 5>"$WRITER_FIFO" || { cleanup_writer_fifo; writer_setup_failed; }; exec 6>&- 7<&-; '
+                .'cleanup_writer_fifo || writer_setup_failed; '
+            : '';
+        $redirect = $boundBashOutput ? 'exec </dev/null >/dev/null 2>&1 4>&-; ' : 'exec </dev/null >&4 2>&1 4>&-; ';
         $childOutput = $boundBashOutput ? ' >&5 2>&1 5>&-' : '';
         $finishOutput = $boundBashOutput
             ? 'wait "$WRITER_PID"; WRITER_RC=$?; echo "$RC $WRITER_RC" > "$STATUS_FILE"; '
             : 'echo "$RC" > "$STATUS_FILE"; ';
         $shellCode = \sprintf(
-            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || { echo claimed; exit 73; }; set +o noclobber; if ! { exec 4%s %s; }; then echo log-open-failed; exit 74; fi; echo $$ || exit 74; %sbash -c %s%s & CHILD_PID=$!; %sSTATUS_FILE=%s; after_exit() { %s; }; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > "$STATUS_FILE"; after_exit; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; %safter_exit; exit $RC',
+            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || { echo claimed; exit 73; }; set +o noclobber; if ! { exec 4%s %s; }; then echo log-open-failed; exit 74; fi; %secho $$ || exit 74; %sbash -c %s%s & CHILD_PID=$!; %sSTATUS_FILE=%s; after_exit() { %s; }; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > "$STATUS_FILE"; after_exit; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; %safter_exit; exit $RC',
             escapeshellarg($pidFile),
             $boundBashOutput ? '>' : '>>',
             escapeshellarg($logFile),
+            $prepareOutput,
             $redirect,
             escapeshellarg($command),
             $childOutput,
