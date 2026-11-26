@@ -146,6 +146,6 @@ final class SessionHistoryProviderTest extends IsolatedKernelTestCase
         $storage->method('update')->willReturnCallback(static fn (callable $update) => $update($record));
         $provider = Factory::createProvider(ChatGPTAuthFixture::service($storage, $http), $http, new ProjectedSymfonyModelCatalog(['gpt-5.5' => new AiModelDefinition('gpt-5.5')], ResponsesModel::class, 'openai-codex'), name: 'openai-codex');
 
-        return new LlmPlatformAdapter(new NullRunOperationalStatusReader(), new AgentMessageConverter(), new DynamicToolDescriptionProcessor(), new Platform([$provider]), [], [], null, null, new NullLogger(), AttributeSerializerValidatorTestFactory::denormalizer(), $resolver);
+        return new LlmPlatformAdapter(new NullRunOperationalStatusReader(), new AgentMessageConverter(), new DynamicToolDescriptionProcessor(), new Platform([$provider]), [], null, null, new NullLogger(), AttributeSerializerValidatorTestFactory::denormalizer(), $resolver);
     }
 }

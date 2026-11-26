@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
-use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
@@ -33,7 +31,6 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
@@ -85,7 +82,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $runId = 'run-advance-redelivery';
         $commandStore = new InMemoryCommandStore();
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, new CommandRouter([])),
+            commandMailboxPolicy: new CommandMailboxPolicy($commandStore),
             eventFactory: new EventFactory(),
         );
         $first = AdvanceRunMessageBuilder::create($runId)
@@ -106,7 +103,6 @@ final class AdvanceRunHandlerTest extends TestCase
             kind: CoreCommandKind::FollowUp,
             idempotencyKey: 'queued-after-advance',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'later']]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $duplicate = $handler->handle($first, $committed->nextState);
@@ -140,12 +136,10 @@ final class AdvanceRunHandlerTest extends TestCase
             kind: CoreCommandKind::FollowUp,
             idempotencyKey: 'followup-ik-1',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Next message']]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
@@ -198,12 +192,10 @@ final class AdvanceRunHandlerTest extends TestCase
             kind: CoreCommandKind::FollowUp,
             idempotencyKey: 'followup-waiting-human-ik-1',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'yes']]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
@@ -253,7 +245,6 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
@@ -295,7 +286,6 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
@@ -330,7 +320,6 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
@@ -369,7 +358,6 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
@@ -412,7 +400,6 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
@@ -468,12 +455,10 @@ final class AdvanceRunHandlerTest extends TestCase
             kind: CoreCommandKind::Compact,
             idempotencyKey: 'compact-completed-ik',
             payload: [],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
@@ -556,12 +541,10 @@ final class AdvanceRunHandlerTest extends TestCase
             kind: CoreCommandKind::Steer,
             idempotencyKey: 'steer-completed-ik',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Continue please.']]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
@@ -601,12 +584,10 @@ final class AdvanceRunHandlerTest extends TestCase
             kind: CoreCommandKind::AppendMessage,
             idempotencyKey: 'append-pending-1',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'After cancel']]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
         $commandBus = new TestMessageBus();
 
@@ -667,12 +648,10 @@ final class AdvanceRunHandlerTest extends TestCase
             kind: CoreCommandKind::AppendMessage,
             idempotencyKey: 'append-pending-2',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'After cancel']]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
@@ -713,12 +692,10 @@ final class AdvanceRunHandlerTest extends TestCase
             kind: CoreCommandKind::AppendMessage,
             idempotencyKey: 'append-pending-3',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'After cancel']]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
         $commandBus = new TestMessageBus();
 
@@ -761,7 +738,6 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),

@@ -62,7 +62,7 @@ final class ProviderBoundaryCaptureSupport
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox, $toolSetResolver),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHooks: [],
+
             streamObserver: null,
             costCalculator: null,
             modelResolver: null,

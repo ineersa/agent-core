@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Infrastructure\Storage\DoctrineCommandStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 
 final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
@@ -22,7 +23,7 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $store = self::getContainer()->get(CommandStoreInterface::class);
         $this->assertInstanceOf(DoctrineCommandStore::class, $store);
         $other = $this->freshStore();
-        $first = new PendingCommand('fifo', 'steer', 'first', ['text' => 'earlier', 'typed' => new CommandCancellationOptions(safe: true)], new CommandCancellationOptions(safe: true));
+        $first = new PendingCommand('fifo', 'steer', 'first', ['text' => 'earlier', 'typed' => new \DateTimeImmutable('2026-01-01')]);
         $second = new PendingCommand('fifo', 'continue', 'second');
         $this->assertTrue($store->enqueue($first));
         $this->assertTrue($other->enqueue($second));
@@ -41,6 +42,24 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $this->assertTrue($other->enqueue($first));
         $this->assertTrue($other->enqueue($second));
         $this->assertFalse($other->has('other-run', 'first'));
+    }
+
+    public function testLegacyPendingRowDecodesWithoutCommandOptions(): void
+    {
+        $store = self::getContainer()->get(CommandStoreInterface::class);
+        $command = new PendingCommand('legacy', 'steer', 'key', ['text' => 'kept']);
+        $store->enqueue($command);
+        // Reconstruct the former native DTO shape inside the Messenger envelope.
+        $serialized = serialize($command);
+        $legacy = str_replace(':4:{', ':5:{', substr($serialized, 0, -1))
+            .serialize('options').serialize(new CommandCancellationOptions(safe: true)).'}';
+        $payload = addslashes(str_replace($serialized, $legacy, serialize(new Envelope($command))));
+        self::getContainer()->get(Connection::class)->executeStatement(
+            'UPDATE run_command SET payload = ?, payload_hash = ? WHERE run_id = ?',
+            [$payload, hash('sha256', $payload), 'legacy'],
+        );
+
+        $this->assertEquals([$command], $this->freshStore()->pending('legacy'));
     }
 
     public function testFinalizationWithoutEnqueueLeavesNoIdentityMarkers(): void

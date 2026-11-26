@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
@@ -17,7 +16,6 @@ use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
@@ -181,8 +179,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
     public function testFollowUpWhileWaitingClearsPendingOnAdvanceBoundary(): void
     {
         $store = new InMemoryCommandStore();
-        $router = new CommandRouter([]);
-        $mailbox = new CommandMailboxPolicy($store, $router);
+        $mailbox = new CommandMailboxPolicy($store);
         $handler = new AdvanceRunHandler(
             deferred: new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $mailbox,
@@ -194,7 +191,6 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
             kind: CoreCommandKind::FollowUp,
             idempotencyKey: 'fu-clear-1',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'go on']]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $state = $this->waitingState('run-followup-clear', 'ah_orphan');
@@ -270,11 +266,8 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         TestToolBatchCoordination::suspend($collector, $store, 'run-tool-cancel', 1, 'step-t', 'call-t', 'q-t');
 
         $store = new InMemoryCommandStore();
-        $router = new CommandRouter([]);
         $handler = new ApplyCommandHandler(
             commandStore: $store,
-            commandRouter: $router,
-            commandMailboxPolicy: new CommandMailboxPolicy($store, $router),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -363,12 +356,9 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
     private function applyHandler(?TestLogger $logger = null): ApplyCommandHandler
     {
         $store = new InMemoryCommandStore();
-        $router = new CommandRouter([]);
 
         return new ApplyCommandHandler(
             commandStore: $store,
-            commandRouter: $router,
-            commandMailboxPolicy: new CommandMailboxPolicy($store, $router),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,

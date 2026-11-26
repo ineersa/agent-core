@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
-use Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
@@ -21,14 +20,12 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
-use Ineersa\AgentCore\Domain\Model\ProviderRequest;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
@@ -88,7 +85,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 
 final class PlatformIntegrationTest extends TestCase
 {
-    public function testPlatformInvokerAppliesHookChainAndInjectsDynamicToolDescriptions(): void
+    public function testPlatformInvokerAppliesContextAndConversionHooksAndInjectsDynamicToolDescriptions(): void
     {
         $calls = [];
 
@@ -117,24 +114,6 @@ final class PlatformIntegrationTest extends TestCase
                 $this->calls[] = 'convert_to_llm';
 
                 return new MessageBag(Message::ofUser('converted'));
-            }
-        };
-
-        $beforeProviderHook = new class($calls) implements BeforeProviderRequestHookInterface {
-            /** @param list<string> $calls */
-            public function __construct(private array &$calls)
-            {
-            }
-
-            public function beforeProviderRequest(string $model, array $input, array $options, ?CancellationTokenInterface $cancelToken = null): ?ProviderRequest
-            {
-                $this->calls[] = 'before_provider_request';
-
-                return new ProviderRequest(
-                    model: $model.'-patched',
-                    input: $input,
-                    options: array_replace($options, ['temperature' => 0.2]),
-                );
             }
         };
 
@@ -189,11 +168,10 @@ final class PlatformIntegrationTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox),
             platform: $platform,
             transformContextHooks: [$transformHook],
-            convertToLlmHooks: [$convertHook],
+            convertToLlmHook: $convertHook,
             streamObserver: null,
             costCalculator: null,
             modelResolver: $modelResolver,
-            providerRequestPreparer: new ProviderRequestPreparer([$beforeProviderHook]),
             logger: new NullLogger(),
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
@@ -217,11 +195,10 @@ final class PlatformIntegrationTest extends TestCase
             ),
         ));
 
-        $this->assertSame(['transform_context', 'convert_to_llm', 'before_provider_request'], $calls);
-        $this->assertSame('gpt-test-resolved-patched', $modelClient->capturedModel);
+        $this->assertSame(['transform_context', 'convert_to_llm'], $calls);
+        $this->assertSame('gpt-test-resolved', $modelClient->capturedModel);
         $this->assertTrue($modelClient->capturedOptions['stream']);
         $this->assertSame(64, $modelClient->capturedOptions['max_tokens']);
-        $this->assertSame(0.2, $modelClient->capturedOptions['temperature']);
         $this->assertSame('Search docs for turn 2 (override)', $modelClient->capturedOptions['tools'][0]['function']['description']);
         $this->assertArrayNotHasKey('_agent_core_invocation', $modelClient->capturedOptions);
         $this->assertArrayNotHasKey('thinking_level', $modelClient->capturedOptions);
@@ -358,7 +335,7 @@ final class PlatformIntegrationTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHooks: [],
+
             streamObserver: null,
             costCalculator: $costCalculator,
             modelResolver: $modelResolver,
@@ -446,7 +423,7 @@ final class PlatformIntegrationTest extends TestCase
                 toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
                 platform: $platform,
                 transformContextHooks: [],
-                convertToLlmHooks: [$imageGatingHook],
+                convertToLlmHook: $imageGatingHook,
                 streamObserver: null,
                 costCalculator: null,
                 logger: new NullLogger(),
@@ -495,7 +472,7 @@ final class PlatformIntegrationTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHooks: [],
+
             streamObserver: null,
             costCalculator: null,
             modelResolver: null,
@@ -535,7 +512,7 @@ final class PlatformIntegrationTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHooks: [],
+
             streamObserver: null,
             costCalculator: null,
             modelResolver: null,
@@ -1083,7 +1060,7 @@ final class PlatformIntegrationTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHooks: [],
+
             streamObserver: null,
             costCalculator: null,
             modelResolver: null,
@@ -1621,7 +1598,6 @@ final class PlatformIntegrationTest extends TestCase
     private function createAdapter(
         ?\Closure $streamFactory = null,
         iterable $transformHooks = [],
-        iterable $convertHooks = [],
         ?LlmStreamObserverInterface $streamObserver = null,
     ): LlmPlatformAdapter {
         $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage());
@@ -1632,7 +1608,6 @@ final class PlatformIntegrationTest extends TestCase
         return $this->createAdapterForPlatform(
             $platform,
             transformHooks: $transformHooks,
-            convertHooks: $convertHooks,
             streamObserver: $streamObserver,
         );
     }
@@ -1640,7 +1615,6 @@ final class PlatformIntegrationTest extends TestCase
     private function createAdapterForPlatform(
         SymfonyPlatformInterface $platform,
         iterable $transformHooks = [],
-        iterable $convertHooks = [],
         ?LlmStreamObserverInterface $streamObserver = null,
         ?int $maxRetries = null,
         ?CostCalculatorInterface $costCalculator = null,
@@ -1668,7 +1642,6 @@ final class PlatformIntegrationTest extends TestCase
             ),
             platform: $platform,
             transformContextHooks: $transformHooks,
-            convertToLlmHooks: $convertHooks,
             streamObserver: $streamObserver,
             costCalculator: $costCalculator,
             modelResolver: null,

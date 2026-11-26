@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
-use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -71,7 +70,7 @@ final class SubmissionDeliveryRunHandlerTest extends IsolatedKernelTestCase
         $state = $f->parentState->with(['lastSeq' => 3, 'status' => RunStatus::Completed, 'pendingToolCalls' => [], 'activeStepId' => null]);
         $mailbox = $c->get(CommandStoreInterface::class);
         for ($i = 0; $i < 100; ++$i) {
-            $mailbox->enqueue(new PendingCommand($f->parent, CoreCommandKind::AppendMessage, 'existing-'.$i, [], new CommandCancellationOptions()));
+            $mailbox->enqueue(new PendingCommand($f->parent, CoreCommandKind::AppendMessage, 'existing-'.$i, []));
         }
         $handler = $c->get(SubmissionDeliveryRunHandler::class);
         $result = $handler->handle($delivery, $state);
@@ -99,7 +98,7 @@ final class SubmissionDeliveryRunHandlerTest extends IsolatedKernelTestCase
         $delivery = $this->accept($f);
         $mailbox = $c->get(CommandStoreInterface::class);
         for ($i = 0; $i < 99; ++$i) {
-            $mailbox->enqueue(new PendingCommand($f->child, CoreCommandKind::AppendMessage, 'existing-'.$i, [], new CommandCancellationOptions()));
+            $mailbox->enqueue(new PendingCommand($f->child, CoreCommandKind::AppendMessage, 'existing-'.$i, []));
         }
         $result = $c->get(SubmissionDeliveryRunHandler::class)->handle($delivery, $f->childState);
         Assert::assertSame('agent_command_queued', $result->events[0]->type);
