@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Runtime\Process\DetachedProcessLauncher;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\NativeExitObservationDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\NativeProcessExitDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
@@ -272,10 +273,25 @@ final class ProcessLifecycle
         return 0 === $exitCode;
     }
 
-    /** A synthetic stop marker records a signal attempt, not native exit. */
-    public function hasObservedExit(?int $exitCode, ?int $pid): bool
+    /**
+     * Observe whether the wrapper has exited and with which status.
+     *
+     * The wrapper writes its status before it exits, so status read after the
+     * PID is seen dead is complete. Reading status only before the liveness
+     * check races that exit and reports a finished command without its code.
+     * A synthetic stop marker (-1) records a signal attempt, not native exit.
+     */
+    public function observeExit(?string $statusPath, ?int $pid): NativeExitObservationDTO
     {
-        return (null !== $exitCode && -1 !== $exitCode) || (null !== $pid && !$this->isAlive($pid));
+        $exit = $this->readNativeExit($statusPath);
+        if (null !== $exit && -1 !== $exit->exitCode) {
+            return new NativeExitObservationDTO($exit, true);
+        }
+        if (null === $pid || $this->isAlive($pid)) {
+            return new NativeExitObservationDTO($exit, false);
+        }
+
+        return new NativeExitObservationDTO($this->readNativeExit($statusPath) ?? $exit, true);
     }
 
     /**
