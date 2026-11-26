@@ -17,66 +17,48 @@ use Symfony\Component\Process\Process;
  */
 final class BuildDistributionScriptTest extends TestCase
 {
-    public function testZstdIsRequiredAcrossDistributionEntrypoints(): void
+    public function testZstdIsOptionalForSystemPhpButIncludedInNativeBuilds(): void
     {
         $root = ProjectDir::get();
         $composer = json_decode((string) file_get_contents($root.'/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
         $pin = json_decode((string) file_get_contents($root.'/tools/static/pin.json'), true, flags: \JSON_THROW_ON_ERROR);
-        $this->assertArrayHasKey('ext-zstd', $composer['require']);
+        $this->assertArrayNotHasKey('ext-zstd', $composer['require']);
+        $this->assertArrayHasKey('ext-zstd', $composer['suggest']);
         $this->assertContains('zstd', $pin['extensions']);
-        $this->assertStringContainsString("'phar', 'zstd'", (string) file_get_contents($root.'/bin/console'));
-        $this->assertStringContainsString('phar zstd)', (string) file_get_contents($root.'/installer/bash-installer'));
-        $workflow = \Symfony\Component\Yaml\Yaml::parseFile($root.'/.github/workflows/release.yml');
-        $phpSetups = 0;
-        foreach ($workflow['jobs'] as $job) {
-            $hasPhpSetup = false;
-            $zstdSetups = 0;
-            foreach ($job['steps'] as $step) {
-                if (str_starts_with($step['uses'] ?? '', 'shivammathur/setup-php@')) {
-                    ++$phpSetups;
-                    $hasPhpSetup = true;
-                    $this->assertNotContains('zstd', array_map('trim', explode(',', $step['with']['extensions'])));
-                    $this->assertStringContainsString("runner.os == 'Linux' && ', :zstd'", $step['with']['extensions']);
-                    $this->assertStringContainsString('pie:1.6.0@sha256:', $step['with']['tools']);
-                }
-                if ('./.github/actions/setup-zstd' === ($step['uses'] ?? null)) {
-                    $this->assertTrue($hasPhpSetup, 'Install zstd after setting up system PHP.');
-                    $this->assertSame(5, $step['timeout-minutes']);
-                    ++$zstdSetups;
-                }
-            }
-            $this->assertSame($hasPhpSetup ? 1 : 0, $zstdSetups);
+        foreach (['bin/console' => '$requiredExtensions', 'installer/bash-installer' => 'REQUIRED_EXTENSIONS'] as $file => $variable) {
+            $this->assertSame(1, preg_match('/^ *'.preg_quote($variable, '/').' ?=.*$/m', (string) file_get_contents($root.'/'.$file), $match));
+            $this->assertStringNotContainsString('zstd', $match[0]);
         }
-        $this->assertSame(3, $phpSetups);
-        $action = (string) file_get_contents($root.'/.github/actions/setup-zstd/action.yml');
-        $this->assertStringContainsString('kjdev/zstd:0.19.1', $action);
-        $this->assertStringContainsString('phpversion("zstd") !== "0.19.1"', $action);
-        $this->assertStringNotContainsString('phpdismod', $action);
-        $this->assertStringContainsString('if (extension_loaded("zstd"))', $action);
-        $this->assertLessThan(strpos($action, '"$pie" install'), strpos($action, 'if (extension_loaded("zstd"))'));
-        $this->assertSame(2, substr_count($action, 'if ! startup_output='));
-        $this->assertStringContainsString('if ! startup_output="$("$php_bin" -r \'\' 2>&1)" || [[ -n "$startup_output" ]]', $action);
-        $this->assertSame(1, substr_count($action, '--skip-enable-extension'));
-        $this->assertStringContainsString('phpenmod -v "$ver" -s cli zstd', $action);
-        $this->assertLessThan(strpos($action, 'phpenmod -v'), strpos($action, 'tee "/etc/php/${ver}/mods-available/zstd.ini"'));
-        $this->assertStringContainsString('grep -rn zstd "/etc/php/${ver}"', $action);
     }
 
-    public function testStaticPrerequisitesRunBeforePhpZstdAndComposer(): void
+    public function testReleaseChecksPhpStartupBeforeComposerWithoutProvisioningZstd(): void
     {
-        $workflow = \Symfony\Component\Yaml\Yaml::parseFile(ProjectDir::get().'/.github/workflows/release.yml');
-        $setup = [];
-        foreach ($workflow['jobs']['static']['steps'] as $step) {
-            $uses = $step['uses'] ?? '';
-            if (\in_array($uses, ['./.github/actions/static-prerequisites', './.github/actions/setup-zstd'], true)) {
-                $setup[] = $uses;
-            } elseif (str_starts_with($uses, 'shivammathur/setup-php@')) {
-                $setup[] = 'php';
-            } elseif (str_starts_with($step['run'] ?? '', 'composer install ')) {
-                $setup[] = 'composer';
+        $root = ProjectDir::get();
+        $workflow = \Symfony\Component\Yaml\Yaml::parseFile($root.'/.github/workflows/release.yml');
+        $this->assertFileDoesNotExist($root.'/.github/actions/setup-zstd/action.yml');
+        $this->assertStringNotContainsString('zstd', (string) file_get_contents($root.'/.github/workflows/release.yml'));
+        foreach (['phar', 'static', 'publish'] as $job) {
+            $setup = [];
+            foreach ($workflow['jobs'][$job]['steps'] as $step) {
+                $uses = $step['uses'] ?? '';
+                if ('./.github/actions/static-prerequisites' === $uses) {
+                    $setup[] = 'prerequisites';
+                } elseif (str_starts_with($uses, 'shivammathur/setup-php@')) {
+                    $this->assertSame('composer:v2', $step['with']['tools']);
+                    $this->assertSame(5, $step['timeout-minutes']);
+                    $this->assertTrue($step['env']['fail-fast']);
+                    $setup[] = 'php';
+                } elseif ('Check clean PHP startup' === $step['name']) {
+                    $this->assertStringContainsString("php -r '' 2>&1", $step['run']);
+                    $this->assertStringContainsString('php --ini', $step['run']);
+                    $setup[] = 'startup';
+                } elseif (str_starts_with($step['run'] ?? '', 'composer install ')) {
+                    $this->assertStringNotContainsString('--ignore-platform-req', $step['run']);
+                    $setup[] = 'composer';
+                }
             }
+            $this->assertSame('static' === $job ? ['prerequisites', 'php', 'startup', 'composer'] : ['php', 'startup', 'composer'], $setup, $job);
         }
-        $this->assertSame(['./.github/actions/static-prerequisites', 'php', './.github/actions/setup-zstd', 'composer'], $setup);
     }
 
     public function testRuntimeRestoreRecoversOnlyAnExactDraftPrerelease(): void

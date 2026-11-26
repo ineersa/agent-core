@@ -4,6 +4,7 @@
     "license": "MIT",
     "description": "Monorepo for the agent-core ecosystem, consolidated into a single modular monolith.",
     "suggest": {
+        "ext-zstd": "Compresses ChatGPT request bodies when available.",
         "ineersa/hatfield-ext-task-workflow": "Task Workflow",
         "ineersa/hatfield-ext-observational-memory": "Observational Memory"
     },
@@ -53,7 +54,6 @@
         "ext-posix": "*",
         "ext-tokenizer": "*",
         "ext-xml": "*",
-        "ext-zstd": "*",
         "ineersa/hatfield-extension-api": "@dev",
         "symfony/console": "8.2.*@dev",
         "symfony/dependency-injection": "8.2.*@dev",

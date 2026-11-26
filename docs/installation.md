@@ -27,7 +27,9 @@ curl --proto '=https' --tlsv1.2 -fsSL \
 Before installing, provide PHP 8.5 or later with these extensions:
 
 - `pdo_sqlite`, `mbstring`, `xml`, `intl`, `curl`, `openssl`
-- `pcntl`, `posix`, `tokenizer`, `ctype`, `filter`, `iconv`, `phar`, `zstd`
+- `pcntl`, `posix`, `tokenizer`, `ctype`, `filter`, `iconv`, `phar`
+
+Optional: `zstd` enables ChatGPT request compression. The PHAR works without it.
 
 The PHAR still needs a POSIX-capable host. Downloading it does not make stock
 Windows PHP a supported runtime.

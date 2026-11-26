@@ -10,7 +10,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 
 final class HttpRequestBodyDecoderTest extends TestCase
 {
-    public function testPlainAndZstdRequestsDecodeToTheSamePayload(): void
+    public function testPlainAndSupportedZstdRequestsDecodeToTheSamePayload(): void
     {
         $payload = ['input' => [['role' => 'user', 'content' => 'synthetic history']], 'prompt_cache_key' => 'synthetic-cache'];
         $json = json_encode($payload, \JSON_THROW_ON_ERROR);
@@ -21,7 +21,10 @@ final class HttpRequestBodyDecoderTest extends TestCase
             return new MockResponse('{}');
         });
         $http->request('POST', 'https://test.invalid/responses', ['body' => $json])->getContent();
-        $http->request('POST', 'https://test.invalid/responses', ['body' => zstd_compress($json, 3), 'headers' => ['content-encoding' => 'zstd']])->getContent();
-        $this->assertSame([$payload, $payload], $decoded);
+        $this->assertSame([$payload], $decoded);
+        if (\extension_loaded('zstd')) {
+            $http->request('POST', 'https://test.invalid/responses', ['body' => zstd_compress($json, 3), 'headers' => ['content-encoding' => 'zstd']])->getContent();
+            $this->assertSame([$payload, $payload], $decoded);
+        }
     }
 }

@@ -72,8 +72,8 @@ to use the new binary; the task does not stop or restart them.
 ## Release workflow
 
 The workflow checks for all seven payload assets and verifies their checksums before
-publishing. It installs `zstd` 0.19.1 for system PHP with PIE 1.6.0 in a
-separate five-minute step that fails if the pinned extension is not loaded.
+publishing. It checks for clean system PHP startup before Composer, without
+provisioning optional `zstd` for system PHP. Native runtimes must include `zstd`.
 
 Native jobs share a GitHub concurrency group per target to avoid concurrent runtime
 publication for that target. The group allows one running and one pending job;

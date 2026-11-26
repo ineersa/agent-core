@@ -95,7 +95,8 @@ function distribution_runtime_fingerprint(string $target, array $pin): string
 function distribution_verify_runtime_cli(string $cli): void
 {
     CastorTasks\run_checked(escapeshellarg($cli).' -n -r '.escapeshellarg(
-        'if (!(curl_version()["features"] & CURL_VERSION_HTTP2)) { fwrite(STDERR, "Static curl requires HTTP/2 support\n"); exit(1); }'
+        'if (!extension_loaded("zstd")) { fwrite(STDERR, "Static PHP requires zstd\n"); exit(1); }'
+        .'if (!(curl_version()["features"] & CURL_VERSION_HTTP2)) { fwrite(STDERR, "Static curl requires HTTP/2 support\n"); exit(1); }'
     ));
 }
 

@@ -13,7 +13,7 @@ use Symfony\Component\Console\CommandLoader\CommandLoaderInterface;
 
 final class ChatGPTServiceWiringTest extends PerMethodIsolatedKernelTestCase
 {
-    public function testHostProviderCompressesWithoutChangingHistoryOrRoutingHeaders(): void
+    public function testHostProviderPreservesHistoryAndRoutingHeadersWithOrWithoutCompression(): void
     {
         $container = self::getContainer();
         $record = \Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture::record();
@@ -31,16 +31,21 @@ final class ChatGPTServiceWiringTest extends PerMethodIsolatedKernelTestCase
             self::assertSame(['Originator: Hatfield'], $headers['originator']);
             self::assertSame(['session-id: synthetic-cache-key'], $headers['session-id']);
             self::assertSame(['x-client-request-id: synthetic-cache-key'], $headers['x-client-request-id']);
-            self::assertSame(['Content-Encoding: zstd'], $headers['content-encoding']);
             self::assertSame(['Content-Type: application/json'], $headers['content-type']);
             self::assertSame(['Accept: text/event-stream'], $headers['accept']);
             self::assertSame(['Authorization: Bearer synthetic-access'], $headers['authorization']);
             self::assertSame(['X-Host-Proof: unchanged'], $headers['x-host-proof']);
-            $json = zstd_uncompress($options['body']);
-            self::assertIsString($json);
-            self::assertSame(zstd_compress($json, 3), $options['body']);
-            self::assertLessThan(\strlen($json), \strlen($options['body']));
-            self::assertLessThanOrEqual(100 * \strlen($options['body']), \strlen($json));
+            $json = $options['body'];
+            if (\extension_loaded('zstd')) {
+                self::assertSame(['Content-Encoding: zstd'], $headers['content-encoding']);
+                $json = zstd_uncompress($options['body']);
+                self::assertIsString($json);
+                self::assertSame(zstd_compress($json, 3), $options['body']);
+                self::assertLessThan(\strlen($json), \strlen($options['body']));
+                self::assertLessThanOrEqual(100 * \strlen($options['body']), \strlen($json));
+            } else {
+                self::assertArrayNotHasKey('content-encoding', $headers);
+            }
             $body = json_decode($json, true, flags: \JSON_THROW_ON_ERROR);
             self::assertSame('synthetic-cache-key', $body['prompt_cache_key']);
             self::assertSame($text, $body['input'][0]['content']);

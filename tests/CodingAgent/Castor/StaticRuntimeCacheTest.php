@@ -8,9 +8,23 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Process\Process;
 
 final class StaticRuntimeCacheTest extends TestCase
 {
+    public function testRuntimeCliWithoutZstdIsRejected(): void
+    {
+        require_once ProjectDir::get().'/.castor/distribution.php';
+        $probe = new Process([\PHP_BINARY, '-n', '-r', 'echo extension_loaded("zstd") ? "yes" : "no";']);
+        if ('yes' === $probe->mustRun()->getOutput()) {
+            $this->markTestSkipped('The test PHP has built-in zstd even without INI files.');
+        }
+        $this->assertSame('no', $probe->getOutput());
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage("output:\nStatic PHP requires zstd");
+        distribution_verify_runtime_cli(\PHP_BINARY);
+    }
+
     public function testCompiledRuntimeRequiresVerifiedArtifacts(): void
     {
         require_once ProjectDir::get().'/.castor/distribution.php';

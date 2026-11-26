@@ -39,13 +39,18 @@ jobs:
         with:
           # Exact patch from tools/static/pin.json (setup-php accepts patch values).
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip${{ runner.os == 'Linux' && ', :zstd' || '' }}
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
           coverage: none
-          tools: composer:v2, pie:1.6.0@sha256:81041b276f4e23dfdfa6dc941e5745f9adec824a1bcf6141e226181ef43f519e
+          tools: composer:v2
 
-      - name: Install zstd with PIE
-        timeout-minutes: 5
-        uses: ./.github/actions/setup-zstd
+      - name: Check clean PHP startup
+        run: |
+          set -euo pipefail
+          if ! startup_output="$(php -r '' 2>&1)" || [[ -n "$startup_output" ]]; then
+            printf '%s\n' "$startup_output" >&2
+            php --ini
+            exit 1
+          fi
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
@@ -102,13 +107,18 @@ jobs:
           fail-fast: true
         with:
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip${{ runner.os == 'Linux' && ', :zstd' || '' }}
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
           coverage: none
-          tools: composer:v2, pie:1.6.0@sha256:81041b276f4e23dfdfa6dc941e5745f9adec824a1bcf6141e226181ef43f519e
+          tools: composer:v2
 
-      - name: Install zstd with PIE
-        timeout-minutes: 5
-        uses: ./.github/actions/setup-zstd
+      - name: Check clean PHP startup
+        run: |
+          set -euo pipefail
+          if ! startup_output="$(php -r '' 2>&1)" || [[ -n "$startup_output" ]]; then
+            printf '%s\n' "$startup_output" >&2
+            php --ini
+            exit 1
+          fi
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
@@ -250,13 +260,18 @@ jobs:
           fail-fast: true
         with:
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip${{ runner.os == 'Linux' && ', :zstd' || '' }}
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
           coverage: none
-          tools: composer:v2, pie:1.6.0@sha256:81041b276f4e23dfdfa6dc941e5745f9adec824a1bcf6141e226181ef43f519e
+          tools: composer:v2
 
-      - name: Install zstd with PIE
-        timeout-minutes: 5
-        uses: ./.github/actions/setup-zstd
+      - name: Check clean PHP startup
+        run: |
+          set -euo pipefail
+          if ! startup_output="$(php -r '' 2>&1)" || [[ -n "$startup_output" ]]; then
+            printf '%s\n' "$startup_output" >&2
+            php --ini
+            exit 1
+          fi
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist

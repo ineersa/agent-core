@@ -27,8 +27,9 @@ Native builds include `fileinfo` for MIME detection, `gd` for image resizing, an
 Native builds also include `zstd` for lossless ChatGPT request compression.
 The pinned SPC revision provides `config/pkg/ext/ext-zstd.yml`, which depends on
 the `zstd` library recipe. Use `zstd` in the pin's extension list, without `ext-`.
-System-PHP and PHAR installations require `ext-zstd` too; Composer checks it
-when installing dependencies for the PHAR build.
+Fresh and restored native runtimes must pass the CLI check for `zstd` and
+cURL HTTP/2 support. The system PHP used for PHAR builds and installs does not
+require `zstd`; ChatGPT sends uncompressed JSON when it is unavailable.
 
 ## Build flow
 
@@ -75,8 +76,8 @@ run `bin/spc check-update --json` using the pinned SPC executable to compare
 its cached downloads with upstream versions where supported.
 
 Release jobs provision their separate system PHP using setup-php for bundled
-extensions and checksum-pinned PIE 1.6.0 for `kjdev/zstd:0.19.1`. They verify the
-loaded version before Composer. This does not change the native runtime inputs.
+extensions and check for clean PHP startup before Composer. This does not
+change the native runtime inputs.
 
 ## Runtime
 
