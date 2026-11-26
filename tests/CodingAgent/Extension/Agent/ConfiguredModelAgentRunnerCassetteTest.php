@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension\Agent;
 
+use Ineersa\CodingAgent\Tests\Support\ExtensionAgentCassetteConnection;
 use Ineersa\CodingAgent\Tests\Support\ProviderCassetteHttpClientFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
@@ -18,7 +19,6 @@ use Symfony\Component\Yaml\Yaml;
 /** Exercises the public blocking agent runner against native provider HTTP replay. */
 final class ConfiguredModelAgentRunnerCassetteTest extends IsolatedKernelTestCase
 {
-    private const string ENDPOINT = 'https://llama-cassette.invalid/v1';
     private const string SCENARIO = 'extension-agent-tool-drain';
 
     public function testBlockingRunDrainsStreamAndExecutesIsolatedExtensionTool(): void
@@ -105,7 +105,7 @@ final class ConfiguredModelAgentRunnerCassetteTest extends IsolatedKernelTestCas
         if (false !== $capture && '' !== $capture) {
             $provider = self::provider();
             $client = new CassetteHttpClient(
-                new HttpCassette($capture.'/'.self::SCENARIO.'.json', [$provider['base_url'] => self::ENDPOINT]),
+                new HttpCassette($capture.'/'.self::SCENARIO.'.json', [$provider['base_url'] => ExtensionAgentCassetteConnection::REPLAY_BASE_URL]),
                 HttpClient::create(),
                 record: true,
             );
@@ -133,31 +133,8 @@ final class ConfiguredModelAgentRunnerCassetteTest extends IsolatedKernelTestCas
     private static function provider(): array
     {
         $capture = getenv('HATFIELD_PRIVATE_CASSETTE_DIR');
-        if (false !== $capture && '' !== $capture) {
-            return Yaml::parseFile($capture.'/provider.yaml');
-        }
+        $connection = false !== $capture && '' !== $capture ? Yaml::parseFile($capture.'/connection.yaml') : [];
 
-        return [
-            'type' => 'generic',
-            'enabled' => true,
-            'base_url' => self::ENDPOINT,
-            'api' => 'openai-completions',
-            'completions_path' => '/chat/completions',
-            'supports_completions' => true,
-            'supports_thinking_levels' => true,
-            'compatibility' => ['thinking_format' => 'llama_cpp'],
-            'models' => [
-                'flash' => [
-                    'name' => 'flash',
-                    'context_window' => 262144,
-                    'max_tokens' => 65536,
-                    'input' => ['text', 'image'],
-                    'tool_calling' => true,
-                    'reasoning' => true,
-                    'thinking_level_map' => ['off' => 'none'],
-                    'compatibility' => ['thinking_format' => 'mistral', 'supports_reasoning_effort' => true],
-                ],
-            ],
-        ];
+        return ExtensionAgentCassetteConnection::scenarioProvider($connection);
     }
 }

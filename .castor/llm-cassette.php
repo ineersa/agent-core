@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 use Castor\Attribute\AsTask;
 use CastorTasks\OwnedTemporaryDirectory;
-use Ineersa\CodingAgent\Config\AppConfigLoader;
-use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Tests\Support\ExtensionAgentCassetteConnection;
 use Symfony\Component\Yaml\Yaml;
 
 use function CastorTasks\project_root_dir;
@@ -20,19 +19,13 @@ function llm_cassette_record(): void
 {
     $root = project_root_dir();
     // Read the operator's settings before entering isolated QA HOME. Never write them.
-    $config = (new AppConfigLoader(new SettingsPathResolver($root)))
-        ->load($root.'/config/hatfield.defaults.yaml', $root)->effective;
-    $provider = $config['ai']['providers']['llama_cpp'] ?? null;
-    if (!is_array($provider) || true !== ($provider['enabled'] ?? false) || !isset($provider['base_url'], $provider['models']['flash'])) {
-        throw new RuntimeException('Configure an enabled llama_cpp/flash provider before recording.');
-    }
-    $provider['models'] = ['flash' => $provider['models']['flash']];
+    $connection = ExtensionAgentCassetteConnection::load($root, $root);
 
     \CastorTasks\initialize_standalone_qa_run();
     $output = OwnedTemporaryDirectory::allocate($root.'/var', 'llm-capture-'.bin2hex(random_bytes(8)), 0700);
     $output->assertOwned();
-    $settings = $output->path.'/provider.yaml';
-    file_put_contents($settings, Yaml::dump($provider, 12));
+    $settings = $output->path.'/connection.yaml';
+    file_put_contents($settings, Yaml::dump($connection));
     chmod($settings, 0600);
     try {
         $prefix = qa_test_home_shell_prefix().' APP_ENV=test ';
