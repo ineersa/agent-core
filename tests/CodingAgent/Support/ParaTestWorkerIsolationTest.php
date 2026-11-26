@@ -34,8 +34,6 @@ final class ParaTestWorkerIsolationTest extends TestCase
     public static function laneCollisionCases(): iterable
     {
         yield 'check unit vs tui' => ['qa-20260830-192019-151232-9db6c7a1', '1', 'unit', 'tui'];
-        yield 'check unit vs llm-real' => ['qa-20260830-192019-151232-9db6c7a1', '1', 'unit', 'llm-real'];
-        yield 'check tui vs llm-real' => ['qa-20260830-192019-151232-9db6c7a1', '2', 'tui', 'llm-real'];
     }
 
     public function testMissingLaneKeepsTokenOnlyFallbackForStandalonePools(): void

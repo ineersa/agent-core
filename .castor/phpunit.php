@@ -54,7 +54,7 @@ function build_sequential_phpunit_command(string $pharEnv): string
     // HATFIELD_BINARY_PATH / HATFIELD_NATIVE_BINARY_PATH or distribution:verify.
     return qa_observability_env_command().' APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
         .' --bootstrap='.escapeshellarg(paratest_bootstrap_path())
-        .' --exclude-group tui-e2e-replay --exclude-group llm-real --exclude-group controller-replay --exclude-group phar --exclude-group native-artifact'
+        .' --exclude-group tui-e2e-replay --exclude-group controller-replay --exclude-group phar --exclude-group native-artifact'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 }
 
@@ -119,7 +119,7 @@ function test(?string $filter = null, ?string $suite = null): void
             .' --bootstrap='.escapeshellarg(paratest_bootstrap_path())
             .$suiteFlag
             .' --filter='.escapeshellarg($filter)
-            .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=controller-replay'
+            .' --exclude-group=tui-e2e-replay --exclude-group=controller-replay'
             .' '.phpunit_strict_issue_flags()
             .' --colors=never --no-progress --log-junit='.report_path('phpunit-filter.junit.xml');
         $result = run_test_command_bounded('unit-filter', $phpunitCmd, castor_test_runner_max_seconds());
@@ -170,7 +170,7 @@ function test(?string $filter = null, ?string $suite = null): void
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
         .$suiteFlag
-        .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=controller-replay --exclude-group=phar --exclude-group=native-artifact'
+        .' --exclude-group=tui-e2e-replay --exclude-group=controller-replay --exclude-group=phar --exclude-group=native-artifact'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 
     $result = run_test_command_bounded('unit-paratest', $cmd, castor_test_runner_max_seconds());
@@ -197,7 +197,7 @@ function test(?string $filter = null, ?string $suite = null): void
  *
  * This is a standalone command builder — it does NOT call phar_ensure()
  * and does NOT wrap in passthru/exit.  It excludes ALL groups that require
- * live LLM, tmux, or external tooling: tui-e2e-replay, llm-real,
+ * live LLM, tmux, or external tooling: tui-e2e-replay,
  * controller-replay, and phar.  The gate is fully deterministic.
  */
 function build_check_paratest_command(): string
@@ -214,7 +214,7 @@ function build_check_paratest_command(): string
         .' --processes='.$processes
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
-        .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=controller-replay --exclude-group=phar --exclude-group=native-artifact'
+        .' --exclude-group=tui-e2e-replay --exclude-group=controller-replay --exclude-group=phar --exclude-group=native-artifact'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 }
 

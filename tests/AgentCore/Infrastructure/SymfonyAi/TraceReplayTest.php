@@ -4,17 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
-use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
-use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
-use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayModelClient;
-use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayResultConverter;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
-use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
@@ -31,17 +20,12 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\NullLogger;
-use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
-use Symfony\AI\Platform\Platform;
-use Symfony\AI\Platform\Provider;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 
 /**
- * Fixture-driven provider-boundary regression coverage. Invocation context is
- * immutable worker input; session metadata remains the resume-time authority
- * for model and reasoning selection.
+ * Session metadata remains the resume-time authority for model and reasoning selection.
  */
 final class TraceReplayTest extends IsolatedKernelTestCase
 {
@@ -73,40 +57,6 @@ final class TraceReplayTest extends IsolatedKernelTestCase
         } finally {
             parent::tearDown();
         }
-    }
-
-    public function testReplayFixtureResolvesSessionModelAndConsumesImmutableInvocationMessages(): void
-    {
-        $fixture = $this->loadFixture('successful-response.json');
-        $sessionId = $this->writeSessionMetadata([
-            'model' => $fixture['model'],
-            'reasoning' => $fixture['reasoning'],
-        ]);
-        $messages = $this->fixtureMessages($fixture);
-        $modelResolver = $this->createSessionAwareResolver($this->standardAiData());
-        $modelClient = new FixtureReplayModelClient($fixture);
-
-        $result = $this->adapter($modelClient, $fixture, $modelResolver)->invoke(new ModelInvocationRequest(
-            model: 'fallback/unused',
-            input: new ModelInvocationInput(
-                runId: $sessionId,
-                turnNo: 1,
-                stepId: 'turn-1-llm-1',
-                messages: $messages,
-            ),
-        ));
-
-        $this->assertSame($fixture['model'], $modelClient->capturedModel, 'Session metadata model wins at the provider boundary.');
-        $this->assertNotNull($result->assistantMessage);
-        $this->assertSame($fixture['expected_text'], $result->assistantMessage->asText());
-        $this->assertSame($fixture['usage']['input_tokens'], $result->usage['input_tokens']);
-        $this->assertSame($fixture['usage']['output_tokens'], $result->usage['output_tokens']);
-        $this->assertSame($fixture['usage']['total_tokens'], $result->usage['total_tokens']);
-
-        $session = $this->sessionMetaStore->findSession($sessionId);
-        $this->assertNotNull($session);
-        $this->assertSame($fixture['model'], $session->model);
-        $this->assertSame($fixture['reasoning'], $session->reasoning);
     }
 
     public function testResumeUsesSessionMetadataOverChangedGlobalDefaults(): void
@@ -160,102 +110,6 @@ final class TraceReplayTest extends IsolatedKernelTestCase
         $this->assertSame('deepseek/deepseek-v4-flash', $selectionService->resolveInitialModel(null, $sessionId)?->toString());
     }
 
-    public function testReplayFixturePreservesThinkingDeltasForImmutableInvocationMessages(): void
-    {
-        $fixture = $this->loadFixture('successful-response.json');
-        $fixture['deltas'] = array_merge([
-            ['type' => 'thinking', 'content' => 'The user is asking about recursion.'],
-            ['type' => 'thinking_delta', 'content' => 'Let me explain with clear examples.'],
-        ], $fixture['deltas']);
-        $fixture['expected_text'] = "## Recursion in Programming\n\nRecursion is a technique where a function calls itself to solve smaller instances of the same problem.\n\n### Key Components\n\n1. **Base case** – a condition that stops the recursion\n2. **Recursive case** – the function calls itself with modified arguments";
-        $sessionId = $this->writeSessionMetadata([
-            'model' => 'deepseek/deepseek-v4-pro',
-            'reasoning' => 'high',
-        ]);
-        $modelResolver = $this->createSessionAwareResolver($this->standardAiData());
-        $modelClient = new FixtureReplayModelClient($fixture);
-
-        $result = $this->adapter($modelClient, $fixture, $modelResolver)->invoke(new ModelInvocationRequest(
-            model: 'fallback/unused',
-            input: new ModelInvocationInput(
-                runId: $sessionId,
-                turnNo: 1,
-                stepId: 'turn-1-llm-1',
-                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'Explain recursion']])],
-            ),
-        ));
-
-        $this->assertNotNull($result->assistantMessage);
-        $this->assertSame($fixture['expected_text'], $result->assistantMessage->asText());
-        $this->assertTrue($result->assistantMessage->hasThinking());
-        $this->assertSame($fixture['usage']['total_tokens'], $result->usage['total_tokens']);
-    }
-
-    /** @return array<string, mixed> */
-    private function loadFixture(string $name): array
-    {
-        $path = __DIR__.'/../../Fixtures/traces/'.$name;
-        $this->assertFileExists($path);
-        $fixture = json_decode((string) file_get_contents($path), true);
-        $this->assertIsArray($fixture);
-
-        return $fixture;
-    }
-
-    /** @param array<string, mixed> $fixture @return list<AgentMessage> */
-    private function fixtureMessages(array $fixture): array
-    {
-        /** @var list<array{role: string, content: string}> $inputMessages */
-        $inputMessages = $fixture['input']['messages'];
-
-        return array_map(
-            static fn (array $message): AgentMessage => new AgentMessage($message['role'], [['type' => 'text', 'text' => $message['content']]]),
-            $inputMessages,
-        );
-    }
-
-    /** @param array<string, mixed> $fixture */
-    private function adapter(FixtureReplayModelClient $modelClient, array $fixture, SessionAwareModelResolver $modelResolver): LlmPlatformAdapter
-    {
-        $dispatcher = new EventDispatcher();
-        $platform = new Platform(
-            providers: [new Provider(
-                name: 'replay',
-                modelClients: [$modelClient],
-                resultConverters: [new FixtureReplayResultConverter($fixture)],
-                modelCatalog: new FallbackModelCatalog(),
-                eventDispatcher: $dispatcher,
-            )],
-            eventDispatcher: $dispatcher,
-        );
-
-        return new LlmPlatformAdapter(
-            statusReader: new NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
-            platform: $platform,
-            transformContextHooks: [],
-            convertToLlmHooks: [],
-            streamObserver: null,
-            costCalculator: null,
-            logger: new NullLogger(),
-            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            modelResolver: $modelResolver,
-        );
-    }
-
-    /** @param array<string, mixed> $aiData */
-    private function createSessionAwareResolver(array $aiData): SessionAwareModelResolver
-    {
-        $config = $this->makeAppConfig($aiData);
-        $writer = new SettingsOverrideWriter(new SettingsPathResolver($this->settingsDirectory, $this->settingsDirectory.'/home'), PropertyAccess::createPropertyAccessor(), new Filesystem());
-        $selection = new ModelSelectionService($config, new ModelResolver($config, $this->sessionMetaStore, new NullLogger()), $writer, $this->sessionMetaStore);
-        $catalog = $config->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
-
-        return new SessionAwareModelResolver($selection, $catalog, $this->sessionMetaStore, static::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class));
-    }
-
-    /** @param array<string, mixed> $aiData */
     private function createSelectionService(array $aiData): ModelSelectionService
     {
         $config = $this->makeAppConfig($aiData);

@@ -70,28 +70,11 @@ services:
     alias: Ineersa\CodingAgent\Extension\ExtensionUpdateService
     public: true
 
-  # Test HTTP client for LLM requests.  Two modes:
-  #
-  #  1. Replay  (HATFIELD_LLM_REPLAY_FIXTURE_PATH set):
-  #     ControllerReplayHttpClientFactory  returns  a  MockHttpClient
-  #     that serves pre-recorded SSE chunks from fixture files.  Used
-  #     by  deterministic  controller  replay  E2E  (no  live  LLM).
-  #
-  #  2. Live (default): normal HttpClient with a 5s timeout so
-  #     live LLM smoke tests fail fast when llama.cpp generation is
-  #     stuck, instead of hanging for 90s+ until the Castor timeout.
-  #
-  #  The  factory  lives  in  tests/  —  NOT  in  production  src/.
-  #  SymfonyAiProviderFactory  receives  the  injected  HttpClient
-  #  through its constructor; no production env-var branching needed.
-  Symfony\Contracts\HttpClient\HttpClientInterface:
-    factory: ['Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayHttpClientFactory', 'create']
-
-  # Provider HTTP uses a dedicated Amp service in production. Keep that named
-  # dependency on the same replay seam instead of contacting a real endpoint.
+  # Model requests in the test container never fall back to a real transport.
   Ineersa\CodingAgent\Infrastructure\SymfonyAi\llm.http_client:
     class: Symfony\Contracts\HttpClient\HttpClientInterface
-    factory: ['Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayHttpClientFactory', 'create']
+    factory: ['Ineersa\CodingAgent\Tests\Support\ProviderCassetteHttpClientFactory', 'offline']
+    public: true
 
   # Deterministic /usage provider quota HTTP for APP_ENV=test (TUI E2E + unit).
   # Keeps the real ProviderQuotaProbeService; MockHttpClient never contacts networks.

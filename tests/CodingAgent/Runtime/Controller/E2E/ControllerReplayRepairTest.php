@@ -13,7 +13,7 @@ final class ControllerReplayRepairTest extends ControllerReplayE2eTestCase
     public function testRepairReturnsExplicitRefusalFromOwningRuntime(): void
     {
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->waitForEvent('runtime.ready', $this->controllerReadyTimeout());
         $this->writeCommand([
             'v' => 1,
             'id' => 'repair-empty-session',
@@ -34,10 +34,5 @@ final class ControllerReplayRepairTest extends ControllerReplayE2eTestCase
     protected function tempDirPrefix(): string
     {
         return 'test-controller-repair';
-    }
-
-    protected function replayFixtures(): array
-    {
-        return [];
     }
 }

@@ -4,19 +4,19 @@
 
 - Every changed user-visible TUI behavior needs automated proof at the lowest correct layer.
 - Use `castor test` and `VirtualTuiHarness` for layout, widgets, editor input, slash commands, local routing, and rendering.
-- Use `castor test:controller-replay` for runtime JSONL, sessions, events, and shell or tool ordering.
-- Use one minimal `castor test:tui` case with `#[Group('tui-e2e-replay')]` for terminal integration that virtual tests or controller replay cannot prove, or the existing packaged-boot case for that contract.
-- Use live LLM only when replay cannot prove provider behavior; read [live-llm.md](live-llm.md).
+- Use `castor test:controller-replay` for runtime JSONL, sessions, events, and process ownership.
+- Use one minimal `castor test:tui` case with `#[Group('tui-e2e-replay')]` for terminal integration that virtual tests or the controller process lane cannot prove, or the existing packaged-boot case for that contract.
+- Use provider HTTP cassettes when the provider boundary is part of the contract; read [live-llm.md](live-llm.md).
 - Do not require tmux or add journeys for behavior virtual tests can prove. Mocks, service-only DTO tests, custom smoke scripts, and picker or footer visibility assertions cannot be the only proof. Report the proof layer, what the test proves, and exact validation commands; reject missing proof or tests placed at a higher layer than needed.
-- If a reported live hang survives replay, reproduce it with the real controller instead of adding more fixture-only assertions.
+- If a live-only issue cannot be reproduced offline, report that gap rather than adding fixture-only assertions.
 
 ## Harness and lifecycle
 
-- Extend `ControllerReplayE2eTestCase` for replay; extend `ControllerE2eTestCase` for live proof.
+- Extend `ControllerReplayE2eTestCase` for offline source controller process proof.
 - Behavioral controller/TUI tests run source `bin/console` with `APP_ENV=test`, not a PHAR with unavailable test bundles.
-- Replay stays test-layer-only through `ControllerReplayHttpClientFactory`; no production replay-env branches.
-- Provide a fixture for every expected LLM turn. Exhaustion must fail, never fabricate successful completion.
-- Reuse `indexByType`, `foundAck`, `assertStartRunAcked`, `collectEventsUntil`, and diagnostic helpers.
+- The test provider transport uses native Symfony cassettes. Do not add production replay switches.
+- Use a reviewed cassette that covers every expected LLM request. Exhaustion must fail, never fabricate successful completion.
+- Reuse `indexByType`, `collectEventsUntil`, and diagnostic helpers.
 - Collect the specific event that proves the behavior. Do not wait for `run.completed` when the contract is tool execution.
 - Pair app and Messenger transport databases through `TuiE2eDatabaseEnv` or the existing controller base.
 - Keep independent PID ownership for each controller tree; teardown the entire owned group and descendants.

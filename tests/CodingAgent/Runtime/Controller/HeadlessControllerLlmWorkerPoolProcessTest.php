@@ -37,7 +37,7 @@ final class HeadlessControllerLlmWorkerPoolProcessTest extends ControllerReplayE
     public function testControllerProcessStartsSingleLlmFiberConsumer(): void
     {
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->waitForEvent('runtime.ready', $this->controllerReadyTimeout());
 
         $rootPid = $this->controllerRootPid();
         $this->assertGreaterThan(0, $rootPid, 'Controller root PID must be known after runtime.ready');
@@ -68,11 +68,6 @@ final class HeadlessControllerLlmWorkerPoolProcessTest extends ControllerReplayE
      *
      * @return list<array<string, mixed>>
      */
-    protected function replayFixtures(): array
-    {
-        return [];
-    }
-
     protected function extraSettingsYaml(): string
     {
         // Keep tool pool tiny so this topology case only asserts the llm consumer.

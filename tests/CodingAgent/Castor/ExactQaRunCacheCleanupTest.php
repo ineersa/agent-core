@@ -40,7 +40,6 @@ final class ExactQaRunCacheCleanupTest extends TestCase
         $ownedWorker2 = $hatfield.'/cache-'.$qaRunId.'-paraT2';
         $ownedUnitWorker = $hatfield.'/cache-'.$qaRunId.'-unit-T1';
         $ownedTuiWorker = $hatfield.'/cache-'.$qaRunId.'-tui-T2';
-        $ownedLlmWorker = $hatfield.'/cache-'.$qaRunId.'-llm-real-T3';
         $persistent = $hatfield.'/cache';
         $genericWorker = $hatfield.'/cache-paraT1';
         $otherQa = $hatfield.'/cache-qa-20260730-other-cafe';
@@ -48,7 +47,7 @@ final class ExactQaRunCacheCleanupTest extends TestCase
         $unknownLaneTrap = $hatfield.'/cache-'.$qaRunId.'-other-T1';
 
         foreach ([
-            $ownedPrimary, $ownedWorker, $ownedWorker2, $ownedUnitWorker, $ownedTuiWorker, $ownedLlmWorker,
+            $ownedPrimary, $ownedWorker, $ownedWorker2, $ownedUnitWorker, $ownedTuiWorker,
             $persistent, $genericWorker, $otherQa, $prefixTrap, $unknownLaneTrap,
         ] as $dir) {
             mkdir($dir, 0755, true);
@@ -63,7 +62,6 @@ final class ExactQaRunCacheCleanupTest extends TestCase
             $this->assertSame(
                 [
                     'cache-'.$qaRunId,
-                    'cache-'.$qaRunId.'-llm-real-T3',
                     'cache-'.$qaRunId.'-paraT1',
                     'cache-'.$qaRunId.'-paraT2',
                     'cache-'.$qaRunId.'-tui-T2',
@@ -77,7 +75,6 @@ final class ExactQaRunCacheCleanupTest extends TestCase
             $this->assertDirectoryDoesNotExist($ownedWorker2);
             $this->assertDirectoryDoesNotExist($ownedUnitWorker);
             $this->assertDirectoryDoesNotExist($ownedTuiWorker);
-            $this->assertDirectoryDoesNotExist($ownedLlmWorker);
 
             $this->assertDirectoryExists($persistent);
             $this->assertDirectoryExists($genericWorker);

@@ -16,11 +16,6 @@ final class ControllerE2eTestCaseTest extends TestCase
     public function testEarlyReturnPreservesOtherFramesFromSameRead(string $collector): void
     {
         $harness = new class('event-collection') extends ControllerE2eTestCase {
-            protected function tempDirPrefix(): string
-            {
-                return 'unused';
-            }
-
             /** @return list<array<string, mixed>> */
             public function collectSingleChunk(string $collector): array
             {

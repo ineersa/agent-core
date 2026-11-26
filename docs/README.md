@@ -28,7 +28,7 @@ references are intentionally not selected.
 
 - [Architecture index](../architecture/README.md): ownership, queues, cooperative
   execution, state, code mode, scheduling and diagrams.
-- [TUI testing](tui-testing.md), [LLM replay](llm-replay.md),
+- [TUI testing](tui-testing.md), [Provider HTTP cassettes](llm-replay.md),
   [temporary test artifacts](test-artifacts.md).
 - [Distribution](distribution.md), [PHAR](phar-packaging.md),
   [native packaging](static-packaging.md), [static build tools](../tools/static/README.md).

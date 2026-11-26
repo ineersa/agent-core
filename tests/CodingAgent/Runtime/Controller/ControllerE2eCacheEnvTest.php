@@ -150,7 +150,7 @@ final class ControllerE2eCacheEnvTest extends TestCase
  * Test-local concrete harness that exposes only the env-mapping helper.
  *
  * Overrides setUp/tearDown so construction never creates a temp project or
- * requires LLAMA_CPP_SMOKE_TEST / replay fixtures.
+ * launches an isolated controller.
  */
 final class ControllerE2eCacheEnvHarness extends ControllerE2eTestCase
 {
@@ -175,10 +175,5 @@ final class ControllerE2eCacheEnvHarness extends ControllerE2eTestCase
     public function bindProjectDir(string $projectDir): void
     {
         $this->projectDir = $projectDir;
-    }
-
-    protected function tempDirPrefix(): string
-    {
-        return 'unused-controller-e2e-cache-env';
     }
 }

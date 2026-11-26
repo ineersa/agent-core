@@ -85,7 +85,7 @@ function run_test_command_bounded(string $step, string $command, int $timeoutSec
  * Standalone test-task DB migrate with session reaping + hard timeout.
  *
  * Caps migrate setup at 60s (well under castor_test_runner_max_seconds).
- * Used by `castor test` / `test:tui` filtered / `test:controller` /
+ * Used by `castor test` / `test:tui` filtered /
  * `test:controller-replay`. Check-lane migration remains separate and
  * already uses timeout_check_command under the absolute check wall.
  *
@@ -972,7 +972,7 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
     // ── Test E: Live-LLM-like PHPUnit with leaked PHAR workers ──
     echo "\n── Test E: Live-LLM-like PHPUnit with leaked PHAR workers ──\n\n";
 
-    // Regression proof for test:llm-real hardening.
+    // Regression proof for bounded QA subprocess ownership.
     // Simulate a PHPUnit run that exits 0 while leaving behind a
     // background "messenger:consume" worker with the PHAR binary name
     // (same real-world pattern that kept the Castor task alive for

@@ -39,7 +39,7 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
     public function testControllerSigkillStopsOwnedBrokerHelperAndAllowsDurableDbRestart(): void
     {
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->waitForEvent('runtime.ready', $this->controllerReadyTimeout());
 
         $controllerPid = $this->controllerRootPid();
         $this->assertGreaterThan(0, $controllerPid);
@@ -91,7 +91,7 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
         $this->abandonKilledControllerHandles();
 
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->waitForEvent('runtime.ready', $this->controllerReadyTimeout());
         $replacementPid = $this->controllerRootPid();
         $this->assertGreaterThan(0, $replacementPid);
         $replacementBroker = $this->waitForOwnedBroker($replacementPid, 5.0);
@@ -123,7 +123,7 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
             $this->runId = json_decode(trim($seed->getOutput()), true, 32, \JSON_THROW_ON_ERROR)['run_id'];
         }
         $this->spawnController();
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->waitForEvent('runtime.ready', $this->controllerReadyTimeout());
 
         if ($pendingMount) {
             $this->writeCommand(['v' => 1, 'id' => 'fatal-attachment', 'type' => 'resume', 'runId' => $this->runId]);
@@ -258,14 +258,6 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
     protected function replayExtraEnv(): array
     {
         return ['HATFIELD_REPLAY_SESSION_ID' => '' !== $this->runId ? $this->runId : $this->sessionId];
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    protected function replayFixtures(): array
-    {
-        return [];
     }
 
     protected function tempDirPrefix(): string

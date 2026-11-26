@@ -7,10 +7,10 @@ namespace Ineersa\CodingAgent\Tests\Support;
 /**
  * Names SQLite / cache resources for ParaTest workers.
  *
- * castor check runs multiple ParaTest pools in parallel (unit, tui, llm-real).
+ * castor check runs multiple ParaTest pools in parallel (unit and TUI).
  * Each pool reuses TEST_TOKEN values starting at 1, so paths must include the
- * lane as well as the QA run id and worker token. Otherwise unit T1, tui T1,
- * and llm-real T1 share one app_test-*-T1.sqlite and contend on SQLite writes.
+ * lane as well as the QA run id and worker token. Otherwise unit T1 and TUI T1
+ * share one app_test-*-T1.sqlite and contend on SQLite writes.
  */
 final class ParaTestWorkerIsolation
 {

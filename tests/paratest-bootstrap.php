@@ -26,7 +26,7 @@ declare(strict_types=1);
  * ── Environment overrides ──
  *   TEST_TOKEN              — set by ParaTest (empty string for main)
  *   HATFIELD_QA_RUN_ID      — castor check run id (optional)
- *   HATFIELD_QA_LANE        — castor check / test lane id (unit|tui|llm-real)
+ *   HATFIELD_QA_LANE        — castor check / test lane id (unit|tui)
  *   HATFIELD_TEST_DATABASE_PATH — per-worker SQLite path
  *   HATFIELD_CACHE_DIR      — per-worker container cache
  *   HATFIELD_QA_TEST_HOME   — isolated HOME for bin/console migrations (from Castor parent)

@@ -10,7 +10,7 @@ Use this procedure when the user asks you to operate Hatfield and observe real t
 ## Scope and prerequisites
 
 - Read the checkout's `AGENTS.md`, `.agents/skills/testing/SKILL.md`, `tests/AGENTS.md`, and the testing skill's `references/e2e.md` and `references/live-llm.md` before runtime work. Read the Castor skill before discovering launch tasks.
-- For this user-requested manual workflow, use the default model and setup unless the user requests a specific model. The testing skill's instruction, "Use only `llama_cpp_test/test` on port 9052, never production providers in E2E," governs automated E2E runs; do not silently substitute that setup for an explicitly requested normal-setup manual test. Do not change automated E2E policy.
+- For this user-requested manual workflow, use the default model and setup unless the user requests a specific model. The testing skill’s offline provider policy governs automated QA; do not silently substitute that setup for an explicitly requested normal-setup manual test. Do not change automated E2E policy.
 - Run directly in the current worktree. Task worktrees are disposable. Create a separate tmux session, not another checkout, isolated HOME, copied settings tree, or database setup.
 - Separate session ownership still matters. Never interact with another session's panes or cancel its work. Never signal root-owned processes or processes tagged with `HATFIELD_SESSION_ID`.
 - Preserve repository changes. Prefer read-only test prompts. Record `git status --short` before and after the run.

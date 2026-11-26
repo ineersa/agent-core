@@ -5,15 +5,11 @@ declare(strict_types=1);
 /**
  * QA orchestration: the `check` command and its direct helpers.
  *
- * QA gate lanes run concurrently (proc_open).  Unit/integration and
- * replay-backed E2E lanes do not require a live LLM.  The `test:llm-real`
- * lane runs the same ParaTest command as `castor test:llm-real` (port 9052 /
- * llama-proxy; warm cache ~22–25s).  Opt-in live controller smoke:
- *   castor test:controller
+ * QA gate lanes run concurrently (proc_open).  All test lanes run offline with respect to model providers.
  *
  * Lanes (typical shell timeouts):
  *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),
- *   test:tui (210s), test:llm-real (210s), phpstan (90s), lsp:check (110s),
+ *   test:tui (210s), phpstan (90s), lsp:check (110s),
  *   dead-code (150s), cs-check (30s), docs:validate (30s).
  *   Absolute castor check wall clock: castor_test_runner_max_seconds() (210s)
  *   from check() entry — lock wait, QA init, preflight, lanes, and finalizers
@@ -22,8 +18,8 @@ declare(strict_types=1);
  *   No PHAR in the gate.
  *
  * Budget for test:controller-replay (75s → 90s → 120s → 150s): sequential
- * controller-subprocess cases (fixture replay + headless process proofs) each
- * spawn controller + messenger consumers. Replay/live E2E teardown is
+ * controller-subprocess cases (protocol and headless process proofs) each
+ * spawn controller + messenger consumers. E2E teardown is
  * SIGTERM → 0.05s grace → SIGKILL (deterministic reaping; production
  * ConsumerSupervisor grace is separate). Lane budget history: prior suites
  * needed raises under concurrent castor-check contention (GNU timeout 124);
@@ -47,13 +43,13 @@ declare(strict_types=1);
  * =========================================================================
  * This file was split from the former monolithic .castor/tasks.php.
  * See the sibling files for:
- *   helpers.php  — CastorTasks namespace (PHAR, LLM preflight, reports)
+ *   helpers.php  — CastorTasks namespace (PHAR, QA isolation, reports)
  *   shared.php   — widely-used global helpers (fail_quality, etc.)
  *   process.php  — process management (run_commands_parallel, session
  *                   cleanup, timeout-hardstop smoke proof)
  *   phpunit.php  — PHPUnit tasks (test, ParaTest, sequential builders)
- *   e2e.php      — E2E tasks (test:llm-real, test:tui, test:tui-update,
- *                   test:controller, test:controller-replay)
+ *   e2e.php      — E2E tasks (test:tui, test:tui-update,
+ *                   test:controller-replay)
  *   phar.php     — PHAR packaging tasks
  *   tools.php    — static analysis and code-style tasks
  *   run.php      — agent runtime launchers
@@ -68,12 +64,9 @@ use Symfony\Component\Lock\LockInterface;
 
 use function CastorTasks\acquire_castor_check_lock;
 use function CastorTasks\assert_castor_check_lane_artifacts_integrity;
-use function CastorTasks\assert_castor_check_llama_proxy_cache_unchanged;
 use function CastorTasks\assert_castor_check_run_no_process_leaks;
-use function CastorTasks\begin_castor_check_llama_proxy_cache_guard;
 use function CastorTasks\castor_check_lock_enabled;
 use function CastorTasks\castor_cli_executable;
-use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\finalize_qa_run_tui_tmux_sessions;
 use function CastorTasks\initialize_qa_check_run;
 use function CastorTasks\release_castor_check_lock;
@@ -93,17 +86,14 @@ require_once __DIR__.'/env.php';
 /**
  * Run full QA gate.
  *
- * Replay-backed controller/TUI E2E and static-analysis lanes run without
- * production LLM providers.  The `test:llm-real` lane hits llama_cpp_test/test
- * on port 9052 (llama-proxy with cache normalization recommended).  Preflight
- * `check_llm_generation_ready()` runs once before parallel lanes start.
+ * All lanes run without live model providers.
  *
  * Concurrent `castor check` invocations for the same git repository (including sibling
  * worktrees) queue on a shared Symfony Lock (FlockStore) outside the worktree. Lanes run concurrently as external subprocesses (via proc_open)
  * so they do not share memory with the Castor PHAR.  Each lane's
  * output is captured to var/reports/check-<step>.log.
  */
-#[AsTask(description: 'Run full QA gate (includes live llm-real smoke on port 9052)')]
+#[AsTask(description: 'Run full QA gate (no live model providers)')]
 function check(): void
 {
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
@@ -169,8 +159,7 @@ function castor_check_remaining_wall_seconds(float $checkWallDeadline): int
  */
 function _run_castor_check_body(string $root, string $qaRunId, float $checkWallDeadline, float $checkStartedAt): void
 {
-    castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before preflight');
-    $llamaProxyCacheBaseline = begin_castor_check_llama_proxy_cache_guard($checkWallDeadline);
+    castor_check_fail_if_wall_exceeded($checkWallDeadline, 'during QA setup');
 
     // No PHAR ensure — the deterministic controller-replay and TUI
     // replay lanes use source bin/console with APP_ENV=test, which
@@ -187,8 +176,6 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
     // directly — not through a Castor task closure — to stay safe
     // inside the Castor PHAR (no pcntl_fork shared-memory issues).
     //
-    // Unit/integration ParaTest excludes llm-real (build_check_paratest_command).
-    // Live llm-real runs as its own parallel lane (same command as castor test:llm-real).
     // lsp:check and docs:validate reuse their dedicated Castor tasks.
     $allCheckCommands = [
         'deptrac' => [
@@ -217,12 +204,6 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
         'test:tui' => [
             'cmd' => timeout_check_command(
                 build_test_tui_phpunit_command(null),
-                castor_test_runner_max_seconds(),
-            ),
-        ],
-        'test:llm-real' => [
-            'cmd' => timeout_check_command(
-                build_test_llm_real_phpunit_command(null),
                 castor_test_runner_max_seconds(),
             ),
         ],
@@ -290,10 +271,6 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
         fail_quality('tmux is not installed. The QA gate requires tmux for the TUI E2E lane. Install it with your package manager.');
     }
 
-    // Fail fast before spawning parallel lanes if port 9052 cannot complete generation.
-    castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before llm generation preflight');
-    check_llm_generation_ready($checkWallDeadline);
-
     $failures = [];
     $timings = [];
 
@@ -315,18 +292,16 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
         unset($GLOBALS['CASTOR_PHAR_READY']);
         // Detached tmux panes live outside the lane setsid tree; finalize exact-run
         // sessions here so external lane timeouts still release QA-owned resources
-        // before cache-guard or leak assertions can abort the check body.
+        // before leak assertions can abort the check body.
         finalize_qa_run_tui_tmux_sessions($qaRunId);
     }
 
-    // Wall/cache-guard assertions run inside finalize after safe exact-run cache
-    // cleanup so a post-lane cache-guard or wall failure cannot leak QA cache roots.
+    // Check the wall after safe exact-run cache cleanup.
     finalize_castor_check_run(
         $qaRunId,
         $failures,
         $timings,
         array_keys($allCheckCommands),
-        $llamaProxyCacheBaseline,
         $checkWallDeadline,
         $checkStartedAt,
     );
@@ -340,8 +315,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
  * 2. exact-run process/tmux leak assertion (fail_quality never returns on failure)
  * 3. publish completion and reclaim exact QA scopes (only after leak assertion returns)
  * 4. absolute wall check (post-cleanup)
- * 5. llama-proxy cache guard
- * 6. lane-failure quality result or quality ok
+ * 5. lane-failure quality result or quality ok
  *
  * @param array<string, string>    $failures
  * @param array<string, float|int> $timings
@@ -353,7 +327,6 @@ function finalize_castor_check_run(
     array $failures,
     array $timings,
     array $laneSteps,
-    ?int $llamaProxyCacheBaseline,
     float $checkWallDeadline,
     float $checkStartedAt,
 ): void {
@@ -364,10 +337,9 @@ function finalize_castor_check_run(
     assert_castor_check_run_no_process_leaks($qaRunId);
     \CastorTasks\complete_qa_run($qaRunId, \CastorTasks\project_root_dir());
 
-    // Post-lane quality guards after cleanup: wall/cache growth must still fail the
+    // Post-lane quality guards after cleanup: wall overruns must still fail the
     // gate, but must not strand exact-run cache trees when those guards fire.
     castor_check_fail_if_wall_exceeded($checkWallDeadline, 'during post-lane finalizers (after exact-run cache cleanup)');
-    assert_castor_check_llama_proxy_cache_unchanged($llamaProxyCacheBaseline, $checkWallDeadline);
 
     if ([] !== $failures) {
         fail_quality('quality failed:'.\PHP_EOL.format_step_failures($failures));

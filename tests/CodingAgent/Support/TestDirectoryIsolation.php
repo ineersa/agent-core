@@ -113,7 +113,7 @@ ai:
         llama_cpp_test:
             type: generic
             enabled: true
-            base_url: 'http://127.0.0.1:9052/v1'
+            base_url: 'https://model.invalid/v1'
             api: openai-completions
             api_key: dummy
             completions_path: /chat/completions

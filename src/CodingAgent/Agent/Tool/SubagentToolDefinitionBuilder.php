@@ -13,7 +13,7 @@ use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
  *
  * Decision-rule guidance belongs in promptGuidelines (and skills/docs/prompts).
  * The provider schema is generated natively from SubagentArgumentsDTO.
- * Schema/prompt text changes can invalidate llama-proxy tool-schema cache keys.
+ * Schema and prompt text are part of the provider request and its cassette signature.
  */
 final class SubagentToolDefinitionBuilder
 {
