@@ -62,11 +62,7 @@ try {
     $archiveBytes = filesize($path);
     $container->get(ActiveRunContextInterface::class)->release($run);
     $handler->clear();
-    $wholeProcessPeakBeforeAttach = memory_get_peak_usage(true);
-    $baseline = memory_get_usage(false);
-    memory_reset_peak_usage();
     $container->get(SessionMaintenanceHandler::class)->attach(new AttachRun($run, [], 'memory-attach'));
-    $attachGrowth = memory_get_peak_usage(false) - $baseline;
     $available = null;
     foreach ($container->get(InMemoryRuntimeEventSink::class)->drain($run) as $event) {
         if (RuntimeEventTypeEnum::BootstrapAvailable->value === $event->type) {
@@ -81,7 +77,7 @@ try {
         $reason = $record->context['read_reason'];
         $reads[$reason] = ($reads[$reason] ?? 0) + $record->context['archive_bytes_read'];
     }
-    echo json_encode(['count' => $count, 'archive_bytes' => $archiveBytes, 'peak_bytes' => max($wholeProcessPeakBeforeAttach, memory_get_peak_usage(true)), 'attach_growth_bytes' => $attachGrowth, 'indexed_reads' => $reads,
+    echo json_encode(['count' => $count, 'archive_bytes' => $archiveBytes, 'peak_bytes' => memory_get_peak_usage(true), 'indexed_reads' => $reads,
         'spool_bytes' => $available['bytes'], 'spool_records' => $available['records'], 'canonical_seq' => $available['canonical_seq'], 'end_offset' => $available['end_offset']], \JSON_THROW_ON_ERROR)."\n";
 } finally {
     $kernel->shutdown();
