@@ -176,6 +176,13 @@ PHP;
     }
 
     #[Test]
+    public function resolvePgidRejectsNonPositivePidsRatherThanResolvingTheCurrentGroup(): void
+    {
+        $this->assertNull($this->lifecycle->resolvePgid(0));
+        $this->assertNull($this->lifecycle->resolvePgid(-1));
+    }
+
+    #[Test]
     public function launchProcessTracksWrapperPidNotTransientLauncher(): void
     {
         $pidFile = $this->tmpDir.'/wrapper.pid';
@@ -199,6 +206,7 @@ PHP;
                 (int) trim((string) file_get_contents($pidFile)),
                 'Tracked PID must match the wrapper PID file',
             );
+            $this->assertSame($launch['pid'], $launch['pgid'], 'Readiness is published after the wrapper enters its own group');
             $this->assertTrue($this->lifecycle->isAlive($launch['pid']));
             $this->assertNull($this->lifecycle->readStatusFile($statusFile));
         } finally {

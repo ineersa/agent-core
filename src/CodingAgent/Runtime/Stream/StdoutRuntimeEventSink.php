@@ -60,7 +60,7 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
     public function isPipe(): bool
     {
         if (null === self::$isPipe) {
-            self::$isPipe = \function_exists('posix_isatty') && !posix_isatty(\STDOUT);
+            self::$isPipe = !posix_isatty(\STDOUT);
         }
 
         return self::$isPipe;

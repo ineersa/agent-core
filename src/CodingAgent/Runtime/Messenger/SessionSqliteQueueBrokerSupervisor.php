@@ -445,7 +445,7 @@ final class SessionSqliteQueueBrokerSupervisor
     private function signalOwnedTree(int $signal): void
     {
         $pgid = $this->processGroupId;
-        if ($this->canSignalOwnedProcessGroup($pgid) && \function_exists('posix_kill')) {
+        if ($this->canSignalOwnedProcessGroup($pgid)) {
             @posix_kill(-$pgid, $signal);
 
             return;
@@ -469,7 +469,7 @@ final class SessionSqliteQueueBrokerSupervisor
     private function ownedTreeAlive(): bool
     {
         $pgid = $this->processGroupId;
-        if (!$this->canSignalOwnedProcessGroup($pgid) || !\function_exists('posix_kill')) {
+        if (!$this->canSignalOwnedProcessGroup($pgid)) {
             return false;
         }
 
@@ -478,10 +478,6 @@ final class SessionSqliteQueueBrokerSupervisor
 
     private function resolveOwnedProcessGroupId(int $pid): int
     {
-        if (!\function_exists('posix_getpgid')) {
-            return $pid;
-        }
-
         $pgid = @posix_getpgid($pid);
         if (false === $pgid || $pgid <= 1) {
             return $pid;
@@ -523,10 +519,6 @@ final class SessionSqliteQueueBrokerSupervisor
     {
         if (null === $pgid || $pgid <= 1) {
             return false;
-        }
-
-        if (!\function_exists('posix_getpgid')) {
-            return true;
         }
 
         $selfPid = getmypid();
