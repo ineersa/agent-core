@@ -90,14 +90,14 @@ final class ExtensionsSetupScreenTest extends PerMethodIsolatedKernelTestCase
         try {
             $terminal->simulateInput("\r");
             $terminal->simulateInput("\r"); // Disable parent.
-            $this->assertSame(['parent' => 'false', 'forks' => 'off', 'agents' => 'false'], $flow->members);
+            $this->assertSame(['parent' => 'false', 'forks' => 'off', 'agents' => 'false', 'addition' => 'false'], $flow->members);
             $settings = $tui->getFocus();
             $this->assertInstanceOf(SettingsListWidget::class, $settings);
             $this->assertSame('off', $settings->getValue('forks'));
             $this->assertSame('false', $settings->getValue('agents'));
 
             $terminal->simulateInput("\r"); // Re-enabling must not silently restore child choices.
-            $this->assertSame(['parent' => 'true', 'forks' => 'off', 'agents' => 'false'], $flow->members);
+            $this->assertSame(['parent' => 'true', 'forks' => 'off', 'agents' => 'false', 'addition' => 'false'], $flow->members);
             $terminal->simulateInput("\r");
             for ($row = 0; $row < 4; ++$row) {
                 $terminal->simulateInput("\x1b[B");
@@ -133,7 +133,7 @@ final class ExtensionsSetupScreenTest extends PerMethodIsolatedKernelTestCase
         foreach (['configuration' => $cfg, 'class' => 'fixture-task-workflow', 'key' => 'task_workflow'] as $property => $value) {
             (new \ReflectionProperty($flow, $property))->setValue($flow, $value);
         }
-        $flow->members = ['parent' => 'false', 'forks' => 'off', 'agents' => 'false'];
+        $flow->members = ['parent' => 'false', 'forks' => 'off', 'agents' => 'false', 'addition' => 'false'];
         (new \ReflectionMethod($flow, 'collectNodes'))->invoke($flow, $cfg->getConfigTreeBuilder()->buildTree());
         $path = $this->isolatedCwd().'/.hatfield/settings.yaml';
         $this->assertSame($this->isolatedCwd().'/.hatfield', realpath(\dirname($path)));

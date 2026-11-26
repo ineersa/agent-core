@@ -79,7 +79,7 @@ final class ChildExtensionSelectionServiceTest extends TestCase
         );
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('not in extensions.enabled');
+        $this->expectExceptionMessage('not enabled in the parent');
         $service->assertSelectedAvailable([$always], 'test');
     }
 

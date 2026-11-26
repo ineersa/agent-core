@@ -45,7 +45,7 @@ final class MarkdownFrontmatterExtractor
      *                                                                                                           - hasOpeningDelimiter: true when content starts with a valid "---" opening line
      *                                                                                                           - hasClosingDelimiter: true when a valid closing "---" or "..." line was found
      */
-    public function extract(string $raw): array
+    public function extract(string $raw, bool $preserveBody = false): array
     {
         // Normalize line endings: CRLF and CR to LF.
         $content = str_replace(["\r\n", "\r"], "\n", $raw);
@@ -103,6 +103,13 @@ final class MarkdownFrontmatterExtractor
         $body = false !== $closingLineEnd
             ? trim(substr($content, $closingLineEnd + 1))
             : '';
+
+        if ($preserveBody && false !== $closingLineEnd) {
+            // Locate the same line boundary in the original bytes, before newline normalization.
+            $lineCount = substr_count($content, "\n", 0, $closingLineEnd + 1);
+            $lines = preg_split('/\r\n|\r|\n/', $raw, $lineCount + 1);
+            $body = $lines[$lineCount] ?? '';
+        }
 
         return [
             'yamlBlock' => $yamlBlock,

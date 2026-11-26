@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SetupSettingsService;
 use Ineersa\Tui\Setup\CoreSettingsScreen;
+use Ineersa\Tui\Setup\DefinitionSetupScreen;
 use Ineersa\Tui\Setup\ExtensionsSetupScreen;
 use Ineersa\Tui\Setup\SetupScreen;
 use Ineersa\Tui\Setup\UnifiedSetupScreen;
@@ -25,7 +26,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Tui\Tui;
 
-#[AsCommand(name: 'setup', description: 'Configure Hatfield settings, providers and extensions')]
+#[AsCommand(name: 'setup', description: 'Configure Hatfield settings, providers, extensions, skills and agents')]
 final readonly class SetupCommand
 {
     public function __construct(
@@ -37,6 +38,7 @@ final readonly class SetupCommand
         private SetupSettingsService $settingsService,
         private ThemeRegistry $themes,
         private LoggerInterface $logger,
+        private DefinitionSetupService $definitions,
     ) {
     }
 
@@ -62,6 +64,8 @@ final readonly class SetupCommand
                 $providers,
                 new SetupScreen($providers, $this->logger, $theme),
                 new ExtensionsSetupScreen($extensions, $theme, $this->logger),
+                new DefinitionSetupScreen($this->definitions, $scope, $this->logger, $theme, skill: true),
+                new DefinitionSetupScreen($this->definitions, $scope, $this->logger, $theme, skill: false),
             ];
         });
         $tui->run();

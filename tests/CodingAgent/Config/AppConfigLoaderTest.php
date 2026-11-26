@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\SettingsValueResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 
 class AppConfigLoaderTest extends TestCase
@@ -61,6 +62,20 @@ YAML
     protected function tearDown(): void
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
+    }
+
+    public function testProjectExtensionAdditionsAreRejectedAtUserScopeEvenWhenEmpty(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('extensions.project_extensions is only allowed in project settings');
+        $this->loader->resolveLayers($this->tmpDir, [], ['extensions' => ['project_extensions' => []]], []);
+    }
+
+    public function testProjectExtensionAdditionsRejectNonStringEntries(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('extensions.project_extensions must be a list');
+        $this->loader->resolveLayers($this->tmpDir, [], [], ['extensions' => ['project_extensions' => [true]]]);
     }
 
     public function testLoadDefaultsOnly(): void

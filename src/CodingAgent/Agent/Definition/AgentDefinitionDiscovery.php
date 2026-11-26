@@ -40,6 +40,9 @@ final class AgentDefinitionDiscovery
 {
     private ?AgentDefinitionCatalog $cachedCatalog = null;
 
+    /** @var array<string, array{name: string, custom: bool}> In ascending precedence order. */
+    private array $sources = [];
+
     public function __construct(
         private readonly AgentsConfig $agentsConfig,
         private readonly SettingsPathResolver $pathResolver,
@@ -47,6 +50,16 @@ final class AgentDefinitionDiscovery
         private readonly string $cwd,
         private readonly ?LoggerInterface $logger = null,
     ) {
+    }
+
+    /** @return array<string, array{name: string, custom: bool}> */
+    public function sources(): array
+    {
+        $this->cachedCatalog = null;
+        $this->sources = [];
+        $this->discover();
+
+        return array_reverse($this->sources, true);
     }
 
     /**
@@ -167,7 +180,7 @@ final class AgentDefinitionDiscovery
                 continue;
             }
 
-            $this->loadFile($filePath, $definitionsByName, $diagnostics);
+            $this->loadFile($filePath, $definitionsByName, $diagnostics, custom: !$isAutoDiscovery);
         }
     }
 
@@ -196,7 +209,7 @@ final class AgentDefinitionDiscovery
             $this->loadDirectory($path, $definitionsByName, $diagnostics, isAutoDiscovery: false);
         } elseif (is_file($path)) {
             if (str_ends_with(basename($path), '.md')) {
-                $this->loadFile($path, $definitionsByName, $diagnostics);
+                $this->loadFile($path, $definitionsByName, $diagnostics, custom: true);
             } else {
                 $diagnostics[] = new AgentDefinitionDiagnosticDTO(
                     type: 'invalid_path',
@@ -220,6 +233,7 @@ final class AgentDefinitionDiscovery
         string $filePath,
         array &$definitionsByName,
         array &$diagnostics,
+        bool $custom,
     ): void {
         try {
             $definition = $this->parser->parseFile($filePath);
@@ -257,6 +271,8 @@ final class AgentDefinitionDiscovery
         }
 
         $name = $definition->name;
+        unset($this->sources[$filePath]);
+        $this->sources[$filePath] = ['name' => $name, 'custom' => $custom];
 
         if (isset($definitionsByName[$name])) {
             $diagnostics[] = new AgentDefinitionDiagnosticDTO(

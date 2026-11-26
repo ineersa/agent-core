@@ -15,6 +15,8 @@ extensions:
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
         - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
         - Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension
+    # Project-only additions to the resolved enabled list, even when replaced above.
+    project_extensions: []
     settings:
         # OM requires observational_memory.librarian.url in user/project settings.
         # Optional librarian.token (literal or env:NAME) is shared by MCP and REST.

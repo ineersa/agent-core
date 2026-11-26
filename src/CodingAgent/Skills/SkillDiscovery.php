@@ -63,6 +63,9 @@ final class SkillDiscovery
     /** @var list<string> Absolute skill directories registered by enabled extensions */
     private array $registeredSkillDirectories = [];
 
+    /** @var array<string, array{name: string, origin: string}> In precedence order. */
+    private array $sources = [];
+
     public function __construct(
         private readonly SkillsConfig $config,
         private readonly SettingsPathResolver $pathResolver,
@@ -72,6 +75,16 @@ final class SkillDiscovery
         private readonly Filesystem $filesystem,
         private ?LoggerInterface $logger = null,
     ) {
+    }
+
+    /** @return array<string, array{name: string, origin: string}> */
+    public function sources(): array
+    {
+        $this->cachedResult = null;
+        $this->discover(materializeBuiltins: false);
+        $this->cachedResult = null;
+
+        return $this->sources;
     }
 
     /**
@@ -95,7 +108,7 @@ final class SkillDiscovery
      *
      * @throws \RuntimeException When CWD is not configured
      */
-    public function discover(): array
+    public function discover(bool $materializeBuiltins = true): array
     {
         if (null !== $this->cachedResult) {
             return $this->cachedResult;
@@ -107,14 +120,16 @@ final class SkillDiscovery
         // Materialize bundled skills into ~/.hatfield/skills before scanning.
         // Runs even when --no-skills suppresses auto-discovery so the home
         // copy stays current for later sessions.
-        $this->materializeBuiltinSkills($homeDir);
+        if ($materializeBuiltins) {
+            $this->materializeBuiltinSkills($homeDir);
+        }
 
-        /** @var list<string> $searchPaths */
+        /** @var list<array{string, string}> $searchPaths */
         $searchPaths = [];
 
         // Step 1: CLI --skills-path entries (highest priority, always checked)
         foreach ($this->config->skillsPaths as $path) {
-            $searchPaths[] = $path;
+            $searchPaths[] = [$path, 'custom path'];
         }
 
         // Step 2: Auto-discovery paths (only when auto-discovery is enabled).
@@ -125,18 +140,19 @@ final class SkillDiscovery
                 foreach ([$cwd, $homeDir] as $baseDir) {
                     $path = \sprintf($pattern, $baseDir);
                     if (is_dir($path)) {
-                        $searchPaths[] = $path;
+                        $searchPaths[] = [$path, 'local'];
                     }
                 }
             }
 
             // Step 3: Extension-registered skill directories (lowest precedence)
             foreach ($this->registeredSkillDirectories as $directory) {
-                $searchPaths[] = $directory;
+                $searchPaths[] = [$directory, 'package'];
             }
         }
 
         // Scan all search paths
+        $this->sources = [];
         $skills = [];
         $this->collisions = [];
         $this->skillsByCommandName = [];
@@ -144,10 +160,10 @@ final class SkillDiscovery
         $seenNames = [];
         $seenRoots = [];
 
-        foreach ($searchPaths as $searchPath) {
+        foreach ($searchPaths as [$searchPath, $origin]) {
             $foundRoots = $this->scanForSkillRoots($searchPath, 0);
 
-            foreach ($foundRoots as $skillDir) {
+            foreach ($foundRoots as [$skillDir, $linked]) {
                 if (isset($seenRoots[$skillDir])) {
                     continue;
                 }
@@ -158,6 +174,14 @@ final class SkillDiscovery
                 }
 
                 $name = $definition->name;
+                $source = $origin;
+                $builtin = $this->resources->getBuiltinSkillsPath().'/'.basename($skillDir).'/SKILL.md';
+                if ('local' === $source && !$linked && $skillDir === rtrim($homeDir, '/').'/.hatfield/skills/'.basename($skillDir) && is_file($builtin)) {
+                    $source = 'built-in';
+                } elseif ('local' === $source && $linked) {
+                    $source = 'linked path';
+                }
+                $this->sources[$definition->skillFile] = ['name' => $name, 'origin' => $source];
 
                 if (isset($seenNames[$name])) {
                     $this->collisions[] = [
@@ -305,9 +329,9 @@ final class SkillDiscovery
     /**
      * Recursively scan a directory for skill roots (directories containing SKILL.md).
      *
-     * @return list<string> Absolute paths to skill root directories
+     * @return list<array{string, bool}> Canonical skill root and whether its discovery path crossed a symlink
      */
-    private function scanForSkillRoots(string $dir, int $depth): array
+    private function scanForSkillRoots(string $dir, int $depth, bool $linked = false): array
     {
         if ($depth > self::MAX_RECURSION_DEPTH) {
             if (null !== $this->logger) {
@@ -323,10 +347,12 @@ final class SkillDiscovery
             return [];
         }
 
+        $linked = $linked || $realDir !== rtrim($dir, '/');
+
         // Check if this directory itself is a skill root
         $skillMdPath = $realDir.'/SKILL.md';
         if (is_file($skillMdPath)) {
-            return [$realDir];
+            return [[$realDir, $linked]];
         }
 
         // Otherwise, scan immediate subdirectories
@@ -348,7 +374,7 @@ final class SkillDiscovery
                 continue;
             }
 
-            $subResults = $this->scanForSkillRoots($childPath, $depth + 1);
+            $subResults = $this->scanForSkillRoots($childPath, $depth + 1, $linked);
             $results = array_merge($results, $subResults);
         }
 
