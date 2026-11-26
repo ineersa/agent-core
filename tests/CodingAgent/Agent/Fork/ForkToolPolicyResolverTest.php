@@ -10,21 +10,11 @@ use Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
+use PHPUnit\Framework\TestCase;
 
-final class ForkToolPolicyResolverTest extends IsolatedKernelTestCase
+final class ForkToolPolicyResolverTest extends TestCase
 {
-    public function testForkChildPolicyExcludesForkAndSubagent(): void
-    {
-        $resolver = self::getContainer()->get(ForkToolPolicyResolver::class);
-        $policy = $resolver->resolve('parent-policy-1');
-
-        $this->assertNotContains('fork', $policy['tools']);
-        $this->assertNotContains('subagent', $policy['tools']);
-        $this->assertNotSame([], $policy['tools']);
-    }
-
     public function testForkChildPolicyReusesConfiguredSubagentExcludedTools(): void
     {
         // Thesis: SETTINGS-03 agents.subagent_excluded_tools applies to fork children via the

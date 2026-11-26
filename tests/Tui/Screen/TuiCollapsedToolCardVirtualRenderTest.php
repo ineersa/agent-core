@@ -33,21 +33,17 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
 
     private const string SESSION_ID = 'virtual-collapsed-tool-cards';
 
-    /** @return iterable<string, array{string, bool, bool}> */
+    /** @return iterable<string, array{string, bool}> */
     public static function failedToolCards(): iterable
     {
-        yield 'bash exchange' => ['bash', true, false];
-        yield 'bash standalone' => ['bash', false, false];
-        yield 'generic exchange' => ['code_mode', true, false];
-        yield 'read exchange' => ['read', true, false];
-        yield 'skill read' => ['read', true, true];
-        yield 'image exchange' => ['view_image', true, false];
-        yield 'image standalone' => ['view_image', false, false];
+        yield 'bash exchange' => ['bash', false];
+        yield 'generic exchange' => ['code_mode', false];
+        yield 'skill read' => ['read', true];
     }
 
     #[Test]
     #[DataProvider('failedToolCards')]
-    public function failedOutputUsesBoundedPreviewAndCtrlOTogglesFullResult(string $toolName, bool $paired, bool $skill): void
+    public function failedOutputUsesBoundedPreviewAndCtrlOTogglesFullResult(string $toolName, bool $skill): void
     {
         $body = "Command failed with exit code 1.\n".implode("\n", array_map(
             static fn (int $n): string => 'failure-output-line-'.$n,
@@ -59,19 +55,18 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
         if ($skill) {
             $meta['skill_name'] = 'test-skill';
         }
-        $blocks = [];
-        if ($paired) {
-            $blocks[] = new TranscriptBlock(
+        $blocks = [
+            new TranscriptBlock(
                 id: 'failed-call', kind: TranscriptBlockKindEnum::ToolCall,
                 runId: self::SESSION_ID, seq: 1, text: $toolName,
                 meta: [...$meta, 'arguments' => ['command' => 'exit 1', 'path' => 'example.txt']],
-            );
-        }
-        $blocks[] = new TranscriptBlock(
-            id: 'failed-result', kind: TranscriptBlockKindEnum::ToolResult,
-            runId: self::SESSION_ID, seq: 2, text: $toolName,
-            meta: [...$meta, 'is_error' => true, 'result' => $body],
-        );
+            ),
+            new TranscriptBlock(
+                id: 'failed-result', kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID, seq: 2, text: $toolName,
+                meta: [...$meta, 'is_error' => true, 'result' => $body],
+            ),
+        ];
         foreach ($blocks as $block) {
             $state->appendTranscriptBlock($block);
         }

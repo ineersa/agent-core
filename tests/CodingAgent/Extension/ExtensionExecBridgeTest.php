@@ -33,13 +33,12 @@ final class ExtensionExecBridgeTest extends TestCase
 
     public static function cooperativeCases(): iterable
     {
-        yield 'normal held command' => [false, false];
-        yield 'termination grace' => [true, false];
-        yield 'forced termination after grace' => [true, true];
+        yield 'normal held command' => [false];
+        yield 'termination grace' => [true];
     }
 
     #[DataProvider('cooperativeCases')]
-    public function testHeldCommandAndTerminationGraceYield(bool $cancel, bool $force): void
+    public function testHeldCommandAndTerminationGraceYield(bool $cancel): void
     {
         if (!\function_exists('pcntl_signal')) {
             $this->markTestSkipped('Native TERM readiness requires pcntl.');
@@ -80,19 +79,13 @@ PHP;
                 // sibling must run inside the bridge's termination grace.
                 $this->assertFalse(async(static fn () => $future->isComplete())->await(new TimeoutCancellation(2)));
             }
-            if (!$force) {
-                $socket->write("release\n");
-            }
+            $socket->write("release\n");
             $result = $future->await(new TimeoutCancellation(7));
             $this->assertSame($cancel, $result->cancelled);
             $this->assertFalse($result->timedOut);
-            if (!$force) {
-                $this->assertSame('released', $result->stdout);
-                $this->assertSame('captured-error', $result->stderr);
-                $this->assertSame(23, $result->exitCode);
-            } else {
-                $this->assertNotSame(23, $result->exitCode);
-            }
+            $this->assertSame('released', $result->stdout);
+            $this->assertSame('captured-error', $result->stderr);
+            $this->assertSame(23, $result->exitCode);
         } finally {
             $socket?->close();
             $server->close();

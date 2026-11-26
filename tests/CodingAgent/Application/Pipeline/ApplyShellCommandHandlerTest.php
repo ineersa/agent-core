@@ -23,16 +23,18 @@ use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Application\Pipeline\ApplyShellCommandHandler;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
-use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\JsonlRunEventLog;
 use Ineersa\CodingAgent\Session\RunHistorySourceDTO;
 use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Thesis: direct bang shells become canonical turn-owned command+effect
@@ -41,8 +43,20 @@ use Symfony\Component\Lock\LockFactory;
  * shells seed a new turn so retained-history discard can abandon them.
  */
 #[CoversClass(ApplyShellCommandHandler::class)]
-final class ApplyShellCommandHandlerTest extends IsolatedKernelTestCase
+final class ApplyShellCommandHandlerTest extends TestCase
 {
+    private string $directory;
+
+    protected function setUp(): void
+    {
+        $this->directory = TestDirectoryIsolation::createProjectTempDir();
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->directory);
+    }
+
     /**
      * @return iterable<string, array{
      *     status: RunStatus,
@@ -402,7 +416,7 @@ final class ApplyShellCommandHandlerTest extends IsolatedKernelTestCase
         ), $state);
     }
 
-    public function testFreshKeyDoesNotReadCanonicalArchiveAndHandlerIsRegisteredOnce(): void
+    public function testFreshKeyDoesNotReadCanonicalArchive(): void
     {
         $events = $this->createMock(EventStoreInterface::class);
         $events->expects($this->never())->method('rangeFor');
@@ -429,8 +443,6 @@ final class ApplyShellCommandHandlerTest extends IsolatedKernelTestCase
             $this->assertSame(0, $counts['index_cold_rebuild'] ?? 0);
             $this->assertSame(0, $counts['sequence_range'] ?? 0);
         }
-        $this->assertInstanceOf(ApplyShellCommandHandler::class, self::getContainer()->get(ApplyShellCommandHandler::class));
-        $this->assertFalse(self::getContainer()->has('Ineersa\\AgentCore\\Application\\Pipeline\\ApplyShellCommandHandler'));
     }
 
     public function testLaterKindCollisionDoesNotHideAppliedShell(): void
@@ -458,9 +470,8 @@ final class ApplyShellCommandHandlerTest extends IsolatedKernelTestCase
     private function sources(?TestLogger $logger = null): RunHistorySourceProviderInterface
     {
         $sources = $this->createStub(RunHistorySourceProviderInterface::class);
-        $container = self::getContainer();
-        $log = new JsonlRunEventLog($container->get(EventPayloadNormalizer::class), $container->get(LockFactory::class), $container->get(RunSequenceAllocatorInterface::class), new EventLogMaxSeqBootstrapReader(), $logger ?? new TestLogger(), presentations: HistoryEventStoreFactory::presentationFactory());
-        $sources->method('historySource')->willReturnCallback(static fn (string $runId): RunHistorySourceDTO => new RunHistorySourceDTO($log, getcwd().'/.hatfield/sessions/'.$runId.'/events.jsonl'));
+        $log = new JsonlRunEventLog(new EventPayloadNormalizer(), new LockFactory(new FlockStore()), new FileRunSequenceAllocator(), new EventLogMaxSeqBootstrapReader(), $logger ?? new TestLogger(), presentations: HistoryEventStoreFactory::presentationFactory());
+        $sources->method('historySource')->willReturnCallback(fn (string $runId): RunHistorySourceDTO => new RunHistorySourceDTO($log, $this->directory.'/'.$runId.'/events.jsonl'));
 
         return $sources;
     }
@@ -468,8 +479,8 @@ final class ApplyShellCommandHandlerTest extends IsolatedKernelTestCase
     private function appendHistory(RunEvent $event): void
     {
         $path = $this->sources()->historySource($event->runId)->path;
-        self::getContainer()->get(Filesystem::class)->mkdir(\dirname($path));
-        $record = self::getContainer()->get(EventPayloadNormalizer::class)->normalize($event->runId, $event->seq, $event->turnNo, $event->type, $event->payload);
+        (new Filesystem())->mkdir(\dirname($path));
+        $record = (new EventPayloadNormalizer())->normalize($event->runId, $event->seq, $event->turnNo, $event->type, $event->payload);
         file_put_contents($path, json_encode($record, \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
     }
 }

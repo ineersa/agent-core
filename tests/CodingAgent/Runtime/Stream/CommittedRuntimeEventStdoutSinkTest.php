@@ -4,28 +4,29 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Stream;
 
-use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink;
-use Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink
  */
-final class CommittedRuntimeEventStdoutSinkTest extends IsolatedKernelTestCase
+final class CommittedRuntimeEventStdoutSinkTest extends TestCase
 {
-    public function testEmitNoopsWhenStdoutIsNotPipe(): void
+    private string $directory;
+
+    protected function setUp(): void
     {
-        $logger = new TestLogger();
-        $sink = new CommittedRuntimeEventStdoutSink($logger, new StdoutRuntimeEventSink(), self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapEmissionGate::class));
+        $this->directory = TestDirectoryIsolation::createProjectTempDir('stdout-sink');
+        TestDirectoryIsolation::createHatfieldTree($this->directory);
+    }
 
-        $sink->emit(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'run-a', 3, []));
-
-        $this->assertSame([], $logger->records);
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->directory);
     }
 
     /**
@@ -53,7 +54,7 @@ final class CommittedRuntimeEventStdoutSinkTest extends IsolatedKernelTestCase
                 seq: 3,
                 payload: ['url' => 'https://example.com/path/to', 'text' => 'héllo'],
             ));
-            PHP, \dirname(__DIR__, 4)], getcwd(), ['HATFIELD_SESSION_ID' => false]);
+            PHP, \dirname(__DIR__, 4)], $this->directory, ['HATFIELD_SESSION_ID' => false]);
         $process->mustRun();
 
         $output = $process->getOutput();

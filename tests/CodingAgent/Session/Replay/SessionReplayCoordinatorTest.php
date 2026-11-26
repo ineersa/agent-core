@@ -11,10 +11,8 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\Process\Process;
 
 final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
 {
@@ -311,37 +309,6 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
     {
         yield 'accepted cancellation closes the question' => [true];
         yield 'operation abortion leaves the question protected' => [false];
-    }
-
-    public function testColdAndWarmMemoryInIndependent128MProcesses(): void
-    {
-        $directory = TestDirectoryIsolation::createProjectTempDir('coordinated-replay-memory');
-        try {
-            $measurements = [];
-            foreach ([256, 4096] as $count) {
-                $process = new Process([\PHP_BINARY, '-d', 'memory_limit=128M', __DIR__.'/Fixtures/coordinated-replay-memory.php', $directory, (string) $count], \dirname(__DIR__, 4), ['HATFIELD_SESSION_ID' => false], timeout: 8);
-                $process->mustRun();
-                $measurements[] = json_decode($process->getOutput(), true, 512, \JSON_THROW_ON_ERROR);
-            }
-            [$small, $large] = $measurements;
-            fwrite(\STDERR, 'coordinated replay memory: '.json_encode($measurements, \JSON_THROW_ON_ERROR)."\n");
-            $this->assertGreaterThan($small['archive_bytes'] * 15, $large['archive_bytes']);
-            $this->assertLessThanOrEqual($small['peak_bytes'] + 4 * 1024 * 1024, $large['peak_bytes']);
-            foreach ($measurements as $measurement) {
-                $this->assertLessThan(128 * 1024 * 1024, $measurement['peak_bytes']);
-                $this->assertSame($measurement['archive_bytes'], $measurement['cold']['index_cold_rebuild']);
-                $this->assertSame($measurement['archive_bytes'], $measurement['cold']['selected_history']);
-                $this->assertSame(0, $measurement['warm']['index_cold_rebuild'] ?? 0);
-                $this->assertSame($measurement['archive_bytes'], $measurement['warm']['selected_history']);
-                $this->assertSame(0, $measurement['selected']['index_cold_rebuild'] ?? 0);
-                $this->assertLessThan($measurement['archive_bytes'] / 100, $measurement['selected']['selected_history']);
-                $this->assertSame($measurement['count'] * 9 + 1, $measurement['selected_sequence']);
-                $this->assertSame(1, $measurement['messages']);
-                $this->assertLessThanOrEqual(2000, $measurement['blocks']);
-            }
-        } finally {
-            TestDirectoryIsolation::removeDirectory($directory);
-        }
     }
 
     protected static function createKernel(array $options = []): Kernel

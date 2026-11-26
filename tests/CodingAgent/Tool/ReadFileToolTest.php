@@ -61,16 +61,11 @@ final class ReadFileToolTest extends TestCase
 
     /* ── definition() tests ── */
 
-    public function testDefinitionNameIsRead(): void
-    {
-        $definition = $this->readFileTool->definition();
-
-        $this->assertSame('read', $definition->name);
-    }
-
     public function testDefinitionJsonSchemaHasPathOffsetLimit(): void
     {
         $definition = $this->readFileTool->definition();
+        $this->assertSame('read', $definition->name);
+        $this->assertSame('parallel', $definition->executionMode->value);
         // Typed DTO tool: schema is generated natively from ReadFileArgumentsDTO.
         $this->assertNull($definition->parametersJsonSchema);
 
@@ -84,13 +79,6 @@ final class ReadFileToolTest extends TestCase
         $this->assertArrayHasKey('limit', $args);
         $this->assertContains('path', $schema['required']);
         $this->assertFalse($schema['additionalProperties']);
-    }
-
-    public function testDefinitionExecutionModeIsParallel(): void
-    {
-        $definition = $this->readFileTool->definition();
-
-        $this->assertSame('parallel', $definition->executionMode->value);
     }
 
     /* ── __invoke() success tests ── */

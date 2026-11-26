@@ -41,6 +41,7 @@ use PHPUnit\Framework\Attributes\Group;
 /**
  * GF-05 RED: bare project-root AGENTS.md must appear in effective parent + inheriting child context.
  */
+// The parent start uses a capturing runner installed before resolving the configured client.
 #[Group('gf-05-prompt-contract')]
 final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsolatedKernelTestCase
 {

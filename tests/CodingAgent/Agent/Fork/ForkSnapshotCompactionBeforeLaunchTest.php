@@ -39,6 +39,7 @@ use PHPUnit\Framework\Attributes\Group;
  * 3. Generic compaction reuse: ForkExecutionService calls the existing
  *    CompactionServiceInterface::compactMessages (no fork-specific compactor).
  */
+// Each outcome installs its own compaction and runner doubles before resolving the configured launch path.
 #[Group('db')]
 final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKernelTestCase
 {

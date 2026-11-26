@@ -9,16 +9,17 @@ use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Session\History\HistoryReplayPlan;
 use Ineersa\CodingAgent\Session\History\RunPresentationDTO;
 use Ineersa\CodingAgent\Session\History\RunPresentationProjector;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\TestCase;
 
-final class RunPresentationProjectorTest extends IsolatedKernelTestCase
+final class RunPresentationProjectorTest extends TestCase
 {
     public function testIncrementalTerminalReductionRetainsOnlyOrdinaryToolCounts(): void
     {
-        $codec = self::getContainer()->get(ToolExecutionEndPayloadCodec::class);
+        $codec = new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer());
         $projector = new RunPresentationProjector(new ReplayAssistantMessageFactory(), $codec, 0, 800);
         $projector->observe(RunEvent::forAppend('presentation', 0, 'run_started', ['payload' => ['messages' => [
             $this->message('system', 'SYSTEM_SECRET'),
@@ -47,7 +48,7 @@ final class RunPresentationProjectorTest extends IsolatedKernelTestCase
 
     public function testExcludedRecordsCountWithoutChangingSelectedPresentation(): void
     {
-        $projector = new RunPresentationProjector(new ReplayAssistantMessageFactory(), self::getContainer()->get(ToolExecutionEndPayloadCodec::class), 0, 800);
+        $projector = new RunPresentationProjector(new ReplayAssistantMessageFactory(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), 0, 800);
         $projector->observe(RunEvent::forAppend('presentation', 0, 'run_started', ['payload' => ['messages' => [$this->message('user', 'Initial')]]]));
         $projector->observe(RunEvent::forAppend('presentation', 1, 'llm_step_completed', ['assistant_message' => $this->message('assistant', 'Selected')]));
         $projector->observe(RunEvent::forAppend('presentation', 2, 'llm_step_completed', ['assistant_message' => $this->message('assistant', 'DISCARDED_SECRET')]), false);
@@ -69,7 +70,7 @@ final class RunPresentationProjectorTest extends IsolatedKernelTestCase
         ];
         $plan = HistoryReplayPlan::build($events);
         $this->assertFalse($plan->includes($events[4]));
-        $projector = new RunPresentationProjector(new ReplayAssistantMessageFactory(), self::getContainer()->get(ToolExecutionEndPayloadCodec::class), 0, 800);
+        $projector = new RunPresentationProjector(new ReplayAssistantMessageFactory(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), 0, 800);
         foreach ($events as $event) {
             $projector->observe($event, $plan->includes($event));
         }
@@ -82,7 +83,7 @@ final class RunPresentationProjectorTest extends IsolatedKernelTestCase
         $events[] = new RunEvent('presentation', 7, 2, 'turn_advanced', ['turn_no' => 2]);
         $plan = HistoryReplayPlan::build($events);
         $this->assertTrue($plan->includes($events[4]));
-        $projector = new RunPresentationProjector(new ReplayAssistantMessageFactory(), self::getContainer()->get(ToolExecutionEndPayloadCodec::class), 0, 800);
+        $projector = new RunPresentationProjector(new ReplayAssistantMessageFactory(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), 0, 800);
         foreach ($events as $event) {
             $projector->observe($event, $plan->includes($event));
         }
@@ -93,7 +94,7 @@ final class RunPresentationProjectorTest extends IsolatedKernelTestCase
 
     public function testPresentationStillValidatesTheCompleteToolResult(): void
     {
-        $projector = new RunPresentationProjector(new ReplayAssistantMessageFactory(), self::getContainer()->get(ToolExecutionEndPayloadCodec::class), 0, 800);
+        $projector = new RunPresentationProjector(new ReplayAssistantMessageFactory(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), 0, 800);
         $this->expectException(\UnexpectedValueException::class);
         $projector->observe(new RunEvent('presentation', 1, 0, 'tool_execution_end', ['tool_result' => ['tool_call_id' => 'ordinary']]));
     }

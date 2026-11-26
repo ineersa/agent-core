@@ -77,13 +77,6 @@ final class ViewImageToolTest extends TestCase
 
     /* ── definition() tests ── */
 
-    public function testDefinitionNameIsViewImage(): void
-    {
-        $definition = $this->viewImageTool->definition();
-
-        $this->assertSame('view_image', $definition->name);
-    }
-
     /**
      * Regression (PR #387 review): view_image used to ship a leftover manual
      * flat parametersJsonSchema that misclassified it as a raw-array tool and
@@ -94,6 +87,7 @@ final class ViewImageToolTest extends TestCase
     public function testDefinitionUsesNativeFlatSchemaWithCraftedPathDescription(): void
     {
         $definition = $this->viewImageTool->definition();
+        $this->assertSame('view_image', $definition->name);
 
         $this->assertSame(ViewImageTool::DESCRIPTION, $definition->description);
         $this->assertNull($definition->parametersJsonSchema);

@@ -10,10 +10,10 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 
-final class ActiveRunContextTest extends PerMethodIsolatedKernelTestCase
+final class ActiveRunContextTest extends IsolatedKernelTestCase
 {
     public function testKnownReservedRunIsNotImplicitlyQueuedByLookup(): void
     {
@@ -34,7 +34,7 @@ final class ActiveRunContextTest extends PerMethodIsolatedKernelTestCase
         $recovered = new RunState($run, RunStatus::Completed, lastSeq: 4);
         $context->loadRecovered($recovered);
         $this->assertSame($recovered, $context->requireLoaded($run));
-        $this->assertSame($recovered, $context->requireLoaded($run));
+        $context->release($run);
         $repository = self::getContainer()->get(RunOperationalProjectionRepository::class);
         $this->assertSame(RunStatus::Completed, $repository->findOperationalStatus($run)?->status);
     }

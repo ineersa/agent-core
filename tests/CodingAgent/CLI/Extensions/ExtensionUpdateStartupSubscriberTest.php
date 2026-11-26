@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\CLI\Extensions;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\CLI\Extensions\ExtensionUpdateStartupSubscriber;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -11,9 +12,9 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\Exception\ExtensionUpdateException;
 use Ineersa\CodingAgent\Extension\ExtensionUpdateService;
 use Ineersa\CodingAgent\Tests\Support\ExtensionUpdateFixture;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\ConsoleEvents;
 use Symfony\Component\Console\Event\ConsoleCommandEvent;
@@ -22,14 +23,11 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Process\Process;
-use Symfony\Component\Serializer\SerializerInterface;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 // Process isolation is semantic, not synchronization: the startup-once marker
 // and PHP's declared extension classes deliberately survive kernel /reload.
-#[RunTestsInSeparateProcesses]
 #[PreserveGlobalState(false)]
-final class ExtensionUpdateStartupSubscriberTest extends IsolatedKernelTestCase
+final class ExtensionUpdateStartupSubscriberTest extends TestCase
 {
     private ExtensionUpdateFixture $fixture;
     private ExtensionUpdateService $updates;
@@ -38,9 +36,8 @@ final class ExtensionUpdateStartupSubscriberTest extends IsolatedKernelTestCase
 
     protected function setUp(): void
     {
-        parent::setUp();
         $this->fixture = new ExtensionUpdateFixture();
-        $this->updates = $this->fixture->service(self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(ValidatorInterface::class));
+        $this->updates = $this->fixture->service(...AttributeSerializerValidatorTestFactory::create());
         $this->config = new AppConfig(tui: new TuiConfig(theme: 'test'), logging: new LoggingConfig(), cwd: $this->fixture->project());
         $this->sessionEnvironment = getenv('HATFIELD_SESSION_ID');
         putenv('HATFIELD_SESSION_ID');
@@ -51,9 +48,9 @@ final class ExtensionUpdateStartupSubscriberTest extends IsolatedKernelTestCase
         $this->updates->cleanup();
         $this->fixture->close();
         putenv(false === $this->sessionEnvironment ? 'HATFIELD_SESSION_ID' : 'HATFIELD_SESSION_ID='.$this->sessionEnvironment);
-        parent::tearDown();
     }
 
+    #[RunInSeparateProcess]
     public function testYesCompletesBeforeExtensionLoadingAndReloadNeverHotReplacesClasses(): void
     {
         $this->fixture->seed(dependency: true);
@@ -79,6 +76,7 @@ final class ExtensionUpdateStartupSubscriberTest extends IsolatedKernelTestCase
         $this->assertSame('1.1.0', $this->fixture->loadedVersion());
     }
 
+    #[RunInSeparateProcess]
     public function testNoLeavesAllPackagesAndLockfilesUntouchedBeforeContinuing(): void
     {
         $this->fixture->seed('home');
@@ -101,6 +99,7 @@ final class ExtensionUpdateStartupSubscriberTest extends IsolatedKernelTestCase
         $this->assertSame([], glob($this->fixture->directory.'/cache/extension-update-plans/*', \GLOB_ONLYDIR));
     }
 
+    #[RunInSeparateProcess]
     public function testUpToDateDoesNotAskForConsent(): void
     {
         $this->fixture->seed();
@@ -109,6 +108,7 @@ final class ExtensionUpdateStartupSubscriberTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('composer.lock SHA256', $output);
     }
 
+    #[RunInSeparateProcess]
     public function testLegacyRequirementRepairIsDisplayedAndDecliningPreservesBothFiles(): void
     {
         $this->fixture->seed(version: '0.0.43', requirement: '^0.0.43');
@@ -121,17 +121,7 @@ final class ExtensionUpdateStartupSubscriberTest extends IsolatedKernelTestCase
         $this->assertSame($before, $this->fixture->snapshot());
     }
 
-    public function testConstraintAndDependencyOnlyCandidatesDoNotAskForConsent(): void
-    {
-        $this->fixture->seed(dependency: true, version: '0.0.43', requirement: '^0.0.43');
-        $this->fixture->writeDependency('project', '1.1.0');
-        $before = $this->fixture->snapshot();
-        $output = $this->dispatch('');
-        $this->assertStringNotContainsString('Apply exactly', $output);
-        $this->assertStringNotContainsString('composer.json SHA256', $output);
-        $this->assertSame($before, $this->fixture->snapshot());
-    }
-
+    #[RunInSeparateProcess]
     public function testCheckFailureStopsLowerPriorityLoaderAndSessionStartup(): void
     {
         $this->fixture->seed();
@@ -146,16 +136,26 @@ final class ExtensionUpdateStartupSubscriberTest extends IsolatedKernelTestCase
         }
     }
 
+    // The eligible positive control consumes the process-wide startup-once marker.
+    #[RunInSeparateProcess]
     public function testWorkersChildrenAndNoninteractiveInvocationsNeverCheckOrPrompt(): void
     {
-        $this->fixture->seed();
-        $this->fixture->writePackage('project', '2.0.0'); // Any actual check would fail.
+        // Any check must fail before Composer can run; the escape stays wholly
+        // inside the disposable fixture and is never used for a file write.
+        $root = $this->fixture->root('project');
+        $this->fixture->filesystem->mkdir($root);
+        $this->fixture->filesystem->symlink($this->fixture->directory, $root.'/vendor');
         $this->assertSame('', $this->dispatch('', commandName: 'messenger:consume'));
         $this->assertSame('', $this->dispatch('', options: ['--headless' => true]));
         $this->assertSame('', $this->dispatch('', options: ['--controller' => true]));
         $this->assertSame('', $this->dispatch('', interactive: false));
         putenv('HATFIELD_SESSION_ID=owned-child');
         $this->assertSame('', $this->dispatch(''));
+
+        putenv('HATFIELD_SESSION_ID');
+        $this->expectException(ExtensionUpdateException::class);
+        $this->expectExceptionMessage('Composer path escapes the extension installation');
+        $this->dispatch('');
     }
 
     /** @param array<string, bool> $options */

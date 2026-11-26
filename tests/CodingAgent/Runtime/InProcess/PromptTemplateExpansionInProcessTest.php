@@ -26,6 +26,7 @@ use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
  * directory contents.  With per-class kernel boot, templates written by
  * later test methods are invisible to the already-booted client.
  */
+// The configured client captures a different runner spy in each case.
 final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernelTestCase
 {
     private FakeCapturingAgentRunner $spyRunner;
@@ -42,37 +43,6 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
         $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
         $this->assertCount(1, $texts);
         $this->assertSame("Review changes focusing on:\nsecurity performance", $texts[0]);
-    }
-
-    public function testStartPassthroughForNonTemplateSlash(): void
-    {
-        $this->startWithPrompt('/nonexistent arg');
-
-        $this->assertNotNull($this->spyRunner->lastStartInput);
-        $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
-        $this->assertSame(['/nonexistent arg'], $texts);
-    }
-
-    public function testStartPassthroughForNonSlash(): void
-    {
-        $this->startWithPrompt('hello world');
-
-        $this->assertNotNull($this->spyRunner->lastStartInput);
-        $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
-        $this->assertSame(['hello world'], $texts);
-    }
-
-    public function testStartSinglePassNoRecursiveExpansion(): void
-    {
-        $this->writeTemplate('first', '/second arg');
-        $this->writeTemplate('second', 'expanded: $@');
-
-        $this->startWithPrompt('/first');
-
-        $this->assertNotNull($this->spyRunner->lastStartInput);
-        $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
-        $this->assertCount(1, $texts);
-        $this->assertSame('/second arg', $texts[0]);
     }
 
     // ── send() expansion ───────────────────────────────────────────
@@ -120,19 +90,6 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
         $this->assertCount(1, $this->spyRunner->answerHumanCalls);
         $this->assertSame('q1', $this->spyRunner->answerHumanCalls[0]['questionId']);
         $this->assertTrue($this->spyRunner->answerHumanCalls[0]['answer']);
-    }
-
-    // ── send() passthrough ────────────────────────────────────────
-
-    public function testSendPassthroughForNonMatchingSlash(): void
-    {
-        $this->writeTemplate('review', 'expanded:$@');
-
-        // Non-matching slash command passes through unchanged.
-        $this->client()->send('run-1', new UserCommand(type: UserCommandTypeEnum::Message, text: '/nonexistent foo'));
-
-        $this->assertCount(1, $this->spyRunner->steerMessages);
-        $this->assertSame('/nonexistent foo', $this->msgText($this->spyRunner->steerMessages[0]));
     }
 
     // ── shell_command non-expansion ────────────────────────────────

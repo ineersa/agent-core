@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -16,22 +18,58 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator;
 use Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
-final class SessionRunStateReplayServiceTest extends IsolatedKernelTestCase
+final class SessionRunStateReplayServiceTest extends TestCase
 {
     private SessionRunStateReplayService $service;
     private string $runId = 'run-replay-test';
     private string $path;
+    private string $directory;
 
     protected function setUp(): void
     {
-        parent::setUp();
-        $this->service = static::getContainer()->get(SessionRunStateReplayService::class);
-        $this->path = getcwd().'/.hatfield/sessions/'.$this->runId.'/events.jsonl';
+        $this->directory = TestDirectoryIsolation::createProjectTempDir();
+        $dispatcher = new EventDispatcher();
+        $sessions = new HatfieldSessionStore(new AppConfig(new TuiConfig(theme: 'test'), new LoggingConfig(), cwd: $this->directory), $this->createStub(EntityManagerInterface::class), $dispatcher, new LockFactory(new FlockStore()));
+        $store = HistoryEventStoreFactory::create($sessions);
+        $serializer = AttributeSerializerValidatorTestFactory::serializer();
+        $codec = new ToolExecutionEndPayloadCodec($serializer);
+        $sources = $this->createStub(RunHistorySourceProviderInterface::class);
+        $sources->method('historySource')->willReturnCallback($store->historySource(...));
+        $this->service = new SessionRunStateReplayService($store, new SessionReplayCoordinator(
+            $sources,
+            new RunStateReducer($serializer, $codec),
+            new RuntimeEventMapper(new RuntimeEventTranslator($dispatcher, $codec, $serializer)),
+            $this->createStub(TranscriptProjectorInterface::class),
+            new NullLogger(),
+            new InMemoryCommandStore(),
+        ));
+        $this->path = $store->historySource($this->runId)->path;
         (new Filesystem())->mkdir(\dirname($this->path));
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->directory);
     }
 
     public function testNoEventsReturnsNoEventsResult(): void
@@ -1996,7 +2034,7 @@ final class SessionRunStateReplayServiceTest extends IsolatedKernelTestCase
 
     private function seed(RunEvent $event): void
     {
-        $record = static::getContainer()->get(EventPayloadNormalizer::class)->normalizeRunEvent($event);
+        $record = (new EventPayloadNormalizer())->normalizeRunEvent($event);
         file_put_contents($this->path, json_encode($record, \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
     }
 }

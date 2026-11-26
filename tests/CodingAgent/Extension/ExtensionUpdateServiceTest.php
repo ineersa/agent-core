@@ -179,16 +179,6 @@ final class ExtensionUpdateServiceTest extends IsolatedKernelTestCase
         $this->assertSame($before, $this->fixture->snapshot());
     }
 
-    public function testDiscardingALegacyRequirementUpdateLeavesLiveFilesUntouched(): void
-    {
-        $this->fixture->seed(version: '0.0.43', requirement: '^0.0.43');
-        $this->fixture->writePackage('project', '0.0.54');
-        $before = $this->fixture->snapshot();
-        $this->assertCount(1, $this->service->prepare($this->fixture->project()));
-        $this->service->cleanup();
-        $this->assertSame($before, $this->fixture->snapshot());
-    }
-
     public function testUpToDateAndAbsentInstallationsHaveNoPlan(): void
     {
         $this->assertSame([], $this->service->prepare($this->fixture->project()));

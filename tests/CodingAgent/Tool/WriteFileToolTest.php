@@ -46,16 +46,10 @@ final class WriteFileToolTest extends TestCase
 
     /* ── definition() tests ── */
 
-    public function testDefinitionNameIsWrite(): void
-    {
-        $definition = $this->writeFileTool->definition();
-
-        $this->assertSame('write', $definition->name);
-    }
-
     public function testDefinitionJsonSchemaHasPathAndContent(): void
     {
         $definition = $this->writeFileTool->definition();
+        $this->assertSame('write', $definition->name);
         // Typed DTO tool: schema is generated natively from WriteFileArgumentsDTO.
         $this->assertNull($definition->parametersJsonSchema);
 

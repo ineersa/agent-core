@@ -36,7 +36,7 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
 
     protected function setUp(): void
     {
-        parent::setUp();
+        // Only the service-reset wiring case boots the isolated kernel.
         $this->converter = new AgentMessageConverter();
     }
 
@@ -1090,7 +1090,9 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
 
     public function testContainerServiceSurvivesServicesResetter(): void
     {
-        $converter = static::getContainer()->get(AgentMessageConverter::class);
+        parent::setUp();
+        $container = static::getContainer();
+        $converter = $container->get(AgentMessageConverter::class);
         $this->assertInstanceOf(AgentMessageConverter::class, $converter);
         $this->assertNotInstanceOf(ResetInterface::class, $converter);
 
@@ -1099,17 +1101,14 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
         ];
         $before = $converter->toMessageBagForTarget($messages, 'openai/gpt-test');
 
-        $resetter = static::getContainer()->get('services_resetter');
+        $resetter = $container->get('services_resetter');
         $this->assertInstanceOf(ServicesResetterInterface::class, $resetter);
         $resetter->reset();
 
         $after = $converter->toMessageBagForTarget($messages, 'openai/gpt-test');
         $this->assertSame($before, $after);
         $this->assertSame($before->getMessages()[0]->asText(), $after->getMessages()[0]->asText());
-        $this->assertSame(
-            static::getContainer()->get(AgentMessageConverter::class),
-            $converter,
-        );
+        $this->assertSame($container->get(AgentMessageConverter::class), $converter);
     }
 
     #[Group('performance')]

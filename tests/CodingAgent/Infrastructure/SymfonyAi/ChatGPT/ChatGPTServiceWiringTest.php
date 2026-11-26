@@ -11,6 +11,7 @@ use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthFileStore;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface;
 use Symfony\Component\Console\CommandLoader\CommandLoaderInterface;
 
+// Provider cases install different auth/clock/HTTP doubles; the registration case needs an untouched container.
 final class ChatGPTServiceWiringTest extends PerMethodIsolatedKernelTestCase
 {
     public function testHostProviderPreservesHistoryAndRoutingHeadersWithOrWithoutCompression(): void

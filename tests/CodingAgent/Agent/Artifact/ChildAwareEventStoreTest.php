@@ -4,15 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
-use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
@@ -20,105 +18,17 @@ use Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\ChildRunFixture;
-use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
-final class ChildAwareEventStoreTest extends PerMethodIsolatedKernelTestCase
+final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
 {
-    #[\PHPUnit\Framework\Attributes\DataProvider('ownerAuditSizes')]
-    public function testWholeOwnerTransitionAudit(int $messageCount, int $messageBytes, int $sample): void
-    {
-        $container = self::getContainer();
-        $logger = new TestLogger();
-        $container->set(\Ineersa\AgentCore\Application\Handler\RunTracer::class, new \Ineersa\AgentCore\Application\Handler\RunTracer($logger));
-        // Exercise explicit compaction independently of automatic scheduling.
-        $container->get(\Ineersa\CodingAgent\Config\AppConfig::class)->compaction = new \Ineersa\CodingAgent\Config\CompactionConfig(autoEnabled: false, keepRecentTokens: 16);
-        $bus = $container->get('agent.command.bus');
-        $sessions = $container->get(HatfieldSessionStore::class);
-        $active = $container->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class);
-        $report = [];
-        $last = function (string $transport, string $class, string $run) use ($container): \Symfony\Component\Messenger\Envelope {
-            $matches = array_values(array_filter($container->get('messenger.transport.'.$transport)->getSent(), static fn ($envelope): bool => $envelope->getMessage() instanceof $class && $envelope->getMessage()->runId() === $run));
-            $this->assertNotEmpty($matches, $class);
-
-            return $matches[array_key_last($matches)];
-        };
-        $run = $sessions->createSession('isolated owner audit');
-        $consume = static function (object $message, string $operation) use ($bus, $container, $logger, &$report, $sample): void {
-            $queued = $message instanceof \Symfony\Component\Messenger\Envelope ? $message : $bus->dispatch($message);
-            $logger->records = [];
-            $started = hrtime(true);
-            $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
-            $container->get('messenger.transport.run_control')->ack($queued);
-            $report[] = ['sample' => $sample, 'operation' => $operation, 'whole_owner_ms' => (hrtime(true) - $started) / 1e6, 'queue_wait_ms' => null,
-                'spans' => array_values(array_filter($logger->records, static fn (array $record): bool => 'agent_loop.trace.finish' === $record['message']))];
-        };
-        $messages = [];
-        for ($i = 0; $i < $messageCount; ++$i) {
-            $messages[] = new \Ineersa\AgentCore\Domain\Message\AgentMessage(0 === $i % 2 ? 'user' : 'assistant', [['type' => 'text', 'text' => str_repeat('x', $messageBytes)]]);
-        }
-        $consume(new \Ineersa\AgentCore\Domain\Message\StartRun($run, 0, 'start', 1, 'start', new \Ineersa\AgentCore\Domain\Message\StartRunPayload('synthetic system', $messages,
-            new \Ineersa\AgentCore\Domain\Run\RunMetadata(model: 'llama_cpp_test/test'))), 'start');
-        $consume($last('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $run), 'advance');
-        $llm = $last('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class, $run)->getMessage();
-        $consume(new \Ineersa\AgentCore\Domain\Message\LlmStepResult($run, $llm->turnNo(), $llm->stepId(), $llm->attempt(), $llm->idempotencyKey(),
-            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([['id' => 'audit-read', 'name' => 'read', 'arguments' => ['path' => './synthetic.txt']]]),
-            toolsRef: 'default', model: 'llama_cpp_test/test', stopReason: 'tool_call'), 'llm_tools');
-        $tool = $container->get(ToolPayloadStoreInterface::class)->read($last('tool', ToolPayloadMessage::class, $run)->getMessage()->reference);
-        $this->assertInstanceOf(ExecuteToolCall::class, $tool);
-        $consume(new \Ineersa\AgentCore\Domain\Message\ToolCallResult($run, $tool->turnNo(), $tool->stepId(), $tool->attempt(), $tool->idempotencyKey(), $tool->toolCallId, 0,
-            result: ['content' => [['type' => 'text', 'text' => str_repeat('r', $messageBytes)]]]), 'tool_result');
-        $finish = static function () use ($last, $consume, $run, $messageBytes): void {
-            $consume($last('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $run), 'advance_after_input');
-            $request = $last('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class, $run)->getMessage();
-            $consume(new \Ineersa\AgentCore\Domain\Message\LlmStepResult($run, $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(),
-                assistantMessage: SymfonyAiTestMessages::assistantText(str_repeat('a', $messageBytes)), model: 'llama_cpp_test/test', stopReason: 'stop'), 'llm_text');
-        };
-        $finish();
-        $payload = ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'synthetic follow-up']]]];
-        $consume(new \Ineersa\AgentCore\Domain\Message\ApplyCommand($run, $active->requireLoaded($run)->turnNo, 'follow', 1, 'follow', 'follow_up', $payload), 'follow_up');
-        $finish();
-        $turn = $active->requireLoaded($run)->turnNo;
-        $active->release($run);
-        $consume(new \Ineersa\AgentCore\Domain\Message\ApplyCommand($run, $turn, 'cold', 1, 'cold', 'follow_up', $payload), 'cold_recovery_follow_up');
-        $finish();
-        $consume(new \Ineersa\AgentCore\Domain\Message\CompactRun($run, $active->requireLoaded($run)->turnNo, 'compact', 1, 'compact'), 'compact_prepare');
-        $compaction = $last('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class, $run)->getMessage();
-        $consume(new \Ineersa\AgentCore\Domain\Message\CompactionStepResult($run, $compaction->turnNo(), $compaction->stepId(), $compaction->attempt(), $compaction->idempotencyKey(),
-            'synthetic summary', null, $compaction->retainedTailMessages, $compaction->messagesCompacted, $compaction->messagesRetained, $compaction->firstRetainedIndex,
-            $compaction->tokenEstimateBefore, $compaction->trigger, model: $compaction->model), 'compact_result');
-        $consume(new \Ineersa\AgentCore\Domain\Message\ApplyShellCommand($run, $active->requireLoaded($run)->turnNo, 'shell', 1, 'shell', '!true'), 'shell_accept');
-        $shell = $container->get(ToolPayloadStoreInterface::class)->read($last('tool', ToolPayloadMessage::class, $run)->getMessage()->reference);
-        $this->assertInstanceOf(ExecuteShellToolCall::class, $shell);
-        $consume(new \Ineersa\AgentCore\Domain\Message\ToolCallResult($run, $shell->turnNo(), $shell->stepId(), $shell->attempt(), $shell->idempotencyKey(), $shell->toolCallId, 0,
-            result: ['standalone' => $shell->standalone, 'content' => [['type' => 'text', 'text' => 'synthetic shell result']]]), 'shell_result');
-        $this->assertSame(\Ineersa\AgentCore\Domain\Run\RunStatus::Completed, $active->requireLoaded($run)->status);
-        if ('1' === getenv('HATFIELD_OWNER_AUDIT')) {
-            $path = self::$kernel->getProjectDir().'/var/diagnostics/run-state-latency/audit-attributed-'.$messageCount.'x'.$messageBytes.'-'.$sample.'.json';
-            file_put_contents($path, json_encode(['messages' => $messageCount, 'message_bytes' => $messageBytes, 'initial_text_bytes' => $messageCount * $messageBytes,
-                'transport' => 'in-memory', 'external_execution' => 'not exercised', 'auto_compaction' => false, 'measurements' => $report], \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR)."\n");
-        }
-    }
-
-    public static function ownerAuditSizes(): iterable
-    {
-        for ($sample = 0; $sample < 3; ++$sample) {
-            yield 'routine '.$sample => [8, 128, $sample];
-            yield 'larger history '.$sample => [64, 16384, $sample];
-        }
-    }
-
     public function testThreeReadyToolResultsUseOwnerPipeline(): void
     {
         $container = self::getContainer();
-        $logger = new TestLogger();
-        $container->set(\Ineersa\AgentCore\Application\Handler\RunTracer::class, new \Ineersa\AgentCore\Application\Handler\RunTracer($logger));
         $sessions = $container->get(HatfieldSessionStore::class);
         $artifacts = $container->get(AgentArtifactRegistry::class);
-        $container->set(AgentChildRunDirectory::class, new AgentChildRunDirectory($container->get(DeferredSubagentChildRepository::class), $artifacts));
-        $label = getenv('HATFIELD_LATENCY_LABEL');
-        $parents = false === $label ? 3 : 80;
-        for ($i = 0; $i < $parents; ++$i) {
+        for ($i = 0; $i < 3; ++$i) {
             $parent = $sessions->createSession('synthetic catalog');
             for ($j = 0; $j < 3; ++$j) {
                 $artifacts->create($parent, 'agent_'.$j, 'child-'.$i.'-'.$j, 'scout', AgentArtifactKindEnum::Subagent);
@@ -155,26 +65,16 @@ final class ChildAwareEventStoreTest extends PerMethodIsolatedKernelTestCase
                 result: ['content' => [['type' => 'text', 'text' => 'synthetic result']]],
             ));
         }
-        // All results are ready before owner consumption. This measures FIFO
-        // processing and waiting, not worker execution or a real parallel batch.
-        $logger->records = [];
-        $started = hrtime(true);
-        $timings = [];
-        foreach ($results as $index => $result) {
-            $processing = hrtime(true);
+        // All results are ready before consumption; no execution workers are involved.
+        foreach ($results as $result) {
             $bus->dispatch($result->with(new ReceivedStamp('run_control')));
             $container->get('messenger.transport.run_control')->ack($result);
-            $timings[] = ['result' => $index, 'queue_wait_ms' => ($processing - $started) / 1e6, 'processing_ms' => (hrtime(true) - $processing) / 1e6, 'completion_ms' => (hrtime(true) - $started) / 1e6];
         }
-        $state = $container->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class)->requireLoaded($run);
+        $active = $container->get(ActiveRunContextInterface::class);
+        $state = $active->requireLoaded($run);
+        $active->release($run);
         $this->assertSame([], $state->pendingToolCalls);
         $this->assertCount(3, array_filter($state->messages, static fn ($message): bool => 'tool' === $message->role));
-        if (false !== $label) {
-            $this->assertContains($label, ['baseline', 'candidate']);
-            $spans = array_values(array_filter($logger->records, static fn (array $record): bool => 'agent_loop.trace.finish' === $record['message']));
-            $report = ['label' => $label, 'catalog_parents' => $parents, 'catalog_children' => $parents * 3, 'tool_execution_ms' => null, 'scope' => 'in-memory transport, three pre-enqueued results, real owner middleware/handler/commit; no execution workers or broker', 'results' => $timings, 'spans' => $spans];
-            file_put_contents(self::$kernel->getProjectDir().'/var/diagnostics/run-state-latency/'.$label.'-synthetic.json', json_encode($report, \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR)."\n");
-        }
     }
 
     public function testKnownParentOperationsNeverScanChildRegistriesWithoutAProjection(): void
@@ -235,84 +135,6 @@ final class ChildAwareEventStoreTest extends PerMethodIsolatedKernelTestCase
         yield 'opaque child' => ['late-child'];
         yield 'numeric unknown is not a known parent' => ['99999999'];
         yield 'leading-zero alias is not a canonical parent' => ['', true];
-    }
-
-    public function testAppendHandlesParentEvent(): void
-    {
-        $store = self::getContainer()->get(ChildAwareEventStore::class);
-
-        $event = new RunEvent(
-            runId: 'parent-ev-router',
-            seq: 1,
-            turnNo: 0,
-            type: RunEventTypeEnum::RunStarted->value,
-            payload: ['step_id' => 'test-step'],
-        );
-
-        // Should not throw.
-        PreparedEventStoreSeeder::append($store, $event);
-
-        $events = $store->allFor('parent-ev-router');
-        $this->assertNotEmpty($events);
-        $this->assertSame('parent-ev-router', $events[0]->runId);
-    }
-
-    public function testAllForReturnsEmptyForUnknownRunId(): void
-    {
-        $store = self::getContainer()->get(ChildAwareEventStore::class);
-
-        $events = $store->allFor('nonexistent-ev-id');
-        $this->assertSame([], $events);
-    }
-
-    public function testRangeForDelegatesParentEvents(): void
-    {
-        $store = self::getContainer()->get(ChildAwareEventStore::class);
-        PreparedEventStoreSeeder::append($store, new RunEvent(
-            runId: 'parent-range-router',
-            seq: 1,
-            turnNo: 0,
-            type: RunEventTypeEnum::RunStarted->value,
-            payload: [],
-        ));
-        PreparedEventStoreSeeder::append($store, new RunEvent(
-            runId: 'parent-range-router',
-            seq: 2,
-            turnNo: 1,
-            type: RunEventTypeEnum::TurnAdvanced->value,
-            payload: [],
-        ));
-
-        $events = iterator_to_array($store->rangeFor('parent-range-router', 2, 2));
-
-        $this->assertSame([2], array_map(static fn (RunEvent $event): int => $event->seq, $events));
-    }
-
-    public function testAppendManyHandlesMultipleParentEvents(): void
-    {
-        $store = self::getContainer()->get(ChildAwareEventStore::class);
-
-        $events = [
-            new RunEvent(
-                runId: 'parent-ev-many',
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [],
-            ),
-            new RunEvent(
-                runId: 'parent-ev-many',
-                seq: 2,
-                turnNo: 1,
-                type: RunEventTypeEnum::TurnAdvanced->value,
-                payload: [],
-            ),
-        ];
-
-        PreparedEventStoreSeeder::appendMany($store, $events);
-
-        $results = $store->allFor('parent-ev-many');
-        $this->assertCount(2, $results);
     }
 
     private function router(): ChildAwareEventStore

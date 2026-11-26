@@ -10,18 +10,22 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
-use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\JsonlRunEventLog;
 use Ineersa\CodingAgent\Session\RunHistorySourceDTO;
 use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
-final class AgentResumeCommandReaderTest extends IsolatedKernelTestCase
+final class AgentResumeCommandReaderTest extends TestCase
 {
+    private string $directory;
+
     private string $path;
     private TestLogger $logger;
     private RunHistorySourceProviderInterface $sources;
@@ -29,14 +33,18 @@ final class AgentResumeCommandReaderTest extends IsolatedKernelTestCase
 
     protected function setUp(): void
     {
-        parent::setUp();
-        $container = self::getContainer();
+        $this->directory = TestDirectoryIsolation::createProjectTempDir();
         $this->logger = new TestLogger();
-        $log = new JsonlRunEventLog($container->get(EventPayloadNormalizer::class), $container->get(LockFactory::class), $container->get(RunSequenceAllocatorInterface::class), new EventLogMaxSeqBootstrapReader(), $this->logger, presentations: HistoryEventStoreFactory::presentationFactory());
-        $this->path = getcwd().'/.hatfield/sessions/indexed-resume/events.jsonl';
-        $container->get(Filesystem::class)->mkdir(\dirname($this->path));
+        $log = new JsonlRunEventLog(new EventPayloadNormalizer(), new LockFactory(new FlockStore()), new FileRunSequenceAllocator(), new EventLogMaxSeqBootstrapReader(), $this->logger, presentations: HistoryEventStoreFactory::presentationFactory());
+        $this->path = $this->directory.'/indexed-resume/events.jsonl';
+        (new Filesystem())->mkdir(\dirname($this->path));
         $this->sources = $this->createStub(RunHistorySourceProviderInterface::class);
         $this->sources->method('historySource')->willReturn(new RunHistorySourceDTO($log, $this->path));
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->directory);
     }
 
     public function testFreshResumeAbsenceReadsOneBoundaryRegardlessOfArchiveGrowth(): void
@@ -99,7 +107,7 @@ final class AgentResumeCommandReaderTest extends IsolatedKernelTestCase
     private function append(string $type, array $payload): RunEvent
     {
         $event = new RunEvent('indexed-resume', ++$this->sequence, 1, $type, $payload);
-        $record = self::getContainer()->get(EventPayloadNormalizer::class)->normalize($event->runId, $event->seq, $event->turnNo, $event->type, $event->payload);
+        $record = (new EventPayloadNormalizer())->normalize($event->runId, $event->seq, $event->turnNo, $event->type, $event->payload);
         file_put_contents($this->path, json_encode($record, \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
 
         return $event;

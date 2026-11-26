@@ -27,14 +27,30 @@ use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\ChildRunFixture;
-use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
 use Symfony\Component\Messenger\Middleware\StackMiddleware;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
+use Symfony\Component\Uid\Uuid;
 
-final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernelTestCase
+final class OwnerRunInitializationMiddlewareTest extends IsolatedKernelTestCase
 {
+    /** @var list<string> */
+    private array $runIds = [];
+
+    protected function tearDown(): void
+    {
+        try {
+            foreach ($this->runIds as $runId) {
+                $this->registry()->release($runId);
+            }
+            self::getContainer()->get('messenger.transport.run_control')->reset();
+        } finally {
+            parent::tearDown();
+        }
+    }
+
     public function testConsumedResumeRedeliveryDoesNotReapplyOrDisturbLaterWork(): void
     {
         $container = self::getContainer();
@@ -101,7 +117,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
     {
         $container = self::getContainer();
         $parent = $this->reserve();
-        $run = 'resume-recovered-child';
+        $run = $this->childId();
         ChildRunFixture::create($container, $parent, 'agent_resume_target', $run);
         $bus = $container->get('agent.command.bus');
         $receive = static fn (object $message) => $bus->dispatch(new Envelope($message, [new ReceivedStamp('run_control')]));
@@ -140,7 +156,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
     {
         $container = self::getContainer();
         $parent = $this->reserve();
-        $identity = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO($parent, 'child-fresh', 'agent_fresh', 'scout', 'task', $kind);
+        $identity = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO($parent, $this->childId(), 'agent_fresh', 'scout', 'task', $kind);
         ChildRunFixture::reserve($container, $parent, $identity->artifactId, $identity->childRunId);
         $lifecycle = $container->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
         $lifecycle->reservePending($identity);
@@ -170,22 +186,22 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
 
     public static function launchKinds(): iterable
     {
-        yield 'ordinary child' => [AgentArtifactKindEnum::Subagent];
         yield 'profiled fork shared runtime start' => [AgentArtifactKindEnum::Fork];
-    }
-
-    public function testProducerDispatchDoesNotAdmitOrRecoverReservedRun(): void
-    {
-        $run = $this->reserve();
-        self::getContainer()->get('agent.command.bus')->dispatch($this->start($run));
-        $this->expectException(RunContextNotLoadedException::class);
-        $this->registry()->requireLoaded($run);
     }
 
     public function testExplicitReservedStartCreatesQueuedStateOnlyAtOwnerEntry(): void
     {
         $run = $this->reserve();
-        $this->consume($this->start($run));
+        $start = $this->start($run);
+        self::getContainer()->get('agent.command.bus')->dispatch($start);
+        try {
+            $this->registry()->requireLoaded($run);
+            $this->fail('Producer dispatch must not admit the reserved run.');
+        } catch (RunContextNotLoadedException $exception) {
+            $this->assertStringContainsString($run, $exception->getMessage());
+        }
+
+        $this->consume($start);
         $this->assertSame(RunStatus::Queued, $this->registry()->requireLoaded($run)->status);
         $this->assertNull(self::getContainer()->get(EventStoreInterface::class)->latestSequenceFor($run));
     }
@@ -217,7 +233,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
     public function testReservedChildCancellationPreservesParentIdentityBeforeStart(): void
     {
         $parent = $this->reserve();
-        $entry = ChildRunFixture::create(self::getContainer(), $parent, 'agent_reserved', 'reserved-child');
+        $entry = ChildRunFixture::create(self::getContainer(), $parent, 'agent_reserved', $this->childId());
         $this->consume(new ApplyCommand($entry->agentRunId, 0, 'cancel', 1, 'cancel', 'cancel'));
         $state = $this->registry()->requireLoaded($entry->agentRunId);
         $this->assertSame($parent, $state->parentRunId);
@@ -294,7 +310,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
         $parent = $this->reserve();
         $identity = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO(
             $parent,
-            'child-terminal-'.$kind,
+            $this->childId(),
             'agent_terminal_'.$kind,
             'scout',
             'task',
@@ -368,7 +384,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
     {
         $container = self::getContainer();
         $parent = $this->reserve();
-        $entry = ChildRunFixture::create($container, $parent, 'agent_conflict', 'child-conflict');
+        $entry = ChildRunFixture::create($container, $parent, 'agent_conflict', $this->childId());
         $this->registry()->createNew($entry->agentRunId);
         PreparedEventStoreSeeder::append(
             $container->get(EventStoreInterface::class),
@@ -396,7 +412,13 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
 
     private function reserve(): string
     {
-        return self::getContainer()->get(HatfieldSessionStore::class)->createSession('owner boundary');
+        return $this->runIds[] = self::getContainer()->get(HatfieldSessionStore::class)->createSession('owner boundary');
+    }
+
+    private function childId(): string
+    {
+        // The shared owner directory caches successful lookups across methods.
+        return $this->runIds[] = Uuid::v7()->toRfc4122();
     }
 
     private function registry(): ActiveRunContextInterface

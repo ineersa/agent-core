@@ -50,7 +50,15 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-1');
 
         try {
-            $supervisor->start($paths);
+            $previousEnv = $_ENV;
+            $_ENV = [];
+            try {
+                // Empty $_ENV must not strip the inherited HOME from the broker child.
+                $this->assertNotFalse(getenv('HOME'));
+                $supervisor->start($paths);
+            } finally {
+                $_ENV = $previousEnv;
+            }
             $this->assertTrue($this->brokerProcess($supervisor)->isRunning());
             $this->assertTrue($supervisor->supervise());
             $this->assertFileExists($paths->databasePath);
@@ -92,6 +100,33 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         clearstatcache(true, $paths->endpointPath);
         $this->assertFalse(file_exists($paths->endpointPath), 'normal shutdown must remove owned socket');
         $this->assertFileExists($paths->databasePath, 'queue database must survive ordinary shutdown');
+    }
+
+    public function testClientSendRenewAndAckWithoutSecondClaim(): void
+    {
+        $supervisor = new SessionSqliteQueueBrokerSupervisor(new TestLogger(), $this->runtimeConfig(), readyTimeoutSeconds: 15.0);
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-claims');
+        $owner = null;
+        $other = null;
+
+        try {
+            $supervisor->start($paths);
+            $owner = Client::connect($paths->endpointPath);
+            $other = Client::connect($paths->endpointPath);
+
+            $owner->send('jobs', 'body', '{}');
+            $delivery = $owner->receive('jobs');
+            $this->assertNotNull($delivery);
+            $deadline = $owner->keepalive($delivery->receipt);
+            $this->assertGreaterThan(0, $deadline);
+            $this->assertNull($other->receive('jobs'), 'active reservation must block a second claim');
+            $owner->acknowledge($delivery->receipt);
+            $this->assertNull($other->receive('jobs'));
+        } finally {
+            $owner?->close();
+            $other?->close();
+            $supervisor->shutdownUntil(microtime(true) + 5.0);
+        }
     }
 
     public function testForcedBrokerDeathStopsOwnedDriverChildren(): void
@@ -149,26 +184,6 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         } finally {
             @unlink($paths->endpointPath);
             @rmdir($paths->endpointDirectory());
-        }
-    }
-
-    public function testBrokerLaunchInheritsProcessEnvironmentWhenEnvSuperglobalEmpty(): void
-    {
-        $logger = new TestLogger();
-        $config = $this->runtimeConfig();
-        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-env');
-
-        $previousEnv = $_ENV;
-        $_ENV = [];
-        try {
-            $this->assertNotFalse(getenv('HOME'));
-            // Empty $_ENV must not strip HOME from the broker child.
-            $supervisor->start($paths);
-            $this->assertTrue($this->brokerProcess($supervisor)->isRunning());
-        } finally {
-            $_ENV = $previousEnv;
-            $supervisor->shutdownUntil(microtime(true) + 5.0);
         }
     }
 
@@ -234,39 +249,11 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $this->assertFalse($this->brokerProcessAlive($supervisor));
     }
 
-    public function testClientSendRenewAndAckWithoutSecondClaim(): void
-    {
-        $logger = new TestLogger();
-        $config = $this->runtimeConfig();
-        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-client');
-
-        $owner = null;
-        $other = null;
-        try {
-            $supervisor->start($paths);
-            $owner = Client::connect($paths->endpointPath);
-            $other = Client::connect($paths->endpointPath);
-
-            $owner->send('jobs', 'body', '{}');
-            $delivery = $owner->receive('jobs');
-            $this->assertNotNull($delivery);
-            $deadline = $owner->keepalive($delivery->receipt);
-            $this->assertGreaterThan(0, $deadline);
-            $this->assertNull($other->receive('jobs'), 'active reservation must block a second claim');
-            $owner->acknowledge($delivery->receipt);
-            $this->assertNull($other->receive('jobs'));
-        } finally {
-            $owner?->close();
-            $other?->close();
-            $supervisor->shutdownUntil(microtime(true) + 5.0);
-        }
-    }
-
     public function testConfiguredPayloadRoundTripsOversizedExecuteLlmStepThroughAmpWorker(): void
     {
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
+        $required = SessionSqliteQueueBrokerTopology::requiredConnections(4, 32);
         $maxPayload = $this->configuredMaxPayload();
         $supervisor = new SessionSqliteQueueBrokerSupervisor(
             $logger,
@@ -297,8 +284,11 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $this->assertLessThanOrEqual($maxPayload, $encodedBytes);
 
         $transport = null;
+        /** @var list<Client> $clients */
+        $clients = [];
         try {
-            $supervisor->start($paths);
+            $supervisor->start($paths, $required);
+            $this->assertSame($required, $supervisor->advertisedMaxConnections());
             $this->assertSame($maxPayload, $supervisor->advertisedMaxPayload());
             $connect = static fn (): Client => Client::connect($paths->endpointPath);
             $transport = new Transport(
@@ -315,29 +305,9 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $this->assertInstanceOf(ExecuteLlmStep::class, $message);
             $this->assertSame($bodyText, $message->messages[0]->content[0]['text'] ?? null);
             $transport->ack($received[0]);
-        } finally {
-            $transport?->close();
-            $supervisor->shutdownUntil(microtime(true) + 5.0);
-        }
-    }
+            $transport->close();
+            $transport = null;
 
-    public function testConfiguredConnectionBudgetAdmitsTopologyAndRejectsOverflow(): void
-    {
-        $logger = new TestLogger();
-        $config = $this->runtimeConfig();
-        $required = SessionSqliteQueueBrokerTopology::requiredConnections(4, 32);
-        $supervisor = new SessionSqliteQueueBrokerSupervisor(
-            $logger,
-            $config,
-            readyTimeoutSeconds: 15.0,
-            maxPayload: $this->configuredMaxPayload(),
-        );
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-capacity');
-        /** @var list<Client> $clients */
-        $clients = [];
-        try {
-            $supervisor->start($paths, $required);
-            $this->assertSame($required, $supervisor->advertisedMaxConnections());
             for ($i = 0; $i < $required; ++$i) {
                 $clients[] = Client::connect($paths->endpointPath);
             }
@@ -345,6 +315,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $this->expectException(TransportException::class);
             Client::connect($paths->endpointPath);
         } finally {
+            $transport?->close();
             foreach ($clients as $client) {
                 $client->close();
             }
@@ -363,30 +334,23 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             readyTimeoutSeconds: 15.0,
             maxPayload: $maxPayload,
         );
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-mismatch');
+        // Validate the synthetic frame directly; starting a real broker cannot
+        // produce the mismatched budget and only adds an unrelated handshake.
+        $paths = new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'paths');
+        $paths->setValue($supervisor, SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-mismatch'));
+        $required = new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'requiredMaxConnectionsForReady');
+        $required->setValue($supervisor, 65);
+        $carry = new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'stdoutCarry');
+        $carry->setValue($supervisor, json_encode([
+            'event' => 'ready',
+            'max_payload' => $maxPayload,
+            'max_connections' => 64,
+        ], \JSON_THROW_ON_ERROR)."\n");
 
-        try {
-            $supervisor->start($paths, 64);
-            $this->assertSame(64, $supervisor->advertisedMaxConnections());
-
-            $required = new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'requiredMaxConnectionsForReady');
-            $required->setValue($supervisor, 65);
-            $ready = new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'ready');
-            $ready->setValue($supervisor, false);
-            $carry = new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'stdoutCarry');
-            $carry->setValue($supervisor, json_encode([
-                'event' => 'ready',
-                'max_payload' => $maxPayload,
-                'max_connections' => 64,
-            ], \JSON_THROW_ON_ERROR)."\n");
-
-            $consume = new \ReflectionMethod(SessionSqliteQueueBrokerSupervisor::class, 'consumeReadyEvents');
-            $this->expectException(\RuntimeException::class);
-            $this->expectExceptionMessage('advertised max_connections=64 below required 65');
-            $consume->invoke($supervisor);
-        } finally {
-            $supervisor->shutdownUntil(microtime(true) + 5.0);
-        }
+        $consume = new \ReflectionMethod(SessionSqliteQueueBrokerSupervisor::class, 'consumeReadyEvents');
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('advertised max_connections=64 below required 65');
+        $consume->invoke($supervisor);
     }
 
     private function runtimeConfig(): RuntimeProcessConfig
