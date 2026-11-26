@@ -19,7 +19,7 @@ use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\ControlledJsonlControllerFixture;
-use Ineersa\CodingAgent\Tests\Support\RecordingEventDispatcher;
+use Ineersa\CodingAgent\Tests\Support\SessionEventRecorder;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Support\UnusedBackgroundProcessManagerFactory;
@@ -29,6 +29,7 @@ use Ineersa\Hatfield\ExtensionApi\Session\Event\SessionSelectedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnCompletedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\TurnStartedEvent;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient::events
@@ -84,7 +85,9 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
     public function testStartPublishesLiveMainEventsToExtensionsUntilShutdown(): void
     {
         $runId = 'extension-run-'.bin2hex(random_bytes(4));
-        $dispatcher = new RecordingEventDispatcher();
+        $dispatcher = new EventDispatcher();
+        $recorder = new SessionEventRecorder();
+        $dispatcher->addSubscriber($recorder);
         $publisher = new ExtensionSessionEventPublisher($dispatcher, new TestLogger());
         $client = $this->createStartBatchFakeControllerClient(extensionEvents: $publisher);
 
@@ -96,15 +99,17 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
             new SessionSelectedEvent($runId, false),
             new TurnStartedEvent($runId, 2, null),
             new TurnCompletedEvent($runId, 3),
-        ], $dispatcher->events);
+        ], $recorder->events);
         $client->shutdown();
         $this->assertSame('', $publisher->sessionId(), 'Reload and switch shut the client down without a graceful close.');
-        $this->assertCount(3, $dispatcher->events);
+        $this->assertCount(3, $recorder->events);
     }
 
     public function testAttachPublishesOnlyEventsAfterSessionReady(): void
     {
-        $dispatcher = new RecordingEventDispatcher();
+        $dispatcher = new EventDispatcher();
+        $recorder = new SessionEventRecorder();
+        $dispatcher->addSubscriber($recorder);
         $publisher = new ExtensionSessionEventPublisher($dispatcher, new TestLogger());
         $client = $this->createIdleClient(extensionEvents: $publisher);
         $descriptor = new \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO('parent-run', str_repeat('a', 32), 2, 50, 100, 1, 1, 1, str_repeat('0', 64));
@@ -116,6 +121,8 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
         $this->injectStdoutJsonlLines($client, [
             $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', 49),
             json_encode(['type' => RuntimeEventTypeEnum::SessionReady->value, 'runId' => 'parent-run', 'seq' => 0, 'payload' => $ready], \JSON_THROW_ON_ERROR),
+            // Persisted before its delayed stdout copy: already part of the restored cut.
+            $this->jsonlEvent(RuntimeEventTypeEnum::RunCompleted->value, 'parent-run', 50),
             $this->jsonlEvent(RuntimeEventTypeEnum::RunCompleted->value, 'parent-run', 51),
         ]);
         iterator_to_array($client->events('parent-run'));
@@ -123,7 +130,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
         $this->assertEquals([
             new SessionSelectedEvent('parent-run', true),
             new TurnCompletedEvent('parent-run', 51),
-        ], $dispatcher->events, 'Catch-up before session.ready is history, not a live event.');
+        ], $recorder->events, 'Catch-up before session.ready is history, not a live event.');
     }
 
     public function testRuntimeReadyBuffersLaterEventsFromSameStdoutReadChunk(): void
@@ -372,7 +379,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
         $this->assertCount(1, $messageCompleted);
         $this->assertSame('ABC', $messageCompleted[0]->payload['text'] ?? '');
 
-        $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $dispatcher = new EventDispatcher();
         $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
         $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber());
         $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $state);
@@ -582,7 +589,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernel
         );
         $this->assertSame(['command' => 'ls -1'], $childDrain[0]->payload['arguments'] ?? null);
 
-        $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $dispatcher = new EventDispatcher();
         $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
         $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber(
             new \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter(),

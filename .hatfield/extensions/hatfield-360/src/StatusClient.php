@@ -120,7 +120,8 @@ final readonly class StatusClient
     private static function request(string $endpoint, #[\SensitiveParameter] array $payload): ?array
     {
         try {
-            $frame = json_encode($payload, \JSON_THROW_ON_ERROR)."\n";
+            // Raw UTF-8 keeps an astral character at 4 bytes instead of a 12-byte escape pair.
+            $frame = json_encode($payload, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE)."\n";
             if (\strlen($frame) > self::MAX_FRAME_BYTES) {
                 return null;
             }

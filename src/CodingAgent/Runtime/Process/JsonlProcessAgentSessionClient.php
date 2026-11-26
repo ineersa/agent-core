@@ -1215,6 +1215,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                         throw new RuntimeTransportException('Session readiness does not match the delivered suffix.');
                     }
                     $this->suffixCursor = $event->payload['canonical_seq'];
+                    $this->extensionEvents->resumeAfter($event->payload['canonical_seq']);
                     $this->extensionEventsLive = true;
                 }
             } elseif (RuntimeEventTypeEnum::BootstrapSuffix->value === $event->type) {

@@ -101,7 +101,7 @@ dispatched. A terminal main event does not prove that background work settled.
 
 Listeners run synchronously on the interactive event loop: only record state,
 and move I/O or slow work into an `Amp\async()` fiber or an event-loop timer.
-A listener exception is logged and does not stop event delivery to the host.
+A listener exception is logged and does not stop delivery of that event to other listeners or of later events.
 
 ## Compaction hooks
 

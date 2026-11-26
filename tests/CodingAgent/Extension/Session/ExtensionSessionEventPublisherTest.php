@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Extension\Session;
 use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum as Type;
-use Ineersa\CodingAgent\Tests\Support\RecordingEventDispatcher;
+use Ineersa\CodingAgent\Tests\Support\SessionEventRecorder;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\AssistantMessageCompletedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\BackgroundJobEndedEvent;
 use Ineersa\Hatfield\ExtensionApi\Session\Event\ChildExecutionStartedEvent;
@@ -29,7 +29,9 @@ final class ExtensionSessionEventPublisherTest extends TestCase
 {
     public function testPublishesLiveMainEventsOfTheSelectedSessionOnce(): void
     {
-        $dispatcher = new RecordingEventDispatcher();
+        $dispatcher = new EventDispatcher();
+        $recorder = new SessionEventRecorder();
+        $dispatcher->addSubscriber($recorder);
         $publisher = new ExtensionSessionEventPublisher($dispatcher, new NullLogger());
         $publisher->publish(new RuntimeEvent(Type::TurnStarted->value, 's', 1));
         $publisher->select('s', true);
@@ -72,15 +74,21 @@ final class ExtensionSessionEventPublisherTest extends TestCase
             new InputRequestedEvent('s', 4, 'cr', InputRequestTypeEnum::Approval, 'child'),
             new BackgroundJobEndedEvent('s', 'child', 'bash:1'),
             new TurnCompletedEvent('s', 11),
-        ], $dispatcher->events);
+        ], $recorder->events);
     }
 
     public function testSessionBoundariesResetSelectionAndOnlyCloseDispatchesClosing(): void
     {
-        $dispatcher = new RecordingEventDispatcher();
+        $dispatcher = new EventDispatcher();
+        $recorder = new SessionEventRecorder();
+        $dispatcher->addSubscriber($recorder);
         $publisher = new ExtensionSessionEventPublisher($dispatcher, new NullLogger());
         $publisher->select('s', false);
         $publisher->publish(new RuntimeEvent(Type::TurnStarted->value, 's', 5));
+        $publisher->resumeAfter(3);
+        $publisher->publish(new RuntimeEvent(Type::RunCompleted->value, 's', 6));
+        $publisher->resumeAfter(8);
+        $publisher->publish(new RuntimeEvent(Type::RunCompleted->value, 's', 8));
         $publisher->clear();
         $this->assertSame('', $publisher->sessionId());
         $publisher->publish(new RuntimeEvent(Type::TurnStarted->value, 's', 6));
@@ -94,23 +102,32 @@ final class ExtensionSessionEventPublisherTest extends TestCase
         $this->assertEquals([
             new SessionSelectedEvent('s', false),
             new TurnStartedEvent('s', 5, null),
+            new TurnCompletedEvent('s', 6),
             new SessionSelectedEvent('s', true),
             new TurnStartedEvent('s', 1, null),
             new SessionClosingEvent('s'),
-        ], $dispatcher->events);
+        ], $recorder->events);
     }
 
-    public function testListenerFailureIsLoggedWithoutStoppingPublication(): void
+    public function testListenerFailureIsLoggedWithoutStoppingLaterListenersOrPublication(): void
     {
         $dispatcher = new EventDispatcher();
         $dispatcher->addListener(TurnStartedEvent::class, static function (): void {
             throw new \RuntimeException('private listener failure');
-        });
+        }, 10);
+        $recorder = new SessionEventRecorder();
+        $dispatcher->addSubscriber($recorder);
         $logger = new BufferingLogger();
         $publisher = new ExtensionSessionEventPublisher($dispatcher, $logger);
         $publisher->select('s', false);
         $publisher->publish(new RuntimeEvent(Type::TurnStarted->value, 's', 1));
         $publisher->publish(new RuntimeEvent(Type::TurnStarted->value, 's', 2));
+
+        $this->assertEquals([
+            new SessionSelectedEvent('s', false),
+            new TurnStartedEvent('s', 1, null),
+            new TurnStartedEvent('s', 2, null),
+        ], $recorder->events, 'A throwing listener does not hide the event from later listeners.');
 
         $logs = $logger->cleanLogs();
         $this->assertCount(2, $logs);

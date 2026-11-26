@@ -54,6 +54,7 @@ final class Hatfield360ExtensionTest extends TestCase
     private ?array $schedules = null;
     private int $reads = 0;
     private ?\Closure $tick = null;
+    private ?string $title = null;
 
     public function testLiveDuplicateRequestsRetainTheSecondOccurrenceAfterOneAnswer(): void
     {
@@ -114,6 +115,19 @@ final class Hatfield360ExtensionTest extends TestCase
         $extension->onAssistantMessageCompleted(new AssistantMessageCompletedEvent('42', 11, 'Partial answer'));
         $extension->onTurnFailed(new TurnFailedEvent('42', 12));
         $this->assertSame(['id' => '10', 'status' => 'failed'], $this->snapshot($extension)['turn']);
+    }
+
+    public function testAstralResponseFitsWithoutEscaping(): void
+    {
+        $this->title = str_repeat('🦊', 200);
+        $this->schedules = array_map(static fn (int $i): ScheduleDTO => new ScheduleDTO((string) $i, 'Every minute', true, null), range(1, 16));
+        $extension = $this->extension();
+        $this->poll($extension);
+        $extension->onTurnStarted(new TurnStartedEvent('42', 1, null));
+        $extension->onAssistantMessageCompleted(new AssistantMessageCompletedEvent('42', 2, str_repeat('🦊', 1000)));
+        $extension->onTurnCompleted(new TurnCompletedEvent('42', 3));
+
+        $this->assertSame(str_repeat('🦊', 1000), $this->snapshot($extension)['turn']['response']);
     }
 
     public function testCompletionRefreshesInventoryInEitherSettlementOrder(): void
@@ -333,6 +347,7 @@ final class Hatfield360ExtensionTest extends TestCase
         $extension = new Hatfield360Extension($clock ?? new MockClock());
         $session = $this->createStub(SessionContextInterface::class);
         $session->method('getSessionId')->willReturnCallback(fn (): string => $this->selection);
+        $session->method('getSessionDisplayTitle')->willReturnCallback(fn (): ?string => $this->title);
         $session->method('getBackgroundSnapshot')->willReturnCallback(function (): BackgroundSnapshotDTO {
             ++$this->reads;
 

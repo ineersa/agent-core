@@ -62,6 +62,12 @@ final class ExtensionSessionEventPublisher
         }
     }
 
+    /** Restored history up to the bootstrap cut is not live, even if its stdout copy arrives later. */
+    public function resumeAfter(int $sequence): void
+    {
+        $this->sequence = max($this->sequence, $sequence);
+    }
+
     public function publish(RuntimeEvent $event): void
     {
         if ('' === $this->sessionId || $event->runId !== $this->sessionId) {
@@ -79,17 +85,24 @@ final class ExtensionSessionEventPublisher
         }
     }
 
+    /**
+     * Calls each listener separately: dispatch() would stop at the first
+     * throwing listener, and the advanced cursor never redelivers the event.
+     * Session events are not stoppable, so this keeps dispatch semantics.
+     */
     private function dispatch(string $sessionId, object $event): void
     {
-        try {
-            $this->eventDispatcher->dispatch($event);
-        } catch (\Throwable $exception) {
-            // An extension listener must not break runtime event delivery to the TUI.
-            $this->logger->warning('extension.session_event_listener_failed', [
-                'component' => 'extension_session_events', 'event_type' => 'session_event_listener_failed',
-                'run_id' => $sessionId, 'session_id' => $sessionId,
-                'extension_event' => $event::class, 'exception_class' => $exception::class,
-            ]);
+        foreach ($this->eventDispatcher->getListeners($event::class) as $listener) {
+            try {
+                $listener($event, $event::class, $this->eventDispatcher);
+            } catch (\Throwable $exception) {
+                // An extension listener must not break runtime event delivery to the TUI or other listeners.
+                $this->logger->warning('extension.session_event_listener_failed', [
+                    'component' => 'extension_session_events', 'event_type' => 'session_event_listener_failed',
+                    'run_id' => $sessionId, 'session_id' => $sessionId,
+                    'extension_event' => $event::class, 'exception_class' => $exception::class,
+                ]);
+            }
         }
     }
 }
