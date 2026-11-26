@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\CLI\Setup\Exception\DefinitionSetupRefusalException;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Yaml\Yaml;
 
 final class DefinitionSetupServiceTest extends PerMethodIsolatedKernelTestCase
 {
@@ -76,6 +77,35 @@ final class DefinitionSetupServiceTest extends PerMethodIsolatedKernelTestCase
         $this->expectException(DefinitionSetupRefusalException::class);
         $this->expectExceptionMessage('Built-in definitions cannot be deleted');
         $service->delete(true, $user, $path, $after);
+    }
+
+    public function testClearingSoleSkillFieldKeepsValidFrontmatterAndExactBody(): void
+    {
+        $path = $this->fixture($this->isolatedCwd(), '.agents/skills/sample/SKILL.md');
+        $body = "\r\n  Body\r\n";
+        $raw = "---\ndescription: Fixture\n---\n".$body;
+        (new Filesystem())->dumpFile($path, $raw);
+        $service = self::getContainer()->get(DefinitionSetupService::class);
+        $saved = $service->save(true, SettingsLayerEnum::Project, $path, $raw, 'description', '');
+        $this->assertSame([], $service->fields($saved));
+        $this->assertStringEndsWith("\n---\n".$body, $saved);
+        $this->assertSame($saved, $service->read($path));
+    }
+
+    public function testSkillEditPreservesNestedYamlTypes(): void
+    {
+        $path = $this->fixture($this->isolatedCwd(), '.agents/skills/sample/SKILL.md');
+        $raw = "---\ndescription: Fixture\nmetadata: {nested: [{tags: [], map: {}, updated: 2026-11-26}]}\n---\nBody\n";
+        (new Filesystem())->dumpFile($path, $raw);
+        $service = self::getContainer()->get(DefinitionSetupService::class);
+        $saved = $service->save(true, SettingsLayerEnum::Project, $path, $raw, 'description', 'Changed');
+        $yaml = explode("\n---\n", substr($saved, 4), 2)[0];
+        $nested = Yaml::parse($yaml, Yaml::PARSE_OBJECT_FOR_MAP | Yaml::PARSE_DATETIME)->metadata->nested[0];
+        $this->assertSame([], $nested->tags);
+        $this->assertInstanceOf(\stdClass::class, $nested->map);
+        $this->assertSame([], get_object_vars($nested->map));
+        $this->assertInstanceOf(\DateTimeImmutable::class, $nested->updated);
+        $this->assertSame('2026-11-26', $nested->updated->format('Y-m-d'));
     }
 
     private function fixture(string $base, string $relative): string

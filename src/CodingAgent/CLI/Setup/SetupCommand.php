@@ -64,8 +64,8 @@ final readonly class SetupCommand
                 $providers,
                 new SetupScreen($providers, $this->logger, $theme),
                 new ExtensionsSetupScreen($extensions, $theme, $this->logger),
-                new DefinitionSetupScreen($this->definitions, $scope, $app, $this->logger, $theme, skill: true),
-                new DefinitionSetupScreen($this->definitions, $scope, $app, $this->logger, $theme, skill: false),
+                new DefinitionSetupScreen($this->definitions, $scope, $this->logger, $theme, skill: true),
+                new DefinitionSetupScreen($this->definitions, $scope, $this->logger, $theme, skill: false),
             ];
         });
         $tui->run();

@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Setup;
 
 use Ineersa\CodingAgent\CLI\Setup\DefinitionSetupService;
-use Ineersa\CodingAgent\Config\Ai\AiConfig;
-use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
-use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
+use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
+use Ineersa\CodingAgent\Config\SetupSettingsService;
+use Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\Tui\Setup\DefinitionSetupScreen;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
@@ -45,7 +43,7 @@ final class DefinitionSetupScreenTest extends PerMethodIsolatedKernelTestCase
         $tui = new Tui(terminal: $terminal);
         $pane = new ContainerWidget();
         $tui->add($pane);
-        (new DefinitionSetupScreen($container->get(DefinitionSetupService::class), SettingsLayerEnum::User, $container->get(AppConfig::class), new NullLogger(), $theme, skill: false))->mount($tui, $pane, $tui->stop(...));
+        (new DefinitionSetupScreen($container->get(DefinitionSetupService::class), SettingsLayerEnum::User, new NullLogger(), $theme, skill: false))->mount($tui, $pane, $tui->stop(...));
         $tui->start();
         try {
             $terminal->simulateInput("\r"); // Open the only agent.
@@ -87,20 +85,28 @@ final class DefinitionSetupScreenTest extends PerMethodIsolatedKernelTestCase
         $fs->dumpFile($path, "---\nname: picker\ndescription: Fixture\n---\nBody\n");
         $container = self::getContainer();
         $service = $container->get(DefinitionSetupService::class);
-        $app = clone $container->get(AppConfig::class);
-        $app->catalog = new HatfieldModelCatalog(AiConfig::fromArray(['providers' => ['fixture' => ['enabled' => true, 'models' => ['reasoner' => ['thinking_level_map' => ['high' => 'high']]]]]]));
-        $app->extensions = new ExtensionsConfig([SafeGuardExtension::class]);
         $terminal = new VirtualTerminal(columns: 130, rows: 35);
         $tui = new Tui(terminal: $terminal);
         $pane = new ContainerWidget();
         $tui->add($pane);
         $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
-        (new DefinitionSetupScreen($service, SettingsLayerEnum::User, $app, new NullLogger(), $theme, skill: false))->mount($tui, $pane, $tui->stop(...));
+        (new DefinitionSetupScreen($service, SettingsLayerEnum::User, new NullLogger(), $theme, skill: false))->mount($tui, $pane, $tui->stop(...));
         $tui->start();
         try {
+            $cwd = $this->isolatedCwd();
+            $this->assertSame($cwd.'/.hatfield', realpath($cwd.'/.hatfield'));
+            $this->assertFalse(is_link($cwd.'/.hatfield/settings.yaml'));
+            $writer = $container->get(SettingsOverrideWriter::class);
+            $writer->setMany(SettingsLayerEnum::Project, $cwd, [
+                'ai.providers.fixture' => ['enabled' => true, 'models' => ['reasoner' => ['thinking_level_map' => ['high' => 'high']]]],
+                'extensions.enabled' => [SchedulingExtension::class],
+            ]);
+            $models = $container->get(SetupSettingsService::class)->loadConfig()->catalog?->allModels() ?? [];
+            $modelIndex = array_search('fixture/reasoner', array_map(static fn ($ref): string => $ref->toString(), $models), true);
+            $this->assertIsInt($modelIndex);
             $terminal->simulateInput("\r");
             $terminal->simulateInput("\r");
-            foreach ([3 => ['model', 'Model override for this child', 'fixture/reasoner'], 4 => ['thinking', 'Reasoning effort for the child model', 'high'], 6 => ['extensions', 'Optional child extensions', 'SafeGuardExtension'], 8 => ['systemPromptMode', 'Replace uses the agent prompt', 'append']] as $index => [$field, $help, $label]) {
+            foreach ([3 => ['model', 'Model override for this child', 'fixture/reasoner'], 4 => ['thinking', 'Reasoning effort for the child model', 'high'], 6 => ['extensions', 'Optional child extensions', 'SchedulingExtension'], 8 => ['systemPromptMode', 'Replace uses the agent prompt', 'append']] as $index => [$field, $help, $label]) {
                 $form = $tui->getFocus();
                 $this->assertInstanceOf(SettingsListWidget::class, $form);
                 for ($i = 0; $i < $index; ++$i) {
@@ -111,7 +117,11 @@ final class DefinitionSetupScreenTest extends PerMethodIsolatedKernelTestCase
                 $tui->processRender();
                 $this->assertStringContainsString($help, AnsiUtils::stripAnsiCodes($terminal->getOutput()));
                 $terminal->simulateInput("\r");
-                $this->assertInstanceOf(SelectListWidget::class, $form->all()[0]);
+                $picker = $form->all()[0];
+                $this->assertInstanceOf(SelectListWidget::class, $picker);
+                if ('model' === $field) {
+                    $picker->setSelectedIndex($modelIndex + 1);
+                }
                 $terminal->clearOutput();
                 $tui->requestRender(force: true);
                 $tui->processRender();
@@ -119,14 +129,25 @@ final class DefinitionSetupScreenTest extends PerMethodIsolatedKernelTestCase
                 if ('extensions' === $field) {
                     $terminal->simulateInput(' ');
                     $this->assertArrayNotHasKey($field, $service->fields($fs->readFile($path)), 'Toggling does not save before Enter.');
-                } else {
+                } elseif ('model' !== $field) {
                     $terminal->simulateInput("\x1b[B");
-                    if ('model' !== $field) {
-                        $terminal->simulateInput("\x1b[B");
-                    }
+                    $terminal->simulateInput("\x1b[B");
+                }
+                if ('extensions' === $field) {
+                    $writer->set(SettingsLayerEnum::Project, $cwd, 'extensions.enabled', []);
+                    $terminal->simulateInput("\r");
+                    $this->assertArrayNotHasKey($field, $service->fields($fs->readFile($path)), 'A selection removed while the picker was open must not be saved.');
+                    $terminal->simulateInput("\r");
+                    $empty = $form->all()[0];
+                    $this->assertInstanceOf(SelectListWidget::class, $empty);
+                    $this->assertSame('No optional extensions available', $empty->getSelectedItem()['label'] ?? null);
+                    $terminal->simulateInput("\x1b");
+                    $writer->set(SettingsLayerEnum::Project, $cwd, 'extensions.enabled', [SchedulingExtension::class]);
+                    $terminal->simulateInput("\r");
+                    $terminal->simulateInput(' ');
                 }
                 $terminal->simulateInput("\r");
-                $this->assertSame('extensions' === $field ? $app->extensions->enabled : $label, $service->fields($fs->readFile($path))[$field]);
+                $this->assertSame('extensions' === $field ? [SchedulingExtension::class] : $label, $service->fields($fs->readFile($path))[$field]);
             }
         } finally {
             $tui->stop();

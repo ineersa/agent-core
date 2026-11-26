@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Setup;
 
 use Ineersa\CodingAgent\CLI\Setup\DefinitionSetupService;
-use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -36,7 +35,6 @@ final class DefinitionSetupScreen
     public function __construct(
         private readonly DefinitionSetupService $service,
         private readonly SettingsLayerEnum $scope,
-        private readonly AppConfig $app,
         private readonly LoggerInterface $logger,
         private readonly TuiTheme $theme,
         private readonly bool $skill,
@@ -131,13 +129,12 @@ final class DefinitionSetupScreen
         $items = [];
         $fields = $this->service->fields($raw);
         foreach ($this->service->supportedFields($this->skill) as $key => $type) {
-            $choices = $this->service->choices($key, $type, $fields, $this->app);
             $current = $fields[$key] ?? null;
             $text = $this->fieldText($current);
             $label = ucfirst(strtolower(str_replace('-', ' ', (string) preg_replace('/(?<!^)[A-Z]/', ' $0', $key))));
             $submenu = match (true) {
                 'extensions' === $key => fn (string $_, callable $done): SelectListWidget => $this->extensionPicker($current, $done),
-                [] !== $choices => fn (): SelectListWidget => $this->picker($key, $text, $choices),
+                'bool' === $type || \in_array($key, ['model', 'thinking', 'systemPromptMode'], true) => fn (): SelectListWidget => $this->picker($key, $text, $this->service->choices($key, $type, $fields)),
                 default => static fn (string $value): SettingsTextInputWidget => new SettingsTextInputWidget($value, cancelUnchanged: true),
             };
             $help = $this->service->fieldHelp($this->skill, $key);
@@ -195,7 +192,7 @@ final class DefinitionSetupScreen
     private function extensionPicker(mixed $current, callable $done): SelectListWidget
     {
         $selected = \is_array($current) ? $current : [];
-        $available = $this->app->extensions->enabledClasses();
+        $available = $this->service->availableExtensions();
         $items = [];
         foreach (array_unique([...$selected, ...$available]) as $class) {
             $items[] = ['value' => $class, 'label' => StringUtils::stripControlBytes($class).(\in_array($class, $available, true) ? '' : ' (current; unavailable)'), 'checked' => \in_array($class, $selected, true)];

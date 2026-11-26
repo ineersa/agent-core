@@ -68,9 +68,8 @@ final class UnifiedSetupScreenTest extends PerMethodIsolatedKernelTestCase
                 $extension->layer = $scope;
 
                 $service = $container->get(DefinitionSetupService::class);
-                $app = $container->get(AppConfig::class);
 
-                return [$writer->layerPath($scope, $cwd), $container->get(CoreSettingsScreen::class), $provider, new SetupScreen($provider), new ExtensionsSetupScreen($extension, $theme, new NullLogger()), new DefinitionSetupScreen($service, $scope, $app, new NullLogger(), $theme, skill: true), new DefinitionSetupScreen($service, $scope, $app, new NullLogger(), $theme, skill: false)];
+                return [$writer->layerPath($scope, $cwd), $container->get(CoreSettingsScreen::class), $provider, new SetupScreen($provider), new ExtensionsSetupScreen($extension, $theme, new NullLogger()), new DefinitionSetupScreen($service, $scope, new NullLogger(), $theme, skill: true), new DefinitionSetupScreen($service, $scope, new NullLogger(), $theme, skill: false)];
             });
             $tui->start();
             $this->assertStringContainsString('Preferences', $this->render($tui, $terminal));

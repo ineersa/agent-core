@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\SetupSettingsService;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Skills\DTO\SkillFrontmatterDTO;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
@@ -39,6 +40,7 @@ final readonly class DefinitionSetupService
         private Filesystem $filesystem,
         private DenormalizerInterface $denormalizer,
         private ValidatorInterface $validator,
+        private SetupSettingsService $settings,
     ) {
     }
 
@@ -69,10 +71,13 @@ final readonly class DefinitionSetupService
     }
 
     /** @return array<string, mixed> */
-    public function fields(string $raw): array
+    public function fields(string $raw, bool $preserveYamlTypes = false): array
     {
         $frontmatter = $this->extractor->extract($raw);
-        $values = null === $frontmatter['yamlBlock'] ? [] : Yaml::parse($frontmatter['yamlBlock']);
+        $values = null === $frontmatter['yamlBlock'] ? [] : Yaml::parse($frontmatter['yamlBlock'], $preserveYamlTypes ? Yaml::PARSE_OBJECT_FOR_MAP | Yaml::PARSE_DATETIME | Yaml::PARSE_CUSTOM_TAGS | Yaml::PARSE_EXCEPTION_ON_INVALID_TYPE : 0);
+        if ($values instanceof \stdClass) {
+            $values = get_object_vars($values);
+        }
         if (($frontmatter['hasOpeningDelimiter'] && !$frontmatter['hasClosingDelimiter']) || (null !== $values && (!\is_array($values) || ([] !== $values && array_is_list($values))))) {
             throw new DefinitionSetupRefusalException('Frontmatter must be a closed YAML mapping.');
         }
@@ -97,15 +102,23 @@ final readonly class DefinitionSetupService
      *
      * @return list<string>
      */
-    public function choices(string $key, string $type, array $fields, AppConfig $app): array
+    public function choices(string $key, string $type, array $fields): array
     {
+        $app = \in_array($key, ['model', 'thinking'], true) ? $this->settings->loadConfig() : null;
+
         return match (true) {
             'bool' === $type => ['', 'true', 'false'],
             'systemPromptMode' === $key => ['', ...array_column(SystemPromptModeEnum::cases(), 'value')],
-            'model' === $key => ['', ...array_map(static fn ($ref): string => $ref->toString(), $app->catalog?->allModels() ?? [])],
+            'model' === $key => ['', ...array_map(static fn ($ref): string => $ref->toString(), $app?->catalog?->allModels() ?? [])],
             'thinking' === $key => ['', 'off', ...array_values(array_diff(array_keys($this->thinkingMap($fields, $app)), ['off']))],
             default => [],
         };
+    }
+
+    /** @return list<class-string> */
+    public function availableExtensions(): array
+    {
+        return $this->settings->loadConfig()->extensions->enabledClasses();
     }
 
     public function fieldHelp(bool $skill, string $field): ?string
@@ -148,7 +161,7 @@ final readonly class DefinitionSetupService
     public function save(bool $skill, SettingsLayerEnum $scope, string $path, string $expected, string $field, string $value): string
     {
         $this->requireEditable($skill, $scope, $path, $expected);
-        $fields = $this->fields($expected);
+        $fields = $this->fields($expected, preserveYamlTypes: true);
         $type = $this->supportedFields($skill)[$field] ?? throw new DefinitionSetupRefusalException('Unsupported frontmatter field.');
         if ('' === $value && ($skill || !\in_array($field, ['name', 'description'], true))) {
             unset($fields[$field]);
@@ -160,9 +173,12 @@ final readonly class DefinitionSetupService
         }
         $extracted = $this->extractor->extract($expected, preserveBody: true);
         $body = $extracted['hasClosingDelimiter'] ? $extracted['body'] : $expected;
-        $candidate = "---\n".Yaml::dump($fields, 6, 4, Yaml::DUMP_MULTI_LINE_LITERAL_BLOCK)."---\n".$body;
+        // Keep nested YAML node types while ensuring the closing delimiter starts on its own line.
+        $yaml = Yaml::dump((object) $fields, 6, 4, Yaml::DUMP_MULTI_LINE_LITERAL_BLOCK | Yaml::DUMP_OBJECT_AS_MAP | Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE);
+        $candidate = "---\n".rtrim($yaml, "\n")."\n---\n".$body;
+        $validatedFields = $this->fields($candidate);
         if ($skill) {
-            $input = array_intersect_key($fields, $this->supportedFields(true));
+            $input = array_intersect_key($validatedFields, $this->supportedFields(true));
             $dto = $this->denormalizer->denormalize($input, SkillFrontmatterDTO::class);
             $violations = $this->validator->validate($dto);
             if (0 !== \count($violations)) {
@@ -170,6 +186,16 @@ final readonly class DefinitionSetupService
             }
         } else {
             $this->agentParser->parseContent($candidate, $path);
+            $previous = $this->fields($expected);
+            if ('' !== $value && \in_array($field, ['model', 'thinking'], true) && ($previous[$field] ?? null) !== $value
+                && !\in_array($value, $this->choices($field, $type, $validatedFields), true)) {
+                throw new DefinitionSetupRefusalException('That choice is no longer available. Reopen the picker.');
+            }
+            if ('extensions' === $field && [] !== $added = array_diff($validatedFields[$field] ?? [], $previous[$field] ?? [])) {
+                if ([] !== array_diff($added, $this->availableExtensions())) {
+                    throw new DefinitionSetupRefusalException('A selected extension is no longer available. Reopen the picker.');
+                }
+            }
         }
         $this->filesystem->dumpFile($path, $candidate);
 
@@ -188,9 +214,9 @@ final readonly class DefinitionSetupService
      *
      * @return array<string, mixed>
      */
-    private function thinkingMap(array $fields, AppConfig $app): array
+    private function thinkingMap(array $fields, ?AppConfig $app): array
     {
-        $catalog = $app->catalog;
+        $catalog = $app?->catalog;
         if (null === $catalog) {
             return [];
         }
