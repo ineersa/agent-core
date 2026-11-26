@@ -27,6 +27,7 @@ use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -78,7 +79,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
 
         $hatfieldSessionStore = $this->sessionStoreForCwd($projectDir);
         $registry = $this->artifactRegistry($hatfieldSessionStore);
-        $childDirectory = new AgentChildRunDirectory($hatfieldSessionStore, $registry, new TestLogger());
+        $childDirectory = new AgentChildRunDirectory(static::getContainer()->get(DeferredSubagentChildRepository::class), $registry);
         $diagStore = static::getContainer()->get(PromptCacheDiagnosticsStore::class);
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber(static::getContainer()->get('test.prompt_cache_diagnostics_invocation_subscriber'));
@@ -109,7 +110,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
 
         $hatfieldSessionStore = $this->sessionStoreForCwd($projectDir);
         $registry = $this->artifactRegistry($hatfieldSessionStore);
-        $childDirectory = new AgentChildRunDirectory($hatfieldSessionStore, $registry, new TestLogger());
+        $childDirectory = new AgentChildRunDirectory(static::getContainer()->get(DeferredSubagentChildRepository::class), $registry);
         $diagStore = $this->diagStore($hatfieldSessionStore, $registry, $childDirectory);
         $catalog = new HatfieldModelCatalog(new AiConfig(
             providers: [
@@ -436,7 +437,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
     ): PromptCacheDiagnosticsStore {
         return new PromptCacheDiagnosticsStore(
             $sessionStore,
-            $childDirectory ?? new AgentChildRunDirectory($sessionStore, $registry, new TestLogger()),
+            $childDirectory ?? new AgentChildRunDirectory(static::getContainer()->get(DeferredSubagentChildRepository::class), $registry),
             new SessionAgentArtifactPathResolver($sessionStore),
             new TestLogger(),
         );

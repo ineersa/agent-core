@@ -45,6 +45,19 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         return false === $row ? null : $this->snapshot($row);
     }
 
+    /** Every child run is reserved here before its artifact exists; agent_resume rebinds the same row. */
+    public function findParentRunId(string $childRunId): ?string
+    {
+        $parent = $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT batch.parent_run_id FROM deferred_subagent_child child
+             JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
+             WHERE child.child_run_id = ?',
+            [$childRunId],
+        );
+
+        return false === $parent ? null : (string) $parent;
+    }
+
     public function findProviderCacheKey(string $childRunId): ?string
     {
         $key = $this->getEntityManager()->getConnection()->fetchOne(

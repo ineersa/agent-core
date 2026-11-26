@@ -8,12 +8,12 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\Stream\NativeExecutionObservationPublisher;
 use Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\ChildRunFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
@@ -25,7 +25,7 @@ final class NativeExecutionObservationPublisherTest extends IsolatedKernelTestCa
         $sessions = $container->get(HatfieldSessionStore::class);
         $root = $sessions->createSession('root');
         $other = $sessions->createSession('other');
-        $container->get(AgentArtifactRegistry::class)->create($root, 'agent-child', 'child', 'worker', AgentArtifactKindEnum::Subagent);
+        ChildRunFixture::create($container, $root, 'agent-child', 'child', 'worker', AgentArtifactKindEnum::Subagent);
         $relationships = $container->get(RunOperationalProjectionRepository::class);
         $relationships->replace(RunState::queued('nested')->with(['parentRunId' => 'child']));
         $relationships->replace(RunState::queued('cycle')->with(['parentRunId' => 'cycle']));
@@ -55,7 +55,7 @@ final class NativeExecutionObservationPublisherTest extends IsolatedKernelTestCa
     {
         $container = self::getContainer();
         $root = $container->get(HatfieldSessionStore::class)->createSession('root');
-        $container->get(AgentArtifactRegistry::class)->create($root, 'agent-fork', 'fork-run', 'worker', AgentArtifactKindEnum::Fork);
+        ChildRunFixture::create($container, $root, 'agent-fork', 'fork-run', 'worker', AgentArtifactKindEnum::Fork);
         $container->get(RunOperationalProjectionRepository::class)->replace(RunState::queued('nested')->with(['parentRunId' => 'fork-run']));
         $dispatcher = $container->get(EventDispatcherInterface::class);
         $previous = getenv('HATFIELD_CONSUMER_STDOUT_EVENTS');

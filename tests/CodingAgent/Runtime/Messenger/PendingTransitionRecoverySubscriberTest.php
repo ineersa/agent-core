@@ -10,10 +10,10 @@ use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Runtime\Messenger\PendingTransitionRecoverySubscriber;
+use Ineersa\CodingAgent\Tests\Support\ChildRunFixture;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -146,7 +146,7 @@ final class PendingTransitionRecoverySubscriberTest extends IsolatedKernelTestCa
 
     private function registerChild(string $runId): void
     {
-        self::getContainer()->get(AgentArtifactRegistry::class)->create('a-owner', 'artifact-'.$runId, $runId, 'test', AgentArtifactKindEnum::Fork);
+        ChildRunFixture::create(self::getContainer(), 'a-owner', 'artifact-'.$runId, $runId, 'test', AgentArtifactKindEnum::Fork);
     }
 
     private function createSubscriber(PreparedTransitionEventStoreInterface $transitions, TestLogger $logger): PendingTransitionRecoverySubscriber

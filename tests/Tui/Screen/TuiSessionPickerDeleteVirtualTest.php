@@ -154,6 +154,50 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
         }
     }
 
+    public function testLoadsSessionsInPagesAndKeepsSelectionAcrossDeleteConfirm(): void
+    {
+        $active = $this->store->createSession('Active');
+        for ($i = 0; $i < 105; ++$i) {
+            $this->store->createSession('Paged '.$i);
+        }
+        $total = \count($this->store->listSessions());
+
+        $harness = new VirtualTuiHarness(sessionId: $active, columns: 140, rows: 40, palette: new ThemePalette('test', [ThemeColorEnum::Accent->value => 'magenta']));
+        $picker = new SessionPickerController($harness->tui(), $harness->screen(), $this->store, $this->createStub(TuiSessionSwitchServiceInterface::class));
+        $picker->open();
+        $list = $this->listWidget($picker);
+        $harness->startInputLoop();
+        try {
+            $harness->tui()->setFocus($list);
+            $this->assertCount(100, $this->values($list), 'Only the first page loads on open.');
+
+            $harness->sendInput("\x1b[A"); // wraps to the last loaded row
+            $last = $list->getSelectedItem()['value'];
+            $values = $this->values($list);
+            $this->assertCount(min($total, 200), $values, 'Reaching the end appends the next page.');
+            $this->assertSame($values, array_values(array_unique($values)));
+            $this->assertSame($last, $values[99], 'The selection stays on the row the user reached.');
+
+            $harness->sendInput('d');
+            // Another process creates a session while the confirmation is open; it sorts first.
+            $meanwhile = $this->store->createSession('Created meanwhile');
+            $harness->sendInput("\x1b");
+            $this->assertSame($last, $list->getSelectedItem()['value'], 'Cancelling a delete keeps the same session selected, not its old position.');
+            $restored = $this->values($list);
+            $this->assertSame($meanwhile, $restored[0], 'The refresh shifted every browsed row down by one.');
+            $this->assertCount(\count($values), $restored, 'The refresh reloads as many rows as were browsed.');
+        } finally {
+            $harness->stopInputLoop();
+            $picker->closePicker();
+        }
+    }
+
+    /** @return list<string> */
+    private function values(SelectListWidget $list): array
+    {
+        return array_map(static fn (array $item): string => (string) $item['value'], (new \ReflectionProperty(SelectListWidget::class, 'items'))->getValue($list));
+    }
+
     private function listWidget(SessionPickerController $picker): SelectListWidget
     {
         $overlayRef = new \ReflectionProperty(SessionPickerController::class, 'overlay');

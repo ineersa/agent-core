@@ -37,6 +37,7 @@ use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Session\Event\RunOperationalProjectionControllerSessionLifecycleListener;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
+use Ineersa\CodingAgent\Tests\Support\ChildRunFixture;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Support\TestProcessRuntime;
@@ -952,7 +953,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
     public function testCandidateOrderingPreservesScopePrecedenceForDuplicatePid(): void
     {
-        self::getContainer()->get(AgentArtifactRegistry::class)->create('test-poller-run', 'child-artifact', 'child-run', 'test', AgentArtifactKindEnum::Fork);
+        ChildRunFixture::create(self::getContainer(), 'test-poller-run', 'child-artifact', 'child-run', 'test', AgentArtifactKindEnum::Fork);
         $childLog = $this->tmpDir.'/child-identity.log';
         $parentLog = $this->tmpDir.'/parent-identity.log';
         file_put_contents($childLog, 'child immutable record output');
