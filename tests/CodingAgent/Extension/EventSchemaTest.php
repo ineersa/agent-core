@@ -33,4 +33,15 @@ final class EventSchemaTest extends TestCase
         }
         $this->assertFalse(EventSchema::accepts('session.snapshot', 's', 1, 1, ['turn' => $snapshot['turn'] + ['identity' => 'abc']] + $snapshot));
     }
+
+    public function testTurnResponseBounds(): void
+    {
+        $snapshot = ['provider' => 'hatfield', 'attention' => null, 'activeSubagents' => 0, 'backgroundScripts' => 0, 'tool' => null];
+        foreach (['', "Line\nline", str_repeat('🐕', 2000)] as $response) {
+            $this->assertTrue(EventSchema::accepts('session.snapshot', 's', 1, 1, ['turn' => ['id' => 't', 'status' => 'completed', 'trigger' => 'user', 'response' => $response]] + $snapshot));
+        }
+        foreach ([str_repeat('a', 2001), 42, null, "\xED\xA0\x80"] as $response) {
+            $this->assertFalse(EventSchema::accepts('session.snapshot', 's', 1, 1, ['turn' => ['id' => 't', 'status' => 'completed', 'response' => $response]] + $snapshot));
+        }
+    }
 }

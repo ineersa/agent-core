@@ -6,6 +6,14 @@ const switches = ['clear', 'resume'];
 const boundaries = ['startup', ...switches];
 const childEvents = ['SubagentStart', 'SubagentStop'];
 export const text = (value, max) => typeof value === 'string' && [...value].length <= max;
+const maxResponse = 1000;
+
+// Keeps the end of the final message, where the answer usually is.
+function response(value) {
+    if (typeof value !== 'string' || !value.trim() || /\p{Surrogate}/u.test(value)) return null;
+    const scalars = [...value];
+    return scalars.length <= maxResponse ? value : '…' + scalars.slice(1 - maxResponse).join('');
+}
 
 function registry(tasks) {
     if (!Array.isArray(tasks) || tasks.length > 1024) return null;
@@ -96,6 +104,9 @@ export function observe(previous, hook, secret) {
         state.scripts = sample?.scripts ?? null;
         state.agentsUncertain = sample?.subagents ?? true;
         state.turn.status = 'completed';
+        // Older Claude Code versions do not report the final message.
+        const final = response(hook.last_assistant_message);
+        if (final) state.turn.response = final;
         settleWakeup(state);
         refreshTitle = true;
     } else if (event === 'StopFailure' && typeof hook.error === 'string') {

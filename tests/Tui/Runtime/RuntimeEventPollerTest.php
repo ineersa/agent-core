@@ -20,8 +20,11 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiBackgroundJobObservationDTO;
+use Ineersa\Hatfield\ExtensionApi\Tui\DTO\TuiRunObservationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObservationTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiBackgroundJobObserverInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObservationTypeEnum;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiRunObserverInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -166,6 +169,51 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->assertNull($this->poller->poll($this->state, $this->client));
         $this->assertSame(9, $this->state->lastSeq);
+    }
+
+    public function testTerminalRunObservationsReportTheLastAssistantMessageText(): void
+    {
+        $observations = [];
+        $observer = $this->createStub(TuiRunObserverInterface::class);
+        $observer->method('onTuiRunObserved')->willReturnCallback(static function (TuiRunObservationDTO $observation) use (&$observations): void {
+            $observations[] = [$observation->type, $observation->response];
+        });
+        $this->poller->observeRun($observer);
+        $this->state->sessionId = 'test-run';
+        $message = static fn (int $seq, array $content): RuntimeEvent => new RuntimeEvent(RuntimeEventTypeEnum::AssistantMessageCompleted->value, 'test-run', $seq, ['message_id' => 'm'.$seq, 'text' => '', 'content' => $content]);
+        $text = static fn (string $text): array => ['type' => 'text', 'text' => $text, 'block_id' => 'b'];
+        $tool = ['type' => 'tool_call', 'id' => 'call', 'name' => 'bash', 'arguments' => []];
+        $this->client->method('events')->willReturn([
+            new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'test-run', 1),
+            $message(2, [$text('Checking.'), $tool]),
+            new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'test-run', 3),
+            $message(4, [['type' => 'thinking', 'text' => 'hidden'], $text('First.'), $text("Done.\nAll good.")]),
+            new RuntimeEvent(RuntimeEventTypeEnum::RunCompleted->value, 'test-run', 5, ['reason' => 'completed']),
+            // A later terminal observation cannot reuse the reported text.
+            new RuntimeEvent(RuntimeEventTypeEnum::RunCancelled->value, 'test-run', 6, ['reason' => 'cancelled']),
+            new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'test-run', 7),
+            $message(8, [$text('Partial.')]),
+            new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'test-run', 9),
+            $message(10, [$tool]),
+            new RuntimeEvent(RuntimeEventTypeEnum::RunFailed->value, 'test-run', 11, ['reason' => 'failed']),
+            new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'test-run', 12),
+            new RuntimeEvent(RuntimeEventTypeEnum::AssistantMessageCompleted->value, 'test-run', 13, ['message_id' => 'm13', 'text' => 'Legacy text.']),
+            new RuntimeEvent(RuntimeEventTypeEnum::RunCancelled->value, 'test-run', 14, ['reason' => 'cancelled']),
+        ]);
+
+        $this->poller->poll($this->state, $this->client);
+
+        $this->assertSame([
+            [TuiRunObservationTypeEnum::TurnStarted, null],
+            [TuiRunObservationTypeEnum::TurnStarted, null],
+            [TuiRunObservationTypeEnum::TurnCompleted, "First.\n\nDone.\nAll good."],
+            [TuiRunObservationTypeEnum::TurnCancelled, null],
+            [TuiRunObservationTypeEnum::TurnStarted, null],
+            [TuiRunObservationTypeEnum::TurnStarted, null],
+            [TuiRunObservationTypeEnum::TurnFailed, null],
+            [TuiRunObservationTypeEnum::TurnStarted, null],
+            [TuiRunObservationTypeEnum::TurnCancelled, 'Legacy text.'],
+        ], $observations);
     }
 
     public function testPollDeduplicatesBySeq(): void

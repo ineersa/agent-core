@@ -44,9 +44,13 @@ This is a selection signal, not confirmation that restore or a turn succeeded.
 Repeat selections can have the same ID. The callback receives no prompt or
 transcript and must not block the UI. Headless workers do not call it.
 
-Implement `TuiRunObserverInterface` to receive typed, content-free foreground
-observations after live TUI application of canonical events. It exposes the
-session ID, canonical sequence, observation type and an optional request ID.
+Implement `TuiRunObserverInterface` to receive typed foreground observations
+after live TUI application of canonical events. It exposes the session ID,
+canonical sequence, observation type and an optional request ID. Observations
+carry no conversation content, except that `TurnCompleted`, `TurnFailed` and
+`TurnCancelled` set `response` to the untruncated text of the turn's last
+assistant message. It is `null` when that message had no text (for example,
+tool calls only) or no message finished since the turn started.
 Match `InputResolved` to either `QuestionRequested` or `ApprovalRequested`
 by session and request ID; both kinds can be answered through the same route.
 Child execution also produces live `ChildExecutionStarted` and

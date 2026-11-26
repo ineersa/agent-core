@@ -32,6 +32,11 @@ reports whether the desktop confirmed acceptance, not whether it showed a toast.
 Foreground observations report work, final response, failure or cancellation,
 correlated foreground and child question/approval waits and tool names (not tool inputs or results).
 Tool completion or failure clears the matching progress marker, not the response.
+A completed main turn carries the final assistant message as `turn.response`:
+plain text, cut to its last 1,000 Unicode characters behind a leading `…`.
+Later snapshots for the same turn resend it, and a new turn starts without one.
+It is left out when the final message has no text, and never sent for working,
+failed or cancelled turns.
 Attention and tool markers still come from live observations; the visible TUI
 prompt is not an equivalent inventory of attention occurrences.
 The extension reads main activity and owned nonterminal children and Bash/code-mode
