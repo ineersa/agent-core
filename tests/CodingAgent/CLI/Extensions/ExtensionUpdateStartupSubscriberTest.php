@@ -136,6 +136,8 @@ final class ExtensionUpdateStartupSubscriberTest extends TestCase
         }
     }
 
+    // The eligible positive control consumes the process-wide startup-once marker.
+    #[RunInSeparateProcess]
     public function testWorkersChildrenAndNoninteractiveInvocationsNeverCheckOrPrompt(): void
     {
         // Any check must fail before Composer can run; the escape stays wholly
@@ -150,9 +152,10 @@ final class ExtensionUpdateStartupSubscriberTest extends TestCase
         putenv('HATFIELD_SESSION_ID=owned-child');
         $this->assertSame('', $this->dispatch(''));
 
+        putenv('HATFIELD_SESSION_ID');
         $this->expectException(ExtensionUpdateException::class);
         $this->expectExceptionMessage('Composer path escapes the extension installation');
-        $this->updates->prepare($this->fixture->project());
+        $this->dispatch('');
     }
 
     /** @param array<string, bool> $options */

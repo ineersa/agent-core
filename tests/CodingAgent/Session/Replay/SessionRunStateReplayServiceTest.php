@@ -54,7 +54,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
         $codec = new ToolExecutionEndPayloadCodec($serializer);
         $sources = $this->createStub(RunHistorySourceProviderInterface::class);
-        $sources->method('historySource')->willReturn($store->historySource($this->runId));
+        $sources->method('historySource')->willReturnCallback($store->historySource(...));
         $this->service = new SessionRunStateReplayService($store, new SessionReplayCoordinator(
             $sources,
             new RunStateReducer($serializer, $codec),
