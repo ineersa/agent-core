@@ -33,6 +33,7 @@
 - Generate one metadata-based Doctrine migration for an unmerged feature's final schema; never hand-write migrations. Put architecture explanations in `architecture/`, Hatfield usage guidance in `docs/`, and omit task/checkpoint labels from shipped documentation.
 - No production APIs or paths solely for tests. No `ReflectionClass::newInstanceWithoutConstructor()`, `Closure::bind()`, or constructor bypass in production. Test helpers stay in tests.
 - Every caught exception must be rethrown/propagated or explicitly logged as intentional local degradation. Empty catch blocks are forbidden.
+- Never hide or replace the actual error. The original exception or provider message must reach the user, the model, and the logs; curated or generic text may be added beside it or used when no message exists, never substituted for it.
 - Runtime logs: structured event-style messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`); do not log raw prompts, tool output, env values, API keys, or full session content by default. See `docs/datadog.md`.
 
 ## Architecture
