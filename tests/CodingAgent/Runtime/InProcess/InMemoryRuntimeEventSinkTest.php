@@ -82,4 +82,44 @@ final class InMemoryRuntimeEventSinkTest extends TestCase
         $drained = iterator_to_array($sink->drain(''));
         $this->assertCount(2, $drained);
     }
+
+    #[Test]
+    public function stoppingADrainEarlyKeepsEveryUndeliveredEvent(): void
+    {
+        $sink = new InMemoryRuntimeEventSink();
+        $other = new RuntimeEvent('test.type', 'run-2', 0);
+        $first = new RuntimeEvent('test.type', 'run-1', 0);
+        $second = new RuntimeEvent('test.type', 'run-1', 0);
+        $sink->emit($other);
+        $sink->emit($first);
+        $sink->emit($second);
+
+        foreach ($sink->drain('run-1') as $event) {
+            $this->assertSame($first, $event);
+            break;
+        }
+
+        $this->assertSame([$second], iterator_to_array($sink->drain('run-1'), false));
+        $this->assertSame([$other], iterator_to_array($sink->drain('run-2'), false));
+    }
+
+    #[Test]
+    public function eventsEmittedDuringADrainAreDeliveredByTheSameDrain(): void
+    {
+        $sink = new InMemoryRuntimeEventSink();
+        $first = new RuntimeEvent('test.type', 'run-1', 0);
+        $late = new RuntimeEvent('test.type', 'run-1', 0);
+        $sink->emit($first);
+
+        $drained = [];
+        foreach ($sink->drain('run-1') as $event) {
+            $drained[] = $event;
+            if ($first === $event) {
+                $sink->emit($late);
+            }
+        }
+
+        $this->assertSame([$first, $late], $drained);
+        $this->assertSame([], iterator_to_array($sink->drain('run-1'), false));
+    }
 }
