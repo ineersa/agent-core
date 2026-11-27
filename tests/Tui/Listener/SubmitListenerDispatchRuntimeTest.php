@@ -430,8 +430,10 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertSame(['Run the checks after compaction'], $this->state->queuedFollowUps);
         $this->assertSame(RunActivityStateEnum::Compacting, $this->state->activity);
         $this->assertSame([], $this->state->transcript);
-        $this->assertSame('error', $this->logger->records[0]['level']);
-        $this->assertSame('submit_listener.queued_message_render_failed', $this->logger->records[0]['message']);
+        $this->assertSame('warning', $this->logger->records[0]['level']);
+        $this->assertSame('submit_listener.render_failed', $this->logger->records[0]['message']);
+        $this->assertSame('queued_message', $this->logger->records[0]['context']['render_reason']);
+        $this->assertSame('submit_listener.render_failed', $this->logger->records[0]['context']['event_type']);
         $this->assertSame('terminal unavailable', $this->logger->records[0]['context']['exception']->getMessage());
     }
 
@@ -700,6 +702,48 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertFalse($this->state->isShellRun);
         $this->assertSame('fresh-run', $this->state->handle->runId);
         $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+    }
+
+    #[Test]
+    public function promptAfterFirstInputShellKeepsDraftModelSelection(): void
+    {
+        // /new --model draft (or picker selection) followed by a first-input
+        // ! command must not drop the selected model from the next LLM run.
+        $this->state->sessionId = 'test-session';
+        $this->state->handle = null;
+        $this->state->activity = RunActivityStateEnum::Idle;
+        $this->state->request = new StartRunRequest(
+            prompt: '',
+            runId: 'test-session',
+            cwd: '/work',
+            options: ['draft' => true],
+            model: 'llama_cpp_test/test',
+            reasoning: 'high',
+        );
+
+        $this->client->expects($this->once())
+            ->method('shellExecute')
+            ->with('!ls', 'test-session', '/work')
+            ->willReturn(new RunHandle('test-session'));
+        $started = null;
+        $this->client->expects($this->once())
+            ->method('start')
+            ->willReturnCallback(static function (StartRunRequest $req) use (&$started): RunHandle {
+                $started = $req;
+
+                return new RunHandle('fresh-run');
+            });
+
+        $this->dispatchSubmit('!ls');
+        $this->assertTrue($this->state->isShellRun);
+        $this->dispatchSubmit('explain the listing');
+
+        $this->assertInstanceOf(StartRunRequest::class, $started);
+        $this->assertSame('explain the listing', $started->prompt);
+        $this->assertSame('/work', $started->cwd);
+        $this->assertSame(['draft' => true], $started->options);
+        $this->assertSame('llama_cpp_test/test', $started->model);
+        $this->assertSame('high', $started->reasoning);
     }
 
     // ── Normal prompt still works after refactor ────────────────────

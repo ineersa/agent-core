@@ -9,6 +9,11 @@ use Ineersa\CodingAgent\Agent\Tool\NotifyParentTool;
 use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Tool\BashTool;
+use Ineersa\CodingAgent\Tool\EditFileTool;
+use Ineersa\CodingAgent\Tool\ReadFileTool;
+use Ineersa\CodingAgent\Tool\ViewImageTool;
+use Ineersa\CodingAgent\Tool\WriteFileTool;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Style\Padding;
@@ -86,9 +91,7 @@ final readonly class TranscriptToolRenderer
             return $this->buildSkillReadToolCallWidget($block, $theme, $arguments);
         }
 
-        $header = $this->toolCallHeaderLabel($block);
-        $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
-        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
+        $headerLine = $this->toolCallHeaderLine($block);
 
         if ($this->isEditToolCall($block, $arguments)) {
             return $this->buildEditToolCallWidget($block, $theme, $headerLine, $arguments);
@@ -131,12 +134,8 @@ final readonly class TranscriptToolRenderer
             $headerLine .= $suffix;
         }
 
-        $headerColor = $this->toolResultFacts->toolResultIsUnsuccessful($block) && $this->toolResultFacts->metaIsTruthy($block->meta['is_error'] ?? false)
-            ? ThemeColorEnum::Error
-            : ThemeColorEnum::ToolOutput;
-        $bodyColor = $this->toolResultFacts->toolResultIsUnsuccessful($block) && $this->toolResultFacts->metaIsTruthy($block->meta['is_error'] ?? false)
-            ? ThemeColorEnum::Error
-            : $this->successfulToolResultBodyColor($block);
+        $bodyColor = $this->toolExchangeBodyColor($block);
+        $headerColor = ThemeColorEnum::Error === $bodyColor ? ThemeColorEnum::Error : ThemeColorEnum::ToolOutput;
 
         $container = new ContainerWidget();
         $container->add(new ToolDurationHeaderWidget($headerLine, $block, $theme, $headerColor));
@@ -256,7 +255,7 @@ final readonly class TranscriptToolRenderer
 
     private function isSkillReadToolCall(TranscriptBlock $block): bool
     {
-        if ('read' !== ($block->meta['tool_name'] ?? null)) {
+        if (ReadFileTool::NAME !== ($block->meta['tool_name'] ?? null)) {
             return false;
         }
 
@@ -359,18 +358,7 @@ final readonly class TranscriptToolRenderer
         $container = new ContainerWidget();
         $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
 
-        $path = $arguments['path'] ?? null;
-        if (\is_string($path) && '' !== $path) {
-            $container->add(new TextWidget($this->coloredArgumentPathLine($theme, $path)));
-        }
-
-        $patch = $arguments['patch'] ?? '';
-        if (\is_string($patch) && '' !== $patch) {
-            $patchBody = $this->editDiffRenderer->buildPatchBodyWidget($patch, $theme, $this->displayConfig, $this->displayState);
-            if (null !== $patchBody) {
-                $container->add($patchBody);
-            }
-        }
+        $this->appendEditBody($container, $theme, $arguments);
 
         return $container;
     }
@@ -383,22 +371,7 @@ final readonly class TranscriptToolRenderer
         $container = new ContainerWidget();
         $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
 
-        $path = $arguments['path'] ?? '';
-        if (!\is_string($path)) {
-            $path = '';
-        }
-        if ('' !== $path) {
-            $container->add(new TextWidget($this->coloredArgumentPathLine($theme, $path)));
-        }
-
-        $content = $arguments['content'] ?? '';
-        if (!\is_string($content)) {
-            $content = '';
-        }
-
-        foreach ($this->writeContentRenderer->buildContentBodyWidgets($content, $path, $theme, $this->displayConfig, $this->displayState) as $widget) {
-            $container->add($widget);
-        }
+        $this->appendWriteBody($container, $theme, $arguments);
 
         return $container;
     }
@@ -409,7 +382,7 @@ final readonly class TranscriptToolRenderer
     private function isEditToolCall(TranscriptBlock $block, array $arguments): bool
     {
         $toolName = $block->meta['tool_name'] ?? null;
-        if ('edit' !== $toolName) {
+        if (EditFileTool::NAME !== $toolName) {
             return false;
         }
 
@@ -424,7 +397,7 @@ final readonly class TranscriptToolRenderer
     private function isWriteToolCall(TranscriptBlock $block, array $arguments): bool
     {
         $toolName = $block->meta['tool_name'] ?? null;
-        if ('write' !== $toolName) {
+        if (WriteFileTool::NAME !== $toolName) {
             return false;
         }
 
@@ -471,7 +444,7 @@ final readonly class TranscriptToolRenderer
 
     private function isViewImageToolName(mixed $toolName): bool
     {
-        return \is_string($toolName) && 'view_image' === $toolName;
+        return ViewImageTool::NAME === $toolName;
     }
 
     /**
@@ -483,9 +456,7 @@ final readonly class TranscriptToolRenderer
         TuiTheme $theme,
         array $arguments,
     ): AbstractWidget {
-        $header = $this->toolCallHeaderLabel($callBlock);
-        $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
-        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
+        $headerLine = $this->toolCallHeaderLine($callBlock);
         $container = new ContainerWidget();
         $container->add(new ToolDurationHeaderWidget($headerLine, $resultBlock, $theme, ThemeColorEnum::ToolTitle));
 
@@ -516,25 +487,12 @@ final readonly class TranscriptToolRenderer
         TuiTheme $theme,
         array $arguments,
     ): ContainerWidget {
-        $header = $this->toolCallHeaderLabel($callBlock);
-        $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
-        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
+        $headerLine = $this->toolCallHeaderLine($callBlock);
 
         $container = new ContainerWidget();
         $container->add(new ToolDurationHeaderWidget($headerLine, $resultBlock, $theme, ThemeColorEnum::ToolTitle));
 
-        $path = $arguments['path'] ?? null;
-        if (\is_string($path) && '' !== $path) {
-            $container->add(new TextWidget($this->coloredArgumentPathLine($theme, $path)));
-        }
-
-        $patch = $arguments['patch'] ?? '';
-        if (\is_string($patch) && '' !== $patch) {
-            $patchBody = $this->editDiffRenderer->buildPatchBodyWidget($patch, $theme, $this->displayConfig, $this->displayState);
-            if (null !== $patchBody) {
-                $container->add($patchBody);
-            }
-        }
+        $this->appendEditBody($container, $theme, $arguments);
 
         $this->appendStyledToolExchangeResultBodyWidgets($container, $resultBlock, $theme);
 
@@ -550,29 +508,12 @@ final readonly class TranscriptToolRenderer
         TuiTheme $theme,
         array $arguments,
     ): ContainerWidget {
-        $header = $this->toolCallHeaderLabel($callBlock);
-        $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
-        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
+        $headerLine = $this->toolCallHeaderLine($callBlock);
 
         $container = new ContainerWidget();
         $container->add(new ToolDurationHeaderWidget($headerLine, $resultBlock, $theme, ThemeColorEnum::ToolTitle));
 
-        $path = $arguments['path'] ?? '';
-        if (!\is_string($path)) {
-            $path = '';
-        }
-        if ('' !== $path) {
-            $container->add(new TextWidget($this->coloredArgumentPathLine($theme, $path)));
-        }
-
-        $content = $arguments['content'] ?? '';
-        if (!\is_string($content)) {
-            $content = '';
-        }
-
-        foreach ($this->writeContentRenderer->buildContentBodyWidgets($content, $path, $theme, $this->displayConfig, $this->displayState) as $widget) {
-            $container->add($widget);
-        }
+        $this->appendWriteBody($container, $theme, $arguments);
 
         $this->appendStyledToolExchangeResultBodyWidgets($container, $resultBlock, $theme);
 
@@ -584,9 +525,7 @@ final readonly class TranscriptToolRenderer
         TranscriptBlock $resultBlock,
         TuiTheme $theme,
     ): AbstractWidget {
-        $header = $this->toolCallHeaderLabel($callBlock);
-        $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
-        $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
+        $headerLine = $this->toolCallHeaderLine($callBlock);
         $container = new ContainerWidget();
         $container->add(new ToolDurationHeaderWidget($headerLine, $resultBlock, $theme, ThemeColorEnum::ToolTitle));
 
@@ -668,11 +607,76 @@ final readonly class TranscriptToolRenderer
     private function successfulToolResultBodyColor(TranscriptBlock $resultBlock): ThemeColorEnum
     {
         if (!$this->toolResultFacts->toolResultIsUnsuccessful($resultBlock)
-            && 'edit' === ($resultBlock->meta['tool_name'] ?? null)) {
+            && EditFileTool::NAME === ($resultBlock->meta['tool_name'] ?? null)) {
             return ThemeColorEnum::Dim;
         }
 
         return ThemeColorEnum::ToolOutput;
+    }
+
+    private function toolCallHeaderLine(TranscriptBlock $block): string
+    {
+        $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
+
+        return \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $this->toolCallHeaderLabel($block), $suffix);
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function appendEditBody(ContainerWidget $container, TuiTheme $theme, array $arguments): void
+    {
+        $path = $arguments['path'] ?? null;
+        if (\is_string($path) && '' !== $path) {
+            $container->add(new TextWidget($this->coloredArgumentPathLine($theme, $path)));
+        }
+
+        $patch = $arguments['patch'] ?? '';
+        if (\is_string($patch) && '' !== $patch) {
+            $patchBody = $this->editDiffRenderer->buildPatchBodyWidget($patch, $theme, $this->displayConfig, $this->displayState);
+            if (null !== $patchBody) {
+                $container->add($patchBody);
+            }
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function appendWriteBody(ContainerWidget $container, TuiTheme $theme, array $arguments): void
+    {
+        $path = $arguments['path'] ?? '';
+        if (!\is_string($path)) {
+            $path = '';
+        }
+        if ('' !== $path) {
+            $container->add(new TextWidget($this->coloredArgumentPathLine($theme, $path)));
+        }
+
+        $content = $arguments['content'] ?? '';
+        if (!\is_string($content)) {
+            $content = '';
+        }
+
+        foreach ($this->writeContentRenderer->buildContentBodyWidgets($content, $path, $theme, $this->displayConfig, $this->displayState) as $widget) {
+            $container->add($widget);
+        }
+    }
+
+    /**
+     * Indented view_image result lines; a non-empty unparseable result still shows a placeholder.
+     *
+     * @return list<string>
+     */
+    private function viewImageBodyLines(TranscriptBlock $block): array
+    {
+        $result = $block->meta['result'] ?? null;
+        $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
+        if ([] === $bodyLines && \is_string($result) && '' !== $result) {
+            $bodyLines = ['(image metadata)'];
+        }
+
+        return array_map(static fn (string $line): string => '    '.$line, $bodyLines);
     }
 
     private function coloredArgumentPathLine(TuiTheme $theme, string $path): string
@@ -701,15 +705,7 @@ final readonly class TranscriptToolRenderer
     private function buildViewImageToolResultWidget(TranscriptBlock $block, TuiTheme $theme): ContainerWidget
     {
         $header = \sprintf('%s %s', TranscriptGlyphs::GLYPH_TOOL, $this->toolResultHeaderLabel($block));
-        $lines = [];
-        $result = $block->meta['result'] ?? null;
-        $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
-        if ([] === $bodyLines && \is_string($result) && '' !== $result) {
-            $bodyLines = ['(image metadata)'];
-        }
-        foreach ($bodyLines as $bodyLine) {
-            $lines[] = '    '.$bodyLine;
-        }
+        $lines = $this->viewImageBodyLines($block);
 
         $container = new ContainerWidget();
         $container->add(new ToolDurationHeaderWidget($header, $block, $theme, ThemeColorEnum::ToolOutput));
@@ -725,18 +721,12 @@ final readonly class TranscriptToolRenderer
         TuiTheme $theme,
         bool $prependBlankLine,
     ): ?TextWidget {
-        $result = $block->meta['result'] ?? null;
-        $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
-        if ([] === $bodyLines && \is_string($result) && '' !== $result) {
-            $bodyLines = ['(image metadata)'];
-        }
-        if ([] === $bodyLines) {
+        $lines = $this->viewImageBodyLines($block);
+        if ([] === $lines) {
             return null;
         }
-
-        $lines = $prependBlankLine ? [''] : [];
-        foreach ($bodyLines as $bodyLine) {
-            $lines[] = '    '.$bodyLine;
+        if ($prependBlankLine) {
+            array_unshift($lines, '');
         }
 
         return new TextWidget($theme->color(ThemeColorEnum::ToolOutput, implode("\n", $lines)));
@@ -785,12 +775,12 @@ final readonly class TranscriptToolRenderer
 
     private function shouldHideCollapsedResult(mixed $toolName): bool
     {
-        return \is_string($toolName) && 'read' === $toolName;
+        return ReadFileTool::NAME === $toolName;
     }
 
     private function isBashToolName(mixed $toolName): bool
     {
-        return \is_string($toolName) && 'bash' === $toolName;
+        return BashTool::NAME === $toolName;
     }
 
     private function collapsedResultPreviewLineLimit(): int
