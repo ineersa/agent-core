@@ -543,6 +543,14 @@ YAML
         $this->assertSame('cyberpunk', $config['tui']['theme']);
     }
 
+    public function testPathMapRejectsScalarIntermediateNode(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid value for tools.output_cap');
+
+        $this->loader->resolveLayers($this->tmpDir, [], [], ['tools' => ['output_cap' => 'not a mapping']]);
+    }
+
     public function testResolveDoesNotCreateUserSettingsFile(): void
     {
         $cwd = $this->tmpDir.'/project';

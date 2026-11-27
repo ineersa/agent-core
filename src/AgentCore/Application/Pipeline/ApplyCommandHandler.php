@@ -638,7 +638,11 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 $questionId,
                 $message->payload['answer'],
             );
-        } catch (\LogicException) {
+        } catch (\LogicException $exception) {
+            return $this->rejectCommand($state, $message, 'human_response rejected: '.$exception->getMessage());
+        }
+
+        if (null === $prepared) {
             return null;
         }
 

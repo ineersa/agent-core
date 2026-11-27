@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
+use Symfony\Component\PropertyAccess\Exception\UnexpectedTypeException;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Yaml\Yaml;
 
@@ -240,16 +241,15 @@ final class AppConfigLoader
         $accessor = PropertyAccess::createPropertyAccessor();
 
         foreach (self::PATH_CONFIG as $path => $type) {
+            $name = trim(str_replace(['[', ']'], ['.', ''], $path), '.');
             try {
                 $value = $accessor->getValue($data, $path);
-            } catch (\Exception) {
-                // PropertyAccessor throws for keys absent from this config — skip.
-                continue;
+            } catch (UnexpectedTypeException $exception) {
+                throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected mappings along the config path.', $name), previous: $exception);
             }
 
             if (('list' === $type || 'strict-list' === $type) && \is_array($value)) {
                 $strict = 'strict-list' === $type;
-                $name = trim(str_replace(['[', ']'], ['.', ''], $path), '.');
                 if ($strict && !array_is_list($value)) {
                     throw new \InvalidArgumentException(\sprintf('Invalid value for %s: expected list of strings, got associative array.', $name));
                 }

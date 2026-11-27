@@ -242,14 +242,17 @@ final class ToolBatchCollector
         string $stepId,
         string $questionId,
         mixed $answerValue,
-    ): PreparedToolBatchDTO {
-        return $this->prepareWithBatch(
-            $runId,
-            $turnNo,
-            $stepId,
-            'Cannot redrive tool-execution human input for unknown batch run=%s turn=%d step=%s.',
-            fn (ToolBatchStateDTO $batch): array => $this->applyHumanInputRedriveToBatch($batch, $questionId, $answerValue),
-        );
+    ): ?PreparedToolBatchDTO {
+        $before = $this->loadBatch($runId, $turnNo, $stepId);
+        if (null === $before) {
+            return null;
+        }
+        $after = clone $before;
+        $effects = $this->applyHumanInputRedriveToBatch($after, $questionId, $answerValue);
+
+        return null === $effects
+            ? null
+            : new PreparedToolBatchDTO($effects, $this->prepareDelta($runId, $turnNo, $stepId, $before, $after));
     }
 
     /** Capture cancellation settlement without synthesizing new execution work. */
@@ -433,13 +436,13 @@ final class ToolBatchCollector
     }
 
     /**
-     * @return list<ExecuteToolCall>
+     * @return list<ExecuteToolCall>|null null means no matching stored answer
      */
     private function applyHumanInputRedriveToBatch(
         ToolBatchStateDTO $batch,
         string $questionId,
         mixed $answerValue,
-    ): array {
+    ): ?array {
         $matches = [];
         foreach ($batch->calls as $toolCallId => $call) {
             if (!$call instanceof ExecuteToolCall) {
@@ -456,7 +459,7 @@ final class ToolBatchCollector
         }
 
         if ([] === $matches) {
-            throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for question "%s": no stored answered call.', $questionId));
+            return null;
         }
         if (\count($matches) > 1) {
             throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for question "%s": ambiguous answered call match.', $questionId));
