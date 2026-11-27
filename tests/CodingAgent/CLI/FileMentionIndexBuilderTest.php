@@ -245,8 +245,8 @@ final class FileMentionIndexBuilderTest extends TestCase
 
         $this->assertFileExists($indexPath);
 
-        // No leftover dumpFile() temp siblings (index.jsonl + random suffix).
-        $tmpFiles = glob($this->tmpDir.'/index.jsonl?*');
+        // No leftover tmp files after build.
+        $tmpFiles = glob($this->tmpDir.'/*.tmp.*');
         $this->assertEmpty($tmpFiles, 'No temp files should remain after atomic rename.');
     }
 
@@ -343,9 +343,8 @@ final class FileMentionIndexBuilderTest extends TestCase
         $indexPath = $indexDir.'/index.jsonl';
         file_put_contents($indexPath, '{"path":"old.php","dir":false}'."\n");
 
-        // The scan succeeds, but the index directory is not writable. The
-        // builder must refuse before dumpFile(), whose tempnam() would
-        // otherwise fall back to the system temp directory.
+        // The scan succeeds, but the temp file beside the index cannot be
+        // created. The builder must fail without touching the live index.
         chmod($indexDir, 0555);
 
         try {
@@ -359,9 +358,7 @@ final class FileMentionIndexBuilderTest extends TestCase
                 $builder->build();
                 $this->fail('Expected RuntimeException when the index directory is not writable.');
             } catch (\RuntimeException $e) {
-                // The writability refusal is thrown before dumpFile() runs,
-                // so no temp file is created anywhere, system temp included.
-                $this->assertSame("File mention index directory is not writable: {$indexDir}", $e->getMessage());
+                $this->assertStringStartsWith("Cannot open temp index file for writing: {$indexPath}.tmp.", $e->getMessage());
             }
 
             $this->assertSame('{"path":"old.php","dir":false}'."\n", file_get_contents($indexPath));

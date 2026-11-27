@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\CLI;
 use Ineersa\CodingAgent\CLI\DTO\FileMentionIndexEntryDTO;
 use Ineersa\Tui\Completion\FileMentionIndexReader;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Finder\SplFileInfo as FinderSplFileInfo;
 use Symfony\Component\Lock\LockFactory;
@@ -49,11 +48,21 @@ use Symfony\Component\Process\Process;
  *
  * Atomic-write strategy:
  *   1. Acquire a non-blocking named lock via LockFactory.
- *   2. Build the complete JSONL content in memory (bounded by MAX_ENTRIES).
- *   3. Filesystem::dumpFile() writes a sibling temp file and renames it
- *      over the target, so readers never see a partial index and a failed
- *      write leaves the previous index intact.
- *   4. Release lock.
+ *   2. Stream entries into a temp file that is a sibling of the index.
+ *   3. Check every write, fflush and close.
+ *   4. rename(tmp, target) — atomic on the same filesystem.
+ *   5. Release lock.
+ *
+ * The temp file + rename is written by hand on purpose. Do not replace it
+ * with Symfony Filesystem::dumpFile() or PHP tempnam(): both pick the temp
+ * location themselves and silently fall back to the system temp directory
+ * when the temp file cannot be created beside the index (directory not
+ * writable, disk full, out of inodes). If that directory is on another
+ * filesystem, rename() degrades to copy-then-unlink over the live index,
+ * which is not atomic and can leave readers a truncated index. dumpFile()
+ * also writes through a symlinked index path instead of replacing the link.
+ * Keeping the temp file beside the index means the build either publishes
+ * a complete index or fails and leaves the previous one untouched.
  *
  * Caps the output to prevent pathological repos from producing
  * unusably large index files. MAX_ENTRIES counts files and inferred
@@ -75,6 +84,9 @@ final class FileMentionIndexBuilder
 
     /** @var list<string>|null */
     private readonly ?array $excludeDirs;
+
+    /** Cleanup-tracked temp path for atomic-write safety. */
+    private ?string $tmpPath = null;
 
     /**
      * @param string            $cwd         Project root to scan
@@ -111,12 +123,37 @@ final class FileMentionIndexBuilder
         }
 
         try {
-            return $this->scanAndWrite();
+            // Must stay a sibling of the index so the rename below is atomic;
+            // see "Atomic-write strategy" in the class docblock.
+            $this->tmpPath = $this->indexPath.'.tmp.'.getmypid().'.'.hrtime(true);
+            $count = $this->scanAndWrite($this->tmpPath);
+
+            // Atomically replace the existing index.
+            if (!@rename($this->tmpPath, $this->indexPath)) {
+                // Clean up tmp file on rename failure.
+                @unlink($this->tmpPath);
+
+                throw new \RuntimeException("Failed to atomically move file mention index from '{$this->tmpPath}' to '{$this->indexPath}'.");
+            }
+
+            $this->tmpPath = null;
+
+            return $count;
+        } catch (\RuntimeException $re) {
+            // Clean up tmp file on scan/write failure as well — the
+            // exception path through scanAndWrite doesn't close the
+            // tmp handle (finally does it), but the partial file is
+            // left on disk unless cleaned here.
+            if (null !== $this->tmpPath) {
+                @unlink($this->tmpPath);
+            }
+
+            throw $re;
         } catch (\Throwable $e) {
-            // Runtime failures (Git, Symfony Filesystem IOException) already
-            // satisfy the RuntimeException contract; wrap everything else.
-            if ($e instanceof \RuntimeException) {
-                throw $e;
+            // Clean up tmp file before wrapping Finder/filesystem
+            // errors into a consistent RuntimeException interface.
+            if (null !== $this->tmpPath) {
+                @unlink($this->tmpPath);
             }
 
             throw new \RuntimeException("File mention index build failed: {$e->getMessage()}", previous: $e);
@@ -127,45 +164,55 @@ final class FileMentionIndexBuilder
 
     // ─── Internal ──────────────────────────────────────────────────
 
-    private function scanAndWrite(): int
+    private function scanAndWrite(string $tmpPath): int
     {
-        $content = '';
-        $count = 0;
-
-        foreach ($this->scanEntries() as $entry) {
-            if ($count >= self::MAX_ENTRIES) {
-                break;
-            }
-
-            $line = json_encode([
-                'path' => $entry->path,
-                'dir' => $entry->isDirectory,
-            ], \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-
-            if (false === $line) {
-                continue; // Should not happen for simple scalars.
-            }
-
-            $content .= $line."\n";
-            ++$count;
+        $tmpDir = \dirname($tmpPath);
+        if (!is_dir($tmpDir)) {
+            @mkdir($tmpDir, 0755, true);
         }
 
-        $filesystem = new Filesystem();
-        $indexDir = \dirname($this->indexPath);
-        $filesystem->mkdir($indexDir);
-
-        // dumpFile()'s tempnam() silently falls back to the system temp dir
-        // when the index dir is not writable; a cross-filesystem rename then
-        // degrades to a non-atomic overwrite of the live index. Fail instead.
-        if (!is_writable($indexDir)) {
-            throw new \RuntimeException("File mention index directory is not writable: {$indexDir}");
+        $handle = @fopen($tmpPath, 'wb');
+        if (false === $handle) {
+            throw new \RuntimeException("Cannot open temp index file for writing: {$tmpPath}");
         }
 
-        // dumpFile() writes a temp file and renames it over the index, so a
-        // failed or short write throws and never replaces the previous index.
-        $filesystem->dumpFile($this->indexPath, $content);
+        try {
+            $count = 0;
 
-        return $count;
+            foreach ($this->scanEntries() as $entry) {
+                if ($count >= self::MAX_ENTRIES) {
+                    break;
+                }
+
+                $line = json_encode([
+                    'path' => $entry->path,
+                    'dir' => $entry->isDirectory,
+                ], \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+
+                if (false === $line) {
+                    continue; // Should not happen for simple scalars.
+                }
+
+                // A short write (e.g. a full disk) must not survive the rename
+                // and be published as a truncated index.
+                $payload = $line."\n";
+                if (\strlen($payload) !== @fwrite($handle, $payload)) {
+                    throw new \RuntimeException('Short write while building file mention index.');
+                }
+                ++$count;
+            }
+
+            // Flush buffered writes to the OS before rename so the
+            // atomic replacement sees complete data.  A partial write
+            // would survive rename and produce a corrupt index.
+            if (!fflush($handle)) {
+                throw new \RuntimeException('Failed to flush buffered writes for file mention index.');
+            }
+
+            return $count;
+        } finally {
+            fclose($handle);
+        }
     }
 
     /**
