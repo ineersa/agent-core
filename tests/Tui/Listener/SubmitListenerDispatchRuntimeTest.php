@@ -186,10 +186,6 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 return new NoOp();
             }
         };
-        foreach (['new', 'reload'] as $name) {
-            $this->catalog->registerMetadata(new CommandMetadata(name: $name));
-        }
-        $this->catalog->registerMetadata(new CommandMetadata(name: 'resume', aliases: ['r'], acceptsArguments: true));
         $registry = new SlashCommandRegistry($this->catalog);
         foreach (['exit', 'resume', 'new', 'reload'] as $name) {
             $registry->bind($name, $recorder);

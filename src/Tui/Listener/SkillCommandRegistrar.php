@@ -15,8 +15,9 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 /**
  * Registers virtual slash commands for every discovered skill as `/skill:<name>`.
  *
- * Runs from InteractiveMode with prompt templates, after built-in and
- * extension commands, so those win on name collisions. Includes
+ * Runs from InteractiveMode after the code-review command and prompt
+ * templates, and after built-in and extension commands, so all of those
+ * win on name collisions. Includes
  * on-demand-only skills so users can still invoke them explicitly even when
  * they are omitted from the model catalog.
  */

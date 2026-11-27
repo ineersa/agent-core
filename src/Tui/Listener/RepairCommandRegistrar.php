@@ -4,35 +4,23 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\Tui\Command\CommandMetadata;
-use Ineersa\Tui\Command\SlashCommandCatalog;
+use Ineersa\Tui\Command\BuiltInSlashCommands;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
 
 /**
  * Registers the /repair slash command for the active session.
  *
- * Command metadata is registered once per process via
- * {@see registerCatalog()}; each session binds a fresh handler.
+ * Command metadata is static data in {@see BuiltInSlashCommands}; each
+ * session binds a fresh handler.
  *
  * @internal Autowired via {@see TuiListenerRegistrar} and the `app.tui_listener` tag
  */
-final class RepairCommandRegistrar implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
+final class RepairCommandRegistrar implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly LoggerInterface $logger,
     ) {
-    }
-
-    public function registerCatalog(SlashCommandCatalog $catalog): void
-    {
-        $catalog->registerMetadata(new CommandMetadata(
-            name: 'repair',
-            aliases: [],
-            description: 'Repair stale cancellation for the active session',
-            usage: '/repair',
-            acceptsArguments: false,
-        ));
     }
 
     public function register(TuiRuntimeContext $context): void

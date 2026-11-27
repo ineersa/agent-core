@@ -4,25 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\Tui\Command\CommandMetadata;
-use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
 
-final readonly class BackgroundProcessCommandRegistrar implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
+final readonly class BackgroundProcessCommandRegistrar implements TuiListenerRegistrar
 {
     public function __construct(private LoggerInterface $logger)
     {
-    }
-
-    public function registerCatalog(SlashCommandCatalog $catalog): void
-    {
-        $catalog->registerMetadata(new CommandMetadata(
-            name: 'bg',
-            description: 'Manage background Bash and code-mode work; Ctrl+\\ for agents and forks',
-            usage: '/bg',
-            acceptsArguments: false,
-        ));
     }
 
     public function register(TuiRuntimeContext $context): void

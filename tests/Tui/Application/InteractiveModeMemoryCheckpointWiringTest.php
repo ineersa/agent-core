@@ -313,7 +313,7 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
             appConfig: $appConfig,
             historyProvider: $historyProvider,
             commandCatalog: new SlashCommandCatalog(),
-            promptCommandRegistrars: [],
+            catalogRegistrars: [],
             compositionFactory: $composition,
             memorySnapshotLogger: $snapshot,
         );

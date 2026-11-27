@@ -65,7 +65,7 @@ final readonly class InteractiveMode
 {
     /**
      * @param iterable<TuiListenerRegistrar>         $listenerRegistrars
-     * @param iterable<SlashCommandCatalogRegistrar> $promptCommandRegistrars prompt-template and skill registrars
+     * @param iterable<SlashCommandCatalogRegistrar> $catalogRegistrars  code-review, prompt-template, then skill registrars
      */
     public function __construct(
         private HatfieldSessionStore $sessionStore,
@@ -78,7 +78,7 @@ final readonly class InteractiveMode
         private AppConfig $appConfig,
         private HistoryProviderInterface $historyProvider,
         private SlashCommandCatalog $commandCatalog,
-        private iterable $promptCommandRegistrars,
+        private iterable $catalogRegistrars,
         private TuiSessionCompositionFactory $compositionFactory,
         private ProcessMemorySnapshotLogger $memorySnapshotLogger,
     ) {
@@ -153,13 +153,14 @@ final readonly class InteractiveMode
         // fresh mutable display state below.
         $displayConfig = $this->appConfig->tui->transcript;
 
-        // ── Add prompt-template and skill commands to the catalog once ──
+        // ── Add dynamic commands to the catalog once ──
         // Built-in commands were seeded when the catalog was constructed and
-        // extensions registered theirs on ConsoleEvents::COMMAND, so these
-        // run last and skip any name already taken.  Each session iteration
-        // then binds only its own handlers via the fresh per-session
-        // SlashCommandRegistry.
-        foreach ($this->promptCommandRegistrars as $registrar) {
+        // extensions registered theirs on ConsoleEvents::COMMAND, so the
+        // code-review, prompt-template and skill registrars run last (after
+        // CLI skill options are applied) and skip any name already taken.
+        // Each session iteration then binds only its own handlers via the
+        // fresh per-session SlashCommandRegistry.
+        foreach ($this->catalogRegistrars as $registrar) {
             $registrar->registerCatalog($this->commandCatalog);
         }
 

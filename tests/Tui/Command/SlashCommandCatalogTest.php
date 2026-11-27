@@ -4,22 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Command;
 
-use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
+use Ineersa\Tui\Command\BuiltInSlashCommands;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
-use Ineersa\Tui\Listener\CopyCommandRegistrar;
-use Ineersa\Tui\Listener\SessionCommandRegistrar;
-use Ineersa\Tui\Utility\Clipboard;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[CoversClass(SlashCommandCatalog::class)]
 #[CoversClass(CommandMetadata::class)]
+#[CoversClass(BuiltInSlashCommands::class)]
 final class SlashCommandCatalogTest extends TestCase
 {
     private SlashCommandCatalog $catalog;
@@ -73,9 +70,7 @@ final class SlashCommandCatalogTest extends TestCase
     #[Test]
     public function defaultHandlerReturnsNullForMetadataOnlyCommands(): void
     {
-        $this->catalog->registerMetadata(new CommandMetadata(name: 'meta-only', description: 'No handler'));
-
-        $this->assertNull($this->catalog->defaultHandler('meta-only'));
+        $this->assertNull($this->catalog->defaultHandler('help'));
     }
 
     #[Test]
@@ -93,16 +88,6 @@ final class SlashCommandCatalogTest extends TestCase
             new CommandMetadata(name: 'dup'),
             $this->createMockHandler(),
         );
-    }
-
-    #[Test]
-    public function registerMetadataThrowsWhenNameExists(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage("Command 'dup' is already registered.");
-
-        $this->catalog->registerMetadata(new CommandMetadata(name: 'dup'));
-        $this->catalog->registerMetadata(new CommandMetadata(name: 'dup'));
     }
 
     #[Test]
@@ -159,15 +144,6 @@ final class SlashCommandCatalogTest extends TestCase
         $this->catalog->register(new CommandMetadata(name: $name), $this->createMockHandler());
     }
 
-    #[Test]
-    public function registerMetadataThrowsWhenNameConflictsWithExistingAlias(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage("Command 'quit' conflicts with alias of registered command 'exit'.");
-
-        $this->catalog->registerMetadata(new CommandMetadata(name: 'quit'));
-    }
-
     // ─── Metadata access ─────────────────────────────────────────────
 
     #[Test]
@@ -186,8 +162,12 @@ final class SlashCommandCatalogTest extends TestCase
         $all = $this->catalog->allMetadata();
         $names = array_map(static fn (CommandMetadata $m) => $m->name, $all);
 
-        // Should be sorted alphabetically
-        $this->assertSame(['alpha', 'clear', 'exit', 'help', 'hotkeys', 'zebra'], $names);
+        // Should be sorted alphabetically, built-ins included
+        $sorted = $names;
+        sort($sorted, \SORT_STRING);
+        $this->assertSame($sorted, $names);
+        $this->assertSame('alpha', $names[2]);
+        $this->assertSame('zebra', $names[array_key_last($names)]);
     }
 
     // ─── Built-in command metadata ───────────────────────────────────
@@ -229,15 +209,24 @@ final class SlashCommandCatalogTest extends TestCase
     }
 
     #[Test]
-    public function seedsBuiltInRegistrarsAtConstruction(): void
+    #[TestWith(['r', 'resume'])]
+    #[TestWith(['resume', 'resume'])]
+    #[TestWith(['cp', 'copy'])]
+    #[TestWith(['m', 'model'])]
+    #[TestWith(['main', 'agents-main'])]
+    public function seedsSessionBoundBuiltInsAtConstruction(string $name, string $canonical): void
     {
-        $catalog = new SlashCommandCatalog(builtInRegistrars: [
-            new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger())),
-            new CopyCommandRegistrar(new Clipboard()),
-        ]);
+        $this->assertSame($canonical, $this->catalog->resolveName($name));
+        $this->assertNull($this->catalog->defaultHandler($canonical), 'Handlers are bound per session');
+    }
 
-        $this->assertSame('resume', $catalog->resolveName('r'));
-        $this->assertSame('copy', $catalog->resolveName('cp'));
+    #[Test]
+    public function rejectsRegisteringBuiltInAliasAfterConstruction(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("Command 'r' conflicts with alias of registered command 'resume'.");
+
+        $this->catalog->register(new CommandMetadata(name: 'r'), $this->createMockHandler());
     }
 
     // ─── Private helpers ─────────────────────────────────────────────

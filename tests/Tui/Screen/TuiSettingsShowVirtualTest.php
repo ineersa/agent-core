@@ -65,7 +65,6 @@ final class TuiSettingsShowVirtualTest extends TestCase
             );
             $catalog = new SlashCommandCatalog();
             $harness = new VirtualTuiHarness(sessionId: 'settings-show-virtual');
-            (new SettingsShowCommandRegistrar($handler))->registerCatalog($catalog);
             $context = $this->buildTuiContext()->withTui($harness->tui())->withState(new TuiSessionState('settings-show-virtual'))->withScreen($harness->screen())->withSessionServices($this->createSessionServices(catalog: $catalog))->build();
             (new SettingsShowCommandRegistrar($handler))->register($context);
             $router = new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry);

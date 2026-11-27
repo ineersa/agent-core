@@ -48,7 +48,6 @@ final class SessionCommandRegistrarTest extends TestCase
         $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
         $registrar = new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger()));
-        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         $this->assertTrue($catalog->has('new'));
@@ -68,7 +67,6 @@ final class SessionCommandRegistrarTest extends TestCase
         $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
         $registrar = new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger()));
-        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         $this->assertTrue($catalog->has('rename'));
@@ -88,7 +86,6 @@ final class SessionCommandRegistrarTest extends TestCase
         $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
         $registrar = new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger()));
-        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         $this->assertTrue($catalog->has('resume'));
@@ -110,7 +107,6 @@ final class SessionCommandRegistrarTest extends TestCase
         $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
         $registrar = new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger()));
-        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         $result = $context->sessionServices->commandRegistry->execute(new SlashCommand('help', '', '/help'));
@@ -128,7 +124,6 @@ final class SessionCommandRegistrarTest extends TestCase
         $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
         $registrar = new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger()));
-        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         $result = $context->sessionServices->commandRegistry->execute(new SlashCommand('new', '', '/new'));
@@ -143,7 +138,6 @@ final class SessionCommandRegistrarTest extends TestCase
         $context = $this->buildContext(new TuiSessionState('test-session'), $picker, $catalog);
 
         $registrar = new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger()));
-        $registrar->registerCatalog($catalog);
 
         // First session iteration
         $registrar->register($context);

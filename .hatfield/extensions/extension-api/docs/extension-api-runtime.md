@@ -22,7 +22,9 @@ The context exposes only `notify(string $message, string $level = 'info')` with 
 
 Registration throws `InvalidArgumentException` when the name or any alias equals a name or alias
 that is already registered, including every built-in command name and alias such as `resume`,
-`r`, `q`, `quit`, `h` and `?`; the extension then fails to load.
+`r`, `q`, `quit`, `h` and `?`; the extension then fails to load. `code-review`, prompt-template
+and `skill:` command names are not reserved: they are added after extensions load and skip any
+name an extension already registered.
 
 ## Prompt contributors
 

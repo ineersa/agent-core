@@ -58,9 +58,6 @@ services:
     Ineersa\Tui\Listener\TuiListenerRegistrar:
       tags: ['app.tui_listener']
 
-    Ineersa\Tui\Listener\SlashCommandCatalogRegistrar:
-      tags: ['app.slash_command_catalog']
-
     Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface:
       tags: ['agent_core.tool_result_processor']
 
@@ -275,16 +272,6 @@ services:
       $cwd: '%app.cwd%'
 
   # ─── Extension wiring ───
-
-  # Built-in command names and aliases are seeded at construction, before the
-  # adapter below lets extensions register, so extensions cannot take them.
-  Ineersa\Tui\Command\SlashCommandCatalog:
-    arguments:
-      $builtInRegistrars: !tagged_iterator
-        tag: app.slash_command_catalog
-        exclude:
-          - Ineersa\Tui\Listener\PromptTemplateCommandRegistrar
-          - Ineersa\Tui\Listener\SkillCommandRegistrar
 
   Ineersa\Tui\Extension\TuiCommandRegistryAdapter:
     arguments:
@@ -501,8 +488,10 @@ services:
   Ineersa\Tui\Application\InteractiveMode:
     arguments:
       $listenerRegistrars: !tagged_iterator { tag: app.tui_listener, default_priority_method: getPriority }
-      # Run after built-ins (seeded by SlashCommandCatalog) and after extensions.
-      $promptCommandRegistrars:
+      # Run after built-ins (seeded by SlashCommandCatalog) and extensions, in
+      # this order; each skips names that are already taken.
+      $catalogRegistrars:
+        - '@Ineersa\Tui\Listener\CodeReviewCommandRegistrar'
         - '@Ineersa\Tui\Listener\PromptTemplateCommandRegistrar'
         - '@Ineersa\Tui\Listener\SkillCommandRegistrar'
 

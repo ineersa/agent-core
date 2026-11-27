@@ -46,7 +46,6 @@ final class CopyCommandRegistrarTest extends TestCase
         $context = $this->buildContext($state, $catalog);
 
         $registrar = new CopyCommandRegistrar(new Clipboard());
-        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         // Command is registered
@@ -70,7 +69,6 @@ final class CopyCommandRegistrarTest extends TestCase
         $context = $this->buildContext($state, $catalog);
 
         $registrar = new CopyCommandRegistrar(new Clipboard());
-        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         $result = $context->sessionServices->commandRegistry->execute(new SlashCommand('help', '', '/help'));
@@ -88,7 +86,6 @@ final class CopyCommandRegistrarTest extends TestCase
         $context = $this->buildContext($state, $catalog);
 
         $registrar = new CopyCommandRegistrar(new Clipboard());
-        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         // With no assistant message, /cp should show "nothing to copy"
@@ -107,7 +104,6 @@ final class CopyCommandRegistrarTest extends TestCase
         $context = $this->buildContext($state, $catalog);
 
         $registrar = new CopyCommandRegistrar(new Clipboard());
-        $registrar->registerCatalog($catalog);
 
         // First session iteration
         $registrar->register($context);

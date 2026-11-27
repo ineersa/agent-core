@@ -15,8 +15,9 @@ use Ineersa\Tui\Command\SlashCommandHandler;
  * Registers virtual slash commands for every prompt template in the catalog.
  *
  * Runs from InteractiveMode, after built-in commands (seeded when the
- * catalog is constructed) and extension commands (registered on
- * ConsoleEvents::COMMAND), so those win on name collisions. When a template
+ * catalog is constructed), extension commands (registered on
+ * ConsoleEvents::COMMAND) and the code-review command, so those win on
+ * name collisions. When a template
  * name matches an already-registered command or alias, the template is
  * silently skipped.
  *

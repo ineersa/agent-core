@@ -343,7 +343,6 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $state = new TuiSessionState('visible');
         $catalog = new SlashCommandCatalog();
         $registrar = self::getContainer()->get(BackgroundProcessCommandRegistrar::class);
-        $registrar->registerCatalog($catalog);
         $services = $this->createSessionServices(tui: $this->harness->tui(), screen: $this->harness->screen(), state: $state, client: $client, catalog: $catalog);
         $this->context = $this->buildTuiContext()->withTui($this->harness->tui())->withScreen($this->harness->screen())->withState($state)->withClient($client)->withSessionServices($services)->build();
         $registrar->register($this->context);
