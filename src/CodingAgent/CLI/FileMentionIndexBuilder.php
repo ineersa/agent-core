@@ -49,7 +49,7 @@ use Symfony\Component\Process\Process;
  * Atomic-write strategy:
  *   1. Acquire a non-blocking named lock via LockFactory.
  *   2. Stream entries into a temp file that is a sibling of the index.
- *   3. Check every write, fflush and close.
+ *   3. Check every write and the fflush, then close.
  *   4. rename(tmp, target) — atomic on the same filesystem.
  *   5. Release lock.
  *
@@ -61,8 +61,10 @@ use Symfony\Component\Process\Process;
  * filesystem, rename() degrades to copy-then-unlink over the live index,
  * which is not atomic and can leave readers a truncated index. dumpFile()
  * also writes through a symlinked index path instead of replacing the link.
- * Keeping the temp file beside the index means the build either publishes
- * a complete index or fails and leaves the previous one untouched.
+ * Keeping the temp file beside the index means a build that fails to write
+ * leaves the previous index untouched. There is no fsync: a write error that
+ * the filesystem reports only at close (NFS, quotas) is not detected, and
+ * PHP's fclose() result cannot be used for that.
  *
  * Caps the output to prevent pathological repos from producing
  * unusably large index files. MAX_ENTRIES counts files and inferred
@@ -176,8 +178,6 @@ final class FileMentionIndexBuilder
             throw new \RuntimeException("Cannot open temp index file for writing: {$tmpPath}");
         }
 
-        $closed = false;
-
         try {
             $count = 0;
 
@@ -200,7 +200,7 @@ final class FileMentionIndexBuilder
                 $payload = $line."\n";
                 $written = @fwrite($handle, $payload);
                 if (\strlen($payload) !== $written) {
-                    throw new \RuntimeException(\sprintf('Short write to temp index file "%s": wrote %d of %d bytes.', $tmpPath, (int) $written, \strlen($payload)));
+                    throw new \RuntimeException(\sprintf('Short write to temp index file "%s": wrote %d of %d bytes. %s', $tmpPath, (int) $written, \strlen($payload), error_get_last()['message'] ?? ''));
                 }
                 ++$count;
             }
@@ -212,17 +212,9 @@ final class FileMentionIndexBuilder
                 throw new \RuntimeException('Failed to flush buffered writes for file mention index.');
             }
 
-            // Some filesystems (NFS, quotas) report a failed write only at close.
-            $closed = true;
-            if (!fclose($handle)) {
-                throw new \RuntimeException(\sprintf('Failed to close temp index file "%s".', $tmpPath));
-            }
-
             return $count;
         } finally {
-            if (!$closed) {
-                fclose($handle);
-            }
+            fclose($handle);
         }
     }
 
