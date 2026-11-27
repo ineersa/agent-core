@@ -58,6 +58,9 @@ final class TestToolBatchCoordination
     public static function redrive(ToolBatchCollector $collector, ToolBatchStoreInterface $store, string $runId, int $turnNo, string $stepId, string $questionId, mixed $answerValue): array
     {
         $prepared = $collector->prepareHumanInputRedrive($runId, $turnNo, $stepId, $questionId, $answerValue);
+        if (null === $prepared) {
+            throw new \LogicException('Test fixture must contain the stored answer to redrive.');
+        }
         self::finalize($store, $prepared->action);
 
         return $prepared->effects;

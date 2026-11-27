@@ -297,9 +297,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
         $result = $event->getResult();
         $this->assertNotNull($result, 'must deny when origin hook is unloaded');
-        $raw = $result->getResult();
-        $this->assertIsString($raw);
-        $decoded = Toon::decode($raw);
+        $decoded = $result->getResult();
         $this->assertIsArray($decoded);
         $this->assertTrue($decoded['denied'] ?? null);
         $this->assertSame('approval_origin_hook_unavailable', $decoded['reason'] ?? null);
@@ -321,6 +319,51 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $this->assertSame('q-missing', $context['question_id'] ?? null);
         $this->assertSame($missingHookClass, $context['hook_class'] ?? null);
         $this->assertArrayNotHasKey('answer', $context);
+    }
+
+    public function testThrowingToolCallHookDeniesAndLogsCorrelatedFailure(): void
+    {
+        $registry = new ExtensionHookRegistry();
+        $registry->addToolCallHook(new class implements ToolCallHookInterface {
+            public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
+            {
+                throw new \RuntimeException('private exception detail');
+            }
+        });
+        $accessor = new StackToolExecutionContextAccessor();
+        $logger = new TestLogger();
+        $subscriber = new ExtensionToolHookEventSubscriber($registry, '/tmp', $accessor, logger: $logger);
+        $event = $this->requested(new ToolCall('call-throw', 'read', []));
+
+        $accessor->with(new ToolContext(
+            runId: 'run-throw',
+            turnNo: 1,
+            toolCallId: 'call-throw',
+            toolName: 'read',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: 30,
+        ), static function () use ($subscriber, $event): void {
+            $subscriber->onToolCallRequested($event);
+        });
+
+        $denial = $event->getResult()?->getResult();
+        $this->assertIsArray($denial);
+        $this->assertTrue($denial['denied']);
+        $this->assertSame('extension_tool_call_hook_failed', $denial['reason']);
+        $this->assertSame(\RuntimeException::class, $denial['error_type']);
+
+        $this->assertCount(1, $logger->records);
+        $record = $logger->records[0];
+        $this->assertSame('error', $record['level']);
+        $this->assertSame('extension.tool_call_hook_failed', $record['message']);
+        $this->assertEquals([
+            'component' => 'extension.tool_hook_subscriber',
+            'event_type' => 'extension.tool_call_hook_failed',
+            'tool_name' => 'read',
+            'tool_call_id' => 'call-throw',
+            'run_id' => 'run-throw',
+            'error_type' => \RuntimeException::class,
+        ], $record['context']);
     }
 
     public function testTypedFailureResultHookSeesOriginalFlatArguments(): void

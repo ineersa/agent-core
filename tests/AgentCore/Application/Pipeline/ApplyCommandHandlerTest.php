@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
@@ -38,6 +39,7 @@ use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
@@ -294,6 +296,98 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertNull($result->nextState);
         $this->assertSame([], $result->events);
         $this->assertSame([], $result->postCommitActions);
+    }
+
+    #[DataProvider('humanResponseRedriveCases')]
+    public function testHumanResponseRedriveDistinguishesMissingAnswerFromInvalidMatches(int $matches, ?string $reason): void
+    {
+        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
+        $calls = [];
+        for ($i = 0; $i < 2; ++$i) {
+            $callId = 'call-'.$i;
+            $calls[] = new ExecuteToolCall('run-redrive', 1, 'step-redrive', 1, 'exec-'.$i, $callId, 'read', [], $i,
+                humanInputAnswer: $i < $matches ? new ToolCallHumanInputAnswerDTO('q-redrive', 'yes', [
+                    'run_id' => 'run-redrive', 'turn_no' => 1, 'step_id' => 'step-redrive', 'tool_call_id' => $callId,
+                ], ['question_id' => 'q-redrive']) : null,
+            );
+        }
+        TestToolBatchRegistration::register($collector, $batchStore, 'run-redrive', 1, 'step-redrive', $calls);
+
+        $handler = new ApplyCommandHandler(
+            commandStore: new InMemoryCommandStore(),
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: $collector,
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::serializer(),
+            maxPendingCommands: 10,
+        );
+        $state = new RunState(runId: 'run-redrive', status: RunStatus::Running, version: 3, turnNo: 1, lastSeq: 10, activeStepId: 'step-redrive');
+        $result = $handler->handle(new ApplyCommand('run-redrive', 1, 'response', 1, 'response-key', CoreCommandKind::HumanResponse, [
+            'question_id' => 'q-redrive', 'answer' => 2 === $matches ? 'yes' : 'no',
+        ]), $state);
+
+        $this->assertSame([], $result->effects);
+        $this->assertSame([], $result->postCommitEffects);
+        if (null === $reason) {
+            $this->assertNull($result->nextState);
+            $this->assertSame([], $result->events);
+            $this->assertSame([], $result->postCommitActions);
+
+            return;
+        }
+
+        $this->assertCount(1, $result->events);
+        $this->assertSame('agent_command_rejected', $result->events[0]->type);
+        $this->assertSame('response-key', $result->events[0]->payload['idempotency_key']);
+        $this->assertStringContainsString($reason, $result->nextState?->errorMessage ?? '');
+        $this->assertCount(1, $result->postCommitActions);
+        $this->assertInstanceOf(RejectCommandDTO::class, $result->postCommitActions[0]);
+        $this->assertSame($result->events[0]->payload['reason'], $result->postCommitActions[0]->reason);
+    }
+
+    /** @return iterable<string, array{int, ?string}> */
+    public static function humanResponseRedriveCases(): iterable
+    {
+        yield 'no stored answer' => [0, null];
+        yield 'conflicting answer' => [1, 'stored answer conflicts'];
+        yield 'ambiguous answers' => [2, 'ambiguous answered call'];
+    }
+
+    public function testHumanResponseRedrivePropagatesStoreFailure(): void
+    {
+        $failure = new \InvalidArgumentException('Invalid tool batch path.');
+        $store = $this->createMock(ToolBatchStoreInterface::class);
+        $store->expects($this->once())->method('load')->with('run-redrive', 1, 'step-redrive')->willThrowException($failure);
+        $this->expectExceptionObject($failure);
+
+        $this->handleStoredHumanResponseRedrive(new ToolBatchCollector($store));
+    }
+
+    public function testCompletedHumanResponseRedriveAcknowledgesWithoutRedispatch(): void
+    {
+        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
+        $answer = new ToolCallHumanInputAnswerDTO('q-redrive', 'yes', [
+            'run_id' => 'run-redrive', 'turn_no' => 1, 'step_id' => 'step-redrive', 'tool_call_id' => 'call-0',
+        ], ['question_id' => 'q-redrive']);
+        TestToolBatchRegistration::register($collector, $store, 'run-redrive', 1, 'step-redrive', [
+            new ExecuteToolCall('run-redrive', 1, 'step-redrive', 1, 'exec-0', 'call-0', 'read', [], 0, humanInputAnswer: $answer),
+        ]);
+        TestToolBatchCoordination::collect($collector, $store, new ToolCallResult(
+            'run-redrive', 1, 'step-redrive', 1, 'exec-0', 'call-0', 0, ['ok' => true], false, null,
+        ));
+
+        $prepared = $collector->prepareHumanInputRedrive('run-redrive', 1, 'step-redrive', 'q-redrive', 'yes');
+        $this->assertNotNull($prepared);
+        $this->assertSame([], $prepared->effects);
+        $this->assertNull($prepared->action);
+
+        $result = $this->handleStoredHumanResponseRedrive($collector);
+        $this->assertNull($result->nextState);
+        $this->assertSame([], $result->events);
+        $this->assertSame([], $result->effects);
+        $this->assertSame([], $result->postCommitEffects);
+        $this->assertEquals([new MarkCommandAppliedDTO('run-redrive', 'response-key')], $result->postCommitActions);
     }
 
     public function testSteerWhileRunningQueuesButDoesNotDispatchAdvanceRun(): void
@@ -1941,6 +2035,24 @@ final class ApplyCommandHandlerTest extends TestCase
             kind: CoreCommandKind::Cancel,
             payload: ['reason' => 'Outstanding human questions cancelled on session attach.'],
         ), $state);
+    }
+
+    private function handleStoredHumanResponseRedrive(ToolBatchCollector $collector): HandlerResult
+    {
+        $handler = new ApplyCommandHandler(
+            commandStore: new InMemoryCommandStore(),
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: $collector,
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::serializer(),
+            maxPendingCommands: 10,
+        );
+        $state = new RunState(runId: 'run-redrive', status: RunStatus::Running, version: 3, turnNo: 1, lastSeq: 10, activeStepId: 'step-redrive');
+
+        return $handler->handle(new ApplyCommand('run-redrive', 1, 'response', 1, 'response-key', CoreCommandKind::HumanResponse, [
+            'question_id' => 'q-redrive', 'answer' => 'yes',
+        ]), $state);
     }
 
     private function finalizeMailbox(HandlerResult $result, CommandStoreInterface $store): void

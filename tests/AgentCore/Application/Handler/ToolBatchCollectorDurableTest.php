@@ -328,11 +328,9 @@ final class ToolBatchCollectorDurableTest extends TestCase
                 )),
                 'Cannot resume tool-execution human input for unknown batch run=run-missing turn=1 step=step-missing.',
             ],
-            [
-                static fn (): array => TestToolBatchCoordination::redrive($collector, $store, 'run-missing', 1, 'step-missing', 'q-1', '✅ Allow'),
-                'Cannot redrive tool-execution human input for unknown batch run=run-missing turn=1 step=step-missing.',
-            ],
         ];
+
+        $this->assertNull($collector->prepareHumanInputRedrive('run-missing', 1, 'step-missing', 'q-1', '✅ Allow'));
 
         foreach ($cases as [$operation, $expectedMessage]) {
             try {
