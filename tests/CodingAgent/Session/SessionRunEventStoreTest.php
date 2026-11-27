@@ -381,7 +381,7 @@ final class SessionRunEventStoreTest extends TestCase
 
         try {
             $this->store->allFor($runId);
-            self::fail('Corrupt line must throw.');
+            $this->fail('Corrupt line must throw.');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('Corrupt event JSONL for run', $e->getMessage());
             $this->assertStringNotContainsString('secret-session-content', $e->getMessage());
