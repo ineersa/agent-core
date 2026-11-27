@@ -6,9 +6,9 @@ namespace Ineersa\Tui\Utility;
 
 use Symfony\Component\Process\Process;
 
-final class Clipboard
+class Clipboard
 {
-    public static function copy(string $text): bool
+    public function copy(string $text): bool
     {
         // Fast path: external tools (works inside tmux too)
         if (\PHP_OS_FAMILY === 'Darwin' && self::runPipe(['pbcopy'], $text)) {

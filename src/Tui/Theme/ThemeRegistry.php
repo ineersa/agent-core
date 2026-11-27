@@ -98,16 +98,6 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
     }
 
     /**
-     * Look up a palette by name.
-     *
-     * Returns null if no palette with the given name is registered.
-     */
-    public function get(string $name): ?ThemePalette
-    {
-        return $this->themes[$name] ?? null;
-    }
-
-    /**
      * Look up a palette by name, throwing if not found.
      *
      * Used by the theme factory when the name is driven by config
@@ -139,14 +129,6 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
         sort($names);
 
         return $names;
-    }
-
-    /**
-     * Check whether a named theme exists.
-     */
-    public function has(string $name): bool
-    {
-        return isset($this->themes[$name]);
     }
 
     private function ingestDirectory(string $dir): void

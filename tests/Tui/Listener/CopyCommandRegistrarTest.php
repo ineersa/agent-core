@@ -16,6 +16,7 @@ use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Utility\Clipboard;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Tui;
@@ -44,7 +45,7 @@ final class CopyCommandRegistrarTest extends TestCase
         $state = new TuiSessionState('test-session');
         $context = $this->buildContext($state, $catalog);
 
-        $registrar = new CopyCommandRegistrar();
+        $registrar = new CopyCommandRegistrar(new Clipboard());
         $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
@@ -68,7 +69,7 @@ final class CopyCommandRegistrarTest extends TestCase
         $state = new TuiSessionState('test-session');
         $context = $this->buildContext($state, $catalog);
 
-        $registrar = new CopyCommandRegistrar();
+        $registrar = new CopyCommandRegistrar(new Clipboard());
         $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
@@ -86,7 +87,7 @@ final class CopyCommandRegistrarTest extends TestCase
         $state = new TuiSessionState('test-session');
         $context = $this->buildContext($state, $catalog);
 
-        $registrar = new CopyCommandRegistrar();
+        $registrar = new CopyCommandRegistrar(new Clipboard());
         $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
@@ -105,7 +106,7 @@ final class CopyCommandRegistrarTest extends TestCase
         $state = new TuiSessionState('test-session');
         $context = $this->buildContext($state, $catalog);
 
-        $registrar = new CopyCommandRegistrar();
+        $registrar = new CopyCommandRegistrar(new Clipboard());
         $registrar->registerCatalog($catalog);
 
         // First session iteration

@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Ineersa\Tui\Utility\Clipboard;
 
 /**
  * Registers the /copy (alias: /cp) slash command.
@@ -18,6 +19,10 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  */
 final class CopyCommandRegistrar implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
 {
+    public function __construct(private readonly Clipboard $clipboard)
+    {
+    }
+
     public function registerCatalog(SlashCommandCatalog $catalog): void
     {
         $catalog->registerMetadata(new CommandMetadata(
@@ -30,7 +35,7 @@ final class CopyCommandRegistrar implements TuiListenerRegistrar, SlashCommandCa
 
     public function register(TuiRuntimeContext $context): void
     {
-        $handler = new CopyCommandHandler($context->state);
+        $handler = new CopyCommandHandler($context->state, $this->clipboard);
 
         $context->sessionServices->commandRegistry->bind('copy', $handler);
     }

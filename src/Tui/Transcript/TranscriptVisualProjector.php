@@ -57,9 +57,8 @@ final class TranscriptVisualProjector
     public function __construct(
         TuiTranscriptConfig $displayConfig = new TuiTranscriptConfig(),
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
-        ?TranscriptBlockWidgetFactory $factory = null,
     ) {
-        $this->factory = $factory ?? new TranscriptBlockWidgetFactory(
+        $this->factory = new TranscriptBlockWidgetFactory(
             displayConfig: $displayConfig,
             displayState: $displayState,
         );

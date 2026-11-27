@@ -30,10 +30,10 @@ use Symfony\Component\Tui\Widget\TextWidget;
 final readonly class SubagentResultRenderer
 {
     public function __construct(
+        private MarkdownRenderSupport $markdown,
         private TuiTranscriptConfig $displayConfig = new TuiTranscriptConfig(),
         private TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         private TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
-        private MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
     ) {
     }
 

@@ -19,8 +19,8 @@ use Symfony\Component\Tui\Widget\TextWidget;
 final readonly class WriteToolCallContentRenderer
 {
     public function __construct(
+        private MarkdownRenderSupport $markdown,
         private TranscriptLinePreviewService $linePreview = new TranscriptLinePreviewService(),
-        private MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
     ) {
     }
 

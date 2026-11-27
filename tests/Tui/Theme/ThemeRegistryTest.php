@@ -40,8 +40,6 @@ final class ThemeRegistryTest extends TestCase
     {
         $registry = $this->createRegistry();
 
-        $this->assertTrue($registry->has('cyberpunk'));
-
         $palette = $registry->getOrThrow('cyberpunk');
         $this->assertSame('cyberpunk', $palette->name);
         $this->assertSame('#00ffff', $palette->get(ThemeColorEnum::Accent));
@@ -77,14 +75,6 @@ final class ThemeRegistryTest extends TestCase
         $this->assertSame('#88c0d0', $theme->get(ThemeColorEnum::Accent));
     }
 
-    public function testHas(): void
-    {
-        $registry = $this->createRegistry();
-
-        $this->assertTrue($registry->has('cyberpunk'));
-        $this->assertFalse($registry->has('nonexistent'));
-    }
-
     public function testBuiltinThemesResolveDistinctToolArgumentKeyColors(): void
     {
         $registry = $this->createRegistry();
@@ -98,7 +88,6 @@ final class ThemeRegistryTest extends TestCase
         ];
 
         foreach ($themeNames as $themeName) {
-            $this->assertTrue($registry->has($themeName), \sprintf('Missing built-in theme %s', $themeName));
             $palette = $registry->getOrThrow($themeName);
 
             $argumentKey = $palette->get(ThemeColorEnum::ToolArgumentKey);
@@ -119,15 +108,7 @@ final class ThemeRegistryTest extends TestCase
         $method = new \ReflectionMethod(ThemeRegistry::class, 'registerPalette');
         $method->invoke($registry, new ThemePalette('custom', ['accent' => '#abc']), '');
 
-        $this->assertTrue($registry->has('custom'));
-        $this->assertSame('#abc', $registry->get('custom')?->get(ThemeColorEnum::Accent));
-    }
-
-    public function testGetReturnsNullForMissing(): void
-    {
-        $registry = $this->createEmptyRegistry();
-
-        $this->assertNull($registry->get('nope'));
+        $this->assertSame('#abc', $registry->getOrThrow('custom')->get(ThemeColorEnum::Accent));
     }
 
     public function testBuiltinThemePathsOverlapProducesNoSelfCollisions(): void
@@ -138,7 +119,7 @@ final class ThemeRegistryTest extends TestCase
         $registry = new ThemeRegistry($appConfig, $resources, new NullLogger());
 
         $this->assertSame([], $registry->getThemeCollisions());
-        $this->assertTrue($registry->has('nord'));
+        $this->assertContains('nord', $registry->getNames());
     }
 
     public function testSameSourcePathDuplicateRegistrationProducesNoCollision(): void
@@ -153,7 +134,7 @@ final class ThemeRegistryTest extends TestCase
         $method->invoke($registry, $palette, $themeFile);
 
         $this->assertSame([], $registry->getThemeCollisions());
-        $this->assertTrue($registry->has('dup-test'));
+        $this->assertContains('dup-test', $registry->getNames());
     }
 
     public function testDifferentSourcePathDuplicateNameRecordsCollision(): void

@@ -43,7 +43,7 @@ final readonly class TranscriptBlockRenderer
     public function __construct(
         private readonly TuiTranscriptConfig $displayConfig,
         private readonly TranscriptDisplayState $displayState,
-        private readonly MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
+        private readonly MarkdownRenderSupport $markdown,
     ) {
     }
 

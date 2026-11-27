@@ -42,16 +42,14 @@ final readonly class TranscriptBlockWidgetFactory
         private readonly ToolArgumentColoredFormatter $toolArgumentColoredFormatter = new ToolArgumentColoredFormatter(),
         private readonly ViewImageTranscriptFormatter $viewImageFormatter = new ViewImageTranscriptFormatter(),
         private readonly MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
-        ?SubagentResultRenderer $subagentRenderer = null,
-        ?WriteToolCallContentRenderer $writeContentRenderer = null,
     ) {
-        $this->subagentRenderer = $subagentRenderer ?? new SubagentResultRenderer(
+        $this->subagentRenderer = new SubagentResultRenderer(
             displayConfig: $this->displayConfig,
             displayState: $this->displayState,
             linePreviewService: $this->linePreviewService,
             markdown: $this->markdown,
         );
-        $this->writeContentRenderer = $writeContentRenderer ?? new WriteToolCallContentRenderer(
+        $this->writeContentRenderer = new WriteToolCallContentRenderer(
             linePreview: $this->linePreviewService,
             markdown: $this->markdown,
         );

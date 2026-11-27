@@ -18,21 +18,14 @@ use Ineersa\Tui\Utility\Clipboard;
  * Scans the transcript for the last assistant message block and copies
  * its text to the system clipboard via {@see Clipboard::copy()}.
  *
- * The copy closure is injectable for testability without affecting
- * autowiring: when not injected, it defaults to Clipboard::copy().
- *
  * @internal Registered by CopyCommandRegistrar
  */
 final class CopyCommandHandler implements SlashCommandHandler
 {
-    /** @var \Closure(string): bool */
-    private readonly \Closure $copyFn;
-
     public function __construct(
         private readonly TuiSessionState $state,
-        ?\Closure $copyFn = null,
+        private readonly Clipboard $clipboard,
     ) {
-        $this->copyFn = $copyFn ?? static fn (string $text): bool => Clipboard::copy($text);
     }
 
     public function handle(SlashCommand $command): CommandResult
@@ -55,7 +48,7 @@ final class CopyCommandHandler implements SlashCommandHandler
             );
         }
 
-        $success = ($this->copyFn)($lastAssistant->text);
+        $success = $this->clipboard->copy($lastAssistant->text);
 
         if ($success) {
             return new TranscriptMessage(

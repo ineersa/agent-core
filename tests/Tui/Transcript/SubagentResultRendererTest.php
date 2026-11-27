@@ -15,6 +15,7 @@ use Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Transcript\MarkdownRenderSupport;
 use Ineersa\Tui\Transcript\SubagentResultRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
@@ -479,7 +480,7 @@ final class SubagentResultRendererTest extends TestCase
 
     public function testSubagentResultRendererSupportsMetaOnly(): void
     {
-        $renderer = new SubagentResultRenderer();
+        $renderer = new SubagentResultRenderer(new MarkdownRenderSupport());
         $block = new TranscriptBlock(
             id: 'tr',
             kind: TranscriptBlockKindEnum::ToolResult,
@@ -573,10 +574,6 @@ final class SubagentResultRendererTest extends TestCase
         $factory = new TranscriptBlockWidgetFactory(
             displayConfig: $displayConfig,
             displayState: $displayState,
-            subagentRenderer: new SubagentResultRenderer(
-                displayConfig: $displayConfig,
-                displayState: $displayState,
-            ),
         );
         $theme = $this->theme();
         $root = new ContainerWidget();

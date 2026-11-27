@@ -24,7 +24,6 @@ use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeRegistry;
-use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Psr\Log\LoggerInterface;
@@ -90,7 +89,6 @@ final readonly class InteractiveMode
      *
      * @param AgentSessionClient   $client    The runtime session client
      * @param StartRunRequest|null $request   Optional pre-configured start request (from AgentCommand)
-     * @param TuiTheme|null        $theme     Pre-resolved theme (for testing)
      * @param string               $sessionId Existing session ID to resume; empty = new session
      *
      * @return int Console exit code
@@ -98,7 +96,6 @@ final readonly class InteractiveMode
     public function run(
         AgentSessionClient $client,
         ?StartRunRequest $request = null,
-        ?TuiTheme $theme = null,
         string $sessionId = '',
     ): int {
         // ── Install signal handlers for graceful process cleanup ──
@@ -130,7 +127,7 @@ final readonly class InteractiveMode
             });
         }
 
-        $theme ??= new DefaultTheme($this->themeRegistry->getOrThrow($this->appConfig->tui->theme));
+        $theme = new DefaultTheme($this->themeRegistry->getOrThrow($this->appConfig->tui->theme));
 
         // ── Session switch loop ──
         // Each iteration builds fresh TUI/session objects for the

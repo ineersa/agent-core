@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\Tui\Transcript\MarkdownRenderSupport;
 use Ineersa\Tui\Transcript\SubagentResultRenderer;
 use Ineersa\Tui\Transcript\TranscriptToolPresentationPolicy;
 use Ineersa\Tui\Transcript\TranscriptToolResultFacts;
@@ -23,7 +24,7 @@ final class TranscriptToolPresentationPolicyTest extends TestCase
     protected function setUp(): void
     {
         $this->policy = new TranscriptToolPresentationPolicy(
-            new SubagentResultRenderer(),
+            new SubagentResultRenderer(new MarkdownRenderSupport()),
             new TranscriptToolResultFacts(),
         );
     }
