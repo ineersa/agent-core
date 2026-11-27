@@ -197,6 +197,29 @@ final class ThemeRegistryTest extends TestCase
         }
     }
 
+    public function testMalformedThemeSectionsAreLoggedWithoutThrowing(): void
+    {
+        file_put_contents($this->tempDir.'/malformed.yaml', <<<'YAML'
+            name: malformed
+            vars: "abc"
+            colors:
+                - "not-a-colour"
+            YAML);
+        $logger = new TestLogger();
+        $resources = new AppResourceLocator($this->tempDir);
+        $appConfig = new AppConfig(tui: new TuiConfig('malformed', [$this->tempDir]), logging: new LoggingConfig());
+
+        $palette = (new ThemeRegistry($appConfig, $resources, $logger))->getOrThrow('malformed');
+
+        $this->assertNull($palette->get(ThemeColorEnum::Accent));
+        $logged = array_map(
+            static fn (array $record): string => $record['context']['section'].'.'.$record['context']['key'],
+            array_filter($logger->records, static fn (array $record): bool => 'tui.theme.invalid_color' === ($record['context']['event_type'] ?? null)),
+        );
+        sort($logged);
+        $this->assertSame(['colors.0', 'vars.'], $logged);
+    }
+
     private function createRegistry(): ThemeRegistry
     {
         $resources = new AppResourceLocator($this->projectRoot);

@@ -241,7 +241,13 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
         }
 
         foreach (['vars', 'colors'] as $section) {
-            if (!\is_array($data[$section] ?? null)) {
+            if (!isset($data[$section])) {
+                continue;
+            }
+            if (!\is_array($data[$section])) {
+                $this->logInvalidColor($path, $section, '', 'Expected a mapping, got '.get_debug_type($data[$section]).'.');
+                unset($data[$section]);
+
                 continue;
             }
             foreach ($data[$section] as $key => $value) {
@@ -268,7 +274,7 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
             } catch (InvalidArgumentException $e) {
                 // Intentional degradation: the token renders unstyled instead of
                 // throwing when a Style is built from it.
-                $this->logInvalidColor($path, 'colors', $token, $e->getMessage());
+                $this->logInvalidColor($path, 'colors', (string) $token, $e->getMessage());
                 unset($colors[$token]);
             }
         }
