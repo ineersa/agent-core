@@ -11,6 +11,7 @@ use GuzzleHttp\Psr7\Response;
 use Ineersa\CodingAgent\Auth\GrokOAuthConfig;
 use Ineersa\CodingAgent\Auth\GrokTokenRefresher;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\PublicOAuthProvider;
 
 final class GrokTokenRefresherTest extends TestCase
 {
@@ -91,6 +92,9 @@ final class GrokTokenRefresherTest extends TestCase
         $handler = HandlerStack::create(new MockHandler($responses));
         $guzzle = new Client(['handler' => $handler]);
 
-        return new GrokTokenRefresher(GrokOAuthConfig::DEFAULT_PORT, $guzzle);
+        $provider = new PublicOAuthProvider(GrokOAuthConfig::providerOptions());
+        $provider->setHttpClient($guzzle);
+
+        return new GrokTokenRefresher($provider);
     }
 }

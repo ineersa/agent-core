@@ -11,12 +11,12 @@ use Ineersa\CodingAgent\Auth\GrokOAuthService;
 use Ineersa\CodingAgent\Auth\GrokTokenRefresher;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
 final class GrokOAuthServiceTest extends TestCase
 {
-    private GrokAuthStorage $storage;
     private string $tmpDir;
 
     protected function setUp(): void
@@ -25,10 +25,6 @@ final class GrokOAuthServiceTest extends TestCase
 
         $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield-grok-oauth-service-test');
         @mkdir($this->tmpDir.'/.hatfield', 0755, true);
-
-        $store = new FlockStore($this->tmpDir);
-        $lockFactory = new LockFactory($store);
-        $this->storage = new GrokAuthStorage($this->tmpDir, $lockFactory);
     }
 
     protected function tearDown(): void
@@ -39,7 +35,7 @@ final class GrokOAuthServiceTest extends TestCase
 
     public function testRefreshCredentialsThrowsWhenNoStoredCredentials(): void
     {
-        $service = new GrokOAuthService($this->storage, $this->failingRefresher());
+        $service = new GrokOAuthService($this->storage($this->failingRefresher()));
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('No stored Grok credentials found');
@@ -49,7 +45,7 @@ final class GrokOAuthServiceTest extends TestCase
 
     public function testRefreshCredentialsNoStoredCredentialsMentionsAuthHint(): void
     {
-        $service = new GrokOAuthService($this->storage, $this->failingRefresher());
+        $service = new GrokOAuthService($this->storage($this->failingRefresher()));
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage(GrokOAuthConfig::authCommandHint());
@@ -57,31 +53,16 @@ final class GrokOAuthServiceTest extends TestCase
         $service->refreshCredentials();
     }
 
-    public function testRefreshCredentialsThrowsWhenRefresherNotConfigured(): void
-    {
-        $this->storage->saveCredentials(new GrokAuthRecord(
-            access: 'expired-access',
-            refresh: 'expired-refresh-token',
-            expires: time() - 3600,
-        ));
-
-        $service = new GrokOAuthService($this->storage); // no refresher
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('no refresher configured');
-
-        $service->refreshCredentials();
-    }
-
     public function testRefreshCredentialsFailureMentionsAuthHint(): void
     {
-        $this->storage->saveCredentials(new GrokAuthRecord(
+        $storage = $this->storage($this->failingRefresher());
+        $storage->saveCredentials(new GrokAuthRecord(
             access: 'access',
             refresh: 'refresh',
             expires: time() + 3600,
         ));
 
-        $service = new GrokOAuthService($this->storage, $this->failingRefresher());
+        $service = new GrokOAuthService($storage);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage(GrokOAuthConfig::authCommandHint());
@@ -91,54 +72,43 @@ final class GrokOAuthServiceTest extends TestCase
 
     public function testRefreshCredentialsPersistsFreshRecord(): void
     {
-        $this->storage->saveCredentials(new GrokAuthRecord(
-            access: 'stale-access',
-            refresh: 'stale-refresh',
-            expires: time() + 60,
-        ));
-
         $fresh = new GrokAuthRecord(
             access: 'fresh-access',
             refresh: 'fresh-refresh',
             expires: time() + 3600,
         );
 
-        $refresher = new class($fresh) extends GrokTokenRefresher {
-            public string $seenRefresh = '';
+        $refresher = $this->createMock(GrokTokenRefresher::class);
+        $refresher->expects($this->once())->method('refresh')->with('stale-refresh')->willReturn($fresh);
+        $storage = $this->storage($refresher);
+        $storage->saveCredentials(new GrokAuthRecord(
+            access: 'stale-access',
+            refresh: 'stale-refresh',
+            expires: time() + 60,
+        ));
 
-            public function __construct(private GrokAuthRecord $fresh)
-            {
-                parent::__construct();
-            }
-
-            public function refresh(string $refreshToken): GrokAuthRecord
-            {
-                $this->seenRefresh = $refreshToken;
-
-                return $this->fresh;
-            }
-        };
-
-        $service = new GrokOAuthService($this->storage, $refresher);
+        $service = new GrokOAuthService($storage);
         $result = $service->refreshCredentials();
 
-        $this->assertSame('stale-refresh', $refresher->seenRefresh);
         $this->assertSame('fresh-access', $result->access);
         $this->assertSame('fresh-refresh', $result->refresh);
 
-        $loaded = $this->storage->loadCredentialsRaw();
+        $loaded = $storage->loadCredentialsRaw();
         $this->assertNotNull($loaded);
         $this->assertSame('fresh-access', $loaded->access);
         $this->assertSame('fresh-refresh', $loaded->refresh);
     }
 
+    private function storage(GrokTokenRefresher $refresher): GrokAuthStorage
+    {
+        return new GrokAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $refresher, new NullLogger());
+    }
+
     private function failingRefresher(): GrokTokenRefresher
     {
-        return new class extends GrokTokenRefresher {
-            public function refresh(string $refreshToken): GrokAuthRecord
-            {
-                throw new \RuntimeException('Simulated refresh failure.');
-            }
-        };
+        $refresher = $this->createStub(GrokTokenRefresher::class);
+        $refresher->method('refresh')->willThrowException(new \RuntimeException('Simulated refresh failure.'));
+
+        return $refresher;
     }
 }

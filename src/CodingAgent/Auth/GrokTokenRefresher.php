@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Auth;
 
-use GuzzleHttp\ClientInterface;
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\PublicOAuthProvider;
 
@@ -20,14 +19,8 @@ use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\PublicOAuthProvider;
  */
 class GrokTokenRefresher
 {
-    /**
-     * @param ClientInterface|null $httpClient Optional Guzzle client
-     *                                         for tests (MockHandler).
-     *                                         Production leaves null.
-     */
     public function __construct(
-        private int $port = GrokOAuthConfig::DEFAULT_PORT,
-        private readonly ?ClientInterface $httpClient = null,
+        private readonly PublicOAuthProvider $provider,
     ) {
     }
 
@@ -40,15 +33,8 @@ class GrokTokenRefresher
      */
     public function refresh(string $refreshToken): GrokAuthRecord
     {
-        $collaborators = [];
-        if (null !== $this->httpClient) {
-            $collaborators['httpClient'] = $this->httpClient;
-        }
-
-        $provider = new PublicOAuthProvider(GrokOAuthConfig::providerOptions($this->port), $collaborators);
-
         try {
-            $token = $provider->getAccessToken('refresh_token', [
+            $token = $this->provider->getAccessToken('refresh_token', [
                 'refresh_token' => $refreshToken,
             ]);
         } catch (IdentityProviderException $e) {

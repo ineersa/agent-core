@@ -139,48 +139,6 @@ parameters:
 			path: src/CodingAgent/Agent/Execution/SubagentChildToolProgressPresentationFormatter.php
 
 		-
-			message: '#^Constructor parameter \$logger of Ineersa\\CodingAgent\\Auth\\GrokAuthStorage is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/CodingAgent/Auth/GrokAuthStorage.php
-
-		-
-			message: '#^Constructor parameter \$tokenRefresher of Ineersa\\CodingAgent\\Auth\\GrokAuthStorage is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/CodingAgent/Auth/GrokAuthStorage.php
-
-		-
-			message: '#^Constructor parameter \$tokenRefresher of Ineersa\\CodingAgent\\Auth\\GrokOAuthService is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/CodingAgent/Auth/GrokOAuthService.php
-
-		-
-			message: '#^Constructor parameter \$httpClient of Ineersa\\CodingAgent\\Auth\\GrokTokenRefresher is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/CodingAgent/Auth/GrokTokenRefresher.php
-
-		-
-			message: '#^Constructor parameter \$controller of Ineersa\\CodingAgent\\CLI\\AgentCommand is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/CodingAgent/CLI/AgentCommand.php
-
-		-
-			message: '#^Constructor parameter \$startupDatabaseMigrator of Ineersa\\CodingAgent\\CLI\\AgentCommand is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/CodingAgent/CLI/AgentCommand.php
-
-		-
-			message: '#^Constructor parameter \$toolRegistry of Ineersa\\CodingAgent\\CLI\\AgentCommand is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/CodingAgent/CLI/AgentCommand.php
-
-		-
 			message: '#^Catch block must rethrow, log through Psr\\Log\\LoggerInterface, pass the caught exception to a call, or return a typed result built from it\.$#'
 			identifier: hatfield.silentCatch
 			count: 1

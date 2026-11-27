@@ -211,6 +211,15 @@ services:
       $propertyAccessor: '@coding_agent.settings.property_accessor'
       $filesystem: '@Symfony\Component\Filesystem\Filesystem'
 
+  Ineersa\CodingAgent\Auth\GrokTokenRefresher:
+    arguments:
+      $provider: !service
+        class: Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\PublicOAuthProvider
+        arguments:
+          - !service
+            class: array
+            factory: ['Ineersa\CodingAgent\Auth\GrokOAuthConfig', 'providerOptions']
+
   Ineersa\CodingAgent\Auth\GrokAuthStorage:
     arguments:
       $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'

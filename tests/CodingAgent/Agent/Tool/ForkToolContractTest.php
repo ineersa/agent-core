@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionServiceInterface;
 use Ineersa\CodingAgent\Agent\Fork\ForkRuntimeConfigResolver;
-use Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionBuilder;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionProvider;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -29,9 +28,10 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 
 #[CoversClass(ForkToolHandler::class)]
-#[CoversClass(ForkToolDefinitionBuilder::class)]
+#[CoversClass(ForkToolDefinitionProvider::class)]
 final class ForkToolContractTest extends TestCase
 {
     public function testToolSchemaRequiresTaskAndOptionalModelThinking(): void
@@ -41,7 +41,7 @@ final class ForkToolContractTest extends TestCase
             new ToolRuntime(new StackToolExecutionContextAccessor()),
             new NarrowExecutionServiceLocator(new FakeForkExecutionService(new DeferredToolCompletionOutcome('x'))),
         );
-        $definition = ForkToolDefinitionBuilder::build($handler);
+        $definition = (new ForkToolDefinitionProvider($handler))->definition();
         // Typed DTO tool: schema is generated natively from ForkArgumentsDTO.
         $this->assertNull($definition->parametersJsonSchema);
 
@@ -188,7 +188,7 @@ final class ForkToolContractTest extends TestCase
             new ToolRuntime(new StackToolExecutionContextAccessor()),
             new NarrowExecutionServiceLocator(new FakeForkExecutionService(new DeferredToolCompletionOutcome('x'))),
         );
-        $definition = ForkToolDefinitionBuilder::build($handler);
+        $definition = (new ForkToolDefinitionProvider($handler))->definition();
 
         $this->assertSame(ToolExecutionMode::Parallel, $definition->executionMode);
         $guidelines = implode("\n", $definition->promptGuidelines);
@@ -200,7 +200,9 @@ final class ForkToolContractTest extends TestCase
 
     public function testPermanentDefinitionProvidesAssignmentGuidanceWithoutWorkflowSkill(): void
     {
-        $definition = ForkToolDefinitionBuilder::build(new \stdClass());
+        $accessor = new StackToolExecutionContextAccessor();
+        $handler = new ForkToolHandler($accessor, new ToolRuntime($accessor), new ServiceLocator([]));
+        $definition = (new ForkToolDefinitionProvider($handler))->definition();
         $guidelines = implode("\n", $definition->promptGuidelines);
 
         foreach ([

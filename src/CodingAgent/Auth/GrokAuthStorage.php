@@ -10,7 +10,7 @@ use Symfony\Component\Lock\LockFactory;
 /**
  * Grok-keyed wrapper over {@see AuthCredentialFileStore}.
  *
- * Public API unchanged. File I/O and the single file-scoped lock live in
+ * File I/O and the single file-scoped lock live in
  * the shared store; this class only owns Grok record typing + auto-refresh.
  */
 final class GrokAuthStorage
@@ -20,8 +20,8 @@ final class GrokAuthStorage
     public function __construct(
         string $homeDir,
         LockFactory $lockFactory,
-        private readonly ?GrokTokenRefresher $tokenRefresher = null,
-        private readonly ?LoggerInterface $logger = null,
+        private readonly GrokTokenRefresher $tokenRefresher,
+        private readonly LoggerInterface $logger,
     ) {
         $this->store = new AuthCredentialFileStore(
             $homeDir.'/'.GrokOAuthConfig::AUTH_FILE,
@@ -38,38 +38,7 @@ final class GrokAuthStorage
      */
     public function loadCredentials(): ?GrokAuthRecord
     {
-        return $this->store->withLock(function (): ?GrokAuthRecord {
-            $entry = $this->store->get(GrokOAuthConfig::PROVIDER_KEY);
-
-            if (null === $entry) {
-                return null;
-            }
-
-            $record = GrokAuthRecord::fromArray($entry);
-
-            if ($record->isExpired() && null !== $this->tokenRefresher) {
-                try {
-                    $fresh = $this->tokenRefresher->refresh($record->refresh);
-                    $this->store->set(GrokOAuthConfig::PROVIDER_KEY, $fresh->toArray());
-
-                    return $fresh;
-                } catch (\Throwable $e) {
-                    if (null !== $this->logger) {
-                        $this->logger->warning('Grok token refresh failed for expired record', [
-                            'provider_key' => GrokOAuthConfig::PROVIDER_KEY,
-                            'component' => 'grok_auth_storage',
-                            'event_type' => 'grok_token_refresh_failed',
-                        ]);
-                    }
-
-                    $hint = GrokOAuthConfig::authCommandHint();
-
-                    throw new \RuntimeException("Stored Grok credentials have expired and could not be refreshed. Run {$hint} to re-authenticate.", previous: $e);
-                }
-            }
-
-            return $record;
-        });
+        return $this->loadWithRefresh(force: false);
     }
 
     /**
@@ -93,19 +62,40 @@ final class GrokAuthStorage
         });
     }
 
-    public function refreshWithLock(GrokTokenRefresher $refresher): GrokAuthRecord
+    public function refreshWithLock(): GrokAuthRecord
     {
-        return $this->store->withLock(function () use ($refresher): GrokAuthRecord {
-            $entry = $this->store->get(GrokOAuthConfig::PROVIDER_KEY);
-            if (null === $entry) {
-                throw new \RuntimeException('No stored Grok credentials found.');
+        return $this->loadWithRefresh(force: true) ?? throw new \RuntimeException(\sprintf('No stored Grok credentials found. Run %s first.', GrokOAuthConfig::authCommandHint()));
+    }
+
+    private function loadWithRefresh(bool $force): ?GrokAuthRecord
+    {
+        return $this->store->withLock(function () use ($force): ?GrokAuthRecord {
+            $record = $this->loadCredentialsRaw();
+            if (null === $record || (!$force && !$record->isExpired())) {
+                return $record;
             }
 
-            $record = GrokAuthRecord::fromArray($entry);
-            $fresh = $refresher->refresh($record->refresh);
-            $this->store->set(GrokOAuthConfig::PROVIDER_KEY, $fresh->toArray());
+            try {
+                $fresh = $this->tokenRefresher->refresh($record->refresh);
+                $this->store->set(GrokOAuthConfig::PROVIDER_KEY, $fresh->toArray());
 
-            return $fresh;
+                return $fresh;
+            } catch (\Throwable $e) {
+                if (!$force) {
+                    $this->logger->warning('Grok token refresh failed for expired record', [
+                        'provider_key' => GrokOAuthConfig::PROVIDER_KEY,
+                        'component' => 'grok_auth_storage',
+                        'event_type' => 'grok_token_refresh_failed',
+                    ]);
+                }
+
+                $hint = GrokOAuthConfig::authCommandHint();
+                $message = $force
+                    ? "Token refresh failed for stored Grok credentials. Run {$hint} to re-authenticate."
+                    : "Stored Grok credentials have expired and could not be refreshed. Run {$hint} to re-authenticate.";
+
+                throw new \RuntimeException($message, previous: $e);
+            }
         });
     }
 }
