@@ -149,9 +149,9 @@ final class SubagentResultRendererTest extends TestCase
             'reasoning' => 'high',
             'artifact_path' => 'artifacts/agents/agent_01HX',
             'recent_tools' => [
-                'read: path="RuntimeEventTranslator.php"',
+                'read: path="RuntimeEventMapper.php"',
                 'bash: command="castor test"',
-                'edit: path="RuntimeEventTranslator.php"',
+                'edit: path="RuntimeEventMapper.php"',
             ],
             'assistant_excerpt' => 'Found the projection hook.',
         ];
@@ -166,8 +166,8 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('2m19s', $joined);
         $this->assertStringContainsString('Artifact artifacts/agents/agent_01HX', $joined);
         $this->assertStringContainsString('Run run-child-abc', $joined);
-        $this->assertStringContainsString('› edit: path="RuntimeEventTranslator.php"', $joined);
-        $this->assertStringNotContainsString('› read: path="RuntimeEventTranslator.php"', $joined);
+        $this->assertStringContainsString('› edit: path="RuntimeEventMapper.php"', $joined);
+        $this->assertStringNotContainsString('› read: path="RuntimeEventMapper.php"', $joined);
         $this->assertStringNotContainsString('› bash: command="castor test"', $joined);
         $this->assertStringNotContainsString('Found the projection hook.', $joined);
         $this->assertStringNotContainsString('Last read:', $joined);

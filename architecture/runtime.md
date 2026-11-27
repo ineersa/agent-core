@@ -41,8 +41,8 @@ sequenceDiagram
 
 The controller ACKs a supported command before dispatch, so an accepted command
 can still fail at dispatch or execution. `run_control` owns canonical state
-changes, and `RuntimeEventMapper` / `RuntimeEventTranslator` map committed
-`RunEvent` values into protocol DTOs. They do not consume `RunState`. LLM stream
+changes, and `RuntimeEventMapper` maps committed
+`RunEvent` values into protocol DTOs without consuming `RunState`. LLM stream
 events are transient sequence-0 deltas. Partial stdout records remain buffered
 until their newline, both in the controller's consumer poller and in the client.
 

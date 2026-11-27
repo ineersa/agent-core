@@ -22,7 +22,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\SkillReadProjectionSubscriber
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
@@ -202,8 +202,8 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
                 'tool_calls' => $toolCalls,
             ],
         ]);
-        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
-        $completion = $translator->translate($canonical);
+        $mapper = new RuntimeEventMapper(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
+        $completion = $mapper->toRuntimeEvent($canonical);
         $this->assertNotNull($completion);
         $projector->accept($completion);
 

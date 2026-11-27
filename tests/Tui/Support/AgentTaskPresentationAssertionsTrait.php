@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\Tui\Listener\PreviewExpansionInputListener;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
@@ -27,12 +27,12 @@ trait AgentTaskPresentationAssertionsTrait
     private function assertAgentTaskPresentation(array $events, string $artifactId, string $taskBody, string $taskExcerpt, string $inheritedHuman): void
     {
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
-        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec($serializer), $serializer);
+        $mapper = new RuntimeEventMapper(new EventDispatcher(), new ToolExecutionEndPayloadCodec($serializer), $serializer);
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
         foreach ($events as $canonical) {
-            $event = $translator->translate($canonical);
+            $event = $mapper->toRuntimeEvent($canonical);
             if (null !== $event) {
                 $projector->accept($event);
             }
