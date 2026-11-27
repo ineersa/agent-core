@@ -110,19 +110,6 @@ final class ShellCommandHandlerTest extends IsolatedKernelTestCase
         $this->assertNull($this->spyBus->lastMessage);
         $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $empty[0]->type);
     }
-
-    public function testIgnoresNonShellCommands(): void
-    {
-        $handler = new ShellCommandHandler($this->spyBus, self::getContainer()->get(HatfieldSessionStore::class), self::getContainer()->get(AgentChildRunDirectory::class));
-
-        $handler(new ControllerCommandEvent(new RuntimeCommand(
-            id: 'cmd_complete',
-            type: 'complete_run',
-            runId: 'run-complete-1',
-        ), static function (): void {}));
-
-        $this->assertNull($this->spyBus->lastMessage);
-    }
 }
 
 /**

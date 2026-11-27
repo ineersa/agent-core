@@ -9,16 +9,20 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Symfony\Contracts\EventDispatcher\Event;
 
 /**
- * Dispatched by HeadlessController for each decoded JSONL command.
+ * Dispatched by HeadlessController for each decoded JSONL command under the
+ * event name NAME_PREFIX.$command->type (e.g. controller.command.start_run).
  *
- * Listeners use #[AsEventListener] and check $command->type to handle
- * specific command types (start_run, user_message, cancel, resume).
+ * Listeners use one #[AsEventListener] per handled command type with that
+ * per-type event name. The controller rejects a command type without
+ * listeners before ACK.
  *
  * The $emit callable allows listeners to write RuntimeEvents back to
  * the controller's stdout.
  */
 final class ControllerCommandEvent extends Event
 {
+    public const string NAME_PREFIX = 'controller.command.';
+
     /**
      * @param callable(RuntimeEvent): void $emit
      */

@@ -18,7 +18,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * Submits owner work without waiting; run_control emits the correlated reply.
  */
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.'repair')]
 final readonly class RepairHandler
 {
     public function __construct(
@@ -29,10 +29,6 @@ final readonly class RepairHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if ('repair' !== $event->command->type) {
-            return;
-        }
-
         $command = $event->command;
         $runId = $command->runId ?? '';
         if ('' === $runId) {

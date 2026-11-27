@@ -134,7 +134,7 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
                 static function (RuntimeEvent $event): void {
                     self::fail('Valid background target was refused: '.$event->type);
                 },
-            ));
+            ), ControllerCommandEvent::NAME_PREFIX.$command->type->value);
         });
         $harness = $this->mount($this->visibleRunId, $client);
         $harness->sendInput($sequence);
@@ -280,7 +280,7 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
                 static function (RuntimeEvent $event) use (&$errors): void {
                     $errors[] = $event->type;
                 },
-            ));
+            ), ControllerCommandEvent::NAME_PREFIX.$command->type->value);
         });
         $harness = $this->mount($this->visibleRunId, $client);
         $harness->sendInput("\x02");

@@ -15,7 +15,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 /**
  * Handles compact JSONL commands from the parent TUI/controller process.
  */
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.'compact')]
 final readonly class CompactHandler
 {
     public function __construct(
@@ -26,10 +26,6 @@ final readonly class CompactHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if ('compact' !== $event->command->type) {
-            return;
-        }
-
         $command = $event->command;
         $runId = $command->runId ?? '';
         if ('' === $runId) {

@@ -17,7 +17,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * Passive attach only: scopes the controller client to the run and emits
  * run.resumed. Does not dispatch AgentCore Continue.
  */
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.'resume')]
 final readonly class ResumeHandler
 {
     public function __construct(
@@ -28,10 +28,6 @@ final readonly class ResumeHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if ('resume' !== $event->command->type) {
-            return;
-        }
-
         $command = $event->command;
         $runId = $command->runId ?? '';
         if ('' === $runId) {

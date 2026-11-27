@@ -13,7 +13,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.'stop_bash')]
 final readonly class StopBashHandler
 {
     public function __construct(private BackgroundProcessManager $processes, private DenormalizerInterface $serializer, private ValidatorInterface $validator)
@@ -23,9 +23,6 @@ final readonly class StopBashHandler
     public function __invoke(ControllerCommandEvent $event): void
     {
         $command = $event->command;
-        if ('stop_bash' !== $command->type) {
-            return;
-        }
         $request = $this->serializer->denormalize([
             'run_id' => $command->runId ?? '',
             'record_id' => $command->payload['record_id'] ?? 0,

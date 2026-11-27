@@ -20,7 +20,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * onto agent.command.bus so the mcp consumer reconnects and rewrites the
  * session catalog. Does not wait for discovery to finish.
  */
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.'mcp_refresh')]
 final readonly class McpRefreshHandler
 {
     public function __construct(
@@ -31,10 +31,6 @@ final readonly class McpRefreshHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if ('mcp_refresh' !== $event->command->type) {
-            return;
-        }
-
         $runId = $event->command->runId ?? '';
         if ('' === $runId) {
             $event->emit(new RuntimeEvent(

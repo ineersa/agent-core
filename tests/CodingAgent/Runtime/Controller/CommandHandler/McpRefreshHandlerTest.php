@@ -69,20 +69,4 @@ final class McpRefreshHandlerTest extends TestCase
         $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emitted[0]->type);
         $this->assertStringContainsString('mcp_refresh requires runId', (string) ($emitted[0]->payload['error'] ?? ''));
     }
-
-    public function testIgnoresOtherCommandTypes(): void
-    {
-        $bus = new TestMessageBus();
-        $handler = new McpRefreshHandler(
-            new McpSessionLifecycleDispatcher($bus, new TestLogger()),
-            new TestLogger(),
-        );
-
-        $handler(new ControllerCommandEvent(
-            new RuntimeCommand(id: 'cmd_other', type: 'compact', runId: 'run-1'),
-            static function (RuntimeEvent $event): void {},
-        ));
-
-        $this->assertSame([], $bus->messages);
-    }
 }

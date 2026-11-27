@@ -19,7 +19,10 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * to the event loop. Events from the consumer process are forwarded to TUI via
  * the controller's periodic EventStore drain and LLM consumer stdout streaming.
  */
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.'user_message')]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.UserCommandTypeEnum::FollowUp->value)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.UserCommandTypeEnum::AppendMessage->value)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.UserCommandTypeEnum::Steer->value)]
 final readonly class UserMessageHandler
 {
     public function __construct(
@@ -29,10 +32,6 @@ final readonly class UserMessageHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if (!\in_array($event->command->type, ['user_message', UserCommandTypeEnum::FollowUp->value, UserCommandTypeEnum::AppendMessage->value, UserCommandTypeEnum::Steer->value], true)) {
-            return;
-        }
-
         $command = $event->command;
         $runId = $command->runId ?? '';
         if ('' === $runId) {

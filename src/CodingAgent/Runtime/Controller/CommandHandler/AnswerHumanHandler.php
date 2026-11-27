@@ -21,7 +21,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * (human_response). Path A resumes the exact stored ExecuteToolCall; Path B
  * appends a human-response message and schedules AdvanceRun.
  */
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.UserCommandTypeEnum::AnswerHuman->value)]
 final readonly class AnswerHumanHandler
 {
     public function __construct(
@@ -31,10 +31,6 @@ final readonly class AnswerHumanHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if (UserCommandTypeEnum::AnswerHuman->value !== $event->command->type) {
-            return;
-        }
-
         $command = $event->command;
         $runId = $command->runId ?? '';
 

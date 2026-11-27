@@ -15,7 +15,10 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.UserCommandTypeEnum::BackgroundBash->value)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.UserCommandTypeEnum::BackgroundChild->value)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.UserCommandTypeEnum::BackgroundCodeMode->value)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.UserCommandTypeEnum::StopCodeMode->value)]
 final readonly class BackgroundBashHandler
 {
     public function __construct(private BashBackgroundRequestService $requests, private ChildInvocationBackgroundService $children, private MessageBusInterface $commandBus, private DenormalizerInterface $serializer)
@@ -28,9 +31,6 @@ final readonly class BackgroundBashHandler
         if (\in_array($command->type, [UserCommandTypeEnum::BackgroundCodeMode->value, UserCommandTypeEnum::StopCodeMode->value], true)) {
             $this->commandBus->dispatch($this->serializer->denormalize(['run_id' => $command->runId, 'deferred_id' => $command->payload['deferred_id'] ?? '', 'tool_call_id' => $command->payload['tool_call_id'] ?? '', 'stop' => UserCommandTypeEnum::StopCodeMode->value === $command->type], BackgroundCodeModeInvocationDTO::class));
 
-            return;
-        }
-        if (!\in_array($command->type, [UserCommandTypeEnum::BackgroundBash->value, UserCommandTypeEnum::BackgroundChild->value], true)) {
             return;
         }
 

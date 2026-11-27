@@ -12,7 +12,8 @@ use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.'bootstrap.applied')]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.'bootstrap.cancel')]
 final readonly class BootstrapAppliedHandler
 {
     public function __construct(private SessionBootstrapDelivery $delivery, private LoggerInterface $logger)
@@ -21,9 +22,6 @@ final readonly class BootstrapAppliedHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if (!\in_array($event->command->type, ['bootstrap.applied', 'bootstrap.cancel'], true)) {
-            return;
-        }
         try {
             if ('bootstrap.applied' === $event->command->type) {
                 $descriptor = SessionBootstrapDescriptorDTO::fromArray($event->command->payload);

@@ -22,7 +22,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * turn, or dispatch the execution worker. ApplyShellCommandHandler performs
  * all of those operations under RunMessageProcessor's run lock and commit.
  */
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.UserCommandTypeEnum::ShellCommand->value)]
 final readonly class ShellCommandHandler
 {
     public function __construct(
@@ -35,10 +35,6 @@ final readonly class ShellCommandHandler
     public function __invoke(ControllerCommandEvent $event): void
     {
         $command = $event->command;
-        if (UserCommandTypeEnum::ShellCommand->value !== $command->type) {
-            return;
-        }
-
         $runId = trim($command->runId ?? '');
         $rawInput = $command->payload['text'] ?? '';
 

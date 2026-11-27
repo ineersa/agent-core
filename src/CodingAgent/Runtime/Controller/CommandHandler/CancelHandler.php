@@ -21,7 +21,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * No cross-process PID registry or process-kill handoff is needed — the
  * tool worker that started each subprocess is responsible for stopping it.
  */
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.UserCommandTypeEnum::Cancel->value)]
 final readonly class CancelHandler
 {
     public function __construct(
@@ -32,10 +32,6 @@ final readonly class CancelHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if (UserCommandTypeEnum::Cancel->value !== $event->command->type) {
-            return;
-        }
-
         $command = $event->command;
         $runId = $command->runId ?? '';
         if ('' === $runId) {
