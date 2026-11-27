@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
 use Ineersa\AgentCore\Application\Handler\Exception\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
@@ -393,8 +395,10 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
             activeRunContext: $active,
             eventStore: $eventStore,
             logger: $logger,
-            hookDispatcher: new HookDispatcher([$hook]),
             finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($bus, $bus, new TestLogger(), events: new EventDispatcher()), batches: $batches),
+            hookDispatcher: new HookDispatcher([$hook]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
         $subscriber = new WorkerFailedEventSubscriber($active, $commit, new RunLockManager(new LockFactory(new InMemoryStore())), $logger);
         $event = $this->createFinalFailedEvent(new \RuntimeException('handler failed'));
@@ -429,8 +433,10 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
             activeRunContext: $active,
             eventStore: $store,
             logger: new NullLogger(),
-            hookDispatcher: new HookDispatcher([$auto, $cleanup]),
             finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus, new TestLogger(), events: new EventDispatcher())),
+            hookDispatcher: new HookDispatcher([$auto, $cleanup]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
         $subscriber = new WorkerFailedEventSubscriber($active, $commit, $container->get(RunLockManager::class), new NullLogger());
         $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(new Envelope(new StartRun($run, 0, 'failed-start', 1, 'failed-start', new StartRunPayload('', [], new RunMetadata(model: 'test-model')))), 'run_control', new \RuntimeException('permanent failure')));
@@ -454,6 +460,9 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
                 eventStore: $store,
                 logger: $logger,
                 finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus, new TestLogger(), events: new EventDispatcher())),
+                hookDispatcher: new HookDispatcher([]),
+                tracer: new RunTracer(new NullLogger()),
+                actionValidator: new CoordinationActionValidator(),
             ),
             $lockManager ?? new RunLockManager(new LockFactory(new InMemoryStore())), $logger);
     }

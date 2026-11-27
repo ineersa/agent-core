@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Replay;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Run\DTO\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -33,6 +35,8 @@ final class RunStateReducerAgentEndTest extends TestCase
         $replayed = (new RunStateReducer(
             AttributeSerializerValidatorTestFactory::denormalizer(),
             new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+            messageNormalizer: new AgentMessageNormalizer(),
+            assistantMessageFactory: new ReplayAssistantMessageFactory(),
         ))->replay($state, [
             new RunEvent(
                 runId: $runId,
@@ -75,6 +79,8 @@ final class RunStateReducerAgentEndTest extends TestCase
         $reducer = new RunStateReducer(
             AttributeSerializerValidatorTestFactory::denormalizer(),
             new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::denormalizer()),
+            messageNormalizer: new AgentMessageNormalizer(),
+            assistantMessageFactory: new ReplayAssistantMessageFactory(),
         );
 
         $state = $reducer->replay(new RunState(
@@ -117,6 +123,8 @@ final class RunStateReducerAgentEndTest extends TestCase
         $reducer = new RunStateReducer(
             AttributeSerializerValidatorTestFactory::denormalizer(),
             new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::denormalizer()),
+            messageNormalizer: new AgentMessageNormalizer(),
+            assistantMessageFactory: new ReplayAssistantMessageFactory(),
         );
 
         $state = $reducer->replay(new RunState(

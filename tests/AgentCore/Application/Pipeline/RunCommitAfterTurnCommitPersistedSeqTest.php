@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\Exception\RunContextNotLoadedException;
@@ -23,6 +25,7 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
@@ -40,7 +43,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
         $context->loadRecovered($state);
         $events = new InMemoryEventStore();
         $commit = new RunCommit($context, $events, new TestLogger(), TestTransitionFinalizerFactory::create($events,
-            new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())), new HookDispatcher([$subscriber]));
+            new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())), new HookDispatcher([$subscriber]), tracer: new RunTracer(new NullLogger()), actionValidator: new CoordinationActionValidator());
         $commit->commit($state, $state, [new RunEvent('discard', 0, 1, 'history_tail_discarded', [])], dispatchAfterTurnHooks: false);
     }
 
@@ -69,8 +72,10 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: new TestLogger(),
-            hookDispatcher: new HookDispatcher([$subscriber]),
             finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
+            hookDispatcher: new HookDispatcher([$subscriber]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
 
         $next = new RunState(
@@ -124,6 +129,9 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
                 $eventStore,
                 new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher()),
             ),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
 
         $next = $previous->with(['status' => $status]);
@@ -157,6 +165,9 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
                 $eventStore,
                 new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher()),
             ),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
 
         $activeChild = new RunState(
@@ -223,6 +234,9 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
                 $store,
                 new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher()),
             ),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
 
         try {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
@@ -16,6 +17,8 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Config\ToolSettings;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -29,10 +32,13 @@ use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Ineersa\CodingAgent\Tool\ViewImageTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Message\Content\Image;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\UserMessage;
+use Symfony\Component\Clock\MonotonicClock;
+use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Validator\ValidatorBuilder;
 
 /**
@@ -453,6 +459,9 @@ final class ViewImageToolTest extends TestCase
             resultStore: $resultStore,
             toolbox: $toolbox,
             contextAccessor: $contextAccessor,
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            clock: new MonotonicClock(),
+            tracer: new RunTracer(new NullLogger()),
         );
 
         $toolCall = new ToolCall(
@@ -521,7 +530,7 @@ final class ViewImageToolTest extends TestCase
         $this->assertSame('image/png', $agentMessage->content[1]['media_type']);
 
         // 4. Run through AgentMessageConverter::toMessageBag()
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
         $messageBag = $converter->toMessageBag([$agentMessage]);
 
         $messages = $messageBag->getMessages();
@@ -661,7 +670,7 @@ final class ViewImageToolTest extends TestCase
 
     public function testSyntheticImageMessagesAreDeferredUntilAfterConsecutiveToolBatch(): void
     {
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
         $imagePath = $this->tmpDir.'/batch.png';
         $this->createPng1x1($imagePath);
 
@@ -708,7 +717,7 @@ final class ViewImageToolTest extends TestCase
         // If the image file referenced by image_ref is deleted between
         // tool execution and conversion, the converter should produce
         // a text placeholder instead of failing.
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
 
         // Create an image, get its path, then delete it
         $imagePath = $this->tmpDir.'/deleted.png';
@@ -762,7 +771,7 @@ final class ViewImageToolTest extends TestCase
         $checker = $this->createStub(ImageCapabilityCheckerInterface::class);
         $checker->method('supportsImages')->willReturn(false);
 
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
         $hook = new ImageGatingConvertHook($checker, $converter);
 
         $imagePath = $this->tmpDir.'/gating_nonvision.png';
@@ -806,7 +815,7 @@ final class ViewImageToolTest extends TestCase
         $checker = $this->createStub(ImageCapabilityCheckerInterface::class);
         $checker->method('supportsImages')->willReturn(true);
 
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
         $hook = new ImageGatingConvertHook($checker, $converter);
 
         $imagePath = $this->tmpDir.'/gating_vision.png';
@@ -846,7 +855,7 @@ final class ViewImageToolTest extends TestCase
         // Empty model name short-circuits to false before checker is called.
         $checker->method('supportsImages')->willReturn(true);
 
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
         $hook = new ImageGatingConvertHook($checker, $converter);
 
         $imagePath = $this->tmpDir.'/gating_empty_model.png';
@@ -887,7 +896,7 @@ final class ViewImageToolTest extends TestCase
         $checker = $this->createStub(ImageCapabilityCheckerInterface::class);
         $checker->method('supportsImages')->willReturn(false);
 
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
         $hook = new ImageGatingConvertHook($checker, $converter);
 
         $agentMessage = new AgentMessage(

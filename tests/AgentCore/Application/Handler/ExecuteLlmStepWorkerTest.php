@@ -6,26 +6,37 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
+use Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface;
 use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
+use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Exception\LlmStreamCancelledException;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
@@ -40,6 +51,8 @@ use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
 use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\ResultConverterInterface;
+use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * Contract tests for {@see ExecuteLlmStepWorker}.
@@ -111,13 +124,12 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $resolver->method('resolve')->willReturn(new ResolvedModel('overlap-test'));
         $adapter = new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver()),
             platform: new Platform([new Provider('controlled', [$client], [$converter], new FallbackModelCatalog())]),
-            transformContextHooks: [], convertToLlmHook: null, streamObserver: $observer,
-            costCalculator: null, logger: $logger,
+            transformContextHooks: [], convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())), streamObserver: $observer,
+            costCalculator: $this->createStub(CostCalculatorInterface::class), logger: $logger,
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            modelResolver: $resolver,
+            modelResolver: $resolver, providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()), errorClassifier: new LlmProviderErrorClassifier(), toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(), retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class), requestRetryPolicy: new LlmRequestRetryPolicy(), clock: new NativeClock(),
         );
         $worker = new ExecuteLlmStepWorker($bus, $adapter, logger: $logger, tracer: $tracer);
         $prefix = new AgentMessage('user', [['type' => 'text', 'text' => 'prefix-a']]);
@@ -191,7 +203,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $thinkingOnly = new AssistantMessage(new Thinking('reasoning...'));
         $platform = $this->createAlternatingPlatform([$thinkingOnly, new AssistantMessage(new Text('should-not-run'))]);
         $testLogger = new TestLogger();
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: $testLogger);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-1',
@@ -215,7 +227,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $platform = $this->createAlternatingPlatform([$validResponse]);
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: $testLogger);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-3',
@@ -245,7 +257,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
                 receivedStreamDeltas: $receivedStreamDeltas,
                 stopReason: 'stop',
             )]);
-            $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, logger: new TestLogger());
+            $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: new TestLogger());
             $result = $worker(new ExecuteLlmStep(
                 runId: 'synthetic-empty-stream', turnNo: 1, stepId: 'step', attempt: 1, idempotencyKey: 'key', toolsRef: 'tools',
             ));
@@ -270,7 +282,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $platform = $this->createAlternatingPlatform([$errorResult]);
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: $testLogger);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-4',
@@ -303,7 +315,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
 
         $platform = $this->createAlternatingPlatform([$aborted]);
         $testLogger = new TestLogger();
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: $testLogger);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-aborted-silence',
@@ -344,7 +356,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
 
         $platform = $this->createAlternatingPlatform([$aborted]);
         $testLogger = new TestLogger();
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: $testLogger);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-aborted-thinking',
@@ -378,7 +390,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             stopReason: 'stop',
         );
         $platform = $this->createAlternatingPlatform([$ok]);
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, logger: new TestLogger());
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: new TestLogger());
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-dispatch-fail',
@@ -417,7 +429,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         );
 
         $platform = $this->createAlternatingPlatform([$errorResult]);
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, logger: new TestLogger());
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: new TestLogger());
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-retryable',
@@ -437,7 +449,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
     public function testForwardsCoordinatorPreparedMessagesToPlatform(): void
     {
         $platform = $this->createAlternatingPlatform([new AssistantMessage(new Text('done'))]);
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, logger: new TestLogger());
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: new TestLogger());
         $messages = [new AgentMessage('user', [['type' => 'text', 'text' => 'private coordinator context']])];
 
         $worker(new ExecuteLlmStep(

@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\StartRun;
@@ -150,7 +154,7 @@ final class ParentPromptUserContextRegressionTest extends PerMethodIsolatedKerne
     protected function afterKernelBoot(): void
     {
         $this->provisionDeterministicParentContextResources($this->isolatedCwd());
-        $this->pipelineRunner = ParentRegressionCapturingRunner::create();
+        $this->pipelineRunner = ParentRegressionCapturingRunner::create($this->createStub(HistoryTailDiscardInterface::class));
         self::getContainer()->set(AgentRunnerInterface::class, $this->pipelineRunner);
     }
 
@@ -184,7 +188,7 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
     ) {
     }
 
-    public static function create(): self
+    public static function create(HistoryTailDiscardInterface $historyTailDiscard): self
     {
         $activeRunContext = new TestActiveRunContext();
         $eventStore = new InMemoryEventStore();
@@ -192,20 +196,23 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: new NullLogger(),
-            hookDispatcher: null,
             finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
-            commands: new InMemoryCommandStore(),
             handlers: [
                 new StartRunHandler(new EventFactory(), TestSerializerFactory::normalizer()),
             ],
+            commands: new InMemoryCommandStore(),
+            historyTailDiscard: $historyTailDiscard,
         );
 
-        return new self(new RunOrchestrator($processor), $eventStore, $activeRunContext);
+        return new self(new RunOrchestrator($processor, tracer: new RunTracer(new NullLogger())), $eventStore, $activeRunContext);
     }
 
     public function start(StartRunInput $input): string

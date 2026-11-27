@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Contract\Compaction;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 
 /**
- * Optional guard checked before an LLM step is dispatched.
+ * Guard consulted before an LLM step is dispatched.
  *
  * Allows coding-agent-side policy (auto-compaction threshold,
  * provider/model overrides) to schedule a {@see CompactRun} instead of

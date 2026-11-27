@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
@@ -25,6 +26,8 @@ use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class ExecutionWorkerTest extends TestCase
 {
@@ -39,7 +42,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform);
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: new NullLogger());
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-worker-1',
@@ -67,7 +70,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform);
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: new NullLogger());
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-malformed-1',
@@ -101,7 +104,7 @@ final class ExecutionWorkerTest extends TestCase
         $traceLogger = new TestLogger();
         $tracer = new RunTracer($traceLogger);
 
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: $tracer);
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: $tracer, logger: new NullLogger());
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-worker-obs-1',
@@ -150,7 +153,7 @@ final class ExecutionWorkerTest extends TestCase
         };
 
         $traceLogger = new TestLogger();
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new NullRunOperationalStatusReader(), tracer: new RunTracer($traceLogger));
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new NullRunOperationalStatusReader(), tracer: new RunTracer($traceLogger), eventDispatcher: new EventDispatcher(), launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class));
 
         $result = $worker(new ExecuteToolCall(
             runId: 'run-worker-2',
@@ -202,7 +205,7 @@ final class ExecutionWorkerTest extends TestCase
             new FakeToolExecutor(),
             new InMemoryDeferredToolCompletionRepository(),
             $store,
-            new NullRunOperationalStatusReader(),
+            new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         $result = $worker(new ExecuteToolCall(
@@ -248,7 +251,7 @@ final class ExecutionWorkerTest extends TestCase
             $executor,
             new InMemoryDeferredToolCompletionRepository(),
             $store,
-            new NullRunOperationalStatusReader(),
+            new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
         $worker(new ExecuteToolCall(
             runId: 'run-deferred-1', turnNo: 1, stepId: 'step-1', attempt: 1,
@@ -288,8 +291,7 @@ final class ExecutionWorkerTest extends TestCase
 
         $testLogger = new TestLogger();
 
-        // Non-null logger passed so the worker logs (bypasses NullLogger default).
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: $testLogger);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-empty-metrics-1',
@@ -343,7 +345,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform);
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: new NullLogger());
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-empty-1',
@@ -383,7 +385,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform);
+        $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: new NullLogger());
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-finish-only-1',

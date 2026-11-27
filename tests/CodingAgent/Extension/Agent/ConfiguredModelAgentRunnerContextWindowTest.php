@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension\Agent;
 
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
@@ -19,6 +20,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Platform\PlatformInterface;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -39,7 +41,7 @@ final class ConfiguredModelAgentRunnerContextWindowTest extends TestCase
             new NullLogger(),
             $this->createStub(ToolCallArgumentResolverInterface::class),
             $this->createStub(ModelResolverInterface::class),
-            new ProviderRequestPreparer(),
+            new ProviderRequestPreparer(compatShaper: new ProviderCompatibilityRequestShaper(), eventDispatcher: new EventDispatcher()),
         );
 
         $this->assertNull($runner->contextWindow('llama_cpp/flash'));
@@ -76,7 +78,7 @@ final class ConfiguredModelAgentRunnerContextWindowTest extends TestCase
             new NullLogger(),
             $this->createStub(ToolCallArgumentResolverInterface::class),
             $this->createStub(ModelResolverInterface::class),
-            new ProviderRequestPreparer(),
+            new ProviderRequestPreparer(compatShaper: new ProviderCompatibilityRequestShaper(), eventDispatcher: new EventDispatcher()),
         );
 
         $this->assertSame(131072, $runner->contextWindow('llama_cpp/flash'));

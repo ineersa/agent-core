@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
@@ -17,7 +20,11 @@ use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -43,6 +50,7 @@ use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -55,6 +63,7 @@ use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
+use Symfony\Component\Clock\MonotonicClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
@@ -82,10 +91,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         };
         $store = new ToolExecutionResultStore();
         $envelope = (new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(),
-            new ToolExecutor('parallel', 2, $store, toolbox: $toolbox),
+            new ToolExecutor('parallel', 2, $store, toolbox: $toolbox, contextAccessor: new StackToolExecutionContextAccessor(), toolSetResolver: PlatformCollaborators::toolSetResolver(), clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger())),
             new InMemoryDeferredToolCompletionRepository(),
             $store,
-            new NullRunOperationalStatusReader(),
+            new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         ))(new ExecuteToolCall('run-susp', 2, 'turn-2-tools-1', 1, 'idemp', 'call-susp', 'bash', ['command' => 'env'], 0));
 
         $this->assertInstanceOf(ToolCallResult::class, $envelope);
@@ -148,7 +157,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertNotNull($waitingEvent);
         $this->assertSame('tool_call', $waitingEvent->payload['continuation_kind'] ?? null);
         $this->assertSame('call-h', $waitingEvent->payload['continuation_ref']['tool_call_id'] ?? null);
-        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued('run-h'), [
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()))->replay(RunState::queued('run-h'), [
             new RunEvent('run-h', 1, 0, RunEventTypeEnum::RunStarted->value, ['payload' => ['messages' => []]]),
             new RunEvent('run-h', 2, 3, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 3, 'step_id' => 'step-h']),
             new RunEvent('run-h', 3, 3, RunEventTypeEnum::LlmStepCompleted->value, [
@@ -253,8 +262,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             commandStore: $store,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
-            maxPendingCommands: 10,
             toolBatchCollector: $collector2,
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            maxPendingCommands: 10,
         );
         $state = RunStateBuilder::running('run-h2')
             ->withStatus(RunStatus::WaitingHuman)
@@ -341,8 +352,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             commandStore: $store,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
-            maxPendingCommands: 10,
             toolBatchCollector: $collector,
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            maxPendingCommands: 10,
         );
         $state = RunStateBuilder::running('run-x')
             ->withStatus(RunStatus::WaitingHuman)
@@ -397,9 +410,13 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 logger: new NullLogger(),
                 finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher()), batches: $batchStore),
+                hookDispatcher: new HookDispatcher([]),
+                tracer: new RunTracer(new NullLogger()),
+                actionValidator: new CoordinationActionValidator(),
             ),
-            commands: new InMemoryCommandStore(),
             handlers: [$handler],
+            commands: new InMemoryCommandStore(),
+            historyTailDiscard: $this->createStub(HistoryTailDiscardInterface::class),
         );
 
         $request = PendingHumanInputRequestDTO::toolCallFromPayload(

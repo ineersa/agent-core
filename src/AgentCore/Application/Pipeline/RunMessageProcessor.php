@@ -29,7 +29,7 @@ final readonly class RunMessageProcessor
         private RunCommit $runCommit,
         iterable $handlers,
         private CommandStoreInterface $commands,
-        private ?HistoryTailDiscardInterface $historyTailDiscard = null,
+        private HistoryTailDiscardInterface $historyTailDiscard,
     ) {
         $this->handlers = [...$handlers];
     }
@@ -64,7 +64,7 @@ final readonly class RunMessageProcessor
                     // A context-mutating action may append history_tail_discarded
                     // before its normal handler transition. Persist this separate
                     // canonical mutation immediately, including no-op handlers.
-                    if (null !== $this->historyTailDiscard && $this->historyTailDiscard->isContextMutatingMessage($message)) {
+                    if ($this->historyTailDiscard->isContextMutatingMessage($message)) {
                         $discardEvent = $this->historyTailDiscard->prepareForwardTailDiscard($runId, $state);
                         if (null !== $discardEvent) {
                             $this->runCommit->commit($state, $state, [$discardEvent], dispatchAfterTurnHooks: false);

@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
@@ -36,6 +39,7 @@ use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 
 /**
  * Slice A contracts: replay retains typed request; mismatched answer rejects;
@@ -55,7 +59,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
             'ui_kind' => 'confirm',
         ];
         $runId = 'run-pending-hitl-replay';
-        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::serializer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), [
+        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::serializer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()))->replay(RunState::queued($runId), [
             new RunEvent($runId, 1, 0, RunEventTypeEnum::RunStarted->value, ['step_id' => 'start', 'messages' => []]),
             new RunEvent($runId, 2, 1, RunEventTypeEnum::WaitingHuman->value, $payload),
         ]);
@@ -184,6 +188,8 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
             deferred: new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $mailbox,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $store->enqueue(new PendingCommand(
@@ -270,9 +276,10 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
             commandStore: $store,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
-            maxPendingCommands: 10,
             toolBatchCollector: $collector,
+            logger: new NullLogger(),
             serializer: AttributeSerializerValidatorTestFactory::serializer(),
+            maxPendingCommands: 10,
         );
 
         $assistant = new AgentMessage(
@@ -361,9 +368,10 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
             commandStore: $store,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
-            maxPendingCommands: 10,
-            logger: $logger,
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: $logger ?? new NullLogger(),
             serializer: AttributeSerializerValidatorTestFactory::serializer(),
+            maxPendingCommands: 10,
         );
     }
 }

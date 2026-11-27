@@ -14,8 +14,8 @@ use Symfony\AI\Platform\Tool\Tool;
 final readonly class DynamicToolDescriptionProcessor implements InputProcessorInterface
 {
     public function __construct(
-        private ?ToolboxInterface $toolbox = null,
-        private ?ToolSetResolverInterface $toolSetResolver = null,
+        private ToolboxInterface $toolbox,
+        private ToolSetResolverInterface $toolSetResolver,
     ) {
     }
 
@@ -25,7 +25,7 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
 
         // Resolver correlation stays in typed Hatfield input and never enters
         // the provider options array.
-        if (null !== $this->toolSetResolver && null !== $invocationInput?->toolsRef) {
+        if (null !== $invocationInput?->toolsRef) {
             if ($this->resolveToolset($options, $input, $invocationInput)) {
                 return;
             }
@@ -37,7 +37,7 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
         if (\is_array($currentTools) && $this->isToolArray($currentTools)) {
             $tools = $currentTools;
         } else {
-            $tools = $this->toolbox?->getTools() ?? [];
+            $tools = $this->toolbox->getTools();
         }
 
         // Callers may pass tools:[] to guarantee no-tools for invocations
@@ -47,7 +47,7 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
         // 'tool_descriptions' is always removed when there are no tools.
         // 'tools' is only removed when the ORIGINAL value was explicitly
         // empty (before toolbox fallback).  This preserves resolver-provided
-        // flat string names when the toolbox is unavailable — those names
+        // flat string names when the toolbox returns no tools — those names
         // are intentionally non-empty and should not be destroyed by the
         // empty-tools guard.
         //
@@ -108,7 +108,6 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
      */
     private function resolveToolset(array &$options, Input $input, ModelInvocationInput $invocationInput): bool
     {
-        \assert(null !== $this->toolSetResolver);
         \assert(null !== $invocationInput->toolsRef);
 
         $activeSet = $this->toolSetResolver->resolve(

@@ -374,9 +374,23 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             $this->assertSame([], $this->store->sessionSnapshots($foreign));
             $sweeper = $this->newManager();
             $this->assertSame(0, $sweeper->cleanupSessionSidecars([$this->runId, $child]));
-            $this->assertNotNull($this->manager->observeNativeByStatusPath($local->statusPath, $this->runId)?->finishedAt);
-            $this->assertNotNull($this->manager->observeNativeByStatusPath($nested->statusPath, $child)?->finishedAt);
-            $this->assertNull($this->manager->observeNativeByStatusPath($other->statusPath, $foreign)?->finishedAt);
+            // Zero grace can return after signaling but before either wrapper exits.
+            // A synthetic stop marker is not a terminal native observation.
+            $deadline = hrtime(true) + 2_000_000_000;
+            foreach ([[$local, $this->runId], [$nested, $child]] as [$owned, $sessionId]) {
+                do {
+                    $observation = $this->manager->observeNativeByStatusPath($owned->statusPath, $sessionId);
+                    $this->assertNotNull($observation);
+                    if (null !== $observation->finishedAt) {
+                        break;
+                    }
+                    \Amp\delay(0.01);
+                } while (hrtime(true) < $deadline);
+                $this->assertNotNull($observation->finishedAt, 'Owned wrapper did not exit: '.$owned->pid);
+            }
+            $foreignObservation = $this->manager->observeNativeByStatusPath($other->statusPath, $foreign);
+            $this->assertNotNull($foreignObservation);
+            $this->assertNull($foreignObservation->finishedAt);
             $this->manager->releaseNativeInvocation($local->statusPath);
             $this->assertFileDoesNotExist($local->statusPath);
         } finally {

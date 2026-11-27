@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
@@ -38,6 +40,7 @@ use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 
 final class ToolCallResultHandlerTest extends TestCase
 {
@@ -129,6 +132,8 @@ final class ToolCallResultHandlerTest extends TestCase
         $advance = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: new CommandMailboxPolicy($commandStore),
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
         $woken = $advance->handle(AdvanceRunMessageBuilder::create('run-shell')
             ->withTurnNo(2)

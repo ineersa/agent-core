@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
@@ -32,11 +33,14 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\ExceedContextSizeException;
 use Symfony\AI\Platform\Exception\ServerException;
@@ -63,6 +67,11 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: $coordinationCollector,
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            toolbox: $this->createStub(ToolboxInterface::class),
+            tracer: new RunTracer(new NullLogger()),
+            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
+            launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         $state = new RunState(
@@ -155,6 +164,11 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: $coordinationCollector,
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            toolbox: $this->createStub(ToolboxInterface::class),
+            tracer: new RunTracer(new NullLogger()),
+            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
+            launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         $existingMessages = [
@@ -249,6 +263,11 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            toolbox: $this->createStub(ToolboxInterface::class),
+            tracer: new RunTracer(new NullLogger()),
+            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
+            launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         $existingMessages = [
@@ -334,6 +353,11 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            toolbox: $this->createStub(ToolboxInterface::class),
+            tracer: new RunTracer(new NullLogger()),
+            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
+            launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         $state = new RunState(
@@ -409,6 +433,11 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            toolbox: $this->createStub(ToolboxInterface::class),
+            tracer: new RunTracer(new NullLogger()),
+            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
+            launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         $existingMessages = [
@@ -505,6 +534,11 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            toolbox: $this->createStub(ToolboxInterface::class),
+            tracer: new RunTracer(new NullLogger()),
+            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
+            launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         $state = new RunState(
@@ -575,6 +609,11 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: $coordinationCollector,
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            toolbox: $this->createStub(ToolboxInterface::class),
+            tracer: new RunTracer(new NullLogger()),
+            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
+            launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         $error = $classifier->classify([
@@ -659,6 +698,11 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: $coordinationCollector,
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            toolbox: $this->createStub(ToolboxInterface::class),
+            tracer: new RunTracer(new NullLogger()),
+            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
+            launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         // Application retry executor marks exhaustion as terminal before LlmStepResultHandler.
@@ -743,7 +787,10 @@ final class LlmStepResultHandlerTest extends TestCase
             normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: $coordinationCollector,
             toolSetResolver: $toolSetResolver,
-            maxParallelism: 4,
+            toolbox: $this->createStub(ToolboxInterface::class),
+            tracer: new RunTracer(new NullLogger()),
+            toolExecutionSettings: PlatformCollaborators::toolSettings(4),
+            launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         $state = new RunState(
@@ -836,7 +883,9 @@ final class LlmStepResultHandlerTest extends TestCase
             normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: $coordinationCollector,
             toolSetResolver: $toolSetResolver,
-            maxParallelism: 3,
+            toolbox: $this->createStub(ToolboxInterface::class),
+            tracer: new RunTracer(new NullLogger()),
+            toolExecutionSettings: PlatformCollaborators::toolSettings(3),
             launchInputStore: $inputStore,
         );
 
@@ -915,6 +964,11 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: $coordinationCollector,
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            toolbox: $this->createStub(ToolboxInterface::class),
+            tracer: new RunTracer(new NullLogger()),
+            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
+            launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         $state = new RunState(
@@ -993,6 +1047,11 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: $coordinationCollector,
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            toolbox: $this->createStub(ToolboxInterface::class),
+            tracer: new RunTracer(new NullLogger()),
+            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
+            launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         $state = new RunState(

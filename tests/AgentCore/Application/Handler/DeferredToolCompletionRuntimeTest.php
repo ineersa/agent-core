@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -25,6 +27,7 @@ use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
@@ -58,7 +61,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         };
 
         $repo = new InMemoryDeferredToolCompletionRepository();
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader());
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class));
 
         $message = $this->executeMessage(toolCallId: 'call-immediate');
 
@@ -99,7 +102,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         };
 
         $repo = new InMemoryDeferredToolCompletionRepository();
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader());
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class));
 
         $message = $this->executeMessage(toolCallId: 'call-deferred');
         $repo->preparePending($this->sampleCorrelation(deferredId: 'def-outcome-1', toolCallId: 'call-deferred'));
@@ -142,7 +145,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         };
 
         $repo = new InMemoryDeferredToolCompletionRepository();
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader());
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class));
         $message = $this->executeMessage(toolCallId: 'call-retry');
         $repo->preparePending($this->sampleCorrelation(deferredId: 'def-outcome-1', toolCallId: 'call-retry'));
 
@@ -272,7 +275,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 
         $commandBus = new TestMessageBus();
         $repo = new InMemoryDeferredToolCompletionRepository();
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader(), eventDispatcher: $dispatcher);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: $dispatcher, launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class));
         $repo->preparePending($this->sampleCorrelation(deferredId: 'lifecycle-exact-1', toolCallId: 'call-exact-id'));
 
         $worker($this->executeMessage(toolCallId: 'call-exact-id'));
@@ -313,7 +316,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         };
 
         $repo = new InMemoryDeferredToolCompletionRepository();
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader(), eventDispatcher: $dispatcher);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: $dispatcher, launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class));
         $message = $this->executeMessage(toolCallId: 'call-redelivery-event');
         $repo->preparePending($this->sampleCorrelation(deferredId: 'lifecycle-redelivery-1', toolCallId: 'call-redelivery-event'));
         $worker($message);
@@ -348,7 +351,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->assertNull($repo->findMetadataByDeferredId($prepared->deferredId)?->readyAt);
 
         $commandBus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker($commandBus, new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader());
+        $worker = new ExecuteToolCallWorker($commandBus, new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class));
         $result = $worker($this->executeMessage(toolCallId: 'call-prepared'));
 
         $this->assertSame(1, $toolExecutor->calls);
@@ -381,7 +384,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $ready = $repo->registerPending($this->sampleCorrelation(deferredId: 'ready-1', toolCallId: 'call-ready'));
         $this->assertNotNull($repo->findMetadataByDeferredId($ready->deferredId)?->readyAt);
 
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader());
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class));
         $this->assertNull($worker($this->executeMessage(toolCallId: 'call-ready')));
         $this->assertSame(0, $toolExecutor->calls);
 
@@ -403,7 +406,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $repo = new InMemoryDeferredToolCompletionRepository();
         $repo->preparePending($this->sampleCorrelation(deferredId: 'fail-1', toolCallId: 'call-fail'));
         $commandBus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker($commandBus, new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader());
+        $worker = new ExecuteToolCallWorker($commandBus, new TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class));
         $result = $worker($this->executeMessage(toolCallId: 'call-fail'));
 
         $this->assertInstanceOf(ToolCallResult::class, $result);

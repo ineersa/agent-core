@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
@@ -45,6 +48,7 @@ use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 
 final class ApplyCommandHandlerTest extends TestCase
 {
@@ -58,6 +62,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -108,6 +115,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -150,6 +160,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -192,6 +205,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -247,6 +263,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -285,6 +304,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -336,6 +358,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -382,6 +407,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -432,6 +460,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -524,6 +555,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -577,6 +611,8 @@ final class ApplyCommandHandlerTest extends TestCase
         $advanceHandler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: new CommandMailboxPolicy($commandStore),
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
         $drainResult = $advanceHandler->handle($commandBus->messages[0], $result->nextState);
         $this->assertSame(RunStatus::Running, $drainResult->nextState->status);
@@ -593,6 +629,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -651,6 +690,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -693,6 +735,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -739,6 +784,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -823,6 +871,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -882,6 +933,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -931,6 +985,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -976,6 +1033,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -1044,6 +1104,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -1100,6 +1163,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -1152,6 +1218,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -1209,6 +1278,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -1257,6 +1329,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -1297,6 +1372,9 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
             maxPendingCommands: 10,
         );
 
@@ -1351,9 +1429,10 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
-            maxPendingCommands: 10,
             toolBatchCollector: $collector,
+            logger: new NullLogger(),
             serializer: AttributeSerializerValidatorTestFactory::serializer(),
+            maxPendingCommands: 10,
         );
 
         $assistant = new AgentMessage(
@@ -1437,9 +1516,10 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
-            maxPendingCommands: 10,
             toolBatchCollector: $collector,
+            logger: new NullLogger(),
             serializer: AttributeSerializerValidatorTestFactory::serializer(),
+            maxPendingCommands: 10,
         );
 
         $assistant = new AgentMessage(
@@ -1546,9 +1626,10 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
-            maxPendingCommands: 10,
             toolBatchCollector: $collector,
+            logger: new NullLogger(),
             serializer: $serializer,
+            maxPendingCommands: 10,
         );
 
         $assistant = new AgentMessage(
@@ -1634,6 +1715,8 @@ final class ApplyCommandHandlerTest extends TestCase
         $replayed = (new RunStateReducer(
             AttributeSerializerValidatorTestFactory::denormalizer(),
             $codec,
+            messageNormalizer: new AgentMessageNormalizer(),
+            assistantMessageFactory: new ReplayAssistantMessageFactory(),
         ))->replay(
             RunState::queued('run-partial-d')->with([
                 'model' => 'test-model',
@@ -1710,9 +1793,10 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
-            maxPendingCommands: 10,
             toolBatchCollector: $collector,
+            logger: new NullLogger(),
             serializer: $serializer,
+            maxPendingCommands: 10,
         );
 
         $assistant = new AgentMessage(

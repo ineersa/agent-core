@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session\Export;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Session\Export\EffectiveModelContextProjector;
@@ -358,6 +360,8 @@ final class EffectiveModelContextProjectorTest extends TestCase
             runStateReducer: new RunStateReducer(
                 AttributeSerializerValidatorTestFactory::denormalizer(),
                 new ToolExecutionEndPayloadCodec($serializer),
+                messageNormalizer: new AgentMessageNormalizer(),
+                assistantMessageFactory: new ReplayAssistantMessageFactory(),
             ),
         );
     }

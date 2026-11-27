@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
@@ -18,6 +19,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -31,6 +33,7 @@ use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
+use Symfony\Component\Clock\MonotonicClock;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\String\Exception\InvalidArgumentException;
@@ -113,7 +116,7 @@ final class OutputCapTest extends TestCase
         $executor = new ToolExecutor(
             defaultMode: 'parallel', maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
-            toolbox: $toolbox, contextAccessor: $accessor, toolResultProcessors: [$processor],
+            toolbox: $toolbox, contextAccessor: $accessor, toolSetResolver: PlatformCollaborators::toolSetResolver(), clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger()), toolResultProcessors: [$processor],
         );
         $call = ToolCallBuilder::create('executor-call')
             ->withToolName('read')->withArguments([])->withRunId('executor-run')

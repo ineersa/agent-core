@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
@@ -26,7 +27,9 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
+use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\Component\Clock\MonotonicClock;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 final class ExtensionToolInvokerTest extends IsolatedKernelTestCase
@@ -94,7 +97,7 @@ final class ExtensionToolInvokerTest extends IsolatedKernelTestCase
                 throw new \RuntimeException('processor failed after cancellation');
             }
         };
-        $executor = new ToolExecutor('sequential', 1, new ToolExecutionResultStore(), $container->get(ToolboxInterface::class), $contexts, $toolSets, [$processor]);
+        $executor = new ToolExecutor('sequential', 1, new ToolExecutionResultStore(), $container->get(ToolboxInterface::class), $contexts, $toolSets, clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger()), toolResultProcessors: [$processor]);
         $cancelled = $makeInvoker($executor)->invoke(new ToolInvocationRequestDTO($run, 'cancelled', 'native_probe', ['cancel' => true]));
         $this->assertTrue($handler->observedCancellation);
         $this->assertSame(RunStatus::Completed, $projection->findOperationalStatus($run)?->status);

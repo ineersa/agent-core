@@ -6,19 +6,29 @@ namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface;
+use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
@@ -48,10 +58,12 @@ use Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Factory;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\AI\Platform\Platform;
+use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -146,6 +158,6 @@ final class SessionHistoryProviderTest extends IsolatedKernelTestCase
         $storage->method('update')->willReturnCallback(static fn (callable $update) => $update($record));
         $provider = Factory::createProvider(ChatGPTAuthFixture::service($storage, $http), $http, new ProjectedSymfonyModelCatalog(['gpt-5.5' => new AiModelDefinition('gpt-5.5')], ResponsesModel::class, 'openai-codex'), name: 'openai-codex');
 
-        return new LlmPlatformAdapter(new NullRunOperationalStatusReader(), new AgentMessageConverter(), new DynamicToolDescriptionProcessor(), new Platform([$provider]), [], null, null, null, new NullLogger(), AttributeSerializerValidatorTestFactory::denormalizer(), $resolver);
+        return new LlmPlatformAdapter(new NullRunOperationalStatusReader(), toolDescriptionProcessor: new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver()), platform: new Platform([$provider]), transformContextHooks: [], convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())), streamObserver: $this->createStub(LlmStreamObserverInterface::class), costCalculator: $this->createStub(CostCalculatorInterface::class), logger: new NullLogger(), denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(), modelResolver: $resolver, providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()), errorClassifier: new LlmProviderErrorClassifier(), toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(), retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class), requestRetryPolicy: new LlmRequestRetryPolicy(), clock: new NativeClock());
     }
 }

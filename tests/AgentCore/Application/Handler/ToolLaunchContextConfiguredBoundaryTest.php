@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
@@ -19,16 +20,19 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
+use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\Source\SourceCollection;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 use Symfony\AI\Platform\Tool\Tool;
+use Symfony\Component\Clock\MonotonicClock;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\Serializer as MessengerSerializer;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -194,9 +198,12 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
             maxParallelism: 4,
-            toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
+            toolbox: $toolbox,
             contextAccessor: $accessor,
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            clock: new MonotonicClock(),
+            tracer: new RunTracer(new NullLogger()),
             toolResultProcessors: [$processor],
         );
 

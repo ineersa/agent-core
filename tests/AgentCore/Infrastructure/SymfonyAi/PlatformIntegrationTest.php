@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 use Ineersa\AgentCore\Contract\DTO\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
+use Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface;
 use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface;
@@ -23,12 +24,17 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiCost;
 use Ineersa\CodingAgent\Config\Ai\AiCostCalculator;
@@ -78,6 +84,7 @@ use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -164,16 +171,21 @@ final class PlatformIntegrationTest extends TestCase
 
         $adapter = new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox, toolSetResolver: PlatformCollaborators::toolSetResolver('web_search')),
             platform: $platform,
             transformContextHooks: [$transformHook],
             convertToLlmHook: $convertHook,
-            streamObserver: null,
-            costCalculator: null,
-            modelResolver: $modelResolver,
+            streamObserver: $this->createStub(LlmStreamObserverInterface::class),
+            costCalculator: $this->createStub(CostCalculatorInterface::class),
             logger: new NullLogger(),
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            modelResolver: $modelResolver,
+            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()),
+            errorClassifier: new LlmProviderErrorClassifier(),
+            toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
+            requestRetryPolicy: new LlmRequestRetryPolicy(),
+            clock: new NativeClock(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -331,16 +343,21 @@ final class PlatformIntegrationTest extends TestCase
 
         $adapter = new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver()),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHook: null,
-            streamObserver: null,
+            convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())),
+            streamObserver: $this->createStub(LlmStreamObserverInterface::class),
             costCalculator: $costCalculator,
-            modelResolver: $modelResolver,
             logger: new NullLogger(),
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            modelResolver: $modelResolver,
+            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()),
+            errorClassifier: new LlmProviderErrorClassifier(),
+            toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
+            requestRetryPolicy: new LlmRequestRetryPolicy(),
+            clock: new NativeClock(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -403,7 +420,7 @@ final class PlatformIntegrationTest extends TestCase
 
             $imageGatingHook = new ImageGatingConvertHook(
                 $checker,
-                new AgentMessageConverter(),
+                new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock()),
             );
 
             $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
@@ -419,15 +436,21 @@ final class PlatformIntegrationTest extends TestCase
 
             $adapter = new LlmPlatformAdapter(
                 statusReader: new NullRunOperationalStatusReader(),
-                messageConverter: new AgentMessageConverter(),
-                toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+                toolDescriptionProcessor: new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver()),
                 platform: $platform,
                 transformContextHooks: [],
                 convertToLlmHook: $imageGatingHook,
-                streamObserver: null,
-                costCalculator: null,
+                streamObserver: $this->createStub(LlmStreamObserverInterface::class),
+                costCalculator: $this->createStub(CostCalculatorInterface::class),
                 logger: new NullLogger(),
                 denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+                modelResolver: PlatformCollaborators::modelResolver(),
+                providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()),
+                errorClassifier: new LlmProviderErrorClassifier(),
+                toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
+                retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
+                requestRetryPolicy: new LlmRequestRetryPolicy(),
+                clock: new NativeClock(),
             );
 
             $adapter->invoke(new ModelInvocationRequest(
@@ -468,16 +491,21 @@ final class PlatformIntegrationTest extends TestCase
         $statusReader = new MutableRunOperationalStatusReader('run-cancel', cancelAfterReads: 2);
         $adapter = new LlmPlatformAdapter(
             statusReader: $statusReader,
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver()),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHook: null,
-            streamObserver: null,
-            costCalculator: null,
-            modelResolver: null,
+            convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())),
+            streamObserver: $this->createStub(LlmStreamObserverInterface::class),
+            costCalculator: $this->createStub(CostCalculatorInterface::class),
             logger: new NullLogger(),
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            modelResolver: PlatformCollaborators::modelResolver(),
+            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()),
+            errorClassifier: new LlmProviderErrorClassifier(),
+            toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
+            requestRetryPolicy: new LlmRequestRetryPolicy(),
+            clock: new NativeClock(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -508,16 +536,21 @@ final class PlatformIntegrationTest extends TestCase
         $statusReader = new MutableRunOperationalStatusReader('run-cancel-end', cancelAfterReads: 2);
         $adapter = new LlmPlatformAdapter(
             statusReader: $statusReader,
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver()),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHook: null,
-            streamObserver: null,
-            costCalculator: null,
-            modelResolver: null,
+            convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())),
+            streamObserver: $this->createStub(LlmStreamObserverInterface::class),
+            costCalculator: $this->createStub(CostCalculatorInterface::class),
             logger: new NullLogger(),
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            modelResolver: PlatformCollaborators::modelResolver(),
+            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()),
+            errorClassifier: new LlmProviderErrorClassifier(),
+            toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
+            requestRetryPolicy: new LlmRequestRetryPolicy(),
+            clock: new NativeClock(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -695,7 +728,7 @@ final class PlatformIntegrationTest extends TestCase
         $assistant = AgentMessage::fromPayload($assistant->toArray());
         $this->assertNotNull($assistant);
         $tool = new AgentMessage('tool', [['type' => 'text', 'text' => 'done']], toolCallId: 'call_one|fc_one', toolName: 'bash');
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
         $contract = OpenResponsesContract::create();
         $model = new ResponsesModel('gpt-5.6-luna');
         $initial = $contract->createRequestPayload($model, $converter->toMessageBagForTarget([$user], 'openai-codex/gpt-5.6-luna'), []);
@@ -732,7 +765,7 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame([], $assistant->metadata['tool_calls'][0]['arguments'] ?? null);
 
         $tool = new AgentMessage('tool', [['type' => 'text', 'text' => 'done']], toolCallId: 'call_zero|fc_zero', toolName: 'task_list');
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
         $contract = OpenResponsesContract::create();
         $model = new ResponsesModel('gpt-6-sol');
         $target = 'openai-codex/gpt-6-sol';
@@ -772,7 +805,7 @@ final class PlatformIntegrationTest extends TestCase
         $assistant = AgentMessage::fromPayload($assistant->toArray());
         $this->assertNotNull($assistant);
         $tool = new AgentMessage('tool', [['type' => 'text', 'text' => 'done']], toolCallId: 'call_one|fc_one', toolName: 'bash');
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
         $contract = OpenResponsesContract::create();
         $model = new ResponsesModel('gpt-5.6-luna');
         $initial = $contract->createRequestPayload($model, $converter->toMessageBagForTarget([$user], 'openai-codex/gpt-5.6-luna'), []);
@@ -1056,16 +1089,21 @@ final class PlatformIntegrationTest extends TestCase
 
         $adapter = new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver()),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHook: null,
-            streamObserver: null,
-            costCalculator: null,
-            modelResolver: null,
+            convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())),
+            streamObserver: $this->createStub(LlmStreamObserverInterface::class),
+            costCalculator: $this->createStub(CostCalculatorInterface::class),
             logger: new NullLogger(),
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            modelResolver: PlatformCollaborators::modelResolver(),
+            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()),
+            errorClassifier: new LlmProviderErrorClassifier(),
+            toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
+            requestRetryPolicy: new LlmRequestRetryPolicy(),
+            clock: new NativeClock(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -1621,7 +1659,6 @@ final class PlatformIntegrationTest extends TestCase
     ): LlmPlatformAdapter {
         return new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
                 new class implements ToolboxInterface {
                     public function execute(ToolCall $toolCall): ToolResult
@@ -1638,16 +1675,20 @@ final class PlatformIntegrationTest extends TestCase
                     {
                         return [];
                     }
-                },
+                }, toolSetResolver: PlatformCollaborators::toolSetResolver(),
             ),
             platform: $platform,
             transformContextHooks: $transformHooks,
-            convertToLlmHook: null,
-            streamObserver: $streamObserver,
-            costCalculator: $costCalculator,
-            modelResolver: null,
+            convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())),
+            streamObserver: $streamObserver ?? $this->createStub(LlmStreamObserverInterface::class),
+            costCalculator: $costCalculator ?? $this->createStub(CostCalculatorInterface::class),
             logger: new NullLogger(),
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            modelResolver: PlatformCollaborators::modelResolver(),
+            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()),
+            errorClassifier: new LlmProviderErrorClassifier(),
+            toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
             requestRetryPolicy: new LlmRequestRetryPolicy(
                 // Keep retries for provider-error coverage, but avoid real wall backoff.
                 maxRetries: $maxRetries,

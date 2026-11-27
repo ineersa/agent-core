@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -18,6 +19,7 @@ use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Message\ToolCallMessage;
+use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -47,7 +49,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
         $cap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($cap, AttributeSerializerValidatorTestFactory::denormalizer());
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
 
         $prefix = str_repeat('A', 250);
         $suffix = str_repeat('B', 250);
@@ -102,7 +104,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 500);
         $cap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($cap, AttributeSerializerValidatorTestFactory::denormalizer());
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
 
         $sentinel = 'DETAILS_SENTINEL_'.bin2hex(random_bytes(8));
         $largeResult = str_repeat('X', 600).$sentinel;
@@ -399,7 +401,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50);
         $outputCap = $this->outputCap($cfg);
         $hook = new OutputCapLlmTransformHook($outputCap, AttributeSerializerValidatorTestFactory::denormalizer());
-        $converter = new AgentMessageConverter();
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
 
         $sentinel = 'READ_SENTINEL_'.bin2hex(random_bytes(8));
         $largeText = str_repeat('R', 200)."\n".$sentinel;

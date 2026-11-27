@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
@@ -28,6 +29,7 @@ use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\ProviderInterface;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -143,7 +145,7 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
             new NullLogger(),
             new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
             $this->modelResolver(),
-            new ProviderRequestPreparer(),
+            new ProviderRequestPreparer(compatShaper: new ProviderCompatibilityRequestShaper(), eventDispatcher: new EventDispatcher()),
         );
 
         $runner->run(new AgentCallRequestDTO(
@@ -208,7 +210,7 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
             new NullLogger(),
             new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
             $this->modelResolver(),
-            new ProviderRequestPreparer(),
+            new ProviderRequestPreparer(compatShaper: new ProviderCompatibilityRequestShaper(), eventDispatcher: new EventDispatcher()),
         );
     }
 

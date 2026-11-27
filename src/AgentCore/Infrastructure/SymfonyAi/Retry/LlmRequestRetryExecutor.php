@@ -8,9 +8,7 @@ use Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use Symfony\Component\Clock\ClockInterface;
-use Symfony\Component\Clock\NativeClock;
 
 /**
  * Retries a platform invocation when the classifier marks the error retryable.
@@ -22,10 +20,10 @@ use Symfony\Component\Clock\NativeClock;
 final class LlmRequestRetryExecutor
 {
     public function __construct(
-        private readonly LlmRequestRetryPolicy $policy = new LlmRequestRetryPolicy(),
-        private readonly ClockInterface $clock = new NativeClock(),
-        private readonly ?LlmRequestRetryObserverInterface $retryObserver = null,
-        private readonly LoggerInterface $logger = new NullLogger(),
+        private readonly LlmRequestRetryPolicy $policy,
+        private readonly ClockInterface $clock,
+        private readonly LlmRequestRetryObserverInterface $retryObserver,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -92,7 +90,7 @@ final class LlmRequestRetryExecutor
                 ...$retryPayload,
             ]);
 
-            if (null !== $this->retryObserver && '' !== $runId) {
+            if ('' !== $runId) {
                 try {
                     $this->retryObserver->onRequestRetry($runId, $stepId, $retryPayload);
                 } catch (\Throwable $exception) {

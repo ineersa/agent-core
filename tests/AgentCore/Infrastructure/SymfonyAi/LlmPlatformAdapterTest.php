@@ -5,25 +5,34 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
+use Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface;
 use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Exception\LlmStreamCancelledException;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\ProviderErrorMapper;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\ResultConverter;
 use Symfony\AI\Platform\Exception\ServerException;
@@ -39,6 +48,8 @@ use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\ResultConverterInterface;
 use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpClient\Exception\TimeoutException;
 use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Contracts\HttpClient\ResponseInterface;
@@ -73,7 +84,7 @@ final class LlmPlatformAdapterTest extends TestCase
         });
         $adapter = $this->createAdapter($platform, maxRetries: 1, logger: $logger);
         $worker = new ExecuteLlmStepWorker(
-            new TestMessageBus(), $adapter, logger: $logger,
+            new TestMessageBus(), $adapter, tracer: new RunTracer(new NullLogger()), logger: $logger,
         );
         $result = $worker(new ExecuteLlmStep(
             runId: 'provider-metadata-run', turnNo: 1, stepId: 'provider-metadata-step',
@@ -413,15 +424,21 @@ final class LlmPlatformAdapterTest extends TestCase
         $logger = new TestLogger();
         $adapter = new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver()),
             platform: $this->createStub(SymfonyPlatformInterface::class),
             transformContextHooks: [],
-            convertToLlmHook: null,
+            convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())),
             streamObserver: $observer,
-            costCalculator: null,
+            costCalculator: $this->createStub(CostCalculatorInterface::class),
             logger: $logger,
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            modelResolver: PlatformCollaborators::modelResolver(),
+            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()),
+            errorClassifier: new LlmProviderErrorClassifier(),
+            toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
+            requestRetryPolicy: new LlmRequestRetryPolicy(),
+            clock: new NativeClock(),
         );
 
         $reflection = new \ReflectionClass(LlmPlatformAdapter::class);
@@ -529,15 +546,19 @@ final class LlmPlatformAdapterTest extends TestCase
     {
         return new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver()),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHook: null,
-            streamObserver: null,
-            costCalculator: null,
+            convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())),
+            streamObserver: $this->createStub(LlmStreamObserverInterface::class),
+            costCalculator: $this->createStub(CostCalculatorInterface::class),
             logger: $logger ?? new NullLogger(),
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            modelResolver: PlatformCollaborators::modelResolver(),
+            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()),
+            errorClassifier: new LlmProviderErrorClassifier(),
+            toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
             requestRetryPolicy: new LlmRequestRetryPolicy(
                 maxRetries: $maxRetries,
                 baseDelayMs: 0,

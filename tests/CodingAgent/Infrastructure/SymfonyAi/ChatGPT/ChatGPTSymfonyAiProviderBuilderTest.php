@@ -7,19 +7,28 @@ namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\ChatGPT;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface;
+use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
@@ -43,12 +52,14 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionLimitException;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionPolicyException;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Platform;
+use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -316,7 +327,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
             $this->assertNull($next->error);
             $native = array_values(array_filter($bodies[1]['input'], static fn (array $item): bool => \in_array($item['type'] ?? null, ['reasoning', 'function_call', 'message'], true) && 'user' !== ($item['role'] ?? null)));
             $this->assertSame($expected, $native);
-            $foreign = (new AgentMessageConverter())->toMessageBagForTarget([$assistant], 'foreign/model')->getMessages()[0];
+            $foreign = (new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock()))->toMessageBagForTarget([$assistant], 'foreign/model')->getMessages()[0];
             $this->assertInstanceOf(AssistantMessage::class, $foreign);
             foreach ($foreign->getContent() as $part) {
                 if ($part instanceof Text) {
@@ -345,10 +356,10 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         $storage->method('update')->willReturnCallback(static fn (callable $update) => $update($record));
         $builder = new ChatGPTSymfonyAiProviderBuilder(ChatGPTAuthFixture::service($storage, $client), $this->createStub(EventDispatcherInterface::class));
 
-        return new LlmPlatformAdapter(new NullRunOperationalStatusReader(), new AgentMessageConverter(), new DynamicToolDescriptionProcessor(), new Platform((new SymfonyAiProviderFactory(
+        return new LlmPlatformAdapter(new NullRunOperationalStatusReader(), toolDescriptionProcessor: new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver()), platform: new Platform((new SymfonyAiProviderFactory(
             new AppConfig(new TuiConfig('default'), new LoggingConfig(), catalog: new HatfieldModelCatalog(new AiConfig(providers: ['openai-codex' => $config ?? $this->config()]))),
             $this->createStub(EventDispatcherInterface::class), [$builder], httpClient: $client,
-        ))->createProviders()), [], null, null, null, new NullLogger(), AttributeSerializerValidatorTestFactory::denormalizer(), requestRetryPolicy: new LlmRequestRetryPolicy(maxRetries: $maxRetries, baseDelayMs: 0));
+        ))->createProviders()), transformContextHooks: [], convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())), streamObserver: $this->createStub(LlmStreamObserverInterface::class), costCalculator: $this->createStub(CostCalculatorInterface::class), logger: new NullLogger(), denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(), modelResolver: PlatformCollaborators::modelResolver(), providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()), errorClassifier: new LlmProviderErrorClassifier(), toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(), retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class), requestRetryPolicy: new LlmRequestRetryPolicy(maxRetries: $maxRetries, baseDelayMs: 0), clock: new NativeClock());
     }
 
     /** @param list<array<string, mixed>> $events */

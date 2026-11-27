@@ -25,36 +25,6 @@ parameters:
 			path: .hatfield/extensions/task-workflow/src/Claude/ProcessExec.php
 
 		-
-			message: '#^Constructor parameter \$tracer of Ineersa\\AgentCore\\Application\\Handler\\ExecuteCompactionStepWorker is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Handler/ExecuteCompactionStepWorker.php
-
-		-
-			message: '#^Constructor parameter \$tracer of Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Handler/ExecuteLlmStepWorker.php
-
-		-
-			message: '#^Constructor parameter \$eventDispatcher of Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Handler/ExecuteToolCallWorker.php
-
-		-
-			message: '#^Constructor parameter \$launchInputStore of Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Handler/ExecuteToolCallWorker.php
-
-		-
-			message: '#^Constructor parameter \$tracer of Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Handler/ExecuteToolCallWorker.php
-
-		-
 			message: '#^Constructor parameter \$action of Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
 			identifier: hatfield.nullableCollaborator
 			count: 1
@@ -67,68 +37,8 @@ parameters:
 			path: src/AgentCore/Application/Handler/ToolExecutor.php
 
 		-
-			message: '#^Constructor parameter \$clock of Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Handler/ToolExecutor.php
-
-		-
-			message: '#^Constructor parameter \$contextAccessor of Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Handler/ToolExecutor.php
-
-		-
-			message: '#^Constructor parameter \$toolSetResolver of Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Handler/ToolExecutor.php
-
-		-
-			message: '#^Constructor parameter \$toolbox of Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Handler/ToolExecutor.php
-
-		-
-			message: '#^Constructor parameter \$tracer of Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Handler/ToolExecutor.php
-
-		-
-			message: '#^Constructor parameter \$preLlmCompactionGuard of Ineersa\\AgentCore\\Application\\Pipeline\\AdvanceRunHandler is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/AdvanceRunHandler.php
-
-		-
-			message: '#^Constructor parameter \$tracer of Ineersa\\AgentCore\\Application\\Pipeline\\AdvanceRunHandler is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/AdvanceRunHandler.php
-
-		-
 			message: '#^Catch block must rethrow, log through Psr\\Log\\LoggerInterface, pass the caught exception to a call, or return a typed result built from it\.$#'
 			identifier: hatfield.silentCatch
-			count: 1
-			path: src/AgentCore/Application/Pipeline/ApplyCommandHandler.php
-
-		-
-			message: '#^Constructor parameter \$logger of Ineersa\\AgentCore\\Application\\Pipeline\\ApplyCommandHandler is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/ApplyCommandHandler.php
-
-		-
-			message: '#^Constructor parameter \$serializer of Ineersa\\AgentCore\\Application\\Pipeline\\ApplyCommandHandler is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/ApplyCommandHandler.php
-
-		-
-			message: '#^Constructor parameter \$toolBatchCollector of Ineersa\\AgentCore\\Application\\Pipeline\\ApplyCommandHandler is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
 			count: 1
 			path: src/AgentCore/Application/Pipeline/ApplyCommandHandler.php
 
@@ -139,70 +49,10 @@ parameters:
 			path: src/AgentCore/Application/Pipeline/HandlerResult.php
 
 		-
-			message: '#^Constructor parameter \$launchInputStore of Ineersa\\AgentCore\\Application\\Pipeline\\LlmStepResultHandler is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/LlmStepResultHandler.php
-
-		-
-			message: '#^Constructor parameter \$toolExecutionSettings of Ineersa\\AgentCore\\Application\\Pipeline\\LlmStepResultHandler is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/LlmStepResultHandler.php
-
-		-
-			message: '#^Constructor parameter \$toolSetResolver of Ineersa\\AgentCore\\Application\\Pipeline\\LlmStepResultHandler is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/LlmStepResultHandler.php
-
-		-
-			message: '#^Constructor parameter \$toolbox of Ineersa\\AgentCore\\Application\\Pipeline\\LlmStepResultHandler is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/LlmStepResultHandler.php
-
-		-
-			message: '#^Constructor parameter \$tracer of Ineersa\\AgentCore\\Application\\Pipeline\\LlmStepResultHandler is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/LlmStepResultHandler.php
-
-		-
-			message: '#^Constructor parameter \$hookDispatcher of Ineersa\\AgentCore\\Application\\Pipeline\\RunCommit is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/RunCommit.php
-
-		-
-			message: '#^Constructor parameter \$tracer of Ineersa\\AgentCore\\Application\\Pipeline\\RunCommit is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/RunCommit.php
-
-		-
-			message: '#^Constructor parameter \$historyTailDiscard of Ineersa\\AgentCore\\Application\\Pipeline\\RunMessageProcessor is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/RunMessageProcessor.php
-
-		-
-			message: '#^Constructor parameter \$tracer of Ineersa\\AgentCore\\Application\\Pipeline\\RunOrchestrator is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/RunOrchestrator.php
-
-		-
 			message: '#^Catch block must rethrow, log through Psr\\Log\\LoggerInterface, pass the caught exception to a call, or return a typed result built from it\.$#'
 			identifier: hatfield.silentCatch
 			count: 1
 			path: src/AgentCore/Application/Pipeline/ToolExecutionEndPayloadCodec.php
-
-		-
-			message: '#^Constructor parameter \$tracer of Ineersa\\AgentCore\\Application\\Pipeline\\TransitionFinalizer is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Application/Pipeline/TransitionFinalizer.php
 
 		-
 			message: '#^Constructor parameter \$humanInputAnswer of Ineersa\\AgentCore\\Application\\Tool\\ToolContext is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
@@ -263,42 +113,6 @@ parameters:
 			identifier: hatfield.nullableCollaborator
 			count: 1
 			path: src/AgentCore/Domain/Run/StartRunInput.php
-
-		-
-			message: '#^Constructor parameter \$toolSetResolver of Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\DynamicToolDescriptionProcessor is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Infrastructure/SymfonyAi/DynamicToolDescriptionProcessor.php
-
-		-
-			message: '#^Constructor parameter \$toolbox of Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\DynamicToolDescriptionProcessor is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Infrastructure/SymfonyAi/DynamicToolDescriptionProcessor.php
-
-		-
-			message: '#^Constructor parameter \$modelResolver of Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\LlmPlatformAdapter is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapter.php
-
-		-
-			message: '#^Constructor parameter \$retryObserver of Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\LlmPlatformAdapter is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapter.php
-
-		-
-			message: '#^Constructor parameter \$eventDispatcher of Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\ProviderRequestPreparer is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Infrastructure/SymfonyAi/ProviderRequestPreparer.php
-
-		-
-			message: '#^Constructor parameter \$retryObserver of Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Retry\\LlmRequestRetryExecutor is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/AgentCore/Infrastructure/SymfonyAi/Retry/LlmRequestRetryExecutor.php
 
 		-
 			message: '#^Catch block must rethrow, log through Psr\\Log\\LoggerInterface, pass the caught exception to a call, or return a typed result built from it\.$#'

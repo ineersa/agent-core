@@ -7,11 +7,14 @@ namespace Ineersa\CodingAgent\Tests\Session\Repair;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
 use Ineersa\AgentCore\Application\Handler\EffectDispatchFailedEvent;
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
@@ -1123,7 +1126,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         return new SessionRepairService(
             eventStore: $eventStore,
             activeRunContext: $activeRunContext,
-            runStateReducer: new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
+            runStateReducer: new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()),
             replayEventPreparer: new ReplayEventPreparer(),
             eventFactory: new EventFactory(),
             toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
@@ -1137,6 +1140,8 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
                 eventStore: $eventStore,
                 logger: new NullLogger(),
                 finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $dispatcherBus, new TestLogger(), events: $dispatcherEvents), locks: $locks),
+                hookDispatcher: new HookDispatcher([]),
+                tracer: new RunTracer(new NullLogger()),
                 actionValidator: self::getContainer()->get(CoordinationActionValidator::class),
             ),
             deferredBatches: self::getContainer()->get(DeferredSubagentBatchRepository::class),
@@ -1218,7 +1223,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             presentations: HistoryEventStoreFactory::presentationFactory());
 
         $events = $eventStore->allFor($runId);
-        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), $events);
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()))->replay(RunState::queued($runId), $events);
 
         return $replayed->messages;
     }
@@ -1245,7 +1250,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             presentations: HistoryEventStoreFactory::presentationFactory());
 
         $events = $eventStore->allFor($runId);
-        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), $events);
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()))->replay(RunState::queued($runId), $events);
         $this->assertSame($expected, $replayed->status);
     }
 

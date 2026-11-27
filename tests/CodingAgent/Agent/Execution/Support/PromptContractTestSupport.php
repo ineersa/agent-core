@@ -8,7 +8,9 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use PHPUnit\Framework\AssertionFailedError;
+use Symfony\Component\Clock\NativeClock;
 
 /**
  * Shared assertions for GF-05 prompt/message contract RED specifications.
@@ -55,7 +57,7 @@ final class PromptContractTestSupport
      */
     public static function providerVisibleSummaries(array $messages): array
     {
-        $bag = (new AgentMessageConverter())->toMessageBag($messages);
+        $bag = (new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock()))->toMessageBag($messages);
         $out = [];
         foreach ($bag->getMessages() as $message) {
             $text = method_exists($message, 'asText') ? $message->asText() : '';

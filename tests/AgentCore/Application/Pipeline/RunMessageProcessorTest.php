@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
@@ -62,6 +65,9 @@ final class RunMessageProcessorTest extends TestCase
             eventStore: $store,
             logger: new NullLogger(),
             finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher, commands: $commands),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
         $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], $commands, $discard);
         $message = new ApplyCommand('run', 0, 'step', 1, 'same', 'follow_up', []);
@@ -93,8 +99,11 @@ final class RunMessageProcessorTest extends TestCase
             eventStore: $store,
             logger: new NullLogger(),
             finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
-        $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], new InMemoryCommandStore());
+        $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], new InMemoryCommandStore(), historyTailDiscard: $this->createStub(HistoryTailDiscardInterface::class));
 
         $processor->process('test', new AdvanceRun('child-run', 1, 'step', 1, 'identity'));
 
@@ -131,8 +140,11 @@ final class RunMessageProcessorTest extends TestCase
             eventStore: $store,
             logger: new NullLogger(),
             finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
-        $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], new InMemoryCommandStore());
+        $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], new InMemoryCommandStore(), historyTailDiscard: $this->createStub(HistoryTailDiscardInterface::class));
 
         $processor->process('test', new AdvanceRun('child-run', 1, 'step', 1, 'child-identity'));
         $processor->process('test', new AdvanceRun('parent-run', 2, 'step', 1, 'parent-identity'));
@@ -178,6 +190,9 @@ final class RunMessageProcessorTest extends TestCase
             eventStore: $store,
             logger: new NullLogger(),
             finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
         $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], new InMemoryCommandStore(), $discard);
         if ($failAppend) {

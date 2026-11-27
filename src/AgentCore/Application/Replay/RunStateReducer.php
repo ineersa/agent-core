@@ -29,8 +29,8 @@ final readonly class RunStateReducer
     public function __construct(
         private DenormalizerInterface $denormalizer,
         private ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
-        private AgentMessageNormalizer $messageNormalizer = new AgentMessageNormalizer(),
-        private ReplayAssistantMessageFactory $assistantMessageFactory = new ReplayAssistantMessageFactory(),
+        private AgentMessageNormalizer $messageNormalizer,
+        private ReplayAssistantMessageFactory $assistantMessageFactory,
     ) {
     }
 

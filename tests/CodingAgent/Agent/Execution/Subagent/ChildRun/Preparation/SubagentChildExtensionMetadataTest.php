@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Preparation;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -20,9 +23,11 @@ use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension;
 use PHPUnit\Framework\Attributes\Group;
+use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Contract\JsonSchema\Factory;
+use Symfony\Component\Clock\MonotonicClock;
 
 /**
  * Test thesis: child launch persists effective extension allowlist in RunMetadata
@@ -52,12 +57,11 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
         $registry->registerTool(name: 'subagent', description: 'launch', parametersJsonSchema: [], handler: $handler, promptLine: 'subagent');
         $executor = new ToolExecutor(
             defaultMode: 'sequential', maxParallelism: 1,
-            toolbox: new RegistryBackedToolbox(
+            resultStore: new ToolExecutionResultStore(), toolbox: new RegistryBackedToolbox(
                 $registry,
                 new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
                 new Factory(new MapToolArgumentsDescriber()),
-            ),
-            resultStore: new ToolExecutionResultStore(),
+            ), contextAccessor: new StackToolExecutionContextAccessor(), toolSetResolver: PlatformCollaborators::toolSetResolver(), clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger()),
         );
         $result = $executor->execute(ToolCallBuilder::create('missing-extension-call')->withToolName('subagent')->withArguments([])->build());
         $this->assertTrue($result->isError);

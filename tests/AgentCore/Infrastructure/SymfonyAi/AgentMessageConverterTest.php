@@ -27,6 +27,7 @@ use Symfony\AI\Platform\Message\UserMessage;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\DependencyInjection\ServicesResetterInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
@@ -37,7 +38,7 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
     protected function setUp(): void
     {
         // Only the service-reset wiring case boots the isolated kernel.
-        $this->converter = new AgentMessageConverter();
+        $this->converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock());
     }
 
     #[DataProvider('payloadCutoffs')]
@@ -119,7 +120,7 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
     public function testIdleExpiryUsesLastCacheUseAndPreservesReturnedBag(): void
     {
         $clock = new MockClock();
-        $converter = new AgentMessageConverter(clock: $clock);
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: $clock);
         $messages = [new AgentMessage('user', [['type' => 'text', 'text' => 'kept']])];
         $bag = $converter->toMessageBagForTarget($messages, 'target');
         $clock->sleep(59);

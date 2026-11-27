@@ -42,12 +42,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         private AgentMessageNormalizer $messageNormalizer,
         private NormalizerInterface $normalizer,
         private ToolBatchCollector $toolBatchCollector,
-        private ?ToolSetResolverInterface $toolSetResolver = null,
-        private ?ToolboxInterface $toolbox = null,
-        private ?RunTracer $tracer = null,
-        private ?ToolExecutionSettingsInterface $toolExecutionSettings = null,
-        private int $maxParallelism = 1,
-        private ?ToolLaunchInputStoreInterface $launchInputStore = null,
+        private ToolSetResolverInterface $toolSetResolver,
+        private ToolboxInterface $toolbox,
+        private RunTracer $tracer,
+        private ToolExecutionSettingsInterface $toolExecutionSettings,
+        private ToolLaunchInputStoreInterface $launchInputStore,
     ) {
     }
 
@@ -261,9 +260,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                     throw new \RuntimeException(\sprintf('Cannot dispatch %s tool call %s: LlmStepResult model is required for immutable child launch inheritance.', $toolCall['name'], $toolCall['id']));
                 }
                 $parentModel = $producingModel;
-                if (null === $this->launchInputStore) {
-                    throw new \LogicException('Child launch input store is required.');
-                }
                 $launchContext = $this->launchInputStore->publish(
                     kind: $toolCall['name'],
                     runId: $runId,
@@ -331,13 +327,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'messages' => $messages,
             ]);
 
-            $mailboxResult = null === $this->tracer
-                ? $this->commandMailboxPolicy->applyPendingStopBoundaryCommands($stateAfterAssistant)
-                : $this->tracer->inSpan('command.application.stop_boundary', [
-                    'run_id' => $runId,
-                    'turn_no' => $state->turnNo,
-                    'step_id' => $message->stepId(),
-                ], fn (): CommandApplicationResult => $this->commandMailboxPolicy->applyPendingStopBoundaryCommands($stateAfterAssistant))
+            $mailboxResult = $this->tracer->inSpan('command.application.stop_boundary', [
+                'run_id' => $runId,
+                'turn_no' => $state->turnNo,
+                'step_id' => $message->stepId(),
+            ], fn (): CommandApplicationResult => $this->commandMailboxPolicy->applyPendingStopBoundaryCommands($stateAfterAssistant))
             ;
 
             $stateAfterBoundary = $mailboxResult->state;
@@ -441,12 +435,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
     {
         $mode = ToolExecutionMode::Sequential;
         $timeoutSeconds = null;
-        $maxParallelism = max(1, $this->maxParallelism);
-
-        if (null !== $this->toolExecutionSettings) {
-            $defaults = ToolExecutionPolicyResolver::fromSettings($this->toolExecutionSettings)->resolve($toolName);
-            $maxParallelism = $defaults->maxParallelism;
-        }
+        $maxParallelism = ToolExecutionPolicyResolver::fromSettings($this->toolExecutionSettings)->resolve($toolName)->maxParallelism;
 
         if (null !== $activeSet) {
             $modeValue = $activeSet->executionModes[$toolName] ?? ToolExecutionMode::Sequential->value;
@@ -468,7 +457,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
      */
     private function resolveActiveSet(?string $toolsRef, int $turnNo, string $runId): ?ActiveToolSet
     {
-        if (null === $this->toolSetResolver || !\is_string($toolsRef) || '' === $toolsRef) {
+        if (!\is_string($toolsRef) || '' === $toolsRef) {
             return null;
         }
 
@@ -480,10 +469,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
      */
     private function resolveToolSchemas(): array
     {
-        if (null === $this->toolbox) {
-            return [];
-        }
-
         $schemas = [];
 
         foreach ($this->toolbox->getTools() as $tool) {

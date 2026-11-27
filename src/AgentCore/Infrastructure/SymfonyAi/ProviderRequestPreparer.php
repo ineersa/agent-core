@@ -15,8 +15,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 final readonly class ProviderRequestPreparer
 {
     public function __construct(
-        private ProviderCompatibilityRequestShaper $compatShaper = new ProviderCompatibilityRequestShaper(),
-        private ?EventDispatcherInterface $eventDispatcher = null,
+        private ProviderCompatibilityRequestShaper $compatShaper,
+        private EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
@@ -44,7 +44,7 @@ final readonly class ProviderRequestPreparer
             ? $requestInput['message_bag']
             : $requestInput;
 
-        $this->eventDispatcher?->dispatch(new ProviderRequestPreparedEvent(
+        $this->eventDispatcher->dispatch(new ProviderRequestPreparedEvent(
             $invocationInput,
             $resolvedModel,
             $model,

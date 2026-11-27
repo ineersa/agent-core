@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
+use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -23,6 +25,7 @@ use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 
 final class AdvanceRunHandlerTest extends TestCase
 {
@@ -35,6 +38,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create('run-advance-handler-1')
@@ -84,6 +89,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: new CommandMailboxPolicy($commandStore),
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
         $first = AdvanceRunMessageBuilder::create($runId)
             ->withTurnNo(2)
@@ -145,6 +152,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create('run-cancel-advance')
@@ -201,6 +210,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create('run-waiting-human-advance')
@@ -250,6 +261,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         // Initial state: turnNo=0 (as after StartRun)
@@ -291,6 +304,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create('run-cancel-noop')
@@ -325,6 +340,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create('run-pending-tools')
@@ -363,6 +380,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create('run-mixed-tools')
@@ -404,6 +423,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create('run-all-resolved')
@@ -464,6 +485,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create('run-compact-completed')
@@ -550,6 +573,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create('run-steer-completed')
@@ -594,6 +619,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create('run-cancel-append-advance')
@@ -657,6 +684,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create('run-post-cancel-append')
@@ -702,6 +731,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create('run-cancel-tools-pending')
@@ -743,6 +774,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
 
         $state = RunStateBuilder::create($runId)

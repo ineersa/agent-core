@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
 use Ineersa\CodingAgent\Config\TuiTranscriptPreviewsConfig;
 use Ineersa\CodingAgent\Config\TuiTranscriptThinkingConfig;
@@ -54,9 +57,11 @@ use Ineersa\Tui\Transcript\TranscriptMountedWidget;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Contract\JsonSchema\Factory;
+use Symfony\Component\Clock\MonotonicClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 
@@ -437,6 +442,10 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
                 new Factory(new MapToolArgumentsDescriber()),
             ),
+            contextAccessor: new StackToolExecutionContextAccessor(),
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            clock: new MonotonicClock(),
+            tracer: new RunTracer(new NullLogger()),
         );
         $call = ToolCallBuilder::create('bash-call')
             ->withToolName('bash')

@@ -4,16 +4,26 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Support;
 
+use Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface;
+use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Model;
@@ -24,11 +34,13 @@ use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\Result\InMemoryRawResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\ResultInterface;
+use Symfony\AI\Platform\Result\Stream\Delta\DeltaInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\ResultConverterInterface;
 use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
+use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
@@ -58,16 +70,46 @@ final class ProviderBoundaryCaptureSupport
 
         $adapter = new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox, $toolSetResolver),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox, $toolSetResolver ?? self::fixedToolSetResolver(array_map(static fn ($tool) => $tool->getName(), $toolbox->getTools()))),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHook: null,
-            streamObserver: null,
-            costCalculator: null,
-            modelResolver: null,
+            convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())),
+            streamObserver: new class implements LlmStreamObserverInterface {
+                public function onStreamStart(string $runId, ?string $stepId): void
+                {
+                }
+
+                public function onDelta(string $runId, ?string $stepId, DeltaInterface $delta): void
+                {
+                }
+
+                public function onStreamEnd(string $runId, ?string $stepId): void
+                {
+                }
+
+                public function onStreamError(string $runId, ?string $stepId, \Throwable $error): void
+                {
+                }
+            },
+            costCalculator: new class implements CostCalculatorInterface {
+                public function calculateCost(string $modelRef, array $usage): float
+                {
+                    return 0.0;
+                }
+            },
             logger: new NullLogger(),
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            modelResolver: PlatformCollaborators::modelResolver(),
+            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()),
+            errorClassifier: new LlmProviderErrorClassifier(),
+            toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
+            retryObserver: new class implements LlmRequestRetryObserverInterface {
+                public function onRequestRetry(string $runId, ?string $stepId, array $retry): void
+                {
+                }
+            },
+            requestRetryPolicy: new LlmRequestRetryPolicy(),
+            clock: new NativeClock(),
         );
 
         return new self($adapter, $client);

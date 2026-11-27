@@ -15,7 +15,7 @@ final readonly class PendingTransitionRecovery
         private PreparedTransitionEventStoreInterface $store,
         private ActiveRunContextInterface $registry,
         private TransitionFinalizer $finalizer,
-        private CoordinationActionValidator $actionValidator = new CoordinationActionValidator(),
+        private CoordinationActionValidator $actionValidator,
     ) {
     }
 

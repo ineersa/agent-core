@@ -47,10 +47,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         private CommandStoreInterface $commandStore,
         private EventFactory $eventFactory,
         private AgentMessageNormalizer $messageNormalizer,
+        private ToolBatchCollector $toolBatchCollector,
+        private LoggerInterface $logger,
+        private NormalizerInterface&DenormalizerInterface $serializer,
         private int $maxPendingCommands = 100,
-        private ?ToolBatchCollector $toolBatchCollector = null,
-        private ?LoggerInterface $logger = null,
-        private (NormalizerInterface&DenormalizerInterface)|null $serializer = null,
     ) {
     }
 
@@ -468,7 +468,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // the exact ExecuteToolCall effect from durable batch answer metadata without
         // mutating RunState again. markApplied runs only after effects succeed.
         if (RunStatus::WaitingHuman !== $state->status
-            && null !== $this->toolBatchCollector
             && null !== $questionId
             && \array_key_exists('answer', $message->payload)
         ) {
@@ -505,9 +504,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             // If Messenger redelivers q1's human_response, do not reject against active
             // q2 — redrive the exact stored call when the durable answer is equivalent.
             // Conflicts / missing stored answer still fail closed below.
-            if (null !== $this->toolBatchCollector
-                && \array_key_exists('answer', $message->payload)
-            ) {
+            if (\array_key_exists('answer', $message->payload)) {
                 $redrive = $this->tryRedriveToolCallHumanResponse($state, $message, $questionId);
                 if (null !== $redrive) {
                     return $redrive;
@@ -609,14 +606,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         PendingHumanInputRequestDTO $activeRequest,
         string $questionId,
     ): HandlerResult {
-        if (null === $this->toolBatchCollector) {
-            return $this->rejectCommand(
-                $state,
-                $message,
-                'human_response rejected: tool-call continuation requires ToolBatchCollector.',
-            );
-        }
-
         if (!\array_key_exists('answer', $message->payload)) {
             return $this->rejectCommand($state, $message, 'Invalid human_response payload: missing answer.');
         }
@@ -710,10 +699,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         ApplyCommand $message,
         string $questionId,
     ): ?HandlerResult {
-        if (null === $this->toolBatchCollector) {
-            return null;
-        }
-
         $turnNo = $state->turnNo;
         $stepId = $state->activeStepId;
         if (null === $stepId || '' === $stepId) {
@@ -760,7 +745,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         try {
             PendingHumanInputRequestDTO::assertToolCallContinuationRef($ref);
         } catch (\InvalidArgumentException $exception) {
-            $this->logger?->warning('Tool-call continuation ref is malformed — ignoring resume.', [
+            $this->logger->warning('Tool-call continuation ref is malformed — ignoring resume.', [
                 'component' => 'apply_command_handler',
                 'event_type' => 'apply.tool_call_continuation_ref_invalid',
                 'run_id' => $runId,
@@ -936,9 +921,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         $syntheticStepId = $state->activeStepId ?? \sprintf('synthetic-cancel-%d', hrtime(true));
         $projectedToolMessageCount = 0;
-        if (null === $this->serializer) {
-            throw new \LogicException('Cancel of deferred tool-call human waits requires a serializer for ToolExecutionEnd payloads.');
-        }
         $codec = new ToolExecutionEndPayloadCodec($this->serializer);
         $storedResults = null;
 
@@ -952,9 +934,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 // stored result only. Never re-emit ToolExecutionEnd or replace
                 // success with a synthetic cancel. Missing stored results fail closed.
                 $collectorStepId = $state->activeStepId ?? $syntheticStepId;
-                if (null === $this->toolBatchCollector) {
-                    throw new \LogicException(\sprintf('Cancel of deferred tool-call human waits requires ToolBatchCollector to project completed call "%s".', $tcId));
-                }
                 $storedResults ??= $this->toolBatchCollector->getStoredResults($runId, $state->turnNo, $collectorStepId);
                 $stored = $storedResults[$tcId] ?? null;
                 if (null === $stored) {
@@ -1021,9 +1000,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             'currentOperation' => null,
         ]);
 
-        if (null === $this->toolBatchCollector) {
-            throw new \LogicException('Cancel of deferred tool-call human waits requires ToolBatchCollector to finalize scheduling.');
-        }
         $postCommitActions = [];
         $cancelFinalization = $this->toolBatchCollector->prepareCancelFinalization($runId, $state->turnNo, $state->activeStepId ?? $syntheticStepId);
         if (null !== $cancelFinalization) {
@@ -1076,10 +1052,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
     /** @param list<AgentMessage> $messages */
     private function appendToolMessage(array &$messages, ToolCallResult $result): void
     {
-        if (null === $this->serializer) {
-            throw new \LogicException('Projecting tool messages during deferred-tool cancel requires a serializer for notification details.');
-        }
-
         $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $result->result['details'] ?? null);
         $messages[] = $this->messageNormalizer->toolMessage($result, $notifications);
     }
@@ -1116,7 +1088,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
     private function logLateHumanResponseNoOp(RunState $state, ?string $questionId, string $reason): void
     {
-        $this->logger?->info('Late human_response ignored', [
+        $this->logger->info('Late human_response ignored', [
             'component' => 'apply_command_handler',
             'event_type' => 'human_response.late_noop',
             'run_id' => $state->runId,

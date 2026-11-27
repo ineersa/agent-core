@@ -371,7 +371,7 @@ abstract class ControllerE2eTestCase extends TestCase
         if (null !== $this->process && !$this->isRunning()) {
             $this->fail(
                 'Controller process exited while '.$context.'. '
-                .'Stderr: '.$this->stderrBuf,
+                .'Stderr (last 4096 bytes): '.substr($this->stderrBuf, -4096),
             );
         }
     }
@@ -390,7 +390,7 @@ abstract class ControllerE2eTestCase extends TestCase
             'Temp dir: '.$this->tempDir,
             'Run ID: '.$this->runId,
             'Controller running: '.($this->isRunning() ? 'yes' : 'no'),
-            'Stderr: '.$this->stderrBuf,
+            'Stderr (last 4096 bytes): '.substr($this->stderrBuf, -4096),
             'Events collected: '.\count($events),
             'Event types: '.implode(', ', array_unique(array_map(
                 static fn (array $e): string => (string) ($e['type'] ?? 'unknown'),
@@ -437,6 +437,9 @@ abstract class ControllerE2eTestCase extends TestCase
             $cmdline = str_replace("\0", ' ', (string) @file_get_contents('/proc/'.$pid.'/cmdline'));
             $role = preg_match('/messenger:consume\s+(\w+)/', $cmdline, $transport) ? $transport[1]
                 : (str_contains($cmdline, 'sqlite-queue:broker') ? 'broker' : 'controller/helper');
+            if ('broker' === $role && preg_match('/--endpoint=(\S+)/', $cmdline, $endpoint)) {
+                $chunks[] = '  Broker endpoint: '.(file_exists($endpoint[1]) ? (string) filetype($endpoint[1]) : 'missing');
+            }
             preg_match('/^State:\s+(.+)$/m', $status, $state);
             $chunks[] = '  PID '.$pid.' '.$role.': '.($state[1] ?? 'unknown')
                 .' wait='.(string) @file_get_contents('/proc/'.$pid.'/wchan');
@@ -458,8 +461,9 @@ abstract class ControllerE2eTestCase extends TestCase
             foreach (['events.jsonl'] as $file) {
                 $path = $sessionDir.'/'.$file;
                 if (is_file($path)) {
-                    $content = (string) file_get_contents($path);
-                    $lines[] = "--- {$file} (".\strlen($content)." bytes) ---\n".$content;
+                    $size = filesize($path);
+                    $tail = (string) file_get_contents($path, false, null, max(0, (int) $size - 4096), 4096);
+                    $lines[] = "--- {$file} ({$size} bytes; last 4096 bytes) ---\n".$tail;
                 }
             }
         }

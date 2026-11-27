@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
 use Ineersa\AgentCore\Application\DTO\RunStateReplayResult;
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
@@ -120,6 +123,9 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
                 eventStore: $eventStore,
                 logger: new NullLogger(),
                 finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
+                hookDispatcher: new HookDispatcher([]),
+                tracer: new RunTracer(new NullLogger()),
+                actionValidator: new CoordinationActionValidator(),
             ),
         );
         $sink = new InMemoryRuntimeEventSink();

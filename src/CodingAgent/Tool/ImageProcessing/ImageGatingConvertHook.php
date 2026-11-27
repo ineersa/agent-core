@@ -24,9 +24,9 @@ use Symfony\AI\Platform\Message\MessageBag;
  * text-only metadata placeholders so the model receives a readable
  * description instead of unusable image data.
  *
- * This hook runs as a ConvertToLlmHook, which is called before the
- * platform adapter's fallback converter. The hook pre-processes messages
- * so the downstream converter never needs to know about model capabilities.
+ * The platform adapter delegates conversion to this configured hook. The
+ * hook pre-processes messages before calling the converter, so the converter
+ * does not need to know about model capabilities.
  */
 final readonly class ImageGatingConvertHook implements ConvertToLlmHookInterface
 {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Support;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator;
 use Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer;
@@ -13,6 +14,7 @@ use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 
@@ -39,6 +41,7 @@ final class TestTransitionFinalizerFactory
             new LocalMetadataCoordinator($transactions, $batches ?? new TestToolBatchStore(), $commands ?? new InMemoryCommandStore(), $dispatcher),
             new TransitionPlanFactory(),
             $locks ?? new RunLockManager(new LockFactory(new InMemoryStore())),
+            tracer: new RunTracer(new NullLogger()),
         );
     }
 }

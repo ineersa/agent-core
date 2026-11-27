@@ -34,9 +34,9 @@ final readonly class ExecuteToolCallWorker
         private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
         private ToolExecutionResultStore $resultStore,
         private RunOperationalStatusReaderInterface $statusReader,
-        private ?RunTracer $tracer = null,
-        private ?EventDispatcherInterface $eventDispatcher = null,
-        private ?ToolLaunchInputStoreInterface $launchInputStore = null,
+        private RunTracer $tracer,
+        private EventDispatcherInterface $eventDispatcher,
+        private ToolLaunchInputStoreInterface $launchInputStore,
     ) {
     }
 
@@ -74,7 +74,7 @@ final readonly class ExecuteToolCallWorker
                 return $outcome;
             };
 
-            $result = null === $this->tracer ? $execute() : $this->tracer->inSpan('turn.execution.tool_worker', [
+            $result = $this->tracer->inSpan('turn.execution.tool_worker', [
                 'run_id' => $message->runId(),
                 'turn_no' => $message->turnNo(),
                 'step_id' => $message->stepId(),
@@ -131,9 +131,6 @@ final readonly class ExecuteToolCallWorker
                     || $reference->kind !== $message->toolName) {
                     throw new \RuntimeException('Tool launch input reference does not match execution envelope.');
                 }
-                if (null === $this->launchInputStore) {
-                    throw new \LogicException('Child launch input store is required.');
-                }
                 $launchContext = $this->launchInputStore->read($reference);
             }
 
@@ -162,15 +159,13 @@ final readonly class ExecuteToolCallWorker
             );
 
             $executeTool = fn () => $this->toolExecutor->execute($toolCall);
-            $toolResult = null === $this->tracer
-                ? $executeTool()
-                : $this->tracer->inSpan('tool.call', [
-                    'run_id' => $message->runId(),
-                    'turn_no' => $message->turnNo(),
-                    'step_id' => $message->stepId(),
-                    'tool_call_id' => $message->toolCallId,
-                    'tool_name' => $message->toolName,
-                ], $executeTool, level: LogLevel::INFO);
+            $toolResult = $this->tracer->inSpan('tool.call', [
+                'run_id' => $message->runId(),
+                'turn_no' => $message->turnNo(),
+                'step_id' => $message->stepId(),
+                'tool_call_id' => $message->toolCallId,
+                'tool_name' => $message->toolName,
+            ], $executeTool, level: LogLevel::INFO);
 
             if ($this->isDeferredOutcome($toolResult)) {
                 $raw = $toolResult->details['raw_result'] ?? null;
@@ -215,6 +210,6 @@ final readonly class ExecuteToolCallWorker
 
     private function dispatchDeferredRegistered(DeferredToolCompletionCorrelation $correlation): void
     {
-        $this->eventDispatcher?->dispatch(new DeferredToolCompletionRegisteredEvent($correlation));
+        $this->eventDispatcher->dispatch(new DeferredToolCompletionRegisteredEvent($correlation));
     }
 }

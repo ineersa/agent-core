@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
@@ -16,6 +19,7 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -35,6 +39,9 @@ final class RunCommitLoggingTest extends TestCase
             eventStore: $eventStore,
             logger: $logger,
             finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
 
         $next = new RunState(
@@ -74,6 +81,9 @@ final class RunCommitLoggingTest extends TestCase
             eventStore: new RecordingEventStore(),
             logger: new TestLogger(),
             finalizer: TestTransitionFinalizerFactory::create(new RecordingEventStore(), new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         ))->commit($previous, $next, []);
 
         $this->assertSame($next, $activeRunContext->requireLoaded('run-1'));
@@ -95,6 +105,9 @@ final class RunCommitLoggingTest extends TestCase
             eventStore: $store,
             logger: new TestLogger(),
             finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus, new TestLogger(), events: new EventDispatcher())),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
 
         try {

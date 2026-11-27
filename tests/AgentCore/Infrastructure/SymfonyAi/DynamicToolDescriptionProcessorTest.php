@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Input;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
@@ -112,9 +113,9 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
 
     /* ───────── Fallback behavior unchanged ───────── */
 
-    public function testWithoutResolverUsesAllToolboxTools(): void
+    public function testWithoutToolsRefUsesAllToolboxTools(): void
     {
-        $processor = new DynamicToolDescriptionProcessor($this->toolbox);
+        $processor = new DynamicToolDescriptionProcessor($this->toolbox, toolSetResolver: PlatformCollaborators::toolSetResolver());
         $input = new Input('test-model', new MessageBag(), []);
 
         $processor->processInput($input);
@@ -190,24 +191,22 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         }
     }
 
-    public function testResolverWithoutToolboxPreservesFlatStringNames(): void
+    public function testResolverWithEmptyToolboxPreservesFlatStringNames(): void
     {
-        // When resolver provides tool names but there is no Symfony Toolbox
-        // to resolve them into Tool objects, the flat string array from
-        // the resolver is still set in options. The processor cannot create
-        // Tool objects without a toolbox, so it preserves the names.
+        // When the toolbox returns no tools, preserve resolver-provided names
+        // rather than discarding them because no Tool objects can be resolved.
         $resolver = $this->createMock(ToolSetResolverInterface::class);
         $resolver->expects($this->once())
             ->method('resolve')
             ->willReturn(new ActiveToolSet(toolNames: ['read'], allowListNames: ['read']));
 
-        $processor = new DynamicToolDescriptionProcessor(toolbox: null, toolSetResolver: $resolver);
+        $processor = new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: $resolver);
         $input = new Input('test-model', new MessageBag());
 
         $processor->processInput($input, new ModelInvocationInput(toolsRef: 'ref'));
 
         $options = $input->getOptions();
-        // Without a toolbox, the resolver's flat names are preserved
+        // An empty toolbox does not discard the resolver's flat names.
         $this->assertArrayHasKey('tools', $options);
         $this->assertSame(['read'], $options['tools']);
     }
@@ -243,7 +242,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
      */
     public function testEmptyToolsArrayRemovesBothToolsAndToolDescriptions(): void
     {
-        $processor = new DynamicToolDescriptionProcessor($this->toolbox);
+        $processor = new DynamicToolDescriptionProcessor($this->toolbox, toolSetResolver: PlatformCollaborators::toolSetResolver());
         $input = new Input('test-model', new MessageBag(), [
             'tools' => [],
             'tool_descriptions' => ['read' => 'should be removed'],
@@ -257,13 +256,12 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
     }
 
     /**
-     * When no toolbox is available and a resolver short-circuits with an
-     * empty active set, the processor also removes 'tools' and
-     * 'tool_descriptions' from options.
+     * Explicit tools:[] is removed even when the toolbox is empty and
+     * no toolsRef is supplied to invoke the resolver.
      */
-    public function testEmptyToolsWithoutToolboxRemovesToolsOption(): void
+    public function testExplicitEmptyToolsWithEmptyToolboxAndNoToolsRefRemovesToolsOption(): void
     {
-        $processor = new DynamicToolDescriptionProcessor(toolbox: null);
+        $processor = new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver());
         $input = new Input('test-model', new MessageBag(), [
             'tools' => [],
         ]);

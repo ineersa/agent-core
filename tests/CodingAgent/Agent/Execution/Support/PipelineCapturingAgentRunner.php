@@ -4,18 +4,25 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Support;
 
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
@@ -52,23 +59,40 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: new NullLogger(),
-            hookDispatcher: null,
             finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
-            commands: new InMemoryCommandStore(),
             handlers: [
                 new StartRunHandler(
                     eventFactory: new EventFactory(),
                     normalizer: TestSerializerFactory::normalizer(),
                 ),
             ],
+            commands: new InMemoryCommandStore(),
+            historyTailDiscard: new class implements HistoryTailDiscardInterface {
+                public function isContextMutatingMessage(AbstractAgentBusMessage $message): bool
+                {
+                    return false;
+                }
+
+                public function prepareForwardTailDiscard(string $runId, RunState $state): ?RunEvent
+                {
+                    return null;
+                }
+
+                public function afterDiscardCommitted(string $runId): void
+                {
+                }
+            },
         );
 
-        return new self(new RunOrchestrator($processor), $activeRunContext);
+        return new self(new RunOrchestrator($processor, tracer: new RunTracer(new NullLogger())), $activeRunContext);
     }
 
     public function start(StartRunInput $input): string
