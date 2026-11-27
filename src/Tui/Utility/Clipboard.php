@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Utility;
 
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 class Clipboard
@@ -99,16 +100,6 @@ class Clipboard
 
     private static function commandExists(string $cmd): bool
     {
-        try {
-            $which = new Process(['which', $cmd]);
-            $which->setTimeout(2);
-            $which->run();
-
-            return $which->isSuccessful();
-        } catch (\Throwable) {
-            // Intentional local degradation: probing for optional system tools is
-            // best-effort; command lookup failures are non-fatal.
-            return false;
-        }
+        return null !== (new ExecutableFinder())->find($cmd);
     }
 }

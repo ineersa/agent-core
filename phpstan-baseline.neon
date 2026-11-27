@@ -567,7 +567,7 @@ parameters:
 		-
 			message: '#^Catch block must rethrow, log through Psr\\Log\\LoggerInterface, pass the caught exception to a call, or return a typed result built from it\.$#'
 			identifier: hatfield.silentCatch
-			count: 2
+			count: 1
 			path: src/Tui/ImagePaste/ClipboardImageReader.php
 
 		-
@@ -609,7 +609,7 @@ parameters:
 		-
 			message: '#^Catch block must rethrow, log through Psr\\Log\\LoggerInterface, pass the caught exception to a call, or return a typed result built from it\.$#'
 			identifier: hatfield.silentCatch
-			count: 2
+			count: 1
 			path: src/Tui/Utility/Clipboard.php
 
 		-

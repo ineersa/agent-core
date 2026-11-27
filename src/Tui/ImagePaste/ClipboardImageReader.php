@@ -22,6 +22,12 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
 {
     private const float PROCESS_TIMEOUT = 5.0;
 
+    private const array NO_IMAGE_STDERR_MARKERS = [
+        'wl-paste' => ['no data'],
+        'xclip' => ['no image/png', 'no image types', 'no selection', 'not available'],
+        'pngpaste' => ['no image', "clipboard doesn't contain", 'clipboard does not contain'],
+    ];
+
     private readonly ExecutableFinder $executableFinder;
 
     private ?Process $process = null;
@@ -144,65 +150,16 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
             );
         }
 
-        if (!$this->timedOut && !$this->tooLarge && !$this->writeFailed) {
-            try {
-                $process->checkTimeout();
-            } catch (ProcessTimedOutException) {
-                $this->timedOut = true;
-                $this->stopCaptureProcess($process);
-            }
-        }
-
-        if (!$this->timedOut && !$this->tooLarge && !$this->writeFailed && $process->isRunning()) {
-            $buffer = $process->getIncrementalOutput();
-            if ('' !== $buffer) {
-                $maxBytes = $this->imageConfig->maxBytes;
-                $length = \strlen($buffer);
-                if ($this->bytesWritten + $length > $maxBytes) {
-                    $this->tooLarge = true;
-                    $this->stopCaptureProcess($process);
-                } else {
-                    $bytesWritten = @fwrite($this->fileHandle, $buffer);
-                    if (false === $bytesWritten) {
-                        $this->writeFailed = true;
-                        $this->stopCaptureProcess($process);
-                    } else {
-                        $this->bytesWritten += $bytesWritten;
-                    }
-                }
-            }
-
+        $this->checkCaptureTimeout($process);
+        if (!$this->captureStopped() && $process->isRunning()) {
+            $this->drainOutput($process);
             if ($process->isRunning()) {
                 return ClipboardImageReadPollResultDTO::pending();
             }
         }
 
-        if (!$this->timedOut && !$this->tooLarge && !$this->writeFailed) {
-            try {
-                $process->checkTimeout();
-            } catch (ProcessTimedOutException) {
-                $this->timedOut = true;
-                $this->stopCaptureProcess($process);
-            }
-        }
-
-        if (!$this->timedOut && !$this->tooLarge && !$this->writeFailed) {
-            $buffer = $process->getIncrementalOutput();
-            if ('' !== $buffer) {
-                $maxBytes = $this->imageConfig->maxBytes;
-                $length = \strlen($buffer);
-                if ($this->bytesWritten + $length > $maxBytes) {
-                    $this->tooLarge = true;
-                } else {
-                    $bytesWritten = @fwrite($this->fileHandle, $buffer);
-                    if (false === $bytesWritten) {
-                        $this->writeFailed = true;
-                    } else {
-                        $this->bytesWritten += $bytesWritten;
-                    }
-                }
-            }
-        }
+        $this->checkCaptureTimeout($process);
+        $this->drainOutput($process);
 
         return ClipboardImageReadPollResultDTO::terminal($this->finalizeCapture());
     }
@@ -219,6 +176,53 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
         }
 
         $this->resetOperation();
+    }
+
+    private function captureStopped(): bool
+    {
+        return $this->timedOut || $this->tooLarge || $this->writeFailed;
+    }
+
+    private function checkCaptureTimeout(Process $process): void
+    {
+        if ($this->captureStopped()) {
+            return;
+        }
+
+        try {
+            $process->checkTimeout();
+        } catch (ProcessTimedOutException) {
+            // Defer the timeout log and user-facing failure to finalizeCapture().
+            $this->timedOut = true;
+            $this->stopCaptureProcess($process);
+        }
+    }
+
+    private function drainOutput(Process $process): void
+    {
+        if ($this->captureStopped()) {
+            return;
+        }
+
+        $buffer = $process->getIncrementalOutput();
+        if ('' === $buffer) {
+            return;
+        }
+
+        if ($this->bytesWritten + \strlen($buffer) > $this->imageConfig->maxBytes) {
+            $this->tooLarge = true;
+            $this->stopCaptureProcess($process);
+
+            return;
+        }
+
+        $bytesWritten = @fwrite($this->fileHandle, $buffer);
+        if (false === $bytesWritten) {
+            $this->writeFailed = true;
+            $this->stopCaptureProcess($process);
+        } else {
+            $this->bytesWritten += $bytesWritten;
+        }
     }
 
     /**
@@ -384,38 +388,17 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
 
     private function isNoImageExit(string $backend, ?int $exit, string $stderr, int $written): bool
     {
-        if ($written > 0) {
+        if ($written > 0 || 1 !== $exit) {
             return false;
         }
 
-        if (null !== $exit && 1 === $exit && '' === $stderr) {
-            return true;
-        }
-
-        if ('wl-paste' === $backend && null !== $exit && 1 === $exit
-            && str_contains(strtolower($stderr), 'no data')) {
+        if ('' === $stderr) {
             return true;
         }
 
         $stderrLower = strtolower($stderr);
-
-        if ('xclip' === $backend && null !== $exit && 1 === $exit) {
-            if ('' === $stderr) {
-                return true;
-            }
-
-            if (str_contains($stderrLower, 'no image/png')
-                || str_contains($stderrLower, 'no image types')
-                || str_contains($stderrLower, 'no selection')
-                || str_contains($stderrLower, 'not available')) {
-                return true;
-            }
-        }
-
-        if ('pngpaste' === $backend && null !== $exit && 1 === $exit) {
-            if (str_contains($stderrLower, 'no image')
-                || str_contains($stderrLower, 'clipboard doesn\'t contain')
-                || str_contains($stderrLower, 'clipboard does not contain')) {
+        foreach (self::NO_IMAGE_STDERR_MARKERS[$backend] ?? [] as $marker) {
+            if (str_contains($stderrLower, $marker)) {
                 return true;
             }
         }
