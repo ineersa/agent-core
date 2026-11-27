@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Export\SessionEventsExportService;
+use Ineersa\Tui\Export\SessionExportOutcomeEnum;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Listener\FooterStateInitializer;
 use Ineersa\Tui\Question\QuestionController;
@@ -303,22 +304,19 @@ final class SubagentLivePickerController
         $outputPath = getcwd().'/hatfield-child-'.$artifactId.'.html';
         $title = \sprintf('Child %s (%s)', $child->agentName, $artifactId);
 
-        try {
-            $message = $this->exportService->exportEventsFile(
-                $eventsPath,
-                $outputPath,
-                $child->agentRunId,
-                $title,
-                '',
-                '',
-            );
-            if (str_starts_with($message, 'Session exported to: ')) {
-                $message = 'Child agent exported to: '.substr($message, \strlen('Session exported to: '));
-            }
-            $this->showPickerFeedback($message);
-        } catch (\RuntimeException $e) {
-            $this->showPickerFeedback($e->getMessage());
-        }
+        $result = $this->exportService->exportEventsFile(
+            $eventsPath,
+            $outputPath,
+            $child->agentRunId,
+            $title,
+            '',
+            '',
+        );
+        $this->showPickerFeedback(
+            SessionExportOutcomeEnum::Exported === $result->outcome
+                ? \sprintf('Child agent exported to: %s', $result->path)
+                : $result->message,
+        );
     }
 
     private function dismissSelected(

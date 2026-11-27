@@ -16,7 +16,10 @@ use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\Component\Filesystem\Filesystem;
 
 final class SessionEventsExportServiceFactory
 {
@@ -38,8 +41,9 @@ final class SessionEventsExportServiceFactory
                     assistantMessageFactory: new ReplayAssistantMessageFactory(),
                 ),
             ),
-            toolbox: $toolbox,
-            logger: $logger,
+            toolbox: $toolbox ?? new Toolbox([]),
+            filesystem: new Filesystem(),
+            logger: $logger ?? new NullLogger(),
         );
     }
 }

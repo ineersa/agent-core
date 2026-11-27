@@ -7,10 +7,12 @@ namespace Ineersa\Tui\Export;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\CodingAgent\Session\Export\EffectiveModelContextProjector;
 use Ineersa\CodingAgent\Session\Export\EffectiveModelContextSnapshot;
-use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Export\DTO\SessionExportResultDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Tool\Tool;
+use Symfony\Component\Filesystem\Exception\IOException;
+use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * Exports canonical session events as JSONL (byte copy) or HTML (effective model context).
@@ -19,8 +21,9 @@ final class SessionEventsExportService
 {
     public function __construct(
         private readonly EffectiveModelContextProjector $contextProjector,
-        private readonly ?ToolboxInterface $toolbox = null,
-        private readonly ?LoggerInterface $logger = null,
+        private readonly ToolboxInterface $toolbox,
+        private readonly Filesystem $filesystem,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -31,122 +34,135 @@ final class SessionEventsExportService
         string $sessionName = '',
         string $sessionCwd = '',
         string $createdAt = '',
-    ): string {
-        if (!is_file($eventsPath) || !is_readable($eventsPath)) {
-            throw new \RuntimeException(\sprintf('Session %s has no events to export.', $headerSessionId));
+    ): SessionExportResultDTO {
+        if (!is_file($eventsPath)) {
+            return $this->noEvents($headerSessionId, $outputPath);
         }
-        $eventsContent = file_get_contents($eventsPath);
-        if (false === $eventsContent || '' === trim($eventsContent)) {
-            throw new \RuntimeException(\sprintf('Session %s has no events to export.', $headerSessionId));
+
+        try {
+            $eventsContent = $this->filesystem->readFile($eventsPath);
+        } catch (IOException $exception) {
+            return $this->failed($headerSessionId, $outputPath, 'session_export.events_read_failed', \sprintf('Cannot read session events: %s', $eventsPath), $exception);
         }
+
+        if ('' === trim($eventsContent)) {
+            return $this->noEvents($headerSessionId, $outputPath);
+        }
+
         if (str_ends_with($outputPath, '.jsonl')) {
-            $result = $this->exportJsonl($eventsPath, $outputPath);
-            if ('error' === $result->role) {
-                throw new \RuntimeException($result->text);
-            }
-
-            return $result->text;
-        }
-        $result = $this->exportHtml($headerSessionId, $eventsContent, $outputPath, $sessionName, $sessionCwd, $createdAt);
-        if ('error' === $result->role || str_contains($result->text, 'no events')) {
-            throw new \RuntimeException($result->text);
+            return $this->exportJsonl($headerSessionId, $eventsPath, $outputPath);
         }
 
-        return $result->text;
+        return $this->exportHtml($headerSessionId, $eventsContent, $outputPath, $sessionName, $sessionCwd, $createdAt);
     }
 
-    public static function escapeHtml(string $text): string
+    private static function escapeHtml(string $text): string
     {
         return htmlspecialchars($text, \ENT_QUOTES | \ENT_SUBSTITUTE, 'UTF-8');
     }
 
-    public function exportJsonl(string $sourcePath, string $outputPath): TranscriptMessage
+    /**
+     * Byte-copies the live events file with native copy(), which refuses a
+     * destination that is the source itself (directly or through a symlink).
+     * Rewriting the session's own events.jsonl would drop events appended
+     * meanwhile and change the inode that JsonlAppendJournal checks.
+     */
+    private function exportJsonl(string $sessionId, string $eventsPath, string $outputPath): SessionExportResultDTO
     {
-        $dir = \dirname($outputPath);
-        if (!is_dir($dir)) {
-            if (!@mkdir($dir, 0777, true) && !is_dir($dir)) {
-                return new TranscriptMessage(
-                    \sprintf('Cannot create directory: %s', $dir),
-                    'error',
-                );
-            }
+        try {
+            $this->filesystem->mkdir(\dirname($outputPath));
+        } catch (IOException $exception) {
+            return $this->writeFailed($sessionId, $outputPath, $exception);
         }
 
-        if (false === @copy($sourcePath, $outputPath)) {
-            return new TranscriptMessage(
-                \sprintf('Failed to write export to: %s', $outputPath),
-                'error',
-            );
+        error_clear_last();
+        if (!@copy($eventsPath, $outputPath)) {
+            $reason = error_get_last()['message'] ?? 'copy() refused the destination; it may be the session events file itself.';
+
+            return $this->writeFailed($sessionId, $outputPath, new IOException($reason, path: $outputPath));
         }
 
-        return new TranscriptMessage(
-            \sprintf('Session exported to: %s', $outputPath),
-        );
+        return new SessionExportResultDTO(SessionExportOutcomeEnum::Exported, $outputPath);
     }
 
     /**
      * Generate a standalone HTML export of the effective current model context.
      */
-    public function exportHtml(
+    private function exportHtml(
         string $sessionId,
         string $eventsContent,
         string $outputPath,
-        string $sessionName = '',
-        string $sessionCwd = '',
-        string $createdAt = '',
-    ): TranscriptMessage {
+        string $sessionName,
+        string $sessionCwd,
+        string $createdAt,
+    ): SessionExportResultDTO {
         try {
             $snapshot = $this->contextProjector->project($eventsContent, $sessionId);
         } catch (\RuntimeException $exception) {
-            $this->logger?->warning('Session HTML export failed to project model context.', [
-                'component' => 'session_export',
-                'event_type' => 'session_export.context_projection_failed',
-                'session_id' => $sessionId,
-                'error_class' => $exception::class,
-                'error_message' => $exception->getMessage(),
-            ]);
-
-            return new TranscriptMessage($exception->getMessage(), 'error');
+            return $this->failed($sessionId, $outputPath, 'session_export.context_projection_failed', $exception->getMessage(), $exception);
         }
 
         if ([] === $snapshot->messages && null === $snapshot->compaction) {
-            return new TranscriptMessage(
-                \sprintf('Session %s has no events to export.', $sessionId),
-                'system',
-                'muted',
-            );
+            return $this->noEvents($sessionId, $outputPath);
         }
 
         $displayName = '' !== $sessionName ? $sessionName : 'Session '.$sessionId;
         $title = self::escapeHtml($displayName);
         $html = $this->buildHtml($title, $sessionId, $sessionCwd, $createdAt, $snapshot);
 
-        $dir = \dirname($outputPath);
-        if (!is_dir($dir)) {
-            if (!@mkdir($dir, 0777, true) && !is_dir($dir)) {
-                return new TranscriptMessage(
-                    \sprintf('Cannot create directory: %s', $dir),
-                    'error',
-                );
-            }
+        try {
+            $this->filesystem->dumpFile($outputPath, $html);
+        } catch (IOException $exception) {
+            return $this->writeFailed($sessionId, $outputPath, $exception);
         }
 
-        if (false === @file_put_contents($outputPath, $html)) {
-            return new TranscriptMessage(
-                \sprintf('Failed to write export to: %s', $outputPath),
-                'error',
-            );
-        }
+        return new SessionExportResultDTO(SessionExportOutcomeEnum::Exported, $outputPath);
+    }
 
-        return new TranscriptMessage(
-            \sprintf('Session exported to: %s', $outputPath),
+    private function noEvents(string $sessionId, string $outputPath): SessionExportResultDTO
+    {
+        return new SessionExportResultDTO(
+            SessionExportOutcomeEnum::NoEvents,
+            $outputPath,
+            \sprintf('Session %s has no events to export.', $sessionId),
         );
+    }
+
+    private function writeFailed(string $sessionId, string $outputPath, IOException $exception): SessionExportResultDTO
+    {
+        return $this->failed($sessionId, $outputPath, 'session_export.write_failed', \sprintf('Failed to write export to: %s', $outputPath), $exception);
+    }
+
+    /**
+     * Export failures degrade to a Failed result shown to the user; the cause is logged here.
+     */
+    private function failed(
+        string $sessionId,
+        string $outputPath,
+        string $eventType,
+        string $message,
+        \Throwable $exception,
+    ): SessionExportResultDTO {
+        $this->logger->warning('Session export failed.', [
+            'component' => 'session_export',
+            'event_type' => $eventType,
+            'session_id' => $sessionId,
+            'error_class' => $exception::class,
+            'error_message' => $exception->getMessage(),
+        ]);
+
+        $cause = $exception->getMessage();
+        if ('' !== $cause && $cause !== $message) {
+            $message .= ': '.$cause;
+        }
+
+        return new SessionExportResultDTO(SessionExportOutcomeEnum::Failed, $outputPath, $message);
     }
 
     /**
      * @param array<string, mixed> $data
      */
-    public static function strFromArray(array $data, string $key, string $default = ''): string
+    private static function strFromArray(array $data, string $key, string $default = ''): string
     {
         $value = $data[$key] ?? null;
 
@@ -156,7 +172,7 @@ final class SessionEventsExportService
     /**
      * @param array<string, mixed> $data
      */
-    public static function intFromArray(array $data, string $key, int $default = 0): int
+    private static function intFromArray(array $data, string $key, int $default = 0): int
     {
         $value = $data[$key] ?? null;
 
@@ -221,7 +237,7 @@ HTML;
     private function renderContext(EffectiveModelContextSnapshot $snapshot): string
     {
         $html = '';
-        $toolDefinitionsHtml = $this->renderActiveToolDefinitions();
+        $toolDefinitionsHtml = $this->renderActiveToolDefinitions($snapshot->availableTools);
         $toolsPending = '' !== $toolDefinitionsHtml;
 
         if (null !== $snapshot->compaction) {
@@ -447,14 +463,24 @@ HTML;
         return $html;
     }
 
-    private function renderActiveToolDefinitions(): string
+    /**
+     * Renders host tool definitions only for the tools the session's latest retained
+     * LLM snapshot recorded. Without that snapshot the host toolbox cannot be
+     * attributed to the exported session (child runs and restricted tool sets see a
+     * different set), so no definitions are rendered.
+     *
+     * @param list<string>|null $availableTools
+     */
+    private function renderActiveToolDefinitions(?array $availableTools): string
     {
-        if (null === $this->toolbox) {
+        if (null === $availableTools || [] === $availableTools) {
             return '';
         }
 
-        /** @var list<Tool> $tools */
-        $tools = $this->toolbox->getTools();
+        $tools = array_values(array_filter(
+            $this->toolbox->getTools(),
+            static fn (Tool $tool): bool => \in_array($tool->getName(), $availableTools, true),
+        ));
         if ([] === $tools) {
             return '';
         }

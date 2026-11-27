@@ -163,7 +163,9 @@ final class ExportCommandHandlerTest extends TestCase
         $result = $handler->handle(new SlashCommand('export', '', '/export'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('no events', $result->text);
+        $this->assertSame('system', $result->role);
+        $this->assertSame('muted', $result->style);
+        $this->assertSame('Session test-session has no events to export.', $result->text);
     }
 
     // ── HTML export with populated session ─────────────────────────────────
@@ -375,7 +377,42 @@ final class ExportCommandHandlerTest extends TestCase
     }
 
     #[Test]
-    public function htmlExportOmitsToolDefinitionsWhenToolboxEmpty(): void
+    public function htmlExportListsOnlyToolDefinitionsFromSessionSnapshot(): void
+    {
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Restricted.']],
+                ],
+                'stop_reason' => 'end_turn',
+                'available_tools' => ['read'],
+                'available_tools_schema_tokens_estimate' => 7,
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/restricted-tool-definitions.html';
+        $handler = $this->createHandler('test-session', $this->createToolbox([
+            new Tool(new ExecutionReference(self::class), 'read', 'Read a text file', null),
+            new Tool(new ExecutionReference(self::class), 'bash', 'Run shell commands', null),
+            new Tool(new ExecutionReference(self::class), 'subagent', 'Spawn a child agent', null),
+        ]));
+        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $html = (string) file_get_contents($path);
+        $this->assertStringContainsString('Tool definitions (1)', $html);
+        $this->assertStringContainsString('class="tool-definition-name">read</div>', $html);
+        $this->assertStringNotContainsString('class="tool-definition-name">bash</div>', $html);
+        $this->assertStringNotContainsString('class="tool-definition-name">subagent</div>', $html);
+    }
+
+    #[Test]
+    public function htmlExportOmitsToolDefinitionsWithoutSessionToolSnapshot(): void
     {
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
@@ -390,13 +427,36 @@ final class ExportCommandHandlerTest extends TestCase
         ]);
 
         $path = $this->projectDir.'/no-tool-definitions.html';
-        $handler = $this->createHandler('test-session', $this->createToolbox([]));
+        $handler = $this->createHandler('test-session', $this->createToolbox([
+            new Tool(new ExecutionReference(self::class), 'read', 'Read a text file', null),
+        ]));
         $handler->handle(new SlashCommand('export', $path, '/export '.$path));
 
         $html = (string) file_get_contents($path);
         $this->assertStringNotContainsString('class="tool-definitions"', $html);
         $this->assertStringNotContainsString('Tool definitions (', $html);
         $this->assertStringContainsString('System instructions', $html);
+    }
+
+    #[Test]
+    public function writeFailureIsErrorEvenWhenMessageMentionsEmpty(): void
+    {
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
+            ]),
+        ]);
+        // A regular file where the export directory should be makes the write fail.
+        $blocker = $this->projectDir.'/empty';
+        file_put_contents($blocker, '');
+        $path = $blocker.'/export.html';
+
+        $result = $this->createHandler('test-session')->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('error', $result->role);
+        $this->assertStringStartsWith('Failed to write export to: '.$path.': ', $result->text);
     }
 
     #[Test]

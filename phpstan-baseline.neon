@@ -565,18 +565,6 @@ parameters:
 			path: src/Tui/Completion/FileMentionIndexReader.php
 
 		-
-			message: '#^Constructor parameter \$logger of Ineersa\\Tui\\Export\\SessionEventsExportService is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/Tui/Export/SessionEventsExportService.php
-
-		-
-			message: '#^Constructor parameter \$toolbox of Ineersa\\Tui\\Export\\SessionEventsExportService is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/Tui/Export/SessionEventsExportService.php
-
-		-
 			message: '#^Catch block must rethrow, log through Psr\\Log\\LoggerInterface, pass the caught exception to a call, or return a typed result built from it\.$#'
 			identifier: hatfield.silentCatch
 			count: 2
@@ -587,12 +575,6 @@ parameters:
 			identifier: hatfield.nullableCollaborator
 			count: 1
 			path: src/Tui/Listener/AgentsMainCommandHandler.php
-
-		-
-			message: '#^Catch block must rethrow, log through Psr\\Log\\LoggerInterface, pass the caught exception to a call, or return a typed result built from it\.$#'
-			identifier: hatfield.silentCatch
-			count: 1
-			path: src/Tui/Listener/ExportCommandHandler.php
 
 		-
 			message: '#^Constructor parameter \$memorySnapshotLogger of Ineersa\\Tui\\Listener\\TickPollListener is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'

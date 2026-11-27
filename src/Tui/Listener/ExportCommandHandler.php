@@ -10,6 +10,7 @@ use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Export\SessionEventsExportService;
+use Ineersa\Tui\Export\SessionExportOutcomeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 
 /**
@@ -77,25 +78,20 @@ final class ExportCommandHandler implements SlashCommandHandler
             $createdAt = null !== $session ? $session->createdAt->format(\DateTimeInterface::ATOM) : '';
         }
 
-        try {
-            $message = $this->exportService->exportEventsFile(
-                $eventsPath,
-                $outputPath,
-                $sessionId,
-                $sessionName,
-                $sessionCwd,
-                $createdAt,
-            );
+        $result = $this->exportService->exportEventsFile(
+            $eventsPath,
+            $outputPath,
+            $sessionId,
+            $sessionName,
+            $sessionCwd,
+            $createdAt,
+        );
 
-            return new TranscriptMessage($message);
-        } catch (\RuntimeException $e) {
-            $text = $e->getMessage();
-            if (str_contains($text, 'no events') || str_contains($text, 'No events') || str_contains($text, 'empty')) {
-                return new TranscriptMessage($text, 'system', 'muted');
-            }
-
-            return new TranscriptMessage($text, 'error');
-        }
+        return match ($result->outcome) {
+            SessionExportOutcomeEnum::Exported => new TranscriptMessage(\sprintf('Session exported to: %s', $result->path)),
+            SessionExportOutcomeEnum::NoEvents => new TranscriptMessage($result->message, 'system', 'muted'),
+            SessionExportOutcomeEnum::Failed => new TranscriptMessage($result->message, 'error'),
+        };
     }
 
     private function parsePathArg(string $args): string|false|null
