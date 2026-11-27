@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
@@ -16,12 +17,9 @@ use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
-use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Run\DTO\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
@@ -41,7 +39,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         CoreCommandKind::FollowUp,
     ];
 
-    private const string SYNTHETIC_USER_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
+    private ToolMessageProjector $toolMessageProjector;
 
     public function __construct(
         private CommandStoreInterface $commandStore,
@@ -52,6 +50,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         private NormalizerInterface&DenormalizerInterface $serializer,
         private int $maxPendingCommands = 100,
     ) {
+        $this->toolMessageProjector = new ToolMessageProjector($messageNormalizer, $serializer);
     }
 
     public function supports(object $message): bool
@@ -268,97 +267,21 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ];
         }
 
-        // Idempotent cancel: when cancellation is already in progress,
-        // accept the command without changing state (no version bump).
-        // Repeated cancel during Cancelling should not be rejected.
-        if (RunStatus::Cancelling === $state->status) {
-            if (!self::hasActiveCancellationWork($state)) {
-                $terminalSpecs = [...$eventSpecs, [
-                    'type' => RunEventTypeEnum::AgentEnd->value,
-                    'payload' => [
-                        'reason' => 'cancelled',
-                    ],
-                ]];
-                $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $terminalSpecs);
-
-                $postCommitActions = [];
-                if ($hasPendingAppendMessage) {
-                    $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'post-cancel-advance');
-                    $postCommitActions[] = $followUpAdvance;
-                }
-
-                return new HandlerResult(
-                    nextState: $state->with([
-                        'status' => RunStatus::Cancelled,
-                        'version' => $state->version + 1,
-                        'lastSeq' => $state->lastSeq + \count($events),
-                        'isStreaming' => false,
-                        'streamingMessage' => null,
-                        'pendingToolCalls' => [],
-                        'currentToolCalls' => [],
-                        'pendingHumanInputRequests' => [],
-                        'errorMessage' => $reason,
-                        'activeStepId' => null,
-                        'currentOperation' => null,
-                    ]),
-                    events: $events,
-                    postCommitActions: $postCommitActions,
-                );
-            }
-
-            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
-
-            $noopState = $state->with([
-                'version' => $state->version + 1,
-                'lastSeq' => $state->lastSeq + \count($events),
-            ]);
-
-            return new HandlerResult(
-                nextState: $noopState,
-                events: $events,
-            );
+        // Without active work no later result will arrive to finish cancellation.
+        if (!self::hasActiveCancellationWork($state)) {
+            return $this->finishCancellation($state, $reason, $eventSpecs, $hasPendingAppendMessage);
         }
 
-        $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
-
-        // When there is no active work to finish cancellation (not streaming,
-        // no unresolved tool calls), terminalize immediately
-        // to Cancelled.  Otherwise the run can get stuck Cancelling with no
-        // later result/effect to transition it out — the classic cancel hang.
-        if (!self::hasActiveCancellationWork($state)) {
-            // No active work — terminalize to Cancelled with AgentEnd.
-            // Reuse the already-built $eventSpecs (applied + stale rejections)
-            // and append the agent_end event at the correct sequence number.
-            $eventSpecs[] = [
-                'type' => RunEventTypeEnum::AgentEnd->value,
-                'payload' => [
-                    'reason' => 'cancelled',
-                ],
-            ];
-
+        // Accept repeated cancellation while work drains without changing its lifecycle state.
+        if (RunStatus::Cancelling === $state->status) {
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-            $nextState = $state->with([
-                'status' => RunStatus::Cancelled,
-                'version' => $state->version + 1,
-                'lastSeq' => $state->lastSeq + \count($events),
-                'errorMessage' => $reason,
-                'currentToolCalls' => [],
-                'pendingHumanInputRequests' => [],
-                'activeStepId' => null,
-                'currentOperation' => null,
-            ]);
-
-            $postCommitActions = [];
-            if ($hasPendingAppendMessage) {
-                $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'post-cancel-advance');
-                $postCommitActions[] = $followUpAdvance;
-            }
-
             return new HandlerResult(
-                nextState: $nextState,
+                nextState: $state->with([
+                    'version' => $state->version + 1,
+                    'lastSeq' => $state->lastSeq + \count($events),
+                ]),
                 events: $events,
-                postCommitActions: $postCommitActions,
             );
         }
 
@@ -377,6 +300,8 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 $hasPendingAppendMessage,
             );
         }
+
+        $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
         $nextState = $state->with([
             'status' => RunStatus::Cancelling,
@@ -909,7 +834,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         bool $hasPendingAppendMessage,
     ): HandlerResult {
         $messages = $state->messages;
-        $toolCallInfoMap = $this->buildToolCallInfoMap($state);
+        $toolCallInfoMap = $this->toolMessageProjector->buildToolCallInfoMap($state);
         $pendingToolCalls = $state->pendingToolCalls;
         $batchIds = array_keys($pendingToolCalls);
         usort($batchIds, static function (string $a, string $b) use ($toolCallInfoMap): int {
@@ -926,7 +851,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         foreach ($batchIds as $tcId) {
             if (true === ($pendingToolCalls[$tcId] ?? null)) {
-                if ($this->stateContainsToolMessageForId($messages, $tcId)) {
+                if ($this->toolMessageProjector->stateContainsToolMessageForId($messages, $tcId)) {
                     continue;
                 }
 
@@ -939,7 +864,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 if (null === $stored) {
                     throw new \LogicException(\sprintf('Cannot project completed tool call "%s" during deferred-tool cancel: stored result is missing for turn=%d step=%s.', $tcId, $state->turnNo, $collectorStepId));
                 }
-                $this->appendToolMessage(messages: $messages, result: $stored);
+                $this->toolMessageProjector->appendToolMessage(messages: $messages, result: $stored);
                 ++$projectedToolMessageCount;
 
                 continue;
@@ -948,7 +873,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             $info = $toolCallInfoMap[$tcId] ?? null;
             $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
             $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
-            $syntheticResult = $this->syntheticCancelledToolResult(
+            $syntheticResult = ToolCallResultFactory::syntheticCancelledToolResult(
                 runId: $runId,
                 turnNo: $state->turnNo,
                 stepId: $syntheticStepId,
@@ -961,7 +886,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'type' => RunEventTypeEnum::ToolExecutionEnd->value,
                 'payload' => $codec->toEventPayload($syntheticResult),
             ];
-            $this->appendToolMessage(messages: $messages, result: $syntheticResult);
+            $this->toolMessageProjector->appendToolMessage(messages: $messages, result: $syntheticResult);
             ++$projectedToolMessageCount;
         }
 
@@ -976,114 +901,59 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ];
         }
 
+        $cancelFinalization = $this->toolBatchCollector->prepareCancelFinalization($runId, $state->turnNo, $state->activeStepId ?? $syntheticStepId);
+
+        return $this->finishCancellation(
+            $state->with(['messages' => $messages]),
+            $reason,
+            $eventSpecs,
+            $hasPendingAppendMessage,
+            null === $cancelFinalization ? [] : [$cancelFinalization],
+        );
+    }
+
+    /**
+     * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
+     * @param list<object>                                             $postCommitActions
+     */
+    private function finishCancellation(
+        RunState $state,
+        string $reason,
+        array $eventSpecs,
+        bool $hasPendingAppendMessage,
+        array $postCommitActions = [],
+    ): HandlerResult {
         $eventSpecs[] = [
             'type' => RunEventTypeEnum::AgentEnd->value,
-            'payload' => [
-                'reason' => 'cancelled',
-            ],
+            'payload' => ['reason' => 'cancelled', 'error_message' => $reason],
         ];
-
-        $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
-
-        $nextState = $state->with([
-            'status' => RunStatus::Cancelled,
-            'version' => $state->version + 1,
-            'lastSeq' => $state->lastSeq + \count($events),
-            'isStreaming' => false,
-            'streamingMessage' => null,
-            'pendingToolCalls' => [],
-            'currentToolCalls' => [],
-            'pendingHumanInputRequests' => [],
-            'messages' => $messages,
-            'errorMessage' => $reason,
-            'activeStepId' => null,
-            'currentOperation' => null,
-        ]);
-
-        $postCommitActions = [];
-        $cancelFinalization = $this->toolBatchCollector->prepareCancelFinalization($runId, $state->turnNo, $state->activeStepId ?? $syntheticStepId);
-        if (null !== $cancelFinalization) {
-            $postCommitActions[] = $cancelFinalization;
-        }
+        $events = $this->eventFactory->eventsFromSpecs($state->runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
         if ($hasPendingAppendMessage) {
-            $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'post-cancel-advance');
-            $postCommitActions[] = $followUpAdvance;
+            $postCommitActions[] = $this->followUpAdvanceAction($state->runId, $state->turnNo, 'post-cancel-advance');
         }
 
         return new HandlerResult(
-            nextState: $nextState,
+            nextState: $this->cancelledTerminalState($state, $reason, \count($events)),
             events: $events,
             postCommitActions: $postCommitActions,
         );
     }
 
-    /**
-     * @return array<string, array<string, mixed>>
-     */
-    private function buildToolCallInfoMap(RunState $state): array
+    private function cancelledTerminalState(RunState $state, string $reason, int $eventCount): RunState
     {
-        $toolCallInfoMap = [];
-        foreach (array_reverse($state->messages) as $replayMsg) {
-            if ('assistant' === $replayMsg->role && \is_array($replayMsg->metadata['tool_calls'] ?? null)) {
-                foreach ($replayMsg->metadata['tool_calls'] as $tc) {
-                    if (\is_string($tc['id'] ?? null)) {
-                        $toolCallInfoMap[$tc['id']] = $tc;
-                    }
-                }
-                break;
-            }
-        }
-
-        return $toolCallInfoMap;
-    }
-
-    /** @param list<AgentMessage> $messages */
-    private function stateContainsToolMessageForId(array $messages, string $toolCallId): bool
-    {
-        foreach ($messages as $message) {
-            if ('tool' === $message->role && $message->toolCallId === $toolCallId) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /** @param list<AgentMessage> $messages */
-    private function appendToolMessage(array &$messages, ToolCallResult $result): void
-    {
-        $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $result->result['details'] ?? null);
-        $messages[] = $this->messageNormalizer->toolMessage($result, $notifications);
-    }
-
-    private function syntheticCancelledToolResult(
-        string $runId,
-        int $turnNo,
-        string $stepId,
-        string $toolCallId,
-        string $toolName,
-        int $orderIndex,
-    ): ToolCallResult {
-        $cancelMessage = self::SYNTHETIC_USER_CANCEL_MESSAGE;
-
-        return new ToolCallResult(
-            runId: $runId,
-            turnNo: $turnNo,
-            stepId: $stepId,
-            attempt: 1,
-            idempotencyKey: hash('sha256', \sprintf('cancel-%s-%s', $runId, $toolCallId)),
-            toolCallId: $toolCallId,
-            orderIndex: $orderIndex,
-            result: [
-                'tool_name' => $toolName,
-                'content' => [['type' => 'text', 'text' => $cancelMessage]],
-            ],
-            isError: true,
-            error: [
-                'type' => 'cancelled',
-                'message' => $cancelMessage,
-            ],
-        );
+        return $state->with([
+            'status' => RunStatus::Cancelled,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + $eventCount,
+            'isStreaming' => false,
+            'streamingMessage' => null,
+            'pendingToolCalls' => [],
+            'currentToolCalls' => [],
+            'pendingHumanInputRequests' => [],
+            'errorMessage' => $reason,
+            'activeStepId' => null,
+            'currentOperation' => null,
+        ]);
     }
 
     private function logLateHumanResponseNoOp(RunState $state, ?string $questionId, string $reason): void

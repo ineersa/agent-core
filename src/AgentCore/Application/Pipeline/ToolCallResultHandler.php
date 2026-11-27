@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -24,7 +25,7 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final readonly class ToolCallResultHandler implements RunMessageHandler, RunMessageHandlerLogComponentInterface
 {
-    private const string SYNTHETIC_USER_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
+    private ToolMessageProjector $toolMessageProjector;
 
     private ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec;
 
@@ -35,6 +36,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         private AgentMessageNormalizer $messageNormalizer,
         private NormalizerInterface&DenormalizerInterface $serializer,
     ) {
+        $this->toolMessageProjector = new ToolMessageProjector($messageNormalizer, $serializer);
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
 
@@ -82,7 +84,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         if (RunStatus::Cancelling === $state->status) {
             $eventSpecs = [];
             $messages = $state->messages;
-            $toolCallInfoMap = $this->buildToolCallInfoMap($state);
+            $toolCallInfoMap = $this->toolMessageProjector->buildToolCallInfoMap($state);
             $pendingToolCalls = $state->pendingToolCalls;
             $projectedToolMessageCount = 0;
 
@@ -129,7 +131,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                         $stored = $storedResults[$tcId] ?? null;
                     }
 
-                    if ($this->stateContainsToolMessageForId($messages, $tcId)) {
+                    if ($this->toolMessageProjector->stateContainsToolMessageForId($messages, $tcId)) {
                         // Already projected into messages — do not duplicate.
                         continue;
                     }
@@ -147,7 +149,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                         // Never re-emit result_received / execution_end for these ids.
                         // ponytail: collector store miss degrades message text to synthetic cancel;
                         // durable ToolExecutionEnd still carries the real result and the repair path rebuilds from it — rebuild here only if store loss proves real.
-                        $resultToProject = $stored ?? $this->syntheticCancelledToolResult(
+                        $resultToProject = $stored ?? ToolCallResultFactory::syntheticCancelledToolResult(
                             runId: $runId,
                             turnNo: $state->turnNo,
                             stepId: $syntheticStepId,
@@ -155,14 +157,14 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                             toolName: $toolName,
                             orderIndex: $orderIndex,
                         );
-                        $this->appendToolMessage(messages: $messages, result: $resultToProject);
+                        $this->toolMessageProjector->appendToolMessage(messages: $messages, result: $resultToProject);
                     }
                     ++$projectedToolMessageCount;
 
                     continue;
                 }
 
-                $syntheticResult = $this->syntheticCancelledToolResult(
+                $syntheticResult = ToolCallResultFactory::syntheticCancelledToolResult(
                     runId: $runId,
                     turnNo: $state->turnNo,
                     stepId: $syntheticStepId,
@@ -518,26 +520,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
     }
 
     /**
-     * @return array<string, array<string, mixed>>
-     */
-    private function buildToolCallInfoMap(RunState $state): array
-    {
-        $toolCallInfoMap = [];
-        foreach (array_reverse($state->messages) as $replayMsg) {
-            if ('assistant' === $replayMsg->role && \is_array($replayMsg->metadata['tool_calls'] ?? null)) {
-                foreach ($replayMsg->metadata['tool_calls'] as $tc) {
-                    if (\is_string($tc['id'] ?? null)) {
-                        $toolCallInfoMap[$tc['id']] = $tc;
-                    }
-                }
-                break;
-            }
-        }
-
-        return $toolCallInfoMap;
-    }
-
-    /**
      * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
      * @param list<AgentMessage>                                       $messages
      */
@@ -547,58 +529,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
             'payload' => $this->toolExecutionEndPayloadCodec->toEventPayload($result),
         ];
-        $this->appendToolMessage(messages: $messages, result: $result);
-    }
-
-    /** @param list<AgentMessage> $messages */
-    private function appendToolMessage(array &$messages, ToolCallResult $result): void
-    {
-        $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $result->result['details'] ?? null);
-        $messages[] = $this->messageNormalizer->toolMessage($result, $notifications);
-    }
-
-    /**
-     * @param list<AgentMessage> $messages
-     */
-    private function stateContainsToolMessageForId(array $messages, string $toolCallId): bool
-    {
-        foreach ($messages as $message) {
-            if ('tool' === $message->role && $message->toolCallId === $toolCallId) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function syntheticCancelledToolResult(
-        string $runId,
-        int $turnNo,
-        string $stepId,
-        string $toolCallId,
-        string $toolName,
-        int $orderIndex,
-    ): ToolCallResult {
-        $cancelMessage = self::SYNTHETIC_USER_CANCEL_MESSAGE;
-
-        return new ToolCallResult(
-            runId: $runId,
-            turnNo: $turnNo,
-            stepId: $stepId,
-            attempt: 1,
-            idempotencyKey: hash('sha256', \sprintf('cancel-%s-%s', $runId, $toolCallId)),
-            toolCallId: $toolCallId,
-            orderIndex: $orderIndex,
-            result: [
-                'tool_name' => $toolName,
-                'content' => [['type' => 'text', 'text' => $cancelMessage]],
-            ],
-            isError: true,
-            error: [
-                'type' => 'cancelled',
-                'message' => $cancelMessage,
-            ],
-        );
+        $this->toolMessageProjector->appendToolMessage(messages: $messages, result: $result);
     }
 
     private function shellCompletionAdvanceAction(string $runId, int $turnNo): DispatchCoordinationMessageDTO

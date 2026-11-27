@@ -45,8 +45,6 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final readonly class SessionRepairService implements SessionRepairServiceInterface
 {
-    private const string SYNTHETIC_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
-
     private const string SYNTHETIC_FAILED_TOOL_MESSAGE = 'Tool result unavailable: the run failed before the result was committed.';
 
     private ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec;
@@ -625,7 +623,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             orderIndex: $orderIndex,
             idempotencyPurpose: 'repair-cancel',
             errorType: 'cancelled',
-            message: self::SYNTHETIC_CANCEL_MESSAGE,
+            message: ToolCallResultFactory::SYNTHETIC_USER_CANCEL_MESSAGE,
         );
     }
 

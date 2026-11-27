@@ -20,6 +20,38 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
  */
 final class ToolCallResultFactory
 {
+    public const string SYNTHETIC_USER_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
+
+    public static function syntheticCancelledToolResult(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $toolCallId,
+        string $toolName,
+        int $orderIndex,
+    ): ToolCallResult {
+        $cancelMessage = self::SYNTHETIC_USER_CANCEL_MESSAGE;
+
+        return new ToolCallResult(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $stepId,
+            attempt: 1,
+            idempotencyKey: hash('sha256', \sprintf('cancel-%s-%s', $runId, $toolCallId)),
+            toolCallId: $toolCallId,
+            orderIndex: $orderIndex,
+            result: [
+                'tool_name' => $toolName,
+                'content' => [['type' => 'text', 'text' => $cancelMessage]],
+            ],
+            isError: true,
+            error: [
+                'type' => 'cancelled',
+                'message' => $cancelMessage,
+            ],
+        );
+    }
+
     /**
      * Owner-prepared deferred correlation fields from an ExecuteToolCall envelope.
      */

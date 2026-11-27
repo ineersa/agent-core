@@ -567,7 +567,8 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             $this->assertSame(self::TOOL_CALL_ID, $typedResult->toolCallId);
             $this->assertSame('Tool execution cancelled by user.', $typedResult->result['content'][0]['text'] ?? null);
             $this->assertTrue($typedResult->isError);
-            $this->assertSame('cancelled', $typedResult->error['type'] ?? null);
+            $this->assertSame(['type' => 'cancelled', 'message' => 'Tool execution cancelled by user.'], $typedResult->error);
+            $this->assertSame(hash('sha256', 'repair-cancel-'.$runId.'-'.self::TOOL_CALL_ID), $typedResult->idempotencyKey());
         }
 
         $replayed = $this->replayMessages($runId);

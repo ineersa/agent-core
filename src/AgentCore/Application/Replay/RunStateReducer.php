@@ -103,7 +103,7 @@ final readonly class RunStateReducer
             RunEventTypeEnum::ToolExecutionEnd->value => $this->applyToolExecutionEnd($payload, $pendingToolCalls, $state, $completedToolResultsByCallId),
             RunEventTypeEnum::ToolBatchCommitted->value => $this->applyToolBatchCommitted($state, $pendingToolCalls, $messages, $completedToolResultsByCallId),
             RunEventTypeEnum::WaitingHuman->value => $this->applyWaitingHuman($event->payload, $state),
-            RunEventTypeEnum::AgentEnd->value => $this->applyAgentEnd($payload, $state),
+            RunEventTypeEnum::AgentEnd->value => $this->applyAgentEnd($payload, $state, $pendingToolCalls),
             RunEventTypeEnum::ToolExecutionUpdate->value,
             RunEventTypeEnum::AgentCommandQueued->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::ContextCompactionRequested->value => $this->applyNoMutation($event, $state),
@@ -600,12 +600,21 @@ final readonly class RunStateReducer
 
     /**
      * @param array<string, mixed> $payload
+     * @param array<string, bool>  $pendingToolCalls
      */
-    private function applyAgentEnd(array $payload, RunState $state): RunState
+    private function applyAgentEnd(array $payload, RunState $state, array &$pendingToolCalls): RunState
     {
         $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
 
         $status = ReplayLifecycleStatus::terminal($reason);
+
+        if (RunStatus::Cancelled === $status) {
+            $pendingToolCalls = [];
+            $state = $state->with([
+                'currentToolCalls' => [],
+                'errorMessage' => \is_string($payload['error_message'] ?? null) ? $payload['error_message'] : $state->errorMessage,
+            ]);
+        }
 
         return $state->with([
             'status' => $status,
