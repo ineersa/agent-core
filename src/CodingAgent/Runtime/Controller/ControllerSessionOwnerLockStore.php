@@ -36,7 +36,7 @@ final class ControllerSessionOwnerLockStore implements PersistingStoreInterface
             $resource = (string) $key;
             $directory = $this->directory($resource);
             $this->recover($directory);
-            if (file_exists($directory) || is_link($directory)) {
+            if ((file_exists($directory) || is_link($directory)) && !$this->isAbandonedPublication($directory)) {
                 $this->requireOwnedDirectory($directory, $resource);
             } else {
                 $this->filesystem->mkdir($directory);
@@ -87,6 +87,17 @@ final class ControllerSessionOwnerLockStore implements PersistingStoreInterface
             || file_get_contents($directory.'/owner') !== $resource) {
             throw new LockStorageException('Controller session lock directory has uncertain ownership.');
         }
+    }
+
+    /**
+     * A crash between mkdir and the owner write leaves an empty directory.
+     * Ownership precedes every FlockStore open, so it holds no session inode
+     * and the coordinator holder may publish ownership into it. Non-empty
+     * owner-less directories keep failing as uncertain ownership.
+     */
+    private function isAbandonedPublication(string $directory): bool
+    {
+        return !is_link($directory) && is_dir($directory) && !(new \FilesystemIterator($directory))->valid();
     }
 
     private function recover(string $except): void

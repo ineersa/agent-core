@@ -144,6 +144,31 @@ PHP);
         }
     }
 
+    public function testEmptyOwnerlessDirectoryFromCrashedPublicationIsReclaimed(): void
+    {
+        (new Filesystem())->mkdir($this->directory('one'));
+        $factory = new LockFactory(new ControllerSessionOwnerLockStore($this->root));
+        $lock = $factory->createLock($this->resource('one'), ttl: null);
+        $this->assertTrue($lock->acquire(false));
+        $this->assertSame($this->resource('one'), file_get_contents($this->directory('one').'/owner'));
+        $this->assertFalse($factory->createLock($this->resource('one'), ttl: null)->acquire(false));
+        $lock->release();
+        $this->assertDirectoryDoesNotExist($this->directory('one'));
+    }
+
+    public function testNonEmptyOwnerlessDirectoryKeepsUncertainOwnership(): void
+    {
+        (new Filesystem())->dumpFile($this->directory('one').'/unknown', '');
+        $factory = new LockFactory(new ControllerSessionOwnerLockStore($this->root));
+        try {
+            $factory->createLock($this->resource('one'), ttl: null)->acquire(false);
+            $this->fail('A non-empty owner-less directory must not be adopted.');
+        } catch (LockAcquiringException) {
+            $this->assertFileExists($this->directory('one').'/unknown');
+            $this->assertFileDoesNotExist($this->directory('one').'/owner');
+        }
+    }
+
     public function testLegacyAndUnknownDirectoriesAreNotAdopted(): void
     {
         $filesystem = new Filesystem();
