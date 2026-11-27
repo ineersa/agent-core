@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\ImagePaste;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Tool\Support\ImageOpenFailureStreamWrapper;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageFileInspector;
 use Ineersa\Tui\ImagePaste\PastedImageValidationService;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -62,6 +63,16 @@ final class PastedImageValidationServiceTest extends TestCase
         $this->assertTrue($service->isSupportedImageFile($path));
         $this->expectExceptionMessage('Pasted image dimensions (3x2) exceed maximum allowed (2x1).');
         $service->validateFile($path);
+    }
+
+    public function testPreservesOpenFailureMessage(): void
+    {
+        $service = new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger());
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Failed to open pasted image for validation.');
+        ImageOpenFailureStreamWrapper::withPath(static function (string $path) use ($service): void {
+            $service->validateFile($path);
+        });
     }
 
     public function testClassifiesNonImagesAsTextAndValidatesByContent(): void

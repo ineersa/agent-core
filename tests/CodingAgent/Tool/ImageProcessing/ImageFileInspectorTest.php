@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool\ImageProcessing;
 
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Tool\Support\ImageOpenFailureStreamWrapper;
 use Ineersa\CodingAgent\Tool\ImageProcessing\DTO\ImageInspectionDTO;
 use Ineersa\CodingAgent\Tool\ImageProcessing\DTO\ImageInspectionRefusalDTO;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageFileInspector;
@@ -28,18 +29,23 @@ final class ImageFileInspectorTest extends TestCase
     }
 
     #[DataProvider('supportedImages')]
-    public function testInspectsSupportedContentAtExactLimits(string $writer, string $mediaType, string $extension): void
+    public function testInspectsSupportedContentAtExactLimits(?string $writer, string $mediaType, string $extension, int $width = 3, int $height = 2): void
     {
         $path = $this->directory.'/misnamed.txt';
-        $writer(imagecreatetruecolor(3, 2), $path);
+        if (null === $writer) {
+            // Fixed 1x1 WebP: inspection must not depend on GD's optional WebP encoder.
+            file_put_contents($path, base64_decode('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA', true));
+        } else {
+            $writer(imagecreatetruecolor($width, $height), $path);
+        }
         $bytes = filesize($path);
-        $inspector = new ImageFileInspector(new ImageToolConfig(maxBytes: $bytes, maxWidth: 3, maxHeight: 2));
+        $inspector = new ImageFileInspector(new ImageToolConfig(maxBytes: $bytes, maxWidth: $width, maxHeight: $height));
         $result = $inspector->inspect($path);
         $this->assertInstanceOf(ImageInspectionDTO::class, $result);
         $this->assertSame($mediaType, $result->mediaType);
         $this->assertSame($bytes, $result->bytes);
-        $this->assertSame(3, $result->width);
-        $this->assertSame(2, $result->height);
+        $this->assertSame($width, $result->width);
+        $this->assertSame($height, $result->height);
         $this->assertSame($extension, ImageFileInspector::extensionForMime($result->mediaType));
         $this->assertTrue($inspector->isSupportedImageFile($path));
     }
@@ -49,7 +55,7 @@ final class ImageFileInspectorTest extends TestCase
         yield 'PNG' => ['imagepng', 'image/png', 'png'];
         yield 'JPEG' => ['imagejpeg', 'image/jpeg', 'jpg'];
         yield 'GIF' => ['imagegif', 'image/gif', 'gif'];
-        yield 'WebP' => ['imagewebp', 'image/webp', 'webp'];
+        yield 'WebP' => [null, 'image/webp', 'webp', 1, 1];
     }
 
     #[DataProvider('refusals')]
@@ -99,6 +105,15 @@ final class ImageFileInspectorTest extends TestCase
     {
         yield 'width' => [2, 2];
         yield 'height' => [3, 1];
+    }
+
+    public function testReturnsTypedOpenFailureAfterReadableStat(): void
+    {
+        ImageOpenFailureStreamWrapper::withPath(function (string $path): void {
+            $result = (new ImageFileInspector(new ImageToolConfig()))->inspect($path);
+            $this->assertInstanceOf(ImageInspectionRefusalDTO::class, $result);
+            $this->assertSame(ImageInspectionRefusalReasonEnum::OpenFailed, $result->reason);
+        });
     }
 
     public function testUnknownCacheFormatKeepsBinaryFallback(): void

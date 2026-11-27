@@ -380,8 +380,8 @@ final class ViewImageToolTest extends TestCase
 
     public function testNonVisionModelIsRejectedByValidation(): void
     {
-        $imagePath = $this->tmpDir.'/nonvision.png';
-        $this->createPng1x1($imagePath);
+        // A missing file would fail inspection: vision refusal must take precedence.
+        $imagePath = $this->tmpDir.'/nonvision-missing.png';
 
         $visionCheck = $this->createStub(RunVisionCheckService::class);
         $visionCheck->method('isModelVisionCapable')->willReturn(false);
