@@ -160,7 +160,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             payload: [
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),
-                // Serialized steer/follow_up text so RuntimeEventTranslator can emit
+                // Serialized steer/follow_up text so RuntimeEventMapper can emit
                 // user.message_queued for immediate TUI pending feedback (mirrors
                 // CommandMailboxPolicy including message on agent_command_applied).
                 'message' => $message->payload['message'] ?? null,

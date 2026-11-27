@@ -9,14 +9,12 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[CoversClass(RuntimeEventMapper::class)]
-#[CoversClass(RuntimeEventTranslator::class)]
 final class RuntimeEventMapperTest extends TestCase
 {
     private RuntimeEventMapper $mapper;
@@ -24,9 +22,7 @@ final class RuntimeEventMapperTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer()),
-        );
+        $this->mapper = new RuntimeEventMapper(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
     }
 
     // ── Lifecycle normalization ──────────────────────────────────────────────
@@ -747,9 +743,9 @@ final class RuntimeEventMapperTest extends TestCase
     }
 
     /**
-     * The translator reads the message from the compaction-failed payload.
+     * The mapper reads the message from the compaction-failed payload.
      * When CompactionStepResultHandler sets message to the classifier's
-     * user_message, the translator preserves it.  The handler now prefers
+     * user_message, the mapper preserves it.  The handler now prefers
      * user_message from LlmProviderErrorClassifier, so the raw provider
      * exception text is never surfaced.
      */

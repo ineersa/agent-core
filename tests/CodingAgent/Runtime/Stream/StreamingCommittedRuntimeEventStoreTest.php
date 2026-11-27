@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore;
 use PHPUnit\Framework\TestCase;
@@ -191,11 +190,11 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         RuntimeEventSinkInterface $sink,
         bool $stream,
     ): StreamingCommittedRuntimeEventStore {
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(
+        $mapper = new RuntimeEventMapper(
             new EventDispatcher(),
             new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
             AttributeSerializerValidatorTestFactory::serializer(),
-        ));
+        );
 
         return new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, $stream, new EventDispatcher());
     }

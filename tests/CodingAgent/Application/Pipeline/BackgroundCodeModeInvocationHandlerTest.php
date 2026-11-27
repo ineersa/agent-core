@@ -57,7 +57,7 @@ use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -322,7 +322,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
             $ack = $handler->handle($request, $state);
             $this->assertContains(RunEventTypeEnum::ToolCallAcknowledged->value, array_column($ack->events, 'type'));
             $this->assertNotContains(RunEventTypeEnum::ToolExecutionEnd->value, array_column($ack->events, 'type'));
-            $runtime = $container->get(RuntimeEventTranslator::class)->translate($ack->events[0]);
+            $runtime = $container->get(RuntimeEventMapper::class)->toRuntimeEvent($ack->events[0]);
             $this->assertSame(RuntimeEventTypeEnum::ToolCallAcknowledged->value, $runtime->type);
             $this->assertTrue($runtime->payload['backgrounded']);
             $projector = new TranscriptProjector($container->get('event_dispatcher'), new TranscriptProjectionState());
