@@ -955,8 +955,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      *
      * Observer failures must not break model invocation: this is intentional
      * diagnostic local degradation — the observer is an optional side-channel
-     * and its failure should not abort the LLM request. Empty run IDs and a
-     * missing observer are suppressed before the callback runs.
+     * and its failure should not abort the LLM request. Empty run IDs are
+     * ignored before the required observer's callback runs.
      *
      * @param callable(): void                           $callback
      * @param callable(\Throwable): array<string, mixed> $failureContext builds the warning context for the thrown observer exception
