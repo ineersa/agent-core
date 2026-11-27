@@ -137,7 +137,7 @@ final class RunPresentationProjector
             case RunEventTypeEnum::LlmStepFailed->value:
                 $this->status = RunStatus::Failed;
                 // Execution replay's by-ref tool accumulators survive
-                // terminal helpers. Preserve its observable counts.
+                // LLM failure. Preserve its observable counts.
                 break;
             case RunEventTypeEnum::LlmStepCompleted->value:
                 $this->status = RunStatus::Running;
@@ -181,8 +181,11 @@ final class RunPresentationProjector
                 break;
             case RunEventTypeEnum::AgentEnd->value:
                 $this->status = ReplayLifecycleStatus::terminal($payload['reason'] ?? null);
-                // Only ToolBatchCommitted clears both tool accumulators
-                // in execution replay; terminal state fields do not.
+                // Mirror execution replay: cancellation clears pending calls,
+                // but leaves completed results staged for a later batch commit.
+                if (RunStatus::Cancelled === $this->status) {
+                    $this->pending = [];
+                }
                 $this->activeStep = null;
                 $this->questions = [];
                 break;

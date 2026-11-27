@@ -230,11 +230,14 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $this->write(2, 1, 'llm_step_completed', ['assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Answer']]]]);
         $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
         $expected = $index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows'];
-        foreach ([8, 4, 3] as $version) {
+        foreach ([9, 8, 4, 3] as $version) {
             $db = $this->db();
-            $db->executeStatement('DROP INDEX turn_answers');
-            $db->executeStatement('DROP INDEX unresolved_commands');
-            $db->executeStatement('CREATE INDEX unresolved_commands ON command_record (target_anchor, suppressed, source_anchor)');
+            // Version 9 has the current schema but stale presentation semantics.
+            if (9 !== $version) {
+                $db->executeStatement('DROP INDEX turn_answers');
+                $db->executeStatement('DROP INDEX unresolved_commands');
+                $db->executeStatement('CREATE INDEX unresolved_commands ON command_record (target_anchor, suppressed, source_anchor)');
+            }
             $db->executeStatement('UPDATE index_meta SET version = ?', [$version]);
             if (3 === $version) {
                 $db->executeStatement('ALTER TABLE turn_anchor DROP COLUMN answer_seq');
@@ -244,7 +247,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->assertSame($expected, $index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows']);
             $db = $this->db();
             try {
-                $this->assertSame(9, (int) $db->fetchOne('SELECT version FROM index_meta'));
+                $this->assertSame(10, (int) $db->fetchOne('SELECT version FROM index_meta'));
                 $this->assertSame('CREATE INDEX unresolved_commands ON command_record (source_anchor, seq) WHERE target_anchor IS NULL AND suppressed = 0', $db->fetchOne("SELECT sql FROM sqlite_master WHERE name = 'unresolved_commands'"));
                 $this->assertSame('CREATE INDEX turn_answers ON turn_anchor (answer_seq) WHERE retained = 1 AND answer_seq IS NOT NULL', $db->fetchOne("SELECT sql FROM sqlite_master WHERE name = 'turn_answers'"));
             } finally {

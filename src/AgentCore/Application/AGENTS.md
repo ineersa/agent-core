@@ -138,7 +138,7 @@ Explicit historical reconstruction clears operation, tool, shell, and human-inpu
 
 History selection validates its explicit rebuild before committing `history_position_set`. Repair retains preview/refusal/redrive rules and validates hypothetical repair before committing proposed events. Owner maintenance replies use existing `run.history_position_changed` and correlated `session.repair.completed` runtime events. In-process repair reads the narrow `RepairResult` from Messenger's `HandledStamp`.
 
-Historical presentation preserves execution replay's accumulator behavior: terminal events do not clear its by-reference pending calls or staged completed results. A later batch commit can include results staged before termination. Do not change only presentation counts to hide this inherited behavior.
+Historical presentation mirrors execution replay's accumulator behavior: a cancelled `agent_end` clears pending calls in both projections and clears current tool calls in execution state. Other terminal events retain the pending accumulator. All terminal ends preserve staged completed results, which a later batch commit can include. On command-terminal cancellation, `agent_end.error_message` restores the cancellation reason after any queued-command rejections; `reason` remains `cancelled`.
 
 See `docs/session-storage.md` (linear history model).
 

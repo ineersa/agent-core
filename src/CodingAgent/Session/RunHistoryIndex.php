@@ -31,7 +31,8 @@ final readonly class RunHistoryIndex
 {
     public const int PAGE_SIZE = 32;
     public const int PREVIEW_BYTES = 240;
-    private const int VERSION = 9;
+    // Includes presentation snapshot semantics, not just the SQL schema.
+    private const int VERSION = 10;
 
     public function __construct(private LockFactory $locks, private LoggerInterface $logger)
     {

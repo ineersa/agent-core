@@ -102,6 +102,13 @@ tail and canonical history. A failed summary keeps original messages. If the run
 is cancelling, cancellation wins; otherwise an interrupted active turn continues,
 or a maintenance compaction completes without another model turn.
 
+A cancelled `agent_end` clears pending tool calls in execution replay and history
+presentation, and clears current tool calls in execution state. It does not drop
+staged completed results; a later batch commit can still project them. A cancel
+command that terminalizes the run records its message in `agent_end.error_message`
+so replay can restore it even after queued-command rejections. The event's
+lifecycle `reason` remains `cancelled`.
+
 Cancellation is a request, not rollback. Supported workers observe narrow
 operational cancellation state; filesystem writes and remote effects already
 completed remain. Escape in a child live view targets that child. Exiting the

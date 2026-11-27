@@ -445,9 +445,9 @@ final class ToolCallResultHandlerTest extends TestCase
             ->withVersion(3)
             ->withTurnNo(1)
             ->withLastSeq(4)
-            ->withPendingToolCalls(['tc-read-1' => false, 'tc-read-2' => false])
+            ->withPendingToolCalls(['tc-read-2' => false, 'tc-done' => true, 'tc-read-1' => false])
             ->withActiveStepId('turn-step-1')
-            ->withMessages([$assistantMsg])
+            ->withMessages([$assistantMsg, new AgentMessage(role: 'tool', content: [['type' => 'text', 'text' => 'completed']], toolCallId: 'tc-done')])
             ->build();
 
         $message = ToolCallResultBuilder::success('run-cancel-multi')
@@ -469,12 +469,7 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame('tc-read-1', (new ToolExecutionEndPayloadCodec($serializer))->fromEventPayload($result->events[0]->payload)->toolCallId);
         $this->assertTrue((new ToolExecutionEndPayloadCodec($serializer))->fromEventPayload($result->events[1]->payload)->isError);
 
-        // Messages: assistant + 2 synthetic tool
-        $this->assertCount(3, $result->nextState->messages);
-        $this->assertSame('tool', $result->nextState->messages[1]->role);
-        $this->assertSame('tc-read-1', $result->nextState->messages[1]->toolCallId);
-        $this->assertSame('tool', $result->nextState->messages[2]->role);
-        $this->assertSame('tc-read-2', $result->nextState->messages[2]->toolCallId);
+        $this->assertSame([null, 'tc-done', 'tc-read-1', 'tc-read-2'], array_column($result->nextState->messages, 'toolCallId'));
 
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
         $this->assertSame([], $result->nextState->pendingToolCalls);
@@ -1085,8 +1080,17 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertNotNull($toolEnd);
         [$serializer] = AttributeSerializerValidatorTestFactory::create();
         $typed = (new ToolExecutionEndPayloadCodec($serializer))->fromEventPayload($toolEnd->payload);
-        $this->assertSame('Tool execution cancelled by user.', $typed->error['message']);
-        $this->assertSame('cancelled', $typed->error['type']);
+        $text = 'Tool execution cancelled by user.';
+        $this->assertSame('run-cancel-synth-meta', $typed->runId());
+        $this->assertSame(1, $typed->turnNo());
+        $this->assertSame('turn-step-1', $typed->stepId());
+        $this->assertSame(1, $typed->attempt());
+        $this->assertSame(hash('sha256', 'cancel-run-cancel-synth-meta-tc-only'), $typed->idempotencyKey());
+        $this->assertSame('tc-only', $typed->toolCallId);
+        $this->assertSame(0, $typed->orderIndex);
+        $this->assertTrue($typed->isError);
+        $this->assertSame(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => $text]]], $typed->result);
+        $this->assertSame(['type' => 'cancelled', 'message' => $text], $typed->error);
         $this->assertSame('Tool execution cancelled by user.', $result->nextState->messages[1]->content[0]['text'] ?? null);
     }
 

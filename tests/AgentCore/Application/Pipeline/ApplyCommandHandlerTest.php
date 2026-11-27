@@ -1077,10 +1077,9 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertNull($result->nextState->currentOperation);
         $this->assertFalse($result->nextState->isStreaming);
 
-        // Events: agent_command_applied + agent_end (cancelled reason).
-        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
-        $this->assertContains('agent_command_applied', $eventTypes);
-        $this->assertContains('agent_end', $eventTypes);
+        $this->assertSame([], $result->nextState->pendingToolCalls);
+        $this->assertSame([], $result->nextState->currentToolCalls);
+        $this->assertSame(['agent_command_applied', 'agent_end'], array_column($result->events, 'type'));
 
         $agentEndEvent = array_values(array_filter(
             $result->events,
@@ -1364,46 +1363,132 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertNotContains('agent_end', $eventTypes);
     }
 
-    public function testCancelWhileAlreadyCancellingWithNoActiveWorkTerminalizes(): void
+    #[DataProvider('terminalCancellationCases')]
+    public function testTerminalCancellationMatchesWholeReplayState(RunStatus $status, ?string $reason, bool $rejectQueuedCommands): void
     {
+        $runId = 'run-terminal-cancel';
+        $stepId = 'tool-step';
+        $serializer = AttributeSerializerValidatorTestFactory::serializer();
+        $codec = new ToolExecutionEndPayloadCodec($serializer);
+        $reducer = new RunStateReducer($serializer, $codec, new AgentMessageNormalizer(), new ReplayAssistantMessageFactory());
         $commandStore = new InMemoryCommandStore();
-
+        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
-            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolBatchCollector: $collector,
             logger: new NullLogger(),
-            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            serializer: $serializer,
             maxPendingCommands: 10,
         );
-
-        $state = new RunState(
-            runId: 'run-stuck-cancelling',
-            status: RunStatus::Cancelling,
-            version: 30,
-            turnNo: 15,
-            lastSeq: 200,
-            isStreaming: false,
-            pendingToolCalls: ['call_00' => true, 'call_01' => true],
-            messages: [],
-            activeStepId: 'advance-after-tools-33525236701801',
-            model: 'test-model');
-
-        $cancelMessage = new ApplyCommand(
-            runId: 'run-stuck-cancelling',
-            turnNo: 15,
-            stepId: 'cancel-seq202',
-            attempt: 1,
-            idempotencyKey: 'cancel-stuck-1',
-            kind: CoreCommandKind::Cancel,
-            payload: [],
+        $deferred = RunStatus::WaitingHuman === $status;
+        $calls = [['id' => 'completed', 'name' => 'read', 'arguments' => [], 'order_index' => 0]];
+        if ($deferred) {
+            $calls[] = ['id' => 'waiting', 'name' => 'ask_human', 'arguments' => [], 'order_index' => 1];
+            TestToolBatchRegistration::register($collector, $batchStore, $runId, 1, $stepId, [
+                new ExecuteToolCall($runId, 1, $stepId, 1, 'read-invocation', 'completed', 'read', [], 0),
+                new ExecuteToolCall($runId, 1, $stepId, 1, 'ask-invocation', 'waiting', 'ask_human', [], 1),
+            ]);
+        }
+        $completed = new ToolCallResult(
+            $runId, 1, $stepId, 1, 'read-invocation', 'completed', 0,
+            ['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => 'Read result']]], false, null,
         );
+        $history = [
+            new RunEvent($runId, 1, 0, RunEventTypeEnum::RunStarted->value, [
+                'step_id' => 'start',
+                'payload' => [
+                    'messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Read the file']]]],
+                    'metadata' => ['model' => 'test-model'],
+                ],
+            ]),
+            new RunEvent($runId, 2, 1, RunEventTypeEnum::TurnAdvanced->value, ['step_id' => $stepId, 'turn_no' => 1]),
+            new RunEvent($runId, 3, 1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'step_id' => $stepId,
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Checking the file']],
+                    'tool_calls' => $calls,
+                ],
+            ]),
+            new RunEvent($runId, 4, 1, RunEventTypeEnum::ToolExecutionEnd->value, $codec->toEventPayload($completed)),
+        ];
+        if ($deferred) {
+            $this->assertTrue(TestToolBatchCoordination::collect($collector, $batchStore, $completed)->accepted);
+            TestToolBatchCoordination::suspend($collector, $batchStore, $runId, 1, $stepId, 'waiting', 'question');
+            $history[] = new RunEvent($runId, 5, 1, RunEventTypeEnum::WaitingHuman->value, [
+                'kind' => 'interrupt',
+                'question_id' => 'question',
+                'prompt' => 'Continue?',
+                'continuation_kind' => 'tool_call',
+                'continuation_ref' => ['run_id' => $runId, 'turn_no' => 1, 'step_id' => $stepId, 'tool_call_id' => 'waiting'],
+            ]);
+        } elseif (RunStatus::Cancelling === $status) {
+            $history[] = new RunEvent($runId, 5, 1, RunEventTypeEnum::AgentCommandApplied->value, [
+                'kind' => 'cancel',
+                'idempotency_key' => 'prior-cancel',
+            ]);
+        }
+        if ($rejectQueuedCommands) {
+            foreach ([CoreCommandKind::Steer, CoreCommandKind::FollowUp] as $kind) {
+                $commandStore->enqueue(new PendingCommand(
+                    runId: $runId,
+                    kind: $kind,
+                    idempotencyKey: 'queued-'.$kind,
+                    payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Queued input']]]],
+                ));
+            }
+        }
 
-        $result = $handler->handle($cancelMessage, $state);
+        $state = $reducer->replay(RunState::queued($runId)->with(['version' => 7]), $history);
+        $this->assertSame($status, $state->status);
+        $this->assertSame($deferred ? ['completed' => true, 'waiting' => false] : ['completed' => true], $state->pendingToolCalls);
+        $this->assertCount($deferred ? 2 : 1, $state->currentToolCalls);
+        $this->assertCount($deferred ? 1 : 0, $state->pendingHumanInputRequests);
+        $this->assertFalse($state->isStreaming);
+        $this->assertNull($state->currentOperation);
+        $this->assertSame($stepId, $state->activeStepId);
 
-        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
-        $this->assertContains('agent_end', array_map(static fn ($e) => $e->type, $result->events));
+        $result = $handler->handle(new ApplyCommand(
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'cancel-step',
+            attempt: 1,
+            idempotencyKey: 'cancel-command',
+            kind: CoreCommandKind::Cancel,
+            payload: null === $reason ? [] : ['reason' => $reason],
+        ), $state);
+
+        $live = $result->nextState;
+        $this->assertNotNull($live);
+        $this->assertSame(RunStatus::Cancelled, $live->status);
+        $this->assertSame($reason ?? 'Run cancelled by command.', $live->errorMessage);
+        $this->assertSame([
+            'agent_command_applied',
+            ...($rejectQueuedCommands ? ['agent_command_rejected', 'agent_command_rejected'] : []),
+            ...($deferred ? ['tool_execution_end', 'tool_batch_committed'] : []),
+            'agent_end',
+        ], array_column($result->events, 'type'));
+
+        // Version belongs to the stored transition, not to the event stream.
+        $replayed = $reducer->replay($live, [...$history, ...$result->events]);
+        $this->assertEquals($live, $replayed);
+        $this->assertSame([], $live->pendingToolCalls);
+        $this->assertSame([], $live->currentToolCalls);
+        $this->assertSame([], $live->pendingHumanInputRequests);
+        $this->assertNull($live->activeStepId);
+        $this->assertNull($live->currentOperation);
+        $this->assertFalse($live->isStreaming);
+        $this->assertNull($live->streamingMessage);
+        $this->assertSame($deferred ? ['user', 'assistant', 'tool', 'tool'] : ['user', 'assistant'], array_column($live->messages, 'role'));
+    }
+
+    public static function terminalCancellationCases(): iterable
+    {
+        yield 'first cancel with completed pending entry and queued commands' => [RunStatus::Running, null, true];
+        yield 'already cancelling without active work' => [RunStatus::Cancelling, 'Stop the completed batch.', false];
+        yield 'deferred tool human wait with queued commands' => [RunStatus::WaitingHuman, 'Do not wait for approval.', true];
     }
 
     public function testCancelDeferredToolCallHumanWaitTerminalizesWithSyntheticResults(): void
@@ -1493,6 +1578,19 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame('tool', $result->nextState?->messages[1]->role);
         $this->assertSame('call-d', $result->nextState?->messages[1]->toolCallId);
         $this->assertTrue($result->nextState?->messages[1]->isError);
+        $synthetic = (new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))
+            ->fromEventPayload($result->events[1]->payload);
+        $text = 'Tool execution cancelled by user.';
+        $this->assertSame('run-deferred-cancel', $synthetic->runId());
+        $this->assertSame(1, $synthetic->turnNo());
+        $this->assertSame('step-d', $synthetic->stepId());
+        $this->assertSame(1, $synthetic->attempt());
+        $this->assertSame(hash('sha256', 'cancel-run-deferred-cancel-call-d'), $synthetic->idempotencyKey());
+        $this->assertSame('call-d', $synthetic->toolCallId);
+        $this->assertSame(0, $synthetic->orderIndex);
+        $this->assertTrue($synthetic->isError);
+        $this->assertSame(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => $text]]], $synthetic->result);
+        $this->assertSame(['type' => 'cancelled', 'message' => $text], $synthetic->error);
         $finalizations = array_values(array_filter($result->postCommitActions, static fn (object $action): bool => $action instanceof FinalizeToolBatchDTO));
         $this->assertCount(1, $finalizations);
         $this->assertTrue($finalizations[0]->finalized);
@@ -1539,8 +1637,8 @@ final class ApplyCommandHandlerTest extends TestCase
             version: 6,
             turnNo: 1,
             lastSeq: 12,
-            pendingToolCalls: ['call-a' => false, 'call-b' => false],
-            messages: [$assistant],
+            pendingToolCalls: ['call-b' => false, 'call-done' => true, 'call-a' => false],
+            messages: [$assistant, new AgentMessage(role: 'tool', content: [['type' => 'text', 'text' => 'completed']], toolCallId: 'call-done')],
             activeStepId: 'step-m',
             pendingHumanInputRequests: [
                 PendingHumanInputRequestDTO::toolCallFromPayload(
@@ -1572,8 +1670,8 @@ final class ApplyCommandHandlerTest extends TestCase
             $result->nextState?->messages ?? [],
             static fn (AgentMessage $message): bool => 'tool' === $message->role,
         ));
-        $this->assertCount(2, $toolMessages);
-        $this->assertSame(['call-a', 'call-b'], array_map(static fn (AgentMessage $message): ?string => $message->toolCallId, $toolMessages));
+        $this->assertCount(3, $toolMessages);
+        $this->assertSame(['call-done', 'call-a', 'call-b'], array_map(static fn (AgentMessage $message): ?string => $message->toolCallId, $toolMessages));
         $this->assertContains('agent_end', array_map(static fn ($event) => $event->type, $result->events));
     }
 
@@ -1775,7 +1873,10 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame($toolMessages[1]->content, $replayTools[1]->content);
         $this->assertSame($toolMessages[1]->details, $replayTools[1]->details);
         $this->assertSame($toolMessages[1]->toolName, $replayTools[1]->toolName);
-        $this->assertSame(RunStatus::Cancelled, $replayed->status);
+        $this->assertSame($result->nextState->status, $replayed->status);
+        $this->assertSame($result->nextState->pendingToolCalls, $replayed->pendingToolCalls);
+        $this->assertSame($result->nextState->currentToolCalls, $replayed->currentToolCalls);
+        $this->assertSame($result->nextState->pendingHumanInputRequests, $replayed->pendingHumanInputRequests);
     }
 
     public function testCancelCompletedUnprojectedSiblingFailsClosedWhenStoredResultMissing(): void

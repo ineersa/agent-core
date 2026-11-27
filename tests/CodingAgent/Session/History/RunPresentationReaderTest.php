@@ -95,13 +95,14 @@ final class RunPresentationReaderTest extends IsolatedKernelTestCase
         PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, $type, $payload));
         $execution = self::getContainer()->get(RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($run), $run)->rebuiltState;
         $this->assertNotNull($execution);
-        $this->assertSame(['pending_call' => true], $execution->pendingToolCalls);
+        $cancelled = RunStatus::Cancelled === $status;
+        $this->assertSame($cancelled ? [] : ['pending_call' => true], $execution->pendingToolCalls);
         $this->assertCount(1, $execution->messages);
         $product = $reader->read($run, 0, 800);
         $this->assertNotNull($product);
         $this->assertSame($status, $product->status);
-        $this->assertSame(1, $product->pendingToolCallCount);
-        $this->assertSame('pending_call', $product->firstPendingToolCallId);
+        $this->assertSame($cancelled ? 0 : 1, $product->pendingToolCallCount);
+        $this->assertSame($cancelled ? null : 'pending_call', $product->firstPendingToolCallId);
         $this->assertSame(\count($execution->pendingToolCalls), $product->pendingToolCallCount);
         $this->assertSame(\count($execution->messages), $product->messageCount);
         $this->assertSame('Partial work', $product->assistantExcerpt);
