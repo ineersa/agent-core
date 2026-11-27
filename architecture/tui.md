@@ -69,7 +69,10 @@ flowchart TD
 `//text` is sent as an ordinary prompt; the parser does not strip the slashes.
 `SlashCommandCatalog` is process-scoped (metadata, aliases, default handlers,
 extension and prompt-template commands); each session binds its own handlers in a
-fresh `SlashCommandRegistry`. While a subagent live view is active,
+fresh `SlashCommandRegistry`. Built-in registrars seed the catalog when it is
+constructed, before extensions register commands on `ConsoleEvents::COMMAND`, so
+an extension cannot take a built-in name or alias. `InteractiveMode` then adds
+prompt-template and `skill:` commands, skipping names that are already taken. While a subagent live view is active,
 `SubagentLiveInputPolicy` allows only `/agents-main`, `/main` and `/agents-live`.
 
 `ImagePasteInputListener` reuses Symfony's `BracketedPasteTrait` buffering on the

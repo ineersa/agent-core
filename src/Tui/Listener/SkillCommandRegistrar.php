@@ -15,10 +15,10 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 /**
  * Registers virtual slash commands for every discovered skill as `/skill:<name>`.
  *
- * Runs at priority -100 (same band as prompt templates) so real/built-in
- * registrars win on name collisions. Includes on-demand-only skills so users
- * can still invoke them explicitly even when they are omitted from the model
- * catalog.
+ * Runs from InteractiveMode with prompt templates, after built-in and
+ * extension commands, so those win on name collisions. Includes
+ * on-demand-only skills so users can still invoke them explicitly even when
+ * they are omitted from the model catalog.
  */
 final class SkillCommandRegistrar implements SlashCommandCatalogRegistrar, SlashCommandHandler
 {

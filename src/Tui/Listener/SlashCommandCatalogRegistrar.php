@@ -16,8 +16,10 @@ use Ineersa\Tui\Command\SlashCommandRegistry;
  * binds only the current session's handlers in
  * {@see TuiListenerRegistrar::register()}.
  *
- * Called by InteractiveMode before the session switch loop, in
- * tag-priority order (same ordering as the listener registrars).
+ * Built-in registrars are seeded by the SlashCommandCatalog constructor,
+ * before extensions can register commands. PromptTemplateCommandRegistrar
+ * and SkillCommandRegistrar are excluded from that seeding and run from
+ * InteractiveMode before the session switch loop, after extensions.
  */
 interface SlashCommandCatalogRegistrar
 {

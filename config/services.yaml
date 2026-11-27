@@ -276,6 +276,16 @@ services:
 
   # ─── Extension wiring ───
 
+  # Built-in command names and aliases are seeded at construction, before the
+  # adapter below lets extensions register, so extensions cannot take them.
+  Ineersa\Tui\Command\SlashCommandCatalog:
+    arguments:
+      $builtInRegistrars: !tagged_iterator
+        tag: app.slash_command_catalog
+        exclude:
+          - Ineersa\Tui\Listener\PromptTemplateCommandRegistrar
+          - Ineersa\Tui\Listener\SkillCommandRegistrar
+
   Ineersa\Tui\Extension\TuiCommandRegistryAdapter:
     arguments:
       $commandCatalog: '@Ineersa\Tui\Command\SlashCommandCatalog'
@@ -491,7 +501,10 @@ services:
   Ineersa\Tui\Application\InteractiveMode:
     arguments:
       $listenerRegistrars: !tagged_iterator { tag: app.tui_listener, default_priority_method: getPriority }
-      $catalogRegistrars: !tagged_iterator { tag: app.slash_command_catalog, default_priority_method: getPriority }
+      # Run after built-ins (seeded by SlashCommandCatalog) and after extensions.
+      $promptCommandRegistrars:
+        - '@Ineersa\Tui\Listener\PromptTemplateCommandRegistrar'
+        - '@Ineersa\Tui\Listener\SkillCommandRegistrar'
 
   # ─── Per-session TUI composition ───
   # Non-shared projector services: each get() returns a fresh projector

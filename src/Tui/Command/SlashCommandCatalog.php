@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Command;
 
 use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
+use Ineersa\Tui\Listener\SlashCommandCatalogRegistrar;
 
 /**
  * Process-scoped slash command catalog.
@@ -15,6 +16,13 @@ use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
  * commands).  Per-session handler bindings live in the fresh
  * {@see SlashCommandRegistry} created for each TUI session; that
  * registry consults this catalog for metadata and default handlers.
+ *
+ * Built-in command names and aliases are seeded during construction, so
+ * they are present before anything else can register: extensions load on
+ * ConsoleEvents::COMMAND and reach this catalog through
+ * TuiCommandRegistryAdapter, which constructs it first. An extension that
+ * registers a built-in name or alias is therefore rejected in every process
+ * that loads extensions, not only in the TUI.
  *
  * Extension seam: {@see register()} is called by TuiCommandRegistryAdapter
  * at any time during a session, and the catalog is shared, so commands
@@ -31,8 +39,15 @@ final class SlashCommandCatalog
     /** @var array<string, string> alias → canonical name */
     private array $aliasMap = [];
 
+    /**
+     * Prompt-template and skill registrars are not built-ins; InteractiveMode
+     * runs them after extensions have loaded.
+     *
+     * @param iterable<SlashCommandCatalogRegistrar> $builtInRegistrars
+     */
     public function __construct(
         private readonly HotkeyRegistry $hotkeyRegistry = new HotkeyRegistry(),
+        iterable $builtInRegistrars = [],
     ) {
         // Built-in /help — metadata only; handle is built-in to execute()
         $this->addMetadata(
@@ -75,6 +90,10 @@ final class SlashCommandCatalog
             ),
             new ExitTuiCommand(),
         );
+
+        foreach ($builtInRegistrars as $registrar) {
+            $registrar->registerCatalog($this);
+        }
     }
 
     /**

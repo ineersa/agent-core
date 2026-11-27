@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Command;
 
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
+use Ineersa\Tui\Listener\CopyCommandRegistrar;
+use Ineersa\Tui\Listener\SessionCommandRegistrar;
+use Ineersa\Tui\Utility\Clipboard;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[CoversClass(SlashCommandCatalog::class)]
 #[CoversClass(CommandMetadata::class)]
@@ -220,6 +226,18 @@ final class SlashCommandCatalogTest extends TestCase
         $this->assertContains('quit', $meta->aliases);
         $this->assertContains('q', $meta->aliases);
         $this->assertNotEmpty($meta->description);
+    }
+
+    #[Test]
+    public function seedsBuiltInRegistrarsAtConstruction(): void
+    {
+        $catalog = new SlashCommandCatalog(builtInRegistrars: [
+            new SessionCommandRegistrar(new ExtensionSessionEventPublisher(new EventDispatcher(), new NullLogger())),
+            new CopyCommandRegistrar(new Clipboard()),
+        ]);
+
+        $this->assertSame('resume', $catalog->resolveName('r'));
+        $this->assertSame('copy', $catalog->resolveName('cp'));
     }
 
     // ─── Private helpers ─────────────────────────────────────────────

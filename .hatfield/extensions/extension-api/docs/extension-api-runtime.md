@@ -21,7 +21,8 @@ The context exposes only `notify(string $message, string $level = 'info')` with 
 `info`, `success`, `warning` and `error`.
 
 Registration throws `InvalidArgumentException` when the name or any alias equals a name or alias
-that is already registered, including the built-in aliases such as `q`, `quit`, `h` and `?`.
+that is already registered, including every built-in command name and alias such as `resume`,
+`r`, `q`, `quit`, `h` and `?`; the extension then fails to load.
 
 ## Prompt contributors
 
