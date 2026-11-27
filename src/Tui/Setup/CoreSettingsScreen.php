@@ -79,7 +79,7 @@ final class CoreSettingsScreen
                 'ai.default_reasoning', 'compaction.thinking_level', 'forks.thinking_level' => [self::inherit($key), ...ThinkingLevelEnum::values()],
                 default => [],
             };
-            $submenu = \is_bool($sample) ? null : function () use ($label, $help, $context, $choices, $key, $sample, $layer, $removeHint, $tui): SelectListWidget {
+            $submenu = \is_bool($sample) ? null : function (string $_, callable $done) use ($label, $help, $context, $choices, $key, $sample, $layer, $removeHint, $tui): SelectListWidget|SettingsTextInputWidget {
                 $removeHint(false);
                 $context->setText($label."\n".$help.(isset(self::HTTP[$key]) ? ' Unit: '.self::HTTP[$key][1].'.' : '')."\nEnter applies · Esc cancels");
                 $options = $choices();
@@ -94,7 +94,7 @@ final class CoreSettingsScreen
                     $value = $edit->value ?? (self::HTTP[$key][0] ?? null);
                     $secret = self::masked($key);
                     $initial = $secret || (\is_array($sample) && !$this->localValue($this->settings->load(), $layer, $key)->exists) ? '' : self::encode($value, $sample);
-                    $editor = new SettingsTextInputWidget($initial, secret: $secret, cancelUnchanged: true);
+                    $editor = new SettingsTextInputWidget($done, $initial, secret: $secret, cancelUnchanged: true);
                     if (\is_array($sample)) {
                         $context->setText($context->getText().' · One-line YAML'.($secret ? ' (hidden patch)' : ''));
                     }

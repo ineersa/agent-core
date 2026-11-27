@@ -587,7 +587,7 @@ final class SetupScreen
             'API key',
             $apiKeyDisplay,
             'Use an environment reference or paste a raw key.',
-            submenu: static fn (): SettingsTextInputWidget => new SettingsTextInputWidget(secret: true),
+            submenu: static fn (string $_, callable $done): SettingsTextInputWidget => new SettingsTextInputWidget($done, secret: true),
         );
         $items[] = new SettingItem('clearApiKey', 'Clear API key', '', values: ['clear']);
         $items[] = new SettingItem(
@@ -664,10 +664,12 @@ final class SetupScreen
         return $items;
     }
 
-    private function textSubmenu(string $current): SettingsTextInputWidget
+    /**
+     * @param callable(?string): void $done
+     */
+    private function textSubmenu(string $current, callable $done): SettingsTextInputWidget
     {
-        // Vendor submenu factory passes ($current, $onDone); PHP ignores the extra arg.
-        return new SettingsTextInputWidget($current);
+        return new SettingsTextInputWidget($done, $current);
     }
 
     private function onCustomSettingChange(string $id, string $value): void

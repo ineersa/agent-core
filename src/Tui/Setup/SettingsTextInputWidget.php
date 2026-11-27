@@ -6,100 +6,41 @@ namespace Ineersa\Tui\Setup;
 
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Event\CancelEvent;
-use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
+use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Render\RenderContext;
-use Symfony\Component\Tui\Widget\BracketedPasteTrait;
-use Symfony\Component\Tui\Widget\SelectListWidget;
-use Symfony\Component\Tui\Widget\Util\Line;
-use Symfony\Component\Tui\Widget\Util\StringUtils;
+use Symfony\Component\Tui\Widget\InputWidget;
 
 /**
- * Text input that satisfies SettingsListWidget's submenu contract.
+ * Text input for SettingsListWidget submenus.
  *
- * SettingsListWidget only closes submenus on SelectEvent/CancelEvent, but
- * InputWidget fires SubmitEvent — and SelectEvent's constructor requires a
- * SelectListWidget target. This thin bridge looks like an InputWidget and
- * dispatches SelectEvent on Enter so the vendor submenu lifecycle works.
+ * SettingsListWidget passes `$onDone` to the submenu factory; submit applies the
+ * value through it. Rejected submits (blank secret, unchanged value) dispatch
+ * CancelEvent instead: SettingsListWidget routes that to `$onDone(null)`, and
+ * callers' onCancel hooks still run.
  */
-final class SettingsTextInputWidget extends SelectListWidget
+final class SettingsTextInputWidget extends InputWidget
 {
-    use BracketedPasteTrait;
-
-    private Line $line;
-    private string $prompt;
-
-    public function __construct(private readonly string $initial = '', string $prompt = '> ', private readonly bool $secret = false, private readonly bool $cancelUnchanged = false)
+    /**
+     * @param callable(?string): void $onDone
+     */
+    public function __construct(callable $onDone, string $initial = '', private readonly bool $secret = false, bool $cancelUnchanged = false)
     {
-        parent::__construct([]);
-        $this->line = new Line($initial, \strlen($initial));
-        $this->prompt = $prompt;
-        $this->setKeybindings(new Keybindings([
-            'delete_char_backward' => [Key::BACKSPACE, 'shift+backspace'],
-            'cursor_left' => [Key::LEFT, 'ctrl+b'],
-            'cursor_right' => [Key::RIGHT, 'ctrl+f'],
-            'cursor_start' => [Key::HOME, 'ctrl+a'],
-            'cursor_end' => [Key::END, 'ctrl+e'],
-            'delete_char_forward' => [Key::DELETE],
-        ]));
-    }
-
-    public function handleInput(string $data): void
-    {
-        // Do not touch parent KeybindingsTrait::$onInput (private to SelectListWidget).
-
-        $pasted = $this->processBracketedPaste($data);
-        if (null !== $pasted) {
-            $this->line->insert($pasted);
-            $this->invalidate();
-        }
-        if ('' === $data) {
-            return;
-        }
-
-        $kb = $this->getKeybindings();
-        if ($kb->matches($data, 'select_cancel')) {
-            $this->dispatch(new CancelEvent($this));
-
-            return;
-        }
-        if ($kb->matches($data, 'select_confirm')) {
-            $value = $this->line->getText();
-            if (($this->secret && '' === trim($value)) || ($this->cancelUnchanged && $value === $this->initial)) {
+        parent::__construct();
+        $this->setValue($initial);
+        // SettingsListWidget forwards input while keeping focus itself; the
+        // submenu must mark itself focused for InputWidget to render its cursor.
+        $this->setFocused(true);
+        // Compare against the sanitized value InputWidget actually holds.
+        $initialValue = $this->getValue();
+        $this->onSubmit(function (SubmitEvent $event) use ($onDone, $initialValue, $cancelUnchanged): void {
+            $value = $event->getValue();
+            if (($this->secret && '' === trim($value)) || ($cancelUnchanged && $value === $initialValue)) {
                 $this->dispatch(new CancelEvent($this));
 
                 return;
             }
-            $this->dispatch(new SelectEvent($this, [
-                'value' => $value,
-                'label' => $this->secret ? '' : $value,
-            ]));
-
-            return;
-        }
-
-        $edited = match (true) {
-            $kb->matches($data, 'delete_char_backward') => $this->line->deleteCharBackward(),
-            $kb->matches($data, 'delete_char_forward') => $this->line->deleteCharForward(),
-            $kb->matches($data, 'cursor_left') => $this->line->moveCursorLeft(),
-            $kb->matches($data, 'cursor_right') => $this->line->moveCursorRight(),
-            $kb->matches($data, 'cursor_start') => $this->line->moveCursorToStart(),
-            $kb->matches($data, 'cursor_end') => $this->line->moveCursorToEnd(),
-            default => null,
-        };
-        if (null !== $edited) {
-            $this->invalidate();
-
-            return;
-        }
-
-        // Accept full UTF-8 (CJK/emoji); strip control bytes so escapes can't inject.
-        $text = StringUtils::stripControlBytes(StringUtils::sanitizeUtf8($data));
-        if ('' !== $text) {
-            $this->line->insert($text);
-            $this->invalidate();
-        }
+            $onDone($value);
+        });
     }
 
     /**
@@ -111,11 +52,6 @@ final class SettingsTextInputWidget extends SelectListWidget
             return [AnsiUtils::truncateToWidth('Hidden input · Enter applies · Esc cancels', $context->getColumns(), '')];
         }
 
-        $width = max(0, $context->getColumns() - AnsiUtils::visibleWidth($this->prompt));
-        $before = substr($this->line->getText(), 0, $this->line->getCursor());
-        $after = substr($this->line->getText(), $this->line->getCursor());
-        $offset = max(0, AnsiUtils::visibleWidth($before) - $width + 1);
-
-        return [AnsiUtils::truncateToWidth($this->prompt.AnsiUtils::sliceByColumn($before.'█'.$after, $offset, $width, true), $context->getColumns(), '')];
+        return parent::render($context);
     }
 }

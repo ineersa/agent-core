@@ -193,14 +193,14 @@ final class ExtensionsSetupScreen
                 $models = array_unique([$current, ...$this->flow->models()]);
 
                 return new SelectListWidget(array_map(static fn (string $model): array => ['value' => $model, 'label' => $model], array_values(array_filter($models, static fn (string $id): bool => '' !== $id))), maxVisible: 12);
-            } : static fn (string $current): SettingsTextInputWidget => new SettingsTextInputWidget($current);
+            } : static fn (string $current, callable $done): SettingsTextInputWidget => new SettingsTextInputWidget($done, $current);
             // Untyped values, including nested YAML, may contain secrets. Never prefill
             // a malformed on-disk string even when the schema declares a number.
             $numeric = ($node instanceof IntegerNode || $node instanceof FloatNode)
                 && (null === $value || \is_int($value) || \is_float($value));
             if ([] === $choices && !$picker && !$numeric) {
                 $hidden[$path] = true;
-                $submenu = static fn (): SettingsTextInputWidget => new SettingsTextInputWidget(secret: true);
+                $submenu = static fn (string $_, callable $done): SettingsTextInputWidget => new SettingsTextInputWidget($done, secret: true);
                 $display = '' === $display ? '(not configured)' : '(configured)';
                 $clearActions['clear:'.$path] = $path;
             }
