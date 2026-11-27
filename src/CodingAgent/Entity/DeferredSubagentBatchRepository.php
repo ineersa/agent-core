@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DTO\DeferredSubagentCompletionSourceDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
@@ -37,6 +38,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         ManagerRegistry $registry,
         private readonly DeferredSubagentChildRepository $childRepository,
         private readonly SerializerInterface $serializer,
+        private readonly DeferredSubagentBatchIdentityFactory $identityFactory,
     ) {
         parent::__construct($registry, DeferredSubagentBatch::class);
     }
@@ -121,11 +123,16 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         // one query, independently of the already-settled parent tool call.
         // Failed preparation may leave no runtime or only a previous attempt's
         // projection. A successful launch retains its actual lifecycle status.
-        // A run ID survives agent_resume. Trust an operational terminal status
-        // only if it advances past this lifecycle's observed cancellation cursor.
-        return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<SQL
+        // Resume carries the run ID and observation cursor into a new batch.
+        // A newer terminal sequence alone is not enough: require an observed
+        // cancellation or prove this is the original launch by its child identity.
+        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<SQL
             SELECT batch.backgrounded_at,
                 child.child_run_id, child.artifact_id, child.agent_name, child.task,
+                batch.parent_tool_call_id, child.batch_index,
+                CASE WHEN child.launch_status = :launched_child_launch AND child.terminal_status IS NULL
+                    AND state.status IN (:terminal_statuses) AND state.last_event_sequence > child.child_event_cursor
+                    THEN state.status END AS original_launch_terminal_candidate,
                 COALESCE(json_extract(child.child_lifecycle_projection, '$.model'), child.launch_model) AS model,
                 COALESCE(json_extract(child.child_lifecycle_projection, '$.reasoning'), child.launch_reasoning) AS reasoning,
                 COALESCE(json_extract(child.child_lifecycle_projection, '$.latest_input_tokens'), 0) AS latest_input_tokens,
@@ -149,10 +156,22 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             'failed_child_launch' => DeferredSubagentChildLaunchStatusEnum::Failed->value,
             'failed_batch_launch' => DeferredSubagentBatchLaunchStatusEnum::Failed->value,
             'reserved_child_launch' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
+            'launched_child_launch' => DeferredSubagentChildLaunchStatusEnum::Launched->value,
             'failed_status' => RunStatus::Failed->value,
             'cancelling_status' => RunStatus::Cancelling->value,
             'terminal_statuses' => array_values(array_map(static fn (RunStatus $status): string => $status->value, array_filter(RunStatus::cases(), static fn (RunStatus $status): bool => $status->isTerminal()))),
         ] + $parameters, $types);
+
+        foreach ($rows as &$row) {
+            $candidate = $row['original_launch_terminal_candidate'];
+            if (null !== $candidate && $candidate !== $row['status']
+                && $row['child_run_id'] === $this->identityFactory->childIdentity($rootRunId, (string) $row['parent_tool_call_id'], (int) $row['batch_index'])['childRunId']) {
+                $row['status'] = $candidate;
+            }
+            unset($row['original_launch_terminal_candidate'], $row['parent_tool_call_id'], $row['batch_index']);
+        }
+
+        return $rows;
     }
 
     public function hasLaunchedPendingParentToolCall(string $parentRunId, int $parentTurnNo, string $parentToolCallId): bool

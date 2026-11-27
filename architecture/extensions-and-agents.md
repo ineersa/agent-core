@@ -159,7 +159,9 @@ sequenceDiagram
     loop Each child turn commit
         Child->>RC: ObserveDeferredSubagentBatchChildTurnMessage
         RC->>Batch: Read unseen child events, advance observation cursor
-        RC->>RC: CommitSubagentProgress for the parent progress card
+        opt Parent tool call is not settled
+            RC->>RC: CommitSubagentProgress for the parent progress card
+        end
     end
     alt Child terminal outcome
         Child->>Artifact: Finalize handoff, metadata, bounded summaries
@@ -171,6 +173,7 @@ sequenceDiagram
         RC->>Batch: Persist interruption outcome
         RC->>RC: Settle deferred parent call
     end
+    Note over RC,Batch: After parent cancellation settles the call, late child termination updates only the child projection, without parent progress or delivery
     Note over RC,Batch: On run_control worker start, RecoverDeferredSubagentBatchLifecycleMessage reconciles unfinished batches
 ```
 

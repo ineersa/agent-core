@@ -113,7 +113,7 @@ final readonly class DeferredSubagentBatchRecoveryService
                 committedTurnNo: $maxTurnNo,
             );
 
-            $bumpRevision = $updated->lastCommittedSeq > $cursor;
+            $bumpRevision = null === $batch->terminalCompletionEnqueuedAt && $updated->lastCommittedSeq > $cursor;
 
             try {
                 $this->batchRepository->applyBatchChildLifecycleProjection(

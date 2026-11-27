@@ -522,9 +522,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                     'usage' => ['input_tokens' => 7, 'output_tokens' => 3],
                 ];
                 $event = PreparedEventStoreSeeder::append(self::getContainer()->get(EventStoreInterface::class), RunEvent::forAppend($c1['childRunId'], 1, RunEventTypeEnum::LlmStepCompleted->value, $payload));
-                $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Running, 1, [
+                $alreadyObserved = new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Running, 1, [
                     new AfterTurnCommitEventSummary($event->seq, $event->type, $event->payload),
-                ]));
+                ]);
+                $handler($alreadyObserved);
             }
         }
 
@@ -748,12 +749,18 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $this->assertSame(1, $snapshot->getBackgroundSnapshot()->activeSubagents);
             $this->assertNotNull($batchDone->terminalCompletionEnqueuedAt);
             $this->assertNull($batchDone->children[0]->terminalCompletedAt);
+            $observationBus->messages = [];
+            $handler($alreadyObserved);
+            $afterDuplicate = $repo->findByLifecycleId($lifecycle);
+            $this->assertSame([], $observationBus->messages);
+            $this->assertSame($cursorBeforeLate, $afterDuplicate->children[0]->childEventCursor);
+            $this->assertSame($revisionBeforeLate, $afterDuplicate->aggregateProgressRevision);
+            $this->assertEquals($batchDone->terminalCompletionEnqueuedAt, $afterDuplicate->terminalCompletionEnqueuedAt);
             $store = $container->get(EventStoreInterface::class);
             $end = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($c1['childRunId'], 1, 'agent_end', ['reason' => 'cancelled']));
             $message = new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Cancelled, 1, [
                 new AfterTurnCommitEventSummary($end->seq, $end->type, $end->payload),
             ], predecessorSequence: $cursorBeforeLate);
-            $observationBus->messages = [];
             $handler($message);
             $settled = $repo->findByLifecycleId($lifecycle);
             $child = $settled->children[0];
@@ -766,7 +773,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $this->assertSame($revisionBeforeLate, $settled->aggregateProgressRevision);
             $handler($message);
             $this->assertSame([], $observationBus->messages);
-            $this->assertCount(1, $commandBus->messages);
         }
 
         $commandBus->messages = [];
