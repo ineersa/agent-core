@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\MessageContentText;
 use Ineersa\AgentCore\Domain\Message\ToolResultType;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Image;
@@ -479,7 +480,7 @@ final class AgentMessageConverter
      */
     private function convertAgentMessage(AgentMessage $message): array
     {
-        $textContent = $this->contentToText($message->content);
+        $textContent = MessageContentText::join($message->content, textPartsOnly: false);
         $imageRefParts = $this->extractImageRefParts($message->content);
         $hasSignedText = false;
         foreach ($message->content as $part) {
@@ -748,29 +749,6 @@ final class AgentMessageConverter
         }
 
         return $textContent;
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $content
-     *
-     * @return string Concatenated text from all 'text' content parts
-     */
-    private function contentToText(array $content): string
-    {
-        $parts = [];
-
-        foreach ($content as $contentPart) {
-            if (!\is_array($contentPart)) {
-                continue;
-            }
-
-            $text = $contentPart['text'] ?? null;
-            if (\is_string($text) && '' !== $text) {
-                $parts[] = $text;
-            }
-        }
-
-        return implode("\n", $parts);
     }
 
     /**

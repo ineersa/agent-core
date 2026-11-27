@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Event\AgentCommandKindEnum;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\MessageContentText;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
@@ -379,15 +380,7 @@ final class RuntimeEventMapper
 
     private function toolResultText(ToolCallResult $result): string
     {
-        $message = $this->messageNormalizer->toolMessage($result);
-        $parts = [];
-        foreach ($message->content as $part) {
-            if ('text' === ($part['type'] ?? null) && \is_string($part['text'] ?? null)) {
-                $parts[] = $part['text'];
-            }
-        }
-
-        return implode("\n", $parts);
+        return MessageContentText::join($this->messageNormalizer->toolMessage($result)->content, textPartsOnly: true);
     }
 
     // ── Model notification ────────────────────────────────────────────────

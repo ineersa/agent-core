@@ -1140,7 +1140,6 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 2,
             lastSeq: 8,
             isStreaming: false,
-            streamingMessage: null,
             pendingToolCalls: [],
             errorMessage: null,
             messages: [
@@ -1210,7 +1209,6 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 3,
             lastSeq: 12,
             isStreaming: false,
-            streamingMessage: null,
             pendingToolCalls: [],
             errorMessage: 'Run cancelled by command.',
             messages: [
@@ -1269,7 +1267,6 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 15,
             lastSeq: 200,
             isStreaming: false,
-            streamingMessage: null,
             pendingToolCalls: [
                 'call_00' => true,
                 'call_01' => true,
@@ -1574,7 +1571,6 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertNull($live->activeStepId);
         $this->assertNull($live->currentOperation);
         $this->assertFalse($live->isStreaming);
-        $this->assertNull($live->streamingMessage);
         $this->assertSame($deferred ? ['user', 'assistant', 'tool', 'tool'] : ['user', 'assistant'], array_column($live->messages, 'role'));
     }
 

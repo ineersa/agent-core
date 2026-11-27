@@ -18,7 +18,6 @@ final readonly class RunState
      * @param array<string, bool>               $pendingToolCalls
      * @param array<string, bool>               $pendingShellToolCalls     current direct-shell tool call ids only; removed when execution ends
      * @param list<CurrentToolCallDTO>          $currentToolCalls          payload-free current tool coordination only
-     * @param array<string, mixed>|null         $streamingMessage
      * @param list<PendingHumanInputRequestDTO> $pendingHumanInputRequests ordered FIFO of outstanding human-input requests
      */
     public function __construct(
@@ -28,7 +27,6 @@ final readonly class RunState
         public int $turnNo = 0,
         public int $lastSeq = 0,
         public bool $isStreaming = false,
-        public ?array $streamingMessage = null,
         public array $pendingToolCalls = [],
         /** @var array<string, bool> Current direct-shell tool call ids only; never a receipt history. */
         public array $pendingShellToolCalls = [],
@@ -87,7 +85,6 @@ final readonly class RunState
      *     turnNo?: int,
      *     lastSeq?: int,
      *     isStreaming?: bool,
-     *     streamingMessage?: array<string, mixed>|null,
      *     pendingToolCalls?: array<string, bool>,
      *     pendingShellToolCalls?: array<string, bool>,
      *     currentToolCalls?: list<CurrentToolCallDTO>,
@@ -104,31 +101,20 @@ final readonly class RunState
      */
     public function with(array $overrides = []): self
     {
-        return new self(
-            runId: \array_key_exists('runId', $overrides) ? (string) $overrides['runId'] : $this->runId,
-            status: \array_key_exists('status', $overrides) ? $overrides['status'] : $this->status,
-            version: \array_key_exists('version', $overrides) ? (int) $overrides['version'] : $this->version,
-            turnNo: \array_key_exists('turnNo', $overrides) ? (int) $overrides['turnNo'] : $this->turnNo,
-            lastSeq: \array_key_exists('lastSeq', $overrides) ? (int) $overrides['lastSeq'] : $this->lastSeq,
-            isStreaming: \array_key_exists('isStreaming', $overrides) ? (bool) $overrides['isStreaming'] : $this->isStreaming,
-            streamingMessage: \array_key_exists('streamingMessage', $overrides) ? $overrides['streamingMessage'] : $this->streamingMessage,
-            pendingToolCalls: \array_key_exists('pendingToolCalls', $overrides) ? $overrides['pendingToolCalls'] : $this->pendingToolCalls,
-            pendingShellToolCalls: \array_key_exists('pendingShellToolCalls', $overrides) ? $overrides['pendingShellToolCalls'] : $this->pendingShellToolCalls,
-            currentToolCalls: \array_key_exists('currentToolCalls', $overrides) ? $overrides['currentToolCalls'] : $this->currentToolCalls,
-            errorMessage: \array_key_exists('errorMessage', $overrides) ? $overrides['errorMessage'] : $this->errorMessage,
-            messages: \array_key_exists('messages', $overrides) ? $overrides['messages'] : $this->messages,
-            activeStepId: \array_key_exists('activeStepId', $overrides) ? $overrides['activeStepId'] : $this->activeStepId,
-            currentOperation: \array_key_exists('currentOperation', $overrides) ? $overrides['currentOperation'] : $this->currentOperation,
-            lastAppliedAdvanceKey: \array_key_exists('lastAppliedAdvanceKey', $overrides) ? $overrides['lastAppliedAdvanceKey'] : $this->lastAppliedAdvanceKey,
-            lastAppliedCompactionKey: \array_key_exists('lastAppliedCompactionKey', $overrides) ? $overrides['lastAppliedCompactionKey'] : $this->lastAppliedCompactionKey,
-            pendingHumanInputRequests: \array_key_exists('pendingHumanInputRequests', $overrides) ? $overrides['pendingHumanInputRequests'] : $this->pendingHumanInputRequests,
-            model: \array_key_exists('model', $overrides) ? $overrides['model'] : $this->model,
-            parentRunId: \array_key_exists('parentRunId', $overrides) ? $overrides['parentRunId'] : $this->parentRunId,
-        );
+        return clone($this, $overrides);
     }
 
-    private function isPendingStandaloneShellOperation(CurrentOperationDTO $operation): bool
+    /**
+     * Persisted direct-shell tool call identity derived from the command
+     * idempotency key; replay, repair, indexing and admission must agree on it.
+     */
+    public static function standaloneShellToolCallId(string $idempotencyKey): string
     {
-        return isset($this->pendingShellToolCalls['sh_'.hash('sha256', $operation->idempotencyKey)]);
+        return 'sh_'.hash('sha256', $idempotencyKey);
+    }
+
+    public function isPendingStandaloneShellOperation(CurrentOperationDTO $operation): bool
+    {
+        return isset($this->pendingShellToolCalls[self::standaloneShellToolCallId($operation->idempotencyKey)]);
     }
 }

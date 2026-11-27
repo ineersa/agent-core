@@ -121,10 +121,11 @@ final readonly class AgentMessageNormalizer
             // — that duplication inflates model-facing text and triggers false
             // late-hook capping.  The raw_result lives on the AgentMessage
             // details for persistence but is not sent as provider text.
-            $text = $this->extractTextFromContent(
+            $text = MessageContentText::join(
                 \is_array($result->result['content'] ?? null)
                     ? $result->result['content']
                     : [],
+                textPartsOnly: true,
             );
 
             // When content is empty but an error is present, use the error message.
@@ -211,30 +212,6 @@ final readonly class AgentMessageNormalizer
                 'order_index' => $result->orderIndex,
             ],
         );
-    }
-
-    /**
-     * Extract concatenated text from ToolResult content parts.
-     *
-     * @param array<int, array<string, mixed>> $content
-     */
-    private function extractTextFromContent(array $content): string
-    {
-        $parts = [];
-        foreach ($content as $part) {
-            if (!\is_array($part)) {
-                continue;
-            }
-            if (($part['type'] ?? null) !== 'text') {
-                continue;
-            }
-            $text = $part['text'] ?? null;
-            if (\is_string($text) && '' !== $text) {
-                $parts[] = $text;
-            }
-        }
-
-        return implode("\n", $parts);
     }
 
     /**

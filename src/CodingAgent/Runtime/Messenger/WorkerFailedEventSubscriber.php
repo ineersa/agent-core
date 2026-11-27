@@ -133,7 +133,6 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 $failedState = $current->with([
                     'status' => RunStatus::Failed,
                     'isStreaming' => false,
-                    'streamingMessage' => null,
                     'pendingToolCalls' => [],
                     'errorMessage' => $errorMessage,
                 ]);

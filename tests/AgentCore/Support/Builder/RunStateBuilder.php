@@ -13,11 +13,10 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
  * Builder for RunState value objects in tests.
  *
  * Defaults: runId="run-test", status=Queued, version=0, turnNo=0, lastSeq=0,
- * isStreaming=false, streamingMessage=null, pendingToolCalls=[],
+ * isStreaming=false, pendingToolCalls=[],
  * errorMessage=null, messages=[], activeStepId=null,
  * pendingHumanInputRequests=[].
  *
- * @phpstan-type StreamingMessage array<string, mixed>|null
  * @phpstan-type PendingToolCalls array<string, bool>
  * @phpstan-type MessagesList list<AgentMessage>
  * @phpstan-type PendingHumanInputRequests list<PendingHumanInputRequestDTO>
@@ -30,9 +29,6 @@ final class RunStateBuilder
     private int $turnNo = 0;
     private int $lastSeq = 0;
     private bool $isStreaming = false;
-
-    /** @var StreamingMessage */
-    private ?array $streamingMessage = null;
 
     /** @var PendingToolCalls */
     private array $pendingToolCalls = [];
@@ -117,16 +113,6 @@ final class RunStateBuilder
     }
 
     /**
-     * @param StreamingMessage $streamingMessage
-     */
-    public function withStreamingMessage(?array $streamingMessage): self
-    {
-        $this->streamingMessage = $streamingMessage;
-
-        return $this;
-    }
-
-    /**
      * @param PendingToolCalls $pendingToolCalls
      */
     public function withPendingToolCalls(array $pendingToolCalls): self
@@ -186,7 +172,6 @@ final class RunStateBuilder
             turnNo: $this->turnNo,
             lastSeq: $this->lastSeq,
             isStreaming: $this->isStreaming,
-            streamingMessage: $this->streamingMessage,
             pendingToolCalls: $this->pendingToolCalls,
             errorMessage: $this->errorMessage,
             messages: $this->messages,

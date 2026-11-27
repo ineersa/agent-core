@@ -222,7 +222,6 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             turnNo: 0,
             lastSeq: 1,
             isStreaming: false,
-            streamingMessage: null,
             pendingToolCalls: [],
             errorMessage: null,
             messages: $messages,

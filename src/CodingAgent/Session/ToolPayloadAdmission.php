@@ -136,7 +136,7 @@ final readonly class ToolPayloadAdmission
             // Execution has its own key; the shell ID derives from the command key.
             if (null !== $state) {
                 $result['standalone'] = null !== $state->currentOperation
-                    && $reference->toolCallId === 'sh_'.hash('sha256', $state->currentOperation->idempotencyKey);
+                    && $reference->toolCallId === RunState::standaloneShellToolCallId($state->currentOperation->idempotencyKey);
             } else {
                 $pending = $this->pendingShell($reference->runId, $reference->toolCallId, $reference->turnNo, $reference->stepId, $reference->attempt, $reference->idempotencyKey);
                 if (null === $pending) {

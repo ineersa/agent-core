@@ -660,7 +660,6 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             turnNo: 1,
             lastSeq: 2,
             isStreaming: true,
-            streamingMessage: ['message_id' => 'm1'],
             activeStepId: 'llm-1',
             model: 'test-model'));
 

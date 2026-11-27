@@ -33,7 +33,6 @@ final class StartRunHandlerTest extends TestCase
             ->withTurnNo(3)
             ->withLastSeq(9)
             ->withIsStreaming(true)
-            ->withStreamingMessage(['chunk' => 'old'])
             ->withPendingToolCalls(['legacy-call' => true])
             ->withErrorMessage('old error')
             ->withMessages([new AgentMessage(role: 'assistant', content: [])])
@@ -61,7 +60,6 @@ final class StartRunHandlerTest extends TestCase
         $this->assertSame(10, $result->nextState->lastSeq);
         $this->assertSame('start-step-1', $result->nextState->activeStepId);
         $this->assertFalse($result->nextState->isStreaming);
-        $this->assertNull($result->nextState->streamingMessage);
         $this->assertSame([], $result->nextState->pendingToolCalls);
         $this->assertNull($result->nextState->errorMessage);
 
