@@ -58,6 +58,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private DynamicToolDescriptionProcessor $toolDescriptionProcessor,
         private SymfonyPlatformInterface $platform,
         private iterable $transformContextHooks,
+        private ?ConvertToLlmHookInterface $convertToLlmHook,
         private ?LlmStreamObserverInterface $streamObserver,
         private ?CostCalculatorInterface $costCalculator,
         private LoggerInterface $logger,
@@ -69,7 +70,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private readonly ?LlmRequestRetryObserverInterface $retryObserver = null,
         private readonly LlmRequestRetryPolicy $requestRetryPolicy = new LlmRequestRetryPolicy(),
         private readonly ClockInterface $clock = new NativeClock(),
-        private ?ConvertToLlmHookInterface $convertToLlmHook = null,
     ) {
     }
 

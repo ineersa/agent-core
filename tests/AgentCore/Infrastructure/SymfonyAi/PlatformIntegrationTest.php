@@ -335,7 +335,7 @@ final class PlatformIntegrationTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
-
+            convertToLlmHook: null,
             streamObserver: null,
             costCalculator: $costCalculator,
             modelResolver: $modelResolver,
@@ -472,7 +472,7 @@ final class PlatformIntegrationTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
-
+            convertToLlmHook: null,
             streamObserver: null,
             costCalculator: null,
             modelResolver: null,
@@ -512,7 +512,7 @@ final class PlatformIntegrationTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
-
+            convertToLlmHook: null,
             streamObserver: null,
             costCalculator: null,
             modelResolver: null,
@@ -1060,7 +1060,7 @@ final class PlatformIntegrationTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
-
+            convertToLlmHook: null,
             streamObserver: null,
             costCalculator: null,
             modelResolver: null,
@@ -1642,6 +1642,7 @@ final class PlatformIntegrationTest extends TestCase
             ),
             platform: $platform,
             transformContextHooks: $transformHooks,
+            convertToLlmHook: null,
             streamObserver: $streamObserver,
             costCalculator: $costCalculator,
             modelResolver: null,
