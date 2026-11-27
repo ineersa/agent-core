@@ -96,7 +96,6 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $state->usage->hasCacheTelemetry = true;
 
         $harness = new VirtualTuiHarness(sessionId: 'usage-virtual');
-        (new UsageCommandRegistrar($probe, new TestLogger()))->registerCatalog($catalog);
         $context = $this->buildTuiContext()
             ->withTui($harness->tui())
             ->withState($state)
@@ -153,7 +152,6 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $state->usage->outputTokens = 2;
         $state->usage->totalCost = 0.01;
         $harness = new VirtualTuiHarness(sessionId: 'usage-empty');
-        (new UsageCommandRegistrar($probe, new TestLogger()))->registerCatalog($catalog);
         $context = $this->buildTuiContext()
             ->withTui($harness->tui())
             ->withState($state)
@@ -195,7 +193,6 @@ final class TuiUsageCommandVirtualTest extends TestCase
             ], \JSON_THROW_ON_ERROR), ['http_code' => 200]);
         }), both: true);
 
-        (new UsageCommandRegistrar($probe, new TestLogger()))->registerCatalog($catalog);
         $context = $this->buildTuiContext()
             ->withTui($tui)
             ->withState($state)
@@ -226,7 +223,6 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $state->usage->totalCost = 0.001;
 
         $harness = new VirtualTuiHarness(sessionId: 'usage-virtual-fail');
-        (new UsageCommandRegistrar($probe, new TestLogger()))->registerCatalog($catalog);
         $context = $this->buildTuiContext()
             ->withTui($harness->tui())
             ->withState($state)

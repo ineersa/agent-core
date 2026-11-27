@@ -32,7 +32,6 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
             ->build();
 
         $registrar = new SubagentLiveCommandRegistrar();
-        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         $this->assertTrue($catalog->has('agents-live'));

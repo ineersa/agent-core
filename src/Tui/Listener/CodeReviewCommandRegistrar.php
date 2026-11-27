@@ -23,7 +23,8 @@ final readonly class CodeReviewCommandRegistrar implements SlashCommandCatalogRe
 
     public function registerCatalog(SlashCommandCatalog $catalog): void
     {
-        if (null === $this->discovery->findByName('code-review')) {
+        // Built-in and extension commands win — skip if already registered.
+        if ($catalog->has('code-review') || null === $this->discovery->findByName('code-review')) {
             return;
         }
 

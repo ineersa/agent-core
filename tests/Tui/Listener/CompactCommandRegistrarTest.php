@@ -29,7 +29,6 @@ final class CompactCommandRegistrarTest extends TestCase
         $context = $this->buildContext($harness, $state, $catalog);
 
         $registrar = new CompactCommandRegistrar();
-        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         $this->assertTrue($catalog->has('compact'));
@@ -50,7 +49,6 @@ final class CompactCommandRegistrarTest extends TestCase
         $state = new TuiSessionState('compact-help');
         $context = $this->buildContext($harness, $state, $catalog);
 
-        (new CompactCommandRegistrar())->registerCatalog($catalog);
         (new CompactCommandRegistrar())->register($context);
 
         $result = $context->sessionServices->commandRegistry->execute(new SlashCommand('help', '', '/help'));
@@ -69,7 +67,6 @@ final class CompactCommandRegistrarTest extends TestCase
         $context = $this->buildContext($harness, $state, $catalog);
 
         $registrar = new CompactCommandRegistrar();
-        $registrar->registerCatalog($catalog);
         $registrar->register($context);
         $registrar->register($context);
 

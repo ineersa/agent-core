@@ -6,9 +6,8 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\Tui\Command\CommandMetadata;
+use Ineersa\Tui\Command\BuiltInSlashCommands;
 use Ineersa\Tui\Command\ModelCommandHandler;
-use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
@@ -27,35 +26,16 @@ use Symfony\Component\Tui\Event\InputEvent;
  * metadata, and draft pending request stay aligned. Updates TuiSessionState
  * for immediate footer refresh.
  *
- * Command metadata is registered once per process via
- * {@see registerCatalog()}; each session binds fresh handlers wired to
- * the session's picker controllers.
+ * Command metadata is static data in {@see BuiltInSlashCommands}; each
+ * session binds fresh handlers wired to the session's picker controllers.
  */
-final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
+final class ModelControlListener implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly ModelSelectionService $modelService,
         private readonly AppConfig $appConfig,
         private readonly LoggerInterface $logger,
     ) {
-    }
-
-    public function registerCatalog(SlashCommandCatalog $catalog): void
-    {
-        $catalog->registerMetadata(new CommandMetadata(
-            name: 'model',
-            aliases: ['m'],
-            description: 'Select the active AI model',
-            usage: '/model [provider/modelname]',
-            acceptsArguments: true,
-        ));
-        $catalog->registerMetadata(new CommandMetadata(
-            name: 'model-favourites',
-            aliases: ['model-favourite'],
-            description: 'Manage favourite AI models',
-            usage: '/model-favourites [provider/modelname]',
-            acceptsArguments: true,
-        ));
     }
 
     public function register(TuiRuntimeContext $context): void

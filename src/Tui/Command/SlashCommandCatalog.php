@@ -16,6 +16,14 @@ use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
  * {@see SlashCommandRegistry} created for each TUI session; that
  * registry consults this catalog for metadata and default handlers.
  *
+ * Built-in command names and aliases are seeded during construction from
+ * static data ({@see BuiltInSlashCommands}), without building any service,
+ * so they are present before anything else can register: extensions load on
+ * ConsoleEvents::COMMAND and reach this catalog through
+ * TuiCommandRegistryAdapter, which constructs it first. An extension that
+ * registers a built-in name or alias is therefore rejected in every process
+ * that loads extensions, not only in the TUI.
+ *
  * Extension seam: {@see register()} is called by TuiCommandRegistryAdapter
  * at any time during a session, and the catalog is shared, so commands
  * registered dynamically become visible immediately.
@@ -75,6 +83,11 @@ final class SlashCommandCatalog
             ),
             new ExitTuiCommand(),
         );
+
+        // Session-bound built-ins: metadata only; each session binds handlers.
+        foreach (BuiltInSlashCommands::metadata() as $metadata) {
+            $this->registerMetadata($metadata);
+        }
     }
 
     /**
@@ -87,21 +100,6 @@ final class SlashCommandCatalog
     {
         $this->assertNotColliding($metadata);
         $this->handlers[$metadata->name] = $handler;
-        $this->addMetadata($metadata);
-    }
-
-    /**
-     * Register metadata without a default handler.
-     *
-     * Used by built-in command registrars once per process; the
-     * per-session registry binds the actual handler for each session.
-     *
-     * @throws \InvalidArgumentException if the command name or any alias
-     *                                   is already registered
-     */
-    public function registerMetadata(CommandMetadata $metadata): void
-    {
-        $this->assertNotColliding($metadata);
         $this->addMetadata($metadata);
     }
 
@@ -181,12 +179,30 @@ final class SlashCommandCatalog
 
     // ── Internal ────────────────────────────────────────────────────
 
+    /**
+     * Register metadata without a default handler.
+     *
+     * Used for session-bound built-in commands at construction; the
+     * per-session registry binds the actual handler for each session.
+     */
+    private function registerMetadata(CommandMetadata $metadata): void
+    {
+        $this->assertNotColliding($metadata);
+        $this->addMetadata($metadata);
+    }
+
     private function assertNotColliding(CommandMetadata $metadata): void
     {
         $name = $metadata->name;
 
         if (isset($this->metadata[$name])) {
             throw new \InvalidArgumentException("Command '{$name}' is already registered.");
+        }
+
+        // resolveName() prefers canonical names, so a name equal to an
+        // existing alias would silently take that alias over.
+        if (isset($this->aliasMap[$name])) {
+            throw new \InvalidArgumentException("Command '{$name}' conflicts with alias of registered command '{$this->aliasMap[$name]}'.");
         }
 
         foreach ($metadata->aliases as $alias) {

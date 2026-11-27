@@ -25,7 +25,6 @@ use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
 use Ineersa\Tui\ImagePaste\PastedImageValidationService;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Listener\HistoryCommandHandler;
-use Ineersa\Tui\Listener\HistoryCommandRegistrar;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Picker\HistoryPickerController;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
@@ -86,7 +85,6 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
         $picker = new HistoryPickerController($tui, $screen, $state, $provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
         $screen->setTransientStatus('fixture', 'Previous command notice.');
         $catalog = new SlashCommandCatalog();
-        (new HistoryCommandRegistrar())->registerCatalog($catalog);
         $registry = new SlashCommandRegistry($catalog);
         $registry->bind('history', new HistoryCommandHandler($picker));
         $client = $this->createMock(AgentSessionClient::class);

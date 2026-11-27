@@ -46,6 +46,14 @@ use Symfony\Component\Tui\Tui;
  */
 final class SubmitListener implements TuiListenerRegistrar
 {
+    /**
+     * Canonical commands that may run while the session is still restoring.
+     * Matched after alias resolution so every alias is accepted too.
+     *
+     * @var list<string>
+     */
+    private const RESTORE_ALLOWED_COMMANDS = ['reload', 'new', 'exit', 'resume'];
+
     public function __construct(
         private readonly HatfieldSessionStore $sessionStore,
         private readonly TranscriptBlockFactory $blockFactory,
@@ -98,7 +106,7 @@ final class SubmitListener implements TuiListenerRegistrar
             if ('' === $text) {
                 return;
             }
-            if (!$state->sessionReady && 1 !== preg_match('/^\/(?:reload|new|exit|quit|resume)(?:\s|$)/', trim($text))) {
+            if (!$state->sessionReady && !\in_array($router->resolveSlashCommandName($text), self::RESTORE_ALLOWED_COMMANDS, true)) {
                 $screen->promptEditor()->replaceText($text);
                 $screen->setWorkingMessage($state->bootstrapError ?? 'Restoring session. Input is not ready yet.');
 

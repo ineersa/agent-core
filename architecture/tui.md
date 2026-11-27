@@ -55,7 +55,7 @@ priority (higher first), respecting focus:
 ```mermaid
 flowchart TD
     Submit["Submitted editor text, trimmed"] --> Ready{"Session ready?"}
-    Ready -->|"No, not /reload, /new, /exit, /quit, /resume"| Restore["Restore text, show restoring notice"]
+    Ready -->|"No, not /reload, /new, /exit, /resume or an alias"| Restore["Restore text, show restoring notice"]
     Ready -->|Yes| Parse[CommandParser]
     Parse -->|"Empty or // prefix"| Prompt[Normal prompt]
     Parse -->|"!! prefix"| Unsupported["Unsupported-notice message"]
@@ -69,7 +69,14 @@ flowchart TD
 `//text` is sent as an ordinary prompt; the parser does not strip the slashes.
 `SlashCommandCatalog` is process-scoped (metadata, aliases, default handlers,
 extension and prompt-template commands); each session binds its own handlers in a
-fresh `SlashCommandRegistry`. While a subagent live view is active,
+fresh `SlashCommandRegistry`. The catalog registers the built-in commands from
+static `BuiltInSlashCommands` data when it is constructed, without building any
+service, so their names and aliases are taken before extensions register commands
+on `ConsoleEvents::COMMAND` and an extension cannot take them. The built-in
+listener registrars only bind per-session handlers. After CLI skill and template
+options are applied, `InteractiveMode` runs the dynamic `SlashCommandCatalogRegistrar`
+services once, in order: `/code-review`, prompt templates, then `skill:` commands;
+each skips names that are already taken. While a subagent live view is active,
 `SubagentLiveInputPolicy` allows only `/agents-main`, `/main` and `/agents-live`.
 
 `ImagePasteInputListener` reuses Symfony's `BracketedPasteTrait` buffering on the

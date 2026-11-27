@@ -20,6 +20,10 @@ use Ineersa\Tui\Command\SlashCommandRegistry;
  * ExtensionSlashCommandHandler so commands registered by extensions
  * flow through the native TUI command infrastructure.
  *
+ * The catalog seeds built-in command names and aliases when it is
+ * constructed, so registering one of them throws and the extension fails
+ * to load in every process.
+ *
  * Extension handler objects are process-owned, so they are registered
  * on the shared catalog as default handlers; every per-session
  * {@see SlashCommandRegistry} resolves them at

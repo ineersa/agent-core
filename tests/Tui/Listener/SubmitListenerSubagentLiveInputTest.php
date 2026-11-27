@@ -54,7 +54,6 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
     private TuiSessionState $state;
     /** @var AgentSessionClient&MockObject */
     private AgentSessionClient $client;
-    private SlashCommandCatalog $catalog;
     private SubmissionRouter $router;
     private QuestionCoordinator $questionCoordinator;
 
@@ -69,12 +68,16 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         $this->questionCoordinator = new QuestionCoordinator();
         $this->handlerCalls = [];
 
-        $this->catalog = new SlashCommandCatalog();
-        foreach (['new', 'resume', 'tasks', 'rename', 'agents-main', 'agents-live'] as $name) {
-            $this->registerCountingHandler($name);
+        // Built-in commands are already in the catalog; /tasks stands in for
+        // an extension or prompt-template command.
+        $catalog = new SlashCommandCatalog();
+        $catalog->register(new CommandMetadata(name: 'tasks', description: 'test', usage: '/tasks'), $this->countingHandler('tasks'));
+        $registry = new SlashCommandRegistry($catalog);
+        foreach (['new', 'resume', 'rename', 'agents-main', 'agents-live'] as $name) {
+            $registry->bind($name, $this->countingHandler($name));
         }
 
-        $this->router = new SubmissionRouter(new CommandParser(), new SlashCommandRegistry($this->catalog));
+        $this->router = new SubmissionRouter(new CommandParser(), $registry);
         $this->enterLiveView(childRunId: 'child-run-1', childActivity: RunActivityStateEnum::Running);
     }
 
@@ -203,26 +206,22 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         $this->state->subagentLiveView->replaceChildTranscript([]);
     }
 
-    private function registerCountingHandler(string $name): void
+    private function countingHandler(string $name): SlashCommandHandler
     {
-        $test = $this;
-        $this->catalog->register(
-            new CommandMetadata(name: $name, description: 'test', usage: '/'.$name),
-            new class($test, $name) implements SlashCommandHandler {
-                public function __construct(
-                    private SubmitListenerSubagentLiveInputTest $test,
-                    private string $name,
-                ) {
-                }
+        return new class($this, $name) implements SlashCommandHandler {
+            public function __construct(
+                private SubmitListenerSubagentLiveInputTest $test,
+                private string $name,
+            ) {
+            }
 
-                public function handle(SlashCommand $command): TranscriptMessage
-                {
-                    $this->test->recordHandlerCall($command->originalText);
+            public function handle(SlashCommand $command): TranscriptMessage
+            {
+                $this->test->recordHandlerCall($command->originalText);
 
-                    return new TranscriptMessage('handled '.$this->name, 'system');
-                }
-            },
-        );
+                return new TranscriptMessage('handled '.$this->name, 'system');
+            }
+        };
     }
 
     private function liveWorkingMessage(ChatScreen $screen): string

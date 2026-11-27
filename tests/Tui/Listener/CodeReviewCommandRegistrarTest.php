@@ -17,10 +17,12 @@ use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandCatalog;
+use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Listener\CodeReviewCommandRegistrar;
 use PHPUnit\Framework\Attributes\Test;
@@ -84,6 +86,23 @@ final class CodeReviewCommandRegistrarTest extends TestCase
         $this->createRegistrar(noSkills: true)->registerCatalog($catalog);
 
         $this->assertFalse($catalog->has('code-review'));
+    }
+
+    #[Test]
+    public function skipsWhenAnExtensionAlreadyTookTheName(): void
+    {
+        $catalog = new SlashCommandCatalog();
+        $extensionCommand = new CommandMetadata(name: 'code-review', description: 'Extension review');
+        $catalog->register($extensionCommand, new class implements SlashCommandHandler {
+            public function handle(SlashCommand $command): DispatchRuntime
+            {
+                return new DispatchRuntime('extension');
+            }
+        });
+
+        $this->createRegistrar()->registerCatalog($catalog);
+
+        $this->assertSame($extensionCommand, $catalog->getMetadata('code-review'));
     }
 
     private function createRegistrar(bool $noSkills = false): CodeReviewCommandRegistrar

@@ -40,12 +40,9 @@ final class ExportCommandRegistrarTest extends TestCase
         $catalog = new SlashCommandCatalog();
         $registrar = new ExportCommandRegistrar(SessionEventsExportServiceFactory::create());
 
-        $this->assertFalse($catalog->has('export'), 'Export should not be registered yet');
-
-        $registrar->registerCatalog($catalog);
         $registrar->register($this->createContext($catalog));
 
-        $this->assertTrue($catalog->has('export'), 'Export should be registered after registerCatalog()');
+        $this->assertTrue($catalog->has('export'), 'Export is a built-in catalog command');
         $this->assertTrue($catalog->has('exp'), 'Alias /exp should be registered');
 
         $meta = $catalog->getMetadata('export');
@@ -61,7 +58,6 @@ final class ExportCommandRegistrarTest extends TestCase
     {
         $catalog = new SlashCommandCatalog();
         $registrar = new ExportCommandRegistrar(SessionEventsExportServiceFactory::create());
-        $registrar->registerCatalog($catalog);
 
         // First session iteration.
         $registrar->register($this->createContext($catalog));
@@ -77,7 +73,6 @@ final class ExportCommandRegistrarTest extends TestCase
     {
         $catalog = new SlashCommandCatalog();
         $registrar = new ExportCommandRegistrar(SessionEventsExportServiceFactory::create());
-        $registrar->registerCatalog($catalog);
         $registrar->register($this->createContext($catalog));
 
         $meta = $catalog->getMetadata('export');
