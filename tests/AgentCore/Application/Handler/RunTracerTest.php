@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
+use Amp\DeferredFuture;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
+use Ineersa\AgentCore\Tests\Support\IsolatedEventLoop;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LogLevel;
 
+use function Amp\async;
+
 final class RunTracerTest extends TestCase
 {
+    use IsolatedEventLoop;
+
     public function testInterleavedFibersKeepTheirParentsAndUnwindIndependently(): void
     {
         $logger = new TestLogger();
@@ -161,5 +167,77 @@ final class RunTracerTest extends TestCase
         $this->assertSame(['info', 'info'], array_column($logger->records, 'level'));
         $this->assertSame('tool.call', $logger->records[1]['context']['span_name']);
         $this->assertSame('ok', $logger->records[1]['context']['status']);
+    }
+
+    public function testTwoInstancesKeepIndependentSpanStacksOnOneFiber(): void
+    {
+        $firstLogger = new TestLogger();
+        $secondLogger = new TestLogger();
+        $first = new RunTracer($firstLogger);
+        $second = new RunTracer($secondLogger);
+
+        $fiber = new \Fiber(static function () use ($first, $second): void {
+            $first->inSpan('first.outer', [], static function () use ($first, $second): void {
+                $second->inSpan('second.inside', [], static function (): void { \Fiber::suspend(); });
+                $first->inSpan('first.inner', [], static fn (): string => 'done');
+            });
+        });
+        $fiber->start();
+        $fiber->resume();
+
+        $this->assertTrue($fiber->isTerminated());
+        $firstStarts = $this->startsByName($firstLogger);
+        $secondStarts = $this->startsByName($secondLogger);
+        $this->assertNull($secondStarts['second.inside']['parent_span_id'], 'Another tracer instance must not become the parent.');
+        $this->assertSame($firstStarts['first.outer']['span_id'], $firstStarts['first.inner']['parent_span_id']);
+    }
+
+    public function testParentSurvivesAwaitInsideAsyncWhileSiblingRuns(): void
+    {
+        $logger = new TestLogger();
+        $tracer = new RunTracer($logger);
+        $gate = new DeferredFuture();
+        $owner = async(static fn () => $tracer->inSpan('owner', [], static function () use ($tracer, $gate): void {
+            $gate->getFuture()->await();
+            $tracer->inSpan('owner.child', [], static fn (): string => 'done');
+        }));
+        $sibling = async(static fn () => $tracer->inSpan('sibling', [], static fn () => $gate->complete()));
+
+        $sibling->await();
+        $owner->await();
+
+        $starts = $this->startsByName($logger);
+        $this->assertNull($starts['sibling']['parent_span_id'], 'A sibling must not see a suspended owner span.');
+        $this->assertSame($starts['owner']['span_id'], $starts['owner.child']['parent_span_id']);
+    }
+
+    public function testMainSpanSurvivesEventLoopRunStartedFromMain(): void
+    {
+        $logger = new TestLogger();
+        $tracer = new RunTracer($logger);
+
+        $tracer->inSpan('main', [], static function () use ($tracer): void {
+            async(static fn () => $tracer->inSpan('callback', [], static fn (): string => 'done'))->await();
+            $tracer->inSpan('main.child', [], static fn (): string => 'done');
+        });
+
+        $starts = $this->startsByName($logger);
+        $this->assertNull($starts['callback']['parent_span_id'], 'Loop callbacks must not inherit the main span.');
+        $this->assertSame($starts['main']['span_id'], $starts['main.child']['parent_span_id']);
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function startsByName(TestLogger $logger): array
+    {
+        $starts = [];
+        foreach ($logger->records as $record) {
+            if ('agent_loop.trace.start' === $record['message']) {
+                $starts[$record['context']['span_name']] = $record['context'];
+            }
+        }
+
+        return $starts;
     }
 }

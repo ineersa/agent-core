@@ -4,33 +4,36 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Tool;
 
+use Revolt\EventLoop\FiberLocal;
+
 /**
  * Stack-safe ambient context accessor used by ToolExecutor and app-owned tools.
  *
- * Each Fiber owns its nested scopes. Synchronous callers use a separate stack,
- * so a suspended tool cannot expose its context to another invocation.
+ * Each Fiber owns its nested scopes through a per-instance Revolt
+ * {@see FiberLocal}, so a suspended tool cannot expose its context to another
+ * invocation. Synchronous callers use FiberLocal's main-fiber stack. Revolt
+ * clears the stack on its reusable callback Fibers after every callback;
+ * {@see with()} always restores its captured stack before returning, so no
+ * scope outlives its callback.
  */
 final class StackToolExecutionContextAccessor
 {
-    /** @var list<ToolContext> */
-    private array $stack = [];
-
-    /** @var \WeakMap<\Fiber<mixed, mixed, mixed, mixed>, list<ToolContext>> */
-    private readonly \WeakMap $fiberStacks;
+    /** @var FiberLocal<list<ToolContext>> */
+    private readonly FiberLocal $stack;
 
     public function __construct()
     {
-        $this->fiberStacks = new \WeakMap();
+        $this->stack = new FiberLocal(self::emptyStack(...));
     }
 
     public function depth(): int
     {
-        return \count($this->currentStack());
+        return \count($this->stack->get());
     }
 
     public function current(): ?ToolContext
     {
-        $stack = $this->currentStack();
+        $stack = $this->stack->get();
         $key = array_key_last($stack);
 
         return null !== $key ? $stack[$key] : null;
@@ -44,32 +47,25 @@ final class StackToolExecutionContextAccessor
 
     public function with(ToolContext $context, callable $callback): mixed
     {
-        $fiber = \Fiber::getCurrent();
-        $stack = $this->currentStack();
-        if (null === $fiber) {
-            $this->stack = [...$stack, $context];
-        } else {
-            $this->fiberStacks->offsetSet($fiber, [...$stack, $context]);
-        }
+        $stack = $this->stack->get();
+        $this->stack->set([...$stack, $context]);
 
         try {
             return $callback();
         } finally {
-            if (null === $fiber) {
-                $this->stack = $stack;
-            } elseif ([] === $stack) {
-                unset($this->fiberStacks[$fiber]);
+            // Restore the captured snapshot rather than popping, so an
+            // unbalanced nested scope cannot shift this caller's stack.
+            if ([] === $stack) {
+                $this->stack->unset();
             } else {
-                $this->fiberStacks->offsetSet($fiber, $stack);
+                $this->stack->set($stack);
             }
         }
     }
 
     /** @return list<ToolContext> */
-    private function currentStack(): array
+    private static function emptyStack(): array
     {
-        $fiber = \Fiber::getCurrent();
-
-        return null === $fiber ? $this->stack : ($this->fiberStacks[$fiber] ?? []);
+        return [];
     }
 }
