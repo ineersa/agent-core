@@ -9,7 +9,6 @@ use Doctrine\DBAL\Exception;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
-use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Infrastructure\Storage\DoctrineCommandStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Lock\LockFactory;
@@ -22,7 +21,7 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $store = self::getContainer()->get(CommandStoreInterface::class);
         $this->assertInstanceOf(DoctrineCommandStore::class, $store);
         $other = $this->freshStore();
-        $first = new PendingCommand('fifo', 'steer', 'first', ['text' => 'earlier', 'typed' => new CommandCancellationOptions(safe: true)], new CommandCancellationOptions(safe: true));
+        $first = new PendingCommand('fifo', 'steer', 'first', ['text' => 'earlier', 'typed' => new \DateTimeImmutable('2026-01-01')]);
         $second = new PendingCommand('fifo', 'continue', 'second');
         $this->assertTrue($store->enqueue($first));
         $this->assertTrue($other->enqueue($second));

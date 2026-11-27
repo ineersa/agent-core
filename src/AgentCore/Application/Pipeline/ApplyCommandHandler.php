@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
@@ -17,7 +16,6 @@ use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
@@ -47,8 +45,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
     public function __construct(
         private CommandStoreInterface $commandStore,
-        private CommandRouter $commandRouter,
-        private CommandMailboxPolicy $commandMailboxPolicy,
         private EventFactory $eventFactory,
         private AgentMessageNormalizer $messageNormalizer,
         private int $maxPendingCommands = 100,
@@ -88,12 +84,8 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             return new HandlerResult();
         }
 
-        $routedCommand = $this->commandRouter->route($message);
-
-        if ($routedCommand->isRejected()) {
-            $reason = \is_string($routedCommand->reason) ? $routedCommand->reason : 'Command rejected by router.';
-
-            return $this->rejectCommand($state, $message, $reason);
+        if (!CoreCommandKind::isCore($message->kind)) {
+            return $this->rejectCommand($state, $message, \sprintf('Unknown command kind "%s".', $message->kind));
         }
 
         $capacityRejection = $this->mailboxCapacityRejection($runId, $message->kind);
@@ -111,10 +103,9 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         if (RunStatus::Cancelling === $state->status
-            && CoreCommandKind::Cancel !== $message->kind
-            && !$this->commandMailboxPolicy->isCancelSafeExtensionCommand($message->kind, $routedCommand->options)) {
+            && CoreCommandKind::Cancel !== $message->kind) {
             if (CoreCommandKind::AppendMessage === $message->kind) {
-                return $this->enqueueModelVisibleMessageCommand($state, $message, $routedCommand->options);
+                return $this->enqueueModelVisibleMessageCommand($state, $message);
             }
 
             return $this->rejectCommand(
@@ -143,7 +134,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         if (CoreCommandKind::HumanResponse === $message->kind) {
-            return $this->applyHumanResponseCommand($state, $message, $routedCommand->options);
+            return $this->applyHumanResponseCommand($state, $message);
         }
 
         if (CoreCommandKind::Compact === $message->kind) {
@@ -155,9 +146,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             kind: $message->kind,
             idempotencyKey: $message->idempotencyKey(),
             payload: $message->payload,
-            options: new CommandCancellationOptions(
-                safe: true === ($routedCommand->options['cancel_safe'] ?? false),
-            ),
         );
 
         $nextState = $state->with([
@@ -173,7 +161,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             payload: [
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),
-                'options' => $routedCommand->options,
                 // Serialized steer/follow_up text so RuntimeEventTranslator can emit
                 // user.message_queued for immediate TUI pending feedback (mirrors
                 // CommandMailboxPolicy including message on agent_command_applied).
@@ -267,7 +254,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             'payload' => [
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),
-                'options' => [],
             ],
         ]];
 
@@ -438,10 +424,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return false;
     }
 
-    /**
-     * @param array<string, mixed> $options
-     */
-    private function enqueueModelVisibleMessageCommand(RunState $state, ApplyCommand $message, array $options): HandlerResult
+    private function enqueueModelVisibleMessageCommand(RunState $state, ApplyCommand $message): HandlerResult
     {
         $runId = $message->runId();
 
@@ -450,9 +433,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             kind: $message->kind,
             idempotencyKey: $message->idempotencyKey(),
             payload: $message->payload,
-            options: new CommandCancellationOptions(
-                safe: true === ($options['cancel_safe'] ?? false),
-            ),
         );
 
         $nextState = $state->with([
@@ -468,7 +448,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             payload: [
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),
-                'options' => $options,
                 'message' => $message->payload['message'] ?? null,
             ],
         );
@@ -480,10 +459,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         );
     }
 
-    /**
-     * @param array<string, mixed> $options
-     */
-    private function applyHumanResponseCommand(RunState $state, ApplyCommand $message, array $options): HandlerResult
+    private function applyHumanResponseCommand(RunState $state, ApplyCommand $message): HandlerResult
     {
         $questionId = \is_string($message->payload['question_id'] ?? null) ? $message->payload['question_id'] : null;
 
@@ -558,7 +534,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             return new HandlerResult();
         }
         if (HumanInputContinuationKindEnum::ToolCall === $activeRequest->continuationKind) {
-            return $this->applyToolCallHumanResponse($state, $message, $options, $activeRequest, $questionId);
+            return $this->applyToolCallHumanResponse($state, $message, $activeRequest, $questionId);
         }
 
         if (HumanInputContinuationKindEnum::ModelTurn !== $activeRequest->continuationKind) {
@@ -603,7 +579,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'question_id' => \is_string($message->payload['question_id'] ?? null) ? $message->payload['question_id'] : null,
                 'answer' => \array_key_exists('answer', $message->payload) ? $message->payload['answer'] : null,
                 'message' => $humanResponseMessageArray,
-                'options' => $options,
             ],
         );
 
@@ -627,13 +602,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
      * No model-visible human_response message. The typed answer is attached to the
      * stored ExecuteToolCall and requeued through ToolBatchCollector (capacity-aware).
      * Status stays WaitingHuman while more pending requests remain.
-     *
-     * @param array<string, mixed> $options
      */
     private function applyToolCallHumanResponse(
         RunState $state,
         ApplyCommand $message,
-        array $options,
         PendingHumanInputRequestDTO $activeRequest,
         string $questionId,
     ): HandlerResult {
@@ -714,7 +686,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'answer' => $message->payload['answer'],
                 'continuation_kind' => HumanInputContinuationKindEnum::ToolCall->value,
                 'tool_call_id' => $toolCallId,
-                'options' => $options,
             ],
         );
 
@@ -862,7 +833,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 payload: [
                     'kind' => $message->kind,
                     'idempotency_key' => $message->idempotencyKey(),
-                    'options' => [],
                 ],
             );
 
@@ -898,7 +868,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             payload: [
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),
-                'options' => [],
             ],
         );
 

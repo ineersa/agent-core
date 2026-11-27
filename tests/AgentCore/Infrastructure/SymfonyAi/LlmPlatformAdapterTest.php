@@ -417,7 +417,7 @@ final class LlmPlatformAdapterTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $this->createStub(SymfonyPlatformInterface::class),
             transformContextHooks: [],
-            convertToLlmHooks: [],
+
             streamObserver: $observer,
             costCalculator: null,
             logger: $logger,
@@ -533,7 +533,7 @@ final class LlmPlatformAdapterTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHooks: [],
+
             streamObserver: null,
             costCalculator: null,
             logger: $logger ?? new NullLogger(),

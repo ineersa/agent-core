@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
@@ -22,7 +21,6 @@ use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
@@ -53,18 +51,11 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testFollowUpAllowedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $commandBus = new TestMessageBus();
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -97,6 +88,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertCount(1, $result->events);
         $this->assertSame('agent_command_queued', $result->events[0]->type);
         $this->assertSame(CoreCommandKind::FollowUp, $result->events[0]->payload['kind']);
+        $this->assertArrayNotHasKey('options', $result->events[0]->payload);
 
         // FollowUp dispatches AdvanceRun to pick up the queued message
         $this->assertCount(2, $result->postCommitActions);
@@ -110,17 +102,10 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testAppendMessageAllowedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
         $commandBus = new TestMessageBus();
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -160,16 +145,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testSteerCommandRejectedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -209,16 +187,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCommandRejectedDuringCancelling(string $kind, array $payload): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -271,16 +242,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testHumanResponseRejectedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -316,16 +280,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testSteerWhileRunningQueuesButDoesNotDispatchAdvanceRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -374,16 +331,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testFollowUpWhileRunningQueuesButDoesNotDispatchAdvanceRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -425,18 +375,11 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testFollowUpAfterCancelledStillDispatchesAdvanceRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $commandBus = new TestMessageBus();
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -484,16 +427,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelRejectsPendingSteerAndFollowUp(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -505,7 +441,6 @@ final class ApplyCommandHandlerTest extends TestCase
             kind: CoreCommandKind::Steer,
             idempotencyKey: 'steer-stale-1',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Stale steer']]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $commandStore->enqueue(new PendingCommand(
@@ -513,7 +448,6 @@ final class ApplyCommandHandlerTest extends TestCase
             kind: CoreCommandKind::FollowUp,
             idempotencyKey: 'followup-stale-1',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Stale follow up']]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $state = new RunState(
@@ -584,17 +518,10 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelPreservesQueuedAppendMessageForPostCancelMailboxDrain(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
         $commandBus = new TestMessageBus();
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -606,7 +533,6 @@ final class ApplyCommandHandlerTest extends TestCase
             kind: CoreCommandKind::AppendMessage,
             idempotencyKey: 'append-1',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $runtimeText]]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $state = new RunState(
@@ -649,7 +575,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertStringStartsWith('post-cancel-advance-', $commandBus->messages[0]->stepId());
 
         $advanceHandler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
-            commandMailboxPolicy: $commandMailboxPolicy,
+            commandMailboxPolicy: new CommandMailboxPolicy($commandStore),
             eventFactory: new EventFactory(),
         );
         $drainResult = $advanceHandler->handle($commandBus->messages[0], $result->nextState);
@@ -661,17 +587,10 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testSecondCancelWhileCancellingPreservesPendingAppendMessage(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
         $commandBus = new TestMessageBus();
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -683,7 +602,6 @@ final class ApplyCommandHandlerTest extends TestCase
             kind: CoreCommandKind::AppendMessage,
             idempotencyKey: 'append-between-cancels',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $runtimeText]]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
 
         $state = new RunState(
@@ -728,16 +646,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testAppendMessageQueuedWhileCancelling(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -777,16 +688,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testOrdinaryFollowUpRejectedWhileCancelling(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -828,18 +732,11 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCompactOnTerminalRunMarksAppliedNotQueued(RunStatus $status): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $commandBus = new TestMessageBus();
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -921,16 +818,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelOnCompletedRunIsRejected(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -987,16 +877,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelOnFailedRunIsRejected(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1043,16 +926,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCompletedCompactCommandIdCanBeReused(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1095,16 +971,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelFromIdleRunningTerminalizesToCancelled(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1170,16 +1039,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testRepeatedCancelWhileCancellingNoActiveWorkIsIdempotent(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1233,16 +1095,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelWithStaleActiveStepAndAllPendingToolCallsResolvedTerminalizes(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1292,16 +1147,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelWithActiveLlmCurrentOperationEntersCancellingWithoutAgentEnd(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1356,16 +1204,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelWithStandaloneShellCurrentOperationTerminalizesImmediately(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1411,16 +1252,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelWithUnresolvedPendingToolCallEntersCancelling(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1458,16 +1292,9 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelWhileAlreadyCancellingWithNoActiveWorkTerminalizes(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1504,7 +1331,6 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelDeferredToolCallHumanWaitTerminalizesWithSyntheticResults(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
         $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $batchStore, 'run-deferred-cancel', 1, 'step-d', [
             new ExecuteToolCall(
@@ -1523,8 +1349,6 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1601,7 +1425,6 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelMultiDeferredToolCallHumanWaitsSynthesizesAll(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
         $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-multi-d', 1, 'step-m', [
             new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
@@ -1612,8 +1435,6 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1680,7 +1501,6 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
         $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-partial-d', 1, 'step-p', [
             new ExecuteToolCall('run-partial-d', 1, 'step-p', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
@@ -1724,8 +1544,6 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1881,7 +1699,6 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
         $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-missing-store', 1, 'step-m', [
             new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0, mode: 'parallel', maxParallelism: 2),
@@ -1891,8 +1708,6 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,

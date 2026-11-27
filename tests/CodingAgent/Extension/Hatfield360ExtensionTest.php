@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Amp\Future;
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
@@ -16,7 +15,6 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
@@ -273,10 +271,9 @@ final class Hatfield360ExtensionTest extends TestCase
                     kind: 'user' === $identity ? CoreCommandKind::FollowUp : CoreCommandKind::AppendMessage,
                     idempotencyKey: $identity,
                     payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Input']]]],
-                    options: new CommandCancellationOptions(safe: false),
                 ));
             }
-            $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(), new CommandMailboxPolicy($store, new CommandRouter([]), [$policy]), new EventFactory());
+            $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(), new CommandMailboxPolicy($store, [$policy]), new EventFactory());
             $result = $handler->handle(AdvanceRunMessageBuilder::create('42')->withTurnNo(1)->build(), new RunState('42', RunStatus::Completed, turnNo: 1, lastSeq: $seq));
             $starts = array_values(array_filter($result->events, static fn (RunEvent $event): bool => RunEventTypeEnum::TurnAdvanced->value === $event->type));
             $this->assertCount(1, $starts);

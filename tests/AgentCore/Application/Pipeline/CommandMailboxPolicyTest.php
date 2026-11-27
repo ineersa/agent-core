@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
@@ -356,7 +355,6 @@ final class CommandMailboxPolicyTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $policy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter([]),
         );
 
         $state = new RunState(
@@ -400,7 +398,7 @@ final class CommandMailboxPolicyTest extends TestCase
     public function testMissingAndMalformedMessageEnvelopesAreRejectedWithExactReasons(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $policy = new CommandMailboxPolicy($commandStore, new CommandRouter([]));
+        $policy = new CommandMailboxPolicy($commandStore);
         $runId = 'run-mailbox-envelope';
 
         $commandStore->enqueue(new PendingCommand(runId: $runId, kind: 'steer', idempotencyKey: 'env-missing'));
@@ -438,10 +436,8 @@ final class CommandMailboxPolicyTest extends TestCase
         $commandBus = new TestMessageBus();
         $executionBus = new TestMessageBus();
 
-        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: $commandRouter,
             consumptionPolicies: null === $consumption ? [] : [$consumption],
         );
         $toolBatchCollector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
@@ -472,8 +468,6 @@ final class CommandMailboxPolicyTest extends TestCase
                 ),
                 new ApplyCommandHandler(
                     commandStore: $commandStore,
-                    commandRouter: $commandRouter,
-                    commandMailboxPolicy: $commandMailboxPolicy,
                     eventFactory: new EventFactory(),
                     messageNormalizer: new AgentMessageNormalizer(),
                     maxPendingCommands: $maxPendingCommands,

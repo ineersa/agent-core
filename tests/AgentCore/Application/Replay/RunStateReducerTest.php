@@ -14,6 +14,24 @@ use PHPUnit\Framework\TestCase;
 
 final class RunStateReducerTest extends TestCase
 {
+    public function testReplayIgnoresLegacyCommandOptionsButAppliesTheMessage(): void
+    {
+        $message = ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'legacy message']]];
+        $state = $this->reducer()->replay(RunState::queued('legacy'), [
+            new RunEvent('legacy', 1, 1, 'agent_command_queued', [
+                'kind' => 'steer', 'idempotency_key' => 'key', 'options' => [],
+            ]),
+            new RunEvent('legacy', 2, 1, 'agent_command_applied', [
+                'kind' => 'steer', 'idempotency_key' => 'key', 'options' => ['cancel_safe' => false], 'message' => $message,
+            ]),
+        ]);
+
+        $this->assertSame(RunStatus::Running, $state->status);
+        $this->assertSame(2, $state->lastSeq);
+        $this->assertCount(1, $state->messages);
+        $this->assertSame($message['content'], $state->messages[0]->toArray()['content']);
+    }
+
     public function testOnlyExplicitDeferredContinuationResumesIdleTerminalOwners(): void
     {
         $reducer = $this->reducer();

@@ -9,8 +9,7 @@ final readonly class ApplyCommand extends AbstractAgentBusMessage
     /**
      * Initializes the command with run, turn, step, attempt, and idempotency context.
      *
-     * @param array<string, mixed>      $payload
-     * @param array{cancel_safe?: bool} $options
+     * @param array<string, mixed> $payload
      */
     public function __construct(
         string $runId,
@@ -20,7 +19,6 @@ final readonly class ApplyCommand extends AbstractAgentBusMessage
         string $idempotencyKey,
         public string $kind,
         public array $payload = [],
-        public array $options = [],
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }

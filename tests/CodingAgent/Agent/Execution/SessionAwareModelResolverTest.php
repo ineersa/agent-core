@@ -723,7 +723,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $builder = new ChatGPTSymfonyAiProviderBuilder(ChatGPTAuthFixture::service($storage, $http), new EventDispatcher());
         $provider = $catalog->getProvider('openai-codex');
         $this->assertNotNull($provider);
-        $adapter = new LlmPlatformAdapter(new NullRunOperationalStatusReader(), new AgentMessageConverter(), new DynamicToolDescriptionProcessor(), new Platform([$builder->build($provider, $http)]), [], [], null, null, new NullLogger(), AttributeSerializerValidatorTestFactory::denormalizer(), $resolver, new ProviderRequestPreparer([], new ProviderCompatibilityRequestShaper([new ReasoningOptionsFeatureShaper()])));
+        $adapter = new LlmPlatformAdapter(new NullRunOperationalStatusReader(), new AgentMessageConverter(), new DynamicToolDescriptionProcessor(), new Platform([$builder->build($provider, $http)]), [], null, null, new NullLogger(), AttributeSerializerValidatorTestFactory::denormalizer(), $resolver, new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper([new ReasoningOptionsFeatureShaper()])));
         $result = $adapter->invoke(new ModelInvocationRequest($explicit ? 'openai-codex/gpt-6-sol' : '', new ModelInvocationInput(runId: $this->sessionId, messages: $messages), new ModelInvocationOptions(extraOptions: $explicit ? ['thinking_level' => $effort] : [])));
         $this->assertNull($result->error);
     }

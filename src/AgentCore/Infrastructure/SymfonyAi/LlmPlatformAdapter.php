@@ -51,7 +51,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 {
     /**
      * @param iterable<TransformContextHookInterface> $transformContextHooks
-     * @param iterable<ConvertToLlmHookInterface>     $convertToLlmHooks
      */
     public function __construct(
         private RunOperationalStatusReaderInterface $statusReader,
@@ -59,7 +58,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private DynamicToolDescriptionProcessor $toolDescriptionProcessor,
         private SymfonyPlatformInterface $platform,
         private iterable $transformContextHooks,
-        private iterable $convertToLlmHooks,
         private ?LlmStreamObserverInterface $streamObserver,
         private ?CostCalculatorInterface $costCalculator,
         private LoggerInterface $logger,
@@ -71,6 +69,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private readonly ?LlmRequestRetryObserverInterface $retryObserver = null,
         private readonly LlmRequestRetryPolicy $requestRetryPolicy = new LlmRequestRetryPolicy(),
         private readonly ClockInterface $clock = new NativeClock(),
+        private ?ConvertToLlmHookInterface $convertToLlmHook = null,
     ) {
     }
 
@@ -134,7 +133,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             )
             : new ResolvedModel($request->model);
 
-        $messageBag = $this->applyConvertHooks($messages, $cancelToken, $resolvedModel->model);
+        $messageBag = $this->convertMessages($messages, $cancelToken, $resolvedModel->model);
 
         $input = new Input($resolvedModel->model, $messageBag, $providerOptions);
         $this->toolDescriptionProcessor->processInput($input, $request->input);
@@ -164,7 +163,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $this->providerRequestPreparer,
                 $resolvedModel,
                 $request->input,
-                $cancelToken,
             );
             try {
                 $deferredResult = $platform->invoke(
@@ -301,15 +299,10 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      *                                      hooks (e.g. image gating). Passed through
      *                                      to ConvertToLlmHookInterface::convertToLlm().
      */
-    private function applyConvertHooks(array $messages, CancellationTokenInterface $cancelToken, string $modelName = ''): MessageBag
+    private function convertMessages(array $messages, CancellationTokenInterface $cancelToken, string $modelName = ''): MessageBag
     {
-        $resolvedMessageBag = null;
-
-        foreach ($this->convertToLlmHooks as $hook) {
-            $resolvedMessageBag = $hook->convertToLlm($messages, $cancelToken, $modelName);
-        }
-
-        return $resolvedMessageBag ?? $this->messageConverter->toMessageBagForTarget($messages, $modelName);
+        return $this->convertToLlmHook?->convertToLlm($messages, $cancelToken, $modelName)
+            ?? $this->messageConverter->toMessageBagForTarget($messages, $modelName);
     }
 
     /**

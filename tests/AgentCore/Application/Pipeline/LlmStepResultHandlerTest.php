@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
@@ -57,7 +56,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $handler = new LlmStepResultHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -150,7 +148,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $handler = new LlmStepResultHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -245,7 +242,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $handler = new LlmStepResultHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -331,7 +327,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $handler = new LlmStepResultHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -407,7 +402,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $handler = new LlmStepResultHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -504,7 +498,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $handler = new LlmStepResultHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -575,7 +568,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $handler = new LlmStepResultHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -660,7 +652,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $handler = new LlmStepResultHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -744,7 +735,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $handler = new LlmStepResultHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -838,7 +828,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $handler = new LlmStepResultHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -919,7 +908,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $handler = new LlmStepResultHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -998,7 +986,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $handler = new LlmStepResultHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),

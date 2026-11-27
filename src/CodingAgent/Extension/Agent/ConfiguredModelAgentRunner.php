@@ -114,7 +114,6 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             $this->providerRequestPreparer,
             $resolvedModel,
             $invocationInput,
-            $cancelToken,
         );
 
         $agent = new Agent(

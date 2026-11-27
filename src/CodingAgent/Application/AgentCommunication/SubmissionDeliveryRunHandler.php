@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -61,7 +60,7 @@ final readonly class SubmissionDeliveryRunHandler implements RunMessageHandler
             $actions[] = new EnqueueCommandDTO(new PendingCommand($state->runId, CoreCommandKind::AppendMessage, $receipt->identity, [
                 'message' => $envelope,
                 'provenance' => new SubmissionProvenanceDTO($receipt->sourceRunId, $receipt->identity),
-            ], new CommandCancellationOptions()));
+            ]));
             // Never interrupt a provider request, tool batch, compaction or human
             // wait. Ordinary active work drains the mailbox at its next boundary.
             if (RunStatus::Completed === $state->status) {
