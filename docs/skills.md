@@ -82,6 +82,13 @@ not see the skill in `<available_skills>` and will not autonomously select it.
 Semantics are identical for bundled, project, user, and extension-registered
 skills. Existing precedence and name-collision rules are unchanged (first
 discovered wins; names compare case-insensitively, so `Foo` and `foo` collide).
+The comparison folds ASCII letters only.
+
+Explicit loads by name (`/skill:<name>`, CLI `--skills`, agent `skills`) use the
+same case-insensitive comparison, so `skills: [Castor]` loads the `castor`
+skill. Naming one skill twice loads it once. If a skill's `SKILL.md` can no
+longer be read when it is loaded, the skill is skipped with a warning log and
+no skill block is added.
 
 ## Skill commands
 
