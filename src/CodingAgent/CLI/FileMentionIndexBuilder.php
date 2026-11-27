@@ -150,9 +150,20 @@ final class FileMentionIndexBuilder
             ++$count;
         }
 
+        $filesystem = new Filesystem();
+        $indexDir = \dirname($this->indexPath);
+        $filesystem->mkdir($indexDir);
+
+        // dumpFile()'s tempnam() silently falls back to the system temp dir
+        // when the index dir is not writable; a cross-filesystem rename then
+        // degrades to a non-atomic overwrite of the live index. Fail instead.
+        if (!is_writable($indexDir)) {
+            throw new \RuntimeException("File mention index directory is not writable: {$indexDir}");
+        }
+
         // dumpFile() writes a temp file and renames it over the index, so a
         // failed or short write throws and never replaces the previous index.
-        (new Filesystem())->dumpFile($this->indexPath, $content);
+        $filesystem->dumpFile($this->indexPath, $content);
 
         return $count;
     }

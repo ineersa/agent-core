@@ -343,8 +343,9 @@ final class FileMentionIndexBuilderTest extends TestCase
         $indexPath = $indexDir.'/index.jsonl';
         file_put_contents($indexPath, '{"path":"old.php","dir":false}'."\n");
 
-        // The scan succeeds; only the write into the unwritable index
-        // directory fails, so the atomic replace must not happen.
+        // The scan succeeds, but the index directory is not writable. The
+        // builder must refuse before dumpFile(), whose tempnam() would
+        // otherwise fall back to the system temp directory.
         chmod($indexDir, 0555);
 
         try {
@@ -357,8 +358,10 @@ final class FileMentionIndexBuilderTest extends TestCase
             try {
                 $builder->build();
                 $this->fail('Expected RuntimeException when the index directory is not writable.');
-            } catch (\RuntimeException) {
-                // Expected — write failed.
+            } catch (\RuntimeException $e) {
+                // The writability refusal is thrown before dumpFile() runs,
+                // so no temp file is created anywhere, system temp included.
+                $this->assertSame("File mention index directory is not writable: {$indexDir}", $e->getMessage());
             }
 
             $this->assertSame('{"path":"old.php","dir":false}'."\n", file_get_contents($indexPath));

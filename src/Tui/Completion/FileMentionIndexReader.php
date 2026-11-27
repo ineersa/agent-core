@@ -14,9 +14,10 @@ use Ineersa\CodingAgent\CLI\FileMentionIndexBuilder;
  * Loads a JSONL index file produced by
  * {@see FileMentionIndexBuilder},
  * caches the parsed entries in memory, and reloads automatically when
- * the index file's inode, mtime, or size changes.  The builder replaces
- * the file by rename, so the inode changes on every refresh even when
- * the rewrite lands within the same mtime second.
+ * the index file's inode, mtime, or size changes.  The inode normally
+ * changes because the builder replaces the file by rename, which catches
+ * rewrites within the same mtime second; mtime and size are the fallback
+ * signal.
  *
  * Missing or unreadable index files are treated as empty — the caller
  * never receives an exception from index access.  This is intentional
