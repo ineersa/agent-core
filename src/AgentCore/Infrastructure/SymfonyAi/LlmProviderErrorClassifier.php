@@ -78,16 +78,15 @@ final class LlmProviderErrorClassifier
             $providerError[$field] = $error['response_error_'.$field] ?? null;
             unset($error['response_error_'.$field]);
         }
+        $metadata = ProviderErrorMetadataValidator::validate($providerError);
         $details = [];
-        foreach (ProviderErrorMetadataValidator::validate($providerError) as $field => $value) {
+        foreach ($metadata as $field => $value) {
             $error['response_error_'.$field] = $value;
-            // Some bridges already put these fields into the exception
-            // message; repeat only what the message does not show.
-            if (!str_contains($userMessage, $value)) {
-                $details[] = $field.'='.$value;
-            }
+            $details[] = $field.'='.$value;
         }
-        if ([] !== $details) {
+        // ProviderErrorFormatter already starts the message with exactly these
+        // fields as "[code/type/param]"; any other message keeps the suffix.
+        if ([] !== $details && !str_starts_with($detail, '['.implode('/', $metadata).']')) {
             $userMessage .= ' ('.implode(', ', $details).')';
         }
 
