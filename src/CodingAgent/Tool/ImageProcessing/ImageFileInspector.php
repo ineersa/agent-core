@@ -78,6 +78,9 @@ final readonly class ImageFileInspector
             return 'bin';
         }
 
-        return (new FinfoMimeTypeDetector())->lookupExtension($mediaType) ?? 'bin';
+        $extension = (new FinfoMimeTypeDetector())->lookupExtension($mediaType) ?? 'bin';
+
+        // Keep attachment/cache names stable: supported library versions prefer different JPEG aliases.
+        return 'jpeg' === $extension ? 'jpg' : $extension;
     }
 }
