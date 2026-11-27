@@ -41,7 +41,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
      */
     public function buildSingleForcedPayload(DeferredSubagentBatchProjectionDTO $batch, DeferredSubagentInterruptionKindEnum $kind): SubagentProgressSnapshotDTO
     {
-        $child = $this->requireExactlyOneChild($batch);
+        $child = $batch->child ?? throw new \RuntimeException('Single batch progress requires a child row.');
         $cp = $child->childLifecycleProjection;
         $enrichment = null !== $cp
             ? $this->childProgressSummaryBuilder->fromDeferredProjection($cp, $child->artifactId)
@@ -60,18 +60,9 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    private function requireExactlyOneChild(DeferredSubagentBatchProjectionDTO $batch): DeferredSubagentChildProjectionDTO
-    {
-        if (1 !== \count($batch->children)) {
-            throw new \RuntimeException('Single batch progress requires exactly one child row.');
-        }
-
-        return $batch->children[0];
-    }
-
     private function buildSingleNormalPayload(DeferredSubagentBatchProjectionDTO $batch): SubagentProgressSnapshotDTO
     {
-        $child = $this->requireExactlyOneChild($batch);
+        $child = $batch->child ?? throw new \RuntimeException('Single batch progress requires a child row.');
         $cp = $child->childLifecycleProjection;
         $enrichment = null !== $cp
             ? $this->childProgressSummaryBuilder->fromDeferredProjection($cp, $child->artifactId)

@@ -29,7 +29,7 @@ final class SubmissionFactoryTest extends IsolatedKernelTestCase
         Assert::assertSame($first->identity, $outcome->deferredId);
         Assert::assertEquals($first, $f->prepare());
         Assert::assertNotSame($first->identity, $f->prepare(text: 'Different guidance')->identity);
-        self::getContainer()->get(DeferredSubagentBatchRepository::class)->reserveBatch('new-resume', $f->parent, 1, 'resume-call', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, $f->child, $f->artifact, 'scout', 'new task', 'model', 'medium'));
+        self::getContainer()->get(DeferredSubagentBatchRepository::class)->reserveBatch('new-resume', $f->parent, 1, 'resume-call', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO($f->child, $f->artifact, 'scout', 'new task', 'model', 'medium'));
         $f->append($f->parent, 4, 1, 'llm_step_completed', ['assistant_message' => ['tool_calls' => [['id' => 'resume-call'], ['id' => 'steer']]]]);
         // Rebinding uses native lifecycle metadata, not an invented run generation.
         Assert::assertNotSame($first->identity, $f->prepare()->identity);

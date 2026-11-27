@@ -172,19 +172,15 @@ final readonly class SessionMaintenanceHandler
                 continue;
             }
 
-            $allTerminal = true;
-            $unfinished = [];
-            foreach ($batch->children as $child) {
-                if (DeferredSubagentChildLaunchStatusEnum::Launched !== $child->launchStatus) {
-                    $allTerminal = false;
-                    continue;
-                }
+            $child = $batch->child;
+            $allTerminal = null === $child;
+            if (null !== $child && DeferredSubagentChildLaunchStatusEnum::Launched === $child->launchStatus) {
                 $refusal = $this->repair->integrityRefusal($child->childRunId);
                 if (null !== $refusal) {
                     return $refusal;
                 }
                 // Admit the existing child through the audited cold-owner entry.
-                // Preview every child before capturing cancellation for this batch.
+                // Preview the child before capturing cancellation for this batch.
                 $childCommand = new RepairSession($child->childRunId, $command->apply, $command->commandId);
                 $this->initialization->initializeForOwner($child->childRunId, $childCommand);
                 $state = $this->registry->requireLoaded($child->childRunId);
@@ -196,27 +192,17 @@ final readonly class SessionMaintenanceHandler
                         refusalReason: SessionRepairRefusalReasonEnum::ActiveStreaming,
                     );
                 }
-                if ($state->status->isTerminal()) {
-                    continue;
-                }
-                $allTerminal = false;
-                if (RunStatus::WaitingHuman === $state->status) {
-                    continue;
-                }
-                // Parent maintenance cancels unfinished children rather than
-                // repeating their external operations to obtain another outcome.
-                $unfinished[] = $child->childRunId;
-            }
-            if ([] !== $unfinished) {
-                $message = $command->apply ? 'Deferred children cancelled by session repair.' : 'Deferred children would be cancelled by session repair.';
-                foreach ($unfinished as $childRunId) {
-                    $obligations[] = new RepairDeferredChildObligationDTO(RepairDeferredChildObligationDTO::KIND_CANCEL, $batch->lifecycleId, $batch->parentTurnNo, $childRunId);
+                $allTerminal = $state->status->isTerminal();
+                if (!$allTerminal && RunStatus::WaitingHuman !== $state->status) {
+                    // Cancel unfinished work rather than repeating its external operations.
+                    $message = $command->apply ? 'Deferred children cancelled by session repair.' : 'Deferred children would be cancelled by session repair.';
+                    $obligations[] = new RepairDeferredChildObligationDTO(RepairDeferredChildObligationDTO::KIND_CANCEL, $batch->lifecycleId, $batch->parentTurnNo, $child->childRunId);
                 }
             }
             if ($command->apply) {
-                // Reconcile terminal children whose final observation was lost
+                // Reconcile a terminal child whose final observation was lost
                 // at shutdown or during repair, then settle the existing parent
-                // tool call. Completed siblings retain their natural outcomes.
+                // tool call.
                 $obligations[] = new RepairDeferredChildObligationDTO(RepairDeferredChildObligationDTO::KIND_SETTLE, $batch->lifecycleId, $batch->parentTurnNo);
                 if ($allTerminal) {
                     ++$redriven;

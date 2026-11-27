@@ -41,12 +41,11 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
             return;
         }
 
-        $child = $this->childRepository->findEntityByBatchLifecycleAndIndex($message->batchLifecycleId, $message->batchIndex);
+        $child = $this->childRepository->findEntityByBatchLifecycleId($message->batchLifecycleId);
         if (null === $child || $child->childRunId !== $message->childRunId) {
             $this->logger->warning('deferred_subagent_batch.child_turn_child_mismatch', [
                 'batch_lifecycle_id' => $message->batchLifecycleId,
                 'child_run_id' => $message->childRunId,
-                'batch_index' => $message->batchIndex,
                 'component' => 'agent.execution',
                 'event_type' => 'deferred_subagent_batch.child_turn_child_mismatch',
             ]);
@@ -77,7 +76,6 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
             $this->logger->warning('deferred_subagent_batch.child_event_gap', [
                 'batch_lifecycle_id' => $message->batchLifecycleId,
                 'child_run_id' => $message->childRunId,
-                'batch_index' => $message->batchIndex,
                 'cursor' => $cursor,
                 'received_first_seq' => $firstSeq,
                 'component' => 'agent.execution',
@@ -110,7 +108,6 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
         try {
             $this->batchRepository->applyBatchChildLifecycleProjection(
                 batchLifecycleId: $message->batchLifecycleId,
-                batchIndex: $message->batchIndex,
                 projection: $updated,
                 childEventCursor: $updated->lastCommittedSeq,
                 expectedChildProjectionVersion: $child->projectionVersion,
@@ -121,7 +118,6 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
             $this->logger->warning('deferred_subagent_batch.child_projection_version_conflict', [
                 'batch_lifecycle_id' => $message->batchLifecycleId,
                 'child_run_id' => $message->childRunId,
-                'batch_index' => $message->batchIndex,
                 'cursor' => $cursor,
                 'component' => 'agent.execution',
                 'event_type' => 'deferred_subagent_batch.child_projection_version_conflict',
@@ -137,7 +133,6 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
             $this->logger->warning('deferred_subagent_batch.child_projection_persist_failed', [
                 'batch_lifecycle_id' => $message->batchLifecycleId,
                 'child_run_id' => $message->childRunId,
-                'batch_index' => $message->batchIndex,
                 'cursor' => $cursor,
                 'component' => 'agent.execution',
                 'event_type' => 'deferred_subagent_batch.child_projection_persist_failed',

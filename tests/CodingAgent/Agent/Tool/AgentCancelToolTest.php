@@ -73,7 +73,7 @@ final class AgentCancelToolTest extends IsolatedKernelTestCase
         $f = new SubmissionFixture($c);
         $c->get(DeferredSubagentBatchRepository::class)->reserveBatch(
             $f->lifecycle.'-resume', $f->parent, 2, 'resume', 0, new \DateTimeImmutable('+1 hour'),
-            new DeferredSubagentBatchChildIntentDTO(1, $f->child, $f->artifact, 'scout', 'resume task', 'model', 'medium'),
+            new DeferredSubagentBatchChildIntentDTO($f->child, $f->artifact, 'scout', 'resume task', 'model', 'medium'),
         );
 
         $this->assertRefused($f->parent, $f->child, 'current branch');

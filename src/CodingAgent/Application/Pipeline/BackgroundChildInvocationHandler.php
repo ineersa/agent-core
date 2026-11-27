@@ -57,10 +57,7 @@ final readonly class BackgroundChildInvocationHandler implements RunMessageHandl
         if (null === $correlation) {
             throw new \LogicException('Eligible child background registration is missing.');
         }
-        if (1 !== \count($batch->children)) {
-            throw new \LogicException('Child invocation requires exactly one reserved child.');
-        }
-        $child = $batch->children[0];
+        $child = $batch->child ?? throw new \LogicException('Child invocation requires a reserved child.');
         $active = null === $child->childLifecycleProjection || !$child->childLifecycleProjection->childStatus->isTerminal();
         if (!$active) {
             // Natural completion won the race; let the existing lifecycle deliver it.

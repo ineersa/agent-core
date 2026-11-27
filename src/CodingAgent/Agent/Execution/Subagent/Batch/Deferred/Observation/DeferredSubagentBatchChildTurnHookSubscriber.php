@@ -41,7 +41,7 @@ final readonly class DeferredSubagentBatchChildTurnHookSubscriber implements Ess
         return [new DeferredAfterTurnCoordinationDTO(
             $context->runId, $predecessorSequence,
             new ObserveDeferredSubagentBatchChildTurnMessage(
-                batchLifecycleId: $child->batchLifecycleId, batchIndex: $child->batchIndex,
+                batchLifecycleId: $child->batchLifecycleId,
                 childRunId: $context->runId, committedStatus: $committedStatus,
                 turnNo: $context->turnNo, committedEvents: $context->events,
             ),

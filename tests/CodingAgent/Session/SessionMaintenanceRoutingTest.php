@@ -523,12 +523,12 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         ]);
         $factory = new DeferredSubagentBatchIdentityFactory();
         $batchId = $factory->batchLifecycleId($run, 'old-fork');
-        $identity = $factory->childIdentity($run, 'old-fork', 1);
+        $identity = $factory->childIdentity($run, 'old-fork');
         $child = $identity['childRunId'];
         $c->get(AgentArtifactRegistry::class)->create($run, $identity['artifactId'], $child, 'fork', AgentArtifactKindEnum::Fork);
         $batches = $c->get(DeferredSubagentBatchRepository::class);
         $children = $c->get(DeferredSubagentChildRepository::class);
-        $batches->reserveBatch($batchId, $run, 0, 'old-fork', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, $child, $identity['artifactId'], 'fork', 'STALE_FORK', 'llama_cpp_test/test', 'medium'));
+        $batches->reserveBatch($batchId, $run, 0, 'old-fork', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO($child, $identity['artifactId'], 'fork', 'STALE_FORK', 'llama_cpp_test/test', 'medium'));
         $batches->applyLaunchSuccessState($run, 'old-fork', $batchId, new \DateTimeImmutable());
         $batches->markBackgrounded($batchId, new \DateTimeImmutable());
         PreparedEventStoreSeeder::appendMany($store, [
@@ -536,12 +536,12 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             RunEvent::forAppend($child, 0, 'agent_command_applied', ['kind' => 'cancel', 'idempotency_key' => 'cancel-old', 'options' => []]),
         ]);
         $cursor = 1; // The stored projection predates the canonical cancel command.
-        $batches->applyBatchChildLifecycleProjection($batchId, 1, new DeferredChildRunLifecycleProjectionDTO(RunStatus::Running, 0, $cursor, 'llama_cpp_test/test', 'medium'), $cursor, $children->findByChildRunId($child)->projectionVersion, $batches->findByLifecycleId($batchId)->projectionVersion, true);
+        $batches->applyBatchChildLifecycleProjection($batchId, new DeferredChildRunLifecycleProjectionDTO(RunStatus::Running, 0, $cursor, 'llama_cpp_test/test', 'medium'), $cursor, $children->findByChildRunId($child)->projectionVersion, $batches->findByLifecycleId($batchId)->projectionVersion, true);
         $batches->persistInterruptionIntent($batchId, DeferredSubagentInterruptionKindEnum::ParentCancelled, new \DateTimeImmutable(), $batches->findByLifecycleId($batchId)->projectionVersion);
         $batches->markTerminalCompletionEnqueued($batchId, new \DateTimeImmutable(), $batches->findByLifecycleId($batchId)->projectionVersion);
         $foreignBatch = $factory->batchLifecycleId('other-owner', 'old-fork');
-        $foreignChild = $factory->childIdentity('other-owner', 'old-fork', 1);
-        $batches->reserveBatch($foreignBatch, 'other-owner', 0, 'old-fork', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, $foreignChild['childRunId'], $foreignChild['artifactId'], 'fork', 'FOREIGN_FORK', 'llama_cpp_test/test', 'medium'));
+        $foreignChild = $factory->childIdentity('other-owner', 'old-fork');
+        $batches->reserveBatch($foreignBatch, 'other-owner', 0, 'old-fork', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO($foreignChild['childRunId'], $foreignChild['artifactId'], 'fork', 'FOREIGN_FORK', 'llama_cpp_test/test', 'medium'));
         $batches->applyLaunchSuccessState('other-owner', 'old-fork', $foreignBatch, new \DateTimeImmutable());
         $batches->markTerminalCompletionEnqueued($foreignBatch, new \DateTimeImmutable(), $batches->findByLifecycleId($foreignBatch)->projectionVersion);
         if ($childEnded) {
@@ -1128,10 +1128,10 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
                 $lifecycle, $run, $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->toolName, $call->args, $call->orderIndex,
                 $call->toolIdempotencyKey, $call->mode, $call->timeoutSeconds, $call->maxParallelism, argSchema: $call->argSchema, toolsRef: $call->toolsRef,
             ));
-            $identity = $factory->childIdentity($run, $toolId, 1);
+            $identity = $factory->childIdentity($run, $toolId);
             $childIds[] = $child = $identity['childRunId'];
             $container->get(AgentArtifactRegistry::class)->create($run, $identity['artifactId'], $child, 'fork', AgentArtifactKindEnum::Fork);
-            $intent = new DeferredSubagentBatchChildIntentDTO(1, $child, $identity['artifactId'], 'fork', 'Finish existing work.', 'llama_cpp_test/test', 'medium');
+            $intent = new DeferredSubagentBatchChildIntentDTO($child, $identity['artifactId'], 'fork', 'Finish existing work.', 'llama_cpp_test/test', 'medium');
             $batches = $container->get(DeferredSubagentBatchRepository::class);
             $batches->reserveBatch($lifecycle, $run, 1, $toolId, $call->orderIndex, Clock::get()->now()->modify('+1 hour'), $intent);
             $batches->applyLaunchSuccessState($run, $toolId, $lifecycle, Clock::get()->now());

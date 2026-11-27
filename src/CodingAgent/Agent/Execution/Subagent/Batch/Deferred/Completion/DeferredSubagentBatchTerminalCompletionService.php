@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
 
@@ -24,16 +23,8 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
     ) {
     }
 
-    public function completeIfAllTerminal(DeferredSubagentBatchProjectionDTO $batch): void
+    public function completeIfTerminal(DeferredSubagentBatchProjectionDTO $batch): void
     {
-        if (null !== $batch->terminalCompletionEnqueuedAt) {
-            return;
-        }
-
-        if ($this->completionDispatcher->retryFrozenCompletion($batch)) {
-            return;
-        }
-
         $this->completeSingleIfTerminal($batch);
     }
 
@@ -43,7 +34,7 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
             return;
         }
 
-        $child = $this->requireSingleChild($batch);
+        $child = $batch->child ?? throw new \RuntimeException('Single batch natural completion requires a child row.');
         $projection = $child->childLifecycleProjection;
         if (null === $projection || !$projection->childStatus->isTerminal()) {
             return;
@@ -84,14 +75,5 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
             ),
             default => throw new \RuntimeException('Deferred single batch delivery cannot build presentation for non-terminal child status.'),
         };
-    }
-
-    private function requireSingleChild(DeferredSubagentBatchProjectionDTO $batch): DeferredSubagentChildProjectionDTO
-    {
-        if (1 !== \count($batch->children)) {
-            throw new \RuntimeException('Single batch natural completion requires exactly one child row.');
-        }
-
-        return $batch->children[0];
     }
 }

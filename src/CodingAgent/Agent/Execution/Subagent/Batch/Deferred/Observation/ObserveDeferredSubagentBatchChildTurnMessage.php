@@ -17,12 +17,26 @@ final readonly class ObserveDeferredSubagentBatchChildTurnMessage
      */
     public function __construct(
         public string $batchLifecycleId,
-        public int $batchIndex,
         public string $childRunId,
         public RunStatus $committedStatus,
         public int $turnNo,
         public array $committedEvents,
         public ?int $predecessorSequence = null,
     ) {
+    }
+
+    /**
+     * Native Messenger envelopes already queued may still contain batchIndex.
+     *
+     * @param array{batchLifecycleId: string, childRunId: string, committedStatus: RunStatus, turnNo: int, committedEvents: list<AfterTurnCommitEventSummary>, predecessorSequence: ?int} $data
+     */
+    public function __unserialize(array $data): void
+    {
+        $this->batchLifecycleId = $data['batchLifecycleId'];
+        $this->childRunId = $data['childRunId'];
+        $this->committedStatus = $data['committedStatus'];
+        $this->turnNo = $data['turnNo'];
+        $this->committedEvents = $data['committedEvents'];
+        $this->predecessorSequence = $data['predecessorSequence'];
     }
 }

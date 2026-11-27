@@ -81,9 +81,8 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
         $this->assertSame(0, $managed->childEventCursor);
         $this->assertTrue($this->entityManager->contains($managed));
 
-        $ordered = $this->childRepository->findOrderedByBatchLifecycleId($lifecycle);
-        $this->assertCount(1, $ordered);
-        $this->assertSame(17, $ordered[0]->childEventCursor);
+        $ordered = $this->childRepository->findByBatchLifecycleId($lifecycle);
+        $this->assertSame(17, $ordered->childEventCursor);
     }
 
     #[Test]
@@ -95,13 +94,13 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
         for ($round = 0; $round < 128; ++$round) {
             $child = $this->childRepository->findByChildRunId($childRunId);
             $this->assertNotNull($child);
-            $this->assertEquals([$child], $this->childRepository->findOrderedByBatchLifecycleId($lifecycle));
+            $this->assertEquals($child, $this->childRepository->findByBatchLifecycleId($lifecycle));
             $this->assertNotNull($this->childRepository->findProviderCacheKey($childRunId));
             $this->assertSame([], $this->entityManager->getUnitOfWork()->getIdentityMap());
         }
 
         $this->assertNull($this->childRepository->findByChildRunId('missing-child'));
-        $this->assertSame([], $this->childRepository->findOrderedByBatchLifecycleId('missing-lifecycle'));
+        $this->assertNull($this->childRepository->findByBatchLifecycleId('missing-lifecycle'));
         $this->assertNull($this->childRepository->findProviderCacheKey('missing-child'));
     }
 
@@ -113,7 +112,7 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
         $replacement = $this->factory->batchLifecycleId('failed-parent', 'replacement-tool');
         $this->batchRepository->reserveBatch(
             $replacement, 'failed-parent', 2, 'replacement-tool', 0, new \DateTimeImmutable('+1 minute'),
-            new DeferredSubagentBatchChildIntentDTO(1, $childRunId, 'replacement-artifact', 'fresh-agent', 'retry', 'test/model', 'medium'),
+            new DeferredSubagentBatchChildIntentDTO($childRunId, 'replacement-artifact', 'fresh-agent', 'retry', 'test/model', 'medium'),
         );
         $this->assertSame($replacement, $this->childRepository->findByChildRunId($childRunId)?->batchLifecycleId);
         $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $this->childRepository->findByChildRunId($childRunId)?->launchStatus);
@@ -163,11 +162,10 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
         $resumeParent = 'parent-child-fresh-rebind-resume';
         $resumeTool = 'tool-child-fresh-rebind-resume';
         $resumeLifecycle = $this->factory->batchLifecycleId($resumeParent, $resumeTool);
-        $resumeIdentity = $this->factory->childIdentity($resumeParent, $resumeTool, 1);
+        $resumeIdentity = $this->factory->childIdentity($resumeParent, $resumeTool);
 
         $this->childRepository->rebindExistingChildToResumeBatch(
             batchLifecycleId: $resumeLifecycle,
-            batchIndex: 1,
             childRunId: $childRunId,
             artifactId: $resumeIdentity['artifactId'],
             agentName: 'fresh-agent',
@@ -179,13 +177,12 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
         $this->assertFalse($this->entityManager->contains($managed));
 
         $row = $this->connection->fetchAssociative(
-            'SELECT batch_lifecycle_id, batch_index, child_event_cursor, launch_status, terminal_status, terminal_completed_at
+            'SELECT batch_lifecycle_id, child_event_cursor, launch_status, terminal_status, terminal_completed_at
              FROM deferred_subagent_child WHERE child_run_id = :child_run_id',
             ['child_run_id' => $childRunId],
         );
         $this->assertIsArray($row);
         $this->assertSame($resumeLifecycle, $row['batch_lifecycle_id']);
-        $this->assertSame(1, (int) $row['batch_index']);
         // Rebind preserves the existing child event cursor so only post-resume
         // events are observed.
         $this->assertSame(42, (int) $row['child_event_cursor']);
@@ -206,7 +203,7 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
     private function reserveOneChild(string $parent, string $tool): array
     {
         $lifecycle = $this->factory->batchLifecycleId($parent, $tool);
-        $child = $this->factory->childIdentity($parent, $tool, 1);
+        $child = $this->factory->childIdentity($parent, $tool);
         $this->batchRepository->reserveBatch(
             lifecycleId: $lifecycle,
             parentRunId: $parent,
@@ -215,7 +212,6 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
             parentOrderIndex: 0,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntent: new DeferredSubagentBatchChildIntentDTO(
-                batchIndex: 1,
                 childRunId: $child['childRunId'],
                 artifactId: $child['artifactId'],
                 agentName: 'fresh-agent',

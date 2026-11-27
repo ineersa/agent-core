@@ -54,7 +54,6 @@ final class DeferredSubagentBatchRuntimeStartService
         string $toolCallId,
         ChildRunIdentityDTO $identity,
         \Throwable $cause,
-        int $failureBatchIndex,
     ): void {
         $policy = $this->lifecyclePolicy;
         try {
@@ -72,7 +71,6 @@ final class DeferredSubagentBatchRuntimeStartService
                 'component' => 'agent.execution',
                 'event_type' => 'deferred_subagent_batch.launch_abort_failed',
                 'abort_phase' => 'preparation',
-                'failure_batch_index' => $failureBatchIndex,
                 'exception_class' => $abortFailure::class,
             ]);
         }

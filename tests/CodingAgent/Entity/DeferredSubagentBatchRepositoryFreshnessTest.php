@@ -90,8 +90,8 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
         $first = $this->reserveOneChild('parent-inventory', 'first-tool');
         $this->reserveOneChild('parent-inventory', 'second-tool');
         $runs = [
-            $this->factory->childIdentity('parent-inventory', 'first-tool', 1)['childRunId'],
-            $this->factory->childIdentity('parent-inventory', 'second-tool', 1)['childRunId'],
+            $this->factory->childIdentity('parent-inventory', 'first-tool')['childRunId'],
+            $this->factory->childIdentity('parent-inventory', 'second-tool')['childRunId'],
         ];
         $rows = $this->repository->findOwnedChildStatuses('parent-inventory');
         $this->assertSame($runs, array_column($rows, 'child_run_id'));
@@ -115,7 +115,7 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
     {
         $parent = 'parent-resume-inventory';
         $first = $this->reserveOneChild($parent, 'original');
-        $child = $this->factory->childIdentity($parent, 'original', 1);
+        $child = $this->factory->childIdentity($parent, 'original');
         $projection = self::getContainer()->get(RunOperationalProjectionRepository::class);
         $snapshot = self::getContainer()->get(BackgroundWorkSnapshotProvider::class);
         $markCompleted = fn (string $lifecycle): int => $this->connection->update('deferred_subagent_child', [
@@ -154,7 +154,7 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
         for ($round = 0; $round < 128; ++$round) {
             $batch = $this->repository->findByLifecycleId($lifecycle);
             $this->assertNotNull($batch);
-            $this->assertCount(1, $batch->children);
+            $this->assertNotNull($batch->child);
             $this->assertEquals($batch, $this->repository->findByParentRunAndToolCall($parent, $tool));
             $this->assertSame([], $this->entityManager->getUnitOfWork()->getIdentityMap());
         }
@@ -285,7 +285,7 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
     private function reserveOneChild(string $parent, string $tool, ?array $child = null): string
     {
         $lifecycle = $this->factory->batchLifecycleId($parent, $tool);
-        $child ??= $this->factory->childIdentity($parent, $tool, 1);
+        $child ??= $this->factory->childIdentity($parent, $tool);
         $this->repository->reserveBatch(
             lifecycleId: $lifecycle,
             parentRunId: $parent,
@@ -294,7 +294,6 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
             parentOrderIndex: 0,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntent: new DeferredSubagentBatchChildIntentDTO(
-                batchIndex: 1,
                 childRunId: $child['childRunId'],
                 artifactId: $child['artifactId'],
                 agentName: 'fresh-agent',

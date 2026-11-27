@@ -45,11 +45,10 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
         $parent = 'parent-hook-'.$scenario;
         $tool = 'tool-hook-'.$scenario;
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
-        $tracked = $factory->childIdentity($parent, $tool, 1);
-        $failed = $factory->childIdentity($parent, $tool, 2);
+        $tracked = $factory->childIdentity($parent, $tool);
 
         if ('launch_failed_child' === $scenario) {
-            $onlyFailed = $factory->childIdentity($parent, $tool, 1);
+            $onlyFailed = $factory->childIdentity($parent, $tool);
             $batchRepo->reserveBatch(
                 lifecycleId: $lifecycle,
                 parentRunId: $parent,
@@ -57,10 +56,9 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
                 parentToolCallId: $tool,
                 parentOrderIndex: 0,
                 deadlineAt: new \DateTimeImmutable('+600 seconds'),
-                childIntent: new DeferredSubagentBatchChildIntentDTO(batchIndex: 1, childRunId: $onlyFailed['childRunId'], artifactId: $onlyFailed['artifactId'], agentName: 'worker', task: 'T2', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
+                childIntent: new DeferredSubagentBatchChildIntentDTO(childRunId: $onlyFailed['childRunId'], artifactId: $onlyFailed['artifactId'], agentName: 'worker', task: 'T2', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
             );
             $batchRepo->applyLaunchFailurePreparation($parent, $tool, $lifecycle);
-            $failed = $onlyFailed;
         } elseif ($reserveTrackedLaunched) {
             $batchRepo->reserveBatch(
                 lifecycleId: $lifecycle,
@@ -69,7 +67,7 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
                 parentToolCallId: $tool,
                 parentOrderIndex: 0,
                 deadlineAt: new \DateTimeImmutable('+600 seconds'),
-                childIntent: new DeferredSubagentBatchChildIntentDTO(batchIndex: 1, childRunId: $tracked['childRunId'], artifactId: $tracked['artifactId'], agentName: 'worker', task: 'T1', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
+                childIntent: new DeferredSubagentBatchChildIntentDTO(childRunId: $tracked['childRunId'], artifactId: $tracked['artifactId'], agentName: 'worker', task: 'T1', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
             );
             $batchRepo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable());
         }
@@ -80,7 +78,7 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
         if ($useUntrackedChild) {
             $childRunId = 'untracked-child-'.$scenario;
         } elseif ('launch_failed_child' === $scenario) {
-            $childRunId = $factory->childIdentity($parent, $tool, 1)['childRunId'];
+            $childRunId = $factory->childIdentity($parent, $tool)['childRunId'];
         } else {
             $childRunId = $tracked['childRunId'];
         }
@@ -103,7 +101,6 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
             /** @var ObserveDeferredSubagentBatchChildTurnMessage $msg */
             $msg = $actions[0]->message;
             $this->assertSame($lifecycle, $msg->batchLifecycleId);
-            $this->assertSame(1, $msg->batchIndex);
             $this->assertSame($tracked['childRunId'], $msg->childRunId);
             $this->assertSame(RunStatus::Running, $msg->committedStatus);
             $this->assertSame(2, $msg->turnNo);
@@ -112,7 +109,7 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
             // This complete canonical batch follows cursor zero despite allocation holes.
             $bound = $actions[0]->bindCanonicalSequences([7, 8]);
             self::getContainer()->get(ObserveDeferredSubagentBatchChildTurnHandler::class)($bound->message);
-            $this->assertSame(8, $childRepo->findEntityByBatchLifecycleAndIndex($lifecycle, 1)->childEventCursor);
+            $this->assertSame(8, $childRepo->findEntityByBatchLifecycleId($lifecycle)->childEventCursor);
         }
     }
 
@@ -142,7 +139,7 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
         $parent = 'parent-dispatch-fail';
         $tool = 'tool-dispatch-fail';
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
-        $child = $factory->childIdentity($parent, $tool, 1);
+        $child = $factory->childIdentity($parent, $tool);
         $batchRepo->reserveBatch(
             lifecycleId: $lifecycle,
             parentRunId: $parent,
@@ -150,7 +147,7 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
             parentToolCallId: $tool,
             parentOrderIndex: 0,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
-            childIntent: new DeferredSubagentBatchChildIntentDTO(batchIndex: 1, childRunId: $child['childRunId'], artifactId: $child['artifactId'], agentName: 'worker', task: 'task', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
+            childIntent: new DeferredSubagentBatchChildIntentDTO(childRunId: $child['childRunId'], artifactId: $child['artifactId'], agentName: 'worker', task: 'task', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
         );
         $batchRepo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable());
 

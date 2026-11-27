@@ -55,7 +55,7 @@ final class DeferredSubagentBatchLaunchService
             launchContext: $toolContext->launchContext(),
         );
         $projection = $this->reserveInvocation($parentRunId, $toolCallId, $plan);
-        $this->assertPlanMatchesPreparedChild($plan, $this->requirePreparedChild($projection));
+        $this->assertPlanMatchesPreparedChild($plan, $projection->child ?? throw new ToolCallException('Prepared child reservation must contain a child.', retryable: false));
 
         return $this->launchWithPlan(
             parentRunId: $parentRunId,
@@ -74,7 +74,7 @@ final class DeferredSubagentBatchLaunchService
      * Explicit required single-child profiled launch used by fork.
      *
      * Parallelism across multiple fork tool calls is handled by ToolBatchCollector;
-     * each call still launches exactly one deferred child through this path.
+     * each call still launches a deferred child through this path.
      */
     public function launchSingleChildProfile(
         string $parentRunId,
@@ -101,7 +101,7 @@ final class DeferredSubagentBatchLaunchService
             launchContext: $toolContext->launchContext(),
         );
         $projection = $this->reserveInvocation($parentRunId, $toolCallId, $plan);
-        $this->assertPlanMatchesPreparedChild($plan, $this->requirePreparedChild($projection));
+        $this->assertPlanMatchesPreparedChild($plan, $projection->child ?? throw new ToolCallException('Prepared child reservation must contain a child.', retryable: false));
 
         return $this->launchWithPlan(
             parentRunId: $parentRunId,
@@ -176,7 +176,6 @@ final class DeferredSubagentBatchLaunchService
                 $toolCallId,
                 $plan->identity,
                 $e->getPrevious() ?? $e,
-                $e->failureBatchIndex,
             );
             $this->batchRepository->applyLaunchFailurePreparation($parentRunId, $toolCallId, $lifecycleId);
 
@@ -217,22 +216,12 @@ final class DeferredSubagentBatchLaunchService
         return new DeferredToolCompletionOutcome($lifecycleId);
     }
 
-    private function requirePreparedChild(DeferredSubagentBatchProjectionDTO $projection): DeferredSubagentChildProjectionDTO
-    {
-        if (1 !== \count($projection->children)) {
-            throw new ToolCallException('Prepared child reservation must contain exactly one child.', retryable: false);
-        }
-
-        return $projection->children[0];
-    }
-
     private function assertPlanMatchesPreparedChild(
         DeferredSubagentBatchLaunchPlanDTO $plan,
         DeferredSubagentChildProjectionDTO $child,
     ): void {
         $intent = $plan->childIntent;
-        if (1 !== $intent->batchIndex
-            || $intent->childRunId !== $child->childRunId
+        if ($intent->childRunId !== $child->childRunId
             || $intent->artifactId !== $child->artifactId
             || $intent->agentName !== $child->agentName
             || $intent->task !== $child->task

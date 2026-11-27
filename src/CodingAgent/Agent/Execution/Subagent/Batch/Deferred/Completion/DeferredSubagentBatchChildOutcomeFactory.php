@@ -42,7 +42,6 @@ final readonly class DeferredSubagentBatchChildOutcomeFactory
             displayName: $child->agentName,
             taskSummary: $child->task,
             artifactKind: AgentArtifactKindEnum::Subagent,
-            batchIndex: $child->batchIndex,
         );
     }
 

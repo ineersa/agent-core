@@ -16,6 +16,7 @@ final class DeferredSubagentBatchIdentityFactory
 
     public function batchLifecycleId(string $parentRunId, string $parentToolCallId): string
     {
+        // Preserve deterministic IDs assigned before the single-child schema.
         $name = $parentRunId.'|'.$parentToolCallId.'|deferred_subagent_batch';
 
         return Uuid::v5(Uuid::fromString(self::BATCH_NAMESPACE), $name)->toRfc4122();
@@ -24,9 +25,10 @@ final class DeferredSubagentBatchIdentityFactory
     /**
      * @return array{childRunId: string, artifactId: string}
      */
-    public function childIdentity(string $parentRunId, string $parentToolCallId, int $batchIndex): array
+    public function childIdentity(string $parentRunId, string $parentToolCallId): array
     {
-        $name = $parentRunId.'|'.$parentToolCallId.'|'.$batchIndex;
+        // Preserve deterministic IDs assigned before the single-child schema.
+        $name = $parentRunId.'|'.$parentToolCallId.'|1';
         $childRunId = Uuid::v5(Uuid::fromString(self::CHILD_NAMESPACE), $name)->toRfc4122();
         $artifactId = 'agent_'.substr(hash('sha256', $name.'|artifact'), 0, 16);
 

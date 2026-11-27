@@ -23,8 +23,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -103,7 +101,7 @@ final class AgentResumeExecutionService
             throw new ToolCallException('Prepared agent_resume reservation does not match its active tool context.', retryable: false);
         }
 
-        $child = $this->requirePreparedChild($projection);
+        $child = $projection->child ?? throw new ToolCallException('Prepared agent_resume reservation must contain a child.', retryable: false);
         if (DeferredSubagentBatchLaunchStatusEnum::Failed === $projection->launchStatus) {
             throw new ToolCallException('agent_resume batch launch previously failed for this tool call.', retryable: false);
         }
@@ -333,7 +331,6 @@ final class AgentResumeExecutionService
         }
 
         return new DeferredSubagentBatchChildIntentDTO(
-            batchIndex: 1,
             childRunId: $entry->agentRunId,
             artifactId: $entry->artifactId,
             agentName: $entry->agentName,
@@ -341,15 +338,6 @@ final class AgentResumeExecutionService
             launchModel: $launchModel,
             launchReasoning: $launchReasoning,
         );
-    }
-
-    private function requirePreparedChild(DeferredSubagentBatchProjectionDTO $projection): DeferredSubagentChildProjectionDTO
-    {
-        if (1 !== \count($projection->children)) {
-            throw new ToolCallException('Prepared agent_resume reservation must contain exactly one child.', retryable: false);
-        }
-
-        return $projection->children[0];
     }
 
     private function resolveTargetIdentity(string $parentRunId, AgentResumeArgumentsDTO $task): AgentArtifactEntryDTO

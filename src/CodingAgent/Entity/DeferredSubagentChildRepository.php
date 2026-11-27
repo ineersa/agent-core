@@ -75,14 +75,13 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         return $key;
     }
 
-    /**
-     * @return list<DeferredSubagentChildProjectionDTO>
-     */
-    public function findOrderedByBatchLifecycleId(string $batchLifecycleId): array
+    public function findByBatchLifecycleId(string $batchLifecycleId): ?DeferredSubagentChildProjectionDTO
     {
-        return array_map($this->snapshot(...), $this->getEntityManager()->getConnection()->fetchAllAssociative(
-            'SELECT * FROM deferred_subagent_child WHERE batch_lifecycle_id = ? ORDER BY batch_index', [$batchLifecycleId],
-        ));
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
+            'SELECT * FROM deferred_subagent_child WHERE batch_lifecycle_id = ?', [$batchLifecycleId],
+        );
+
+        return false === $row ? null : $this->snapshot($row);
     }
 
     public function insertReservedChild(string $batchLifecycleId, DeferredSubagentBatchChildIntentDTO $childIntent, ?Connection $conn = null): void
@@ -94,7 +93,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         try {
             $conn->insert('deferred_subagent_child', [
                 'batch_lifecycle_id' => $batchLifecycleId,
-                'batch_index' => $intent['batchIndex'],
                 'child_run_id' => $intent['childRunId'],
                 'provider_cache_key' => UuidV7::v7()->toRfc4122(),
                 'artifact_id' => $intent['artifactId'],
@@ -114,7 +112,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         } catch (UniqueConstraintViolationException) {
             $existing = $this->findFreshOneBy([
                 'batchLifecycleId' => $batchLifecycleId,
-                'batchIndex' => $intent['batchIndex'],
             ]);
             if (!$existing instanceof DeferredSubagentChild) {
                 $byChildRun = $this->findFreshEntityByChildRunId($intent['childRunId']);
@@ -122,7 +119,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                     // Resume rebinds an existing terminal child onto a new batch.
                     $this->rebindExistingChildToResumeBatch(
                         batchLifecycleId: $batchLifecycleId,
-                        batchIndex: $intent['batchIndex'],
                         childRunId: $intent['childRunId'],
                         artifactId: $intent['artifactId'],
                         agentName: $intent['agentName'],
@@ -136,19 +132,18 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                     return;
                 }
 
-                throw new \RuntimeException(\sprintf('Deferred subagent child reserve conflict for batch "%s" index %d but row missing.', $batchLifecycleId, $intent['batchIndex']));
+                throw new \RuntimeException(\sprintf('Deferred subagent child reserve conflict for batch "%s" but row missing.', $batchLifecycleId));
             }
             $this->assertChildMatchesIntent($existing, $intent);
         }
     }
 
     /**
-     * @param array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string} $intent
+     * @param array{childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string} $intent
      */
     public function assertChildMatchesIntent(DeferredSubagentChild $row, array $intent): void
     {
-        if ($row->batchIndex !== $intent['batchIndex']
-            || $row->childRunId !== $intent['childRunId']
+        if ($row->childRunId !== $intent['childRunId']
             || $row->artifactId !== $intent['artifactId']) {
             throw new ToolCallException('Deferred subagent batch child identity does not match the deterministic launch for this tool call.', retryable: false);
         }
@@ -170,7 +165,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
      */
     public function rebindExistingChildToResumeBatch(
         string $batchLifecycleId,
-        int $batchIndex,
         string $childRunId,
         string $artifactId,
         string $agentName,
@@ -207,7 +201,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         if ($existing instanceof DeferredSubagentChild) {
             $conn->update('deferred_subagent_child', [
                 'batch_lifecycle_id' => $batchLifecycleId,
-                'batch_index' => $batchIndex,
                 'artifact_id' => $artifactId,
                 'agent_name' => $agentName,
                 'task' => $task,
@@ -230,7 +223,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
 
         $conn->insert('deferred_subagent_child', [
             'batch_lifecycle_id' => $batchLifecycleId,
-            'batch_index' => $batchIndex,
             'child_run_id' => $childRunId,
             'provider_cache_key' => UuidV7::v7()->toRfc4122(),
             'artifact_id' => $artifactId,
@@ -250,11 +242,10 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         ]);
     }
 
-    public function findEntityByBatchLifecycleAndIndex(string $batchLifecycleId, int $batchIndex): ?DeferredSubagentChild
+    public function findEntityByBatchLifecycleId(string $batchLifecycleId): ?DeferredSubagentChild
     {
         $row = $this->findFreshOneBy([
             'batchLifecycleId' => $batchLifecycleId,
-            'batchIndex' => $batchIndex,
         ]);
 
         return $row instanceof DeferredSubagentChild ? $row : null;
@@ -323,7 +314,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
     {
         return new DeferredSubagentChildProjectionDTO(
             batchLifecycleId: $row['batch_lifecycle_id'],
-            batchIndex: (int) $row['batch_index'],
             childRunId: $row['child_run_id'],
             artifactId: $row['artifact_id'],
             agentName: $row['agent_name'],

@@ -27,12 +27,16 @@ final class Version20261102143815Test extends IsolatedKernelTestCase
         $container->get(DeferredSubagentBatchRepository::class)->reserveBatch(
             lifecycleId: 'migration-batch', parentRunId: $root, parentTurnNo: 1,
             parentToolCallId: 'tool', parentOrderIndex: 0, deadlineAt: new \DateTimeImmutable('+600 seconds'),
-            childIntent: new DeferredSubagentBatchChildIntentDTO(1, 'migration-child', 'artifact', 'scout', 'task', 'provider/model', 'low'),
+            childIntent: new DeferredSubagentBatchChildIntentDTO('migration-child', 'artifact', 'scout', 'task', 'provider/model', 'low'),
         );
         $db->update('deferred_subagent_child', ['child_event_cursor' => 42, 'child_lifecycle_projection' => '{"model":"provider/model"}', 'terminal_status' => 'completed'], ['child_run_id' => 'migration-child']);
         $correlation = new DeferredToolCompletionCorrelation('migration-deferred', $root, 1, 'step', 1, 'key', 'host', 'code_mode', [], 0);
         TestToolBatchRegistration::registerDeferredInvocation($container->get(ToolBatchStoreInterface::class), $correlation);
         $container->get(DeferredToolCompletionRepository::class)->registerPending($correlation);
+        // Recreate the pre-single-child index shape for this historical round trip.
+        $db->executeStatement('ALTER TABLE deferred_subagent_child ADD COLUMN batch_index INTEGER NOT NULL DEFAULT 1');
+        $db->executeStatement('DROP INDEX uniq_deferred_subagent_child_batch');
+        $db->executeStatement('CREATE UNIQUE INDEX uniq_deferred_subagent_child_batch_index ON deferred_subagent_child (batch_lifecycle_id, batch_index)');
         $tables = ['deferred_subagent_child', 'tool_deferred_completion'];
         $before = [];
         $indexes = [];

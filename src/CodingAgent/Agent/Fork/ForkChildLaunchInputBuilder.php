@@ -109,7 +109,6 @@ final class ForkChildLaunchInputBuilder
             displayName: $identity->displayName,
             taskSummary: $identity->taskSummary,
             artifactKind: $identity->artifactKind,
-            batchIndex: $identity->batchIndex,
         );
 
         return new PreparedAgentChildRunDTO(

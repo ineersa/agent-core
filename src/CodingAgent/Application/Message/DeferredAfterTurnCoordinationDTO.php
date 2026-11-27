@@ -29,6 +29,6 @@ final readonly class DeferredAfterTurnCoordinationDTO implements CanonicalSequen
         }
         $message = $this->message;
 
-        return new self($this->runId, $this->predecessorSequence, new ObserveDeferredSubagentBatchChildTurnMessage($message->batchLifecycleId, $message->batchIndex, $message->childRunId, $message->committedStatus, $message->turnNo, $events, $this->predecessorSequence));
+        return new self($this->runId, $this->predecessorSequence, new ObserveDeferredSubagentBatchChildTurnMessage($message->batchLifecycleId, $message->childRunId, $message->committedStatus, $message->turnNo, $events, $this->predecessorSequence));
     }
 }

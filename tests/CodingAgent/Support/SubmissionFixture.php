@@ -47,7 +47,7 @@ final class SubmissionFixture
         $this->lifecycle = 'batch-'.Uuid::v7();
         $entry = $container->get(AgentArtifactRegistry::class)->create($this->parent, $this->artifact, $this->child, 'scout', $kind);
         $container->get(AgentChildRunDirectory::class)->register($entry);
-        $container->get(DeferredSubagentBatchRepository::class)->reserveBatch($this->lifecycle, $this->parent, 1, 'spawn', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, $this->child, $this->artifact, 'scout', 'task', 'model', 'medium'));
+        $container->get(DeferredSubagentBatchRepository::class)->reserveBatch($this->lifecycle, $this->parent, 1, 'spawn', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO($this->child, $this->artifact, 'scout', 'task', 'model', 'medium'));
         $this->parentState = RunStateBuilder::running($this->parent)->withTurnNo(1)->withLastSeq(3)->withActiveStepId('step')->withPendingToolCalls(['spawn' => false, 'steer' => false])->build();
         $this->childState = RunStateBuilder::running($this->child)->withTurnNo(1)->withLastSeq(3)->withActiveStepId('step')->withPendingToolCalls(['notice' => false])->build()->with(['parentRunId' => $this->parent]);
         foreach ([$this->parentState, $this->childState] as $state) {

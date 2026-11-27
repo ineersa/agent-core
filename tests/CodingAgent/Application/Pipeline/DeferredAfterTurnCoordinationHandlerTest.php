@@ -33,7 +33,7 @@ final class DeferredAfterTurnCoordinationHandlerTest extends IsolatedKernelTestC
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('identity fence');
         $store = $container->get(PreparedTransitionEventStoreInterface::class);
-        $message = new ObserveDeferredSubagentBatchChildTurnMessage('batch', 1, $run, RunStatus::Completed, 1, [new AfterTurnCommitEventSummary(0, 'agent_end', [])]);
+        $message = new ObserveDeferredSubagentBatchChildTurnMessage('batch', $run, RunStatus::Completed, 1, [new AfterTurnCommitEventSummary(0, 'agent_end', [])]);
         $action = new DeferredAfterTurnCoordinationDTO($run, 0, $message);
         $store->appendTransition([new RunEvent($run, 0, 0, 'agent_end', [])], ['run_id' => $run, 'predecessor_seq' => 0, 'after_turn_actions' => [$action]]);
         $pending = $store->verifiedPendingTransition($run);
@@ -44,7 +44,7 @@ final class DeferredAfterTurnCoordinationHandlerTest extends IsolatedKernelTestC
         } elseif ('predecessor' === $mismatch) {
             $action = new DeferredAfterTurnCoordinationDTO($run, 1, $action->message);
         } elseif ('action' === $mismatch) {
-            $action = new DeferredAfterTurnCoordinationDTO($run, 0, new ObserveDeferredSubagentBatchChildTurnMessage('different', 1, $run, RunStatus::Completed, 1, $action->message->committedEvents));
+            $action = new DeferredAfterTurnCoordinationDTO($run, 0, new ObserveDeferredSubagentBatchChildTurnMessage('different', $run, RunStatus::Completed, 1, $action->message->committedEvents));
         } else {
             $pending = new VerifiedTransitionDTO($pending->identity, $pending->work, [999]);
         }
@@ -70,7 +70,7 @@ final class DeferredAfterTurnCoordinationHandlerTest extends IsolatedKernelTestC
         $event = new RunEvent($run, 0, 1, 'agent_end', ['status' => 'completed']);
         $summary = new AfterTurnCommitEventSummary(0, 'agent_end', ['status' => 'completed']);
         $work = ['run_id' => $run, 'predecessor_seq' => 0];
-        $mismatch = new ObserveDeferredSubagentBatchChildTurnMessage('batch', 1, $run, RunStatus::Completed, 1, [$summary, $summary]);
+        $mismatch = new ObserveDeferredSubagentBatchChildTurnMessage('batch', $run, RunStatus::Completed, 1, [$summary, $summary]);
         try {
             $store->appendTransition([$event], $work + ['after_turn_actions' => [new DeferredAfterTurnCoordinationDTO($run, 0, $mismatch)]]);
             $this->fail('A mismatched observation cannot publish an intent.');
@@ -79,7 +79,7 @@ final class DeferredAfterTurnCoordinationHandlerTest extends IsolatedKernelTestC
         }
         $this->assertNull($store->verifiedPendingTransition($run));
         $this->assertNull($store->latestSequenceFor($run));
-        $message = new ObserveDeferredSubagentBatchChildTurnMessage('batch', 1, $run, RunStatus::Completed, 1, [$summary]);
+        $message = new ObserveDeferredSubagentBatchChildTurnMessage('batch', $run, RunStatus::Completed, 1, [$summary]);
         $store->appendTransition([$event], $work + ['after_turn_actions' => [new DeferredAfterTurnCoordinationDTO($run, 0, $message)]]);
         $pending = $store->verifiedPendingTransition($run);
         $this->assertNotNull($pending);

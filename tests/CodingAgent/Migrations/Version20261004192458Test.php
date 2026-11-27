@@ -43,10 +43,10 @@ final class Version20261004192458Test extends IsolatedKernelTestCase
         $entityManager->flush();
 
         $repository->insertReservedChild('migration-cache-batch', new DeferredSubagentBatchChildIntentDTO(
-            1, 'child-one', 'agent_one', 'worker', 'one', 'test/model', 'medium',
+            'child-one', 'agent_one', 'worker', 'one', 'test/model', 'medium',
         ));
         $repository->insertReservedChild('migration-terminal-batch', new DeferredSubagentBatchChildIntentDTO(
-            1, 'child-two', 'agent_two', 'worker', 'two', 'test/model', 'medium',
+            'child-two', 'agent_two', 'worker', 'two', 'test/model', 'medium',
         ));
         $connection->executeStatement('UPDATE deferred_subagent_child SET child_event_cursor = 42, child_lifecycle_projection = ?', ['{"input_tokens":100}']);
 
@@ -84,7 +84,7 @@ final class Version20261004192458Test extends IsolatedKernelTestCase
         $childId = Uuid::v4()->toRfc4122();
         $repository = $container->get(DeferredSubagentChildRepository::class);
         $repository->insertReservedChild('old-batch', new DeferredSubagentBatchChildIntentDTO(
-            1, $childId, 'agent_resume', 'fork', 'old task', 'test/model', 'medium',
+            $childId, 'agent_resume', 'fork', 'old task', 'test/model', 'medium',
         ));
         $store = $container->get(AgentChildRunEventStoreFactory::class)->create('migration-parent', $childId, 'agent_resume');
         PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childId, 1, 'llm_step_completed', [
@@ -101,7 +101,7 @@ final class Version20261004192458Test extends IsolatedKernelTestCase
             'child_event_cursor' => $terminal->seq,
             'child_lifecycle_projection' => $container->get(SerializerInterface::class)->serialize($legacy, 'json', [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]),
         ], ['child_run_id' => $childId]);
-        $repository->rebindExistingChildToResumeBatch('resume-batch', 1, $childId, 'agent_resume', 'fork', 'resume task', 'test/model', 'medium');
+        $repository->rebindExistingChildToResumeBatch('resume-batch', $childId, 'agent_resume', 'fork', 'resume task', 'test/model', 'medium');
         $recovery = $container->get(DeferredSubagentBatchRecoveryService::class);
         if ($resultCommitted) {
             PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childId, 2, 'agent_command_queued', ['kind' => CoreCommandKind::FollowUp]));
@@ -142,6 +142,9 @@ final class Version20261004192458Test extends IsolatedKernelTestCase
     private function migrateLegacyChildTable(): void
     {
         $connection = static::getContainer()->get('doctrine.orm.default_entity_manager')->getConnection();
+        // This migration expects the pre-single-child column even when fixtures
+        // were seeded through the current repository.
+        $connection->executeStatement('ALTER TABLE deferred_subagent_child ADD COLUMN batch_index INTEGER NOT NULL DEFAULT 1');
         $down = new Version20261004192458($connection, new NullLogger());
         $down->down($connection->createSchemaManager()->introspectSchema());
         foreach ($down->getSql() as $query) {

@@ -407,6 +407,69 @@ SQL);
         $executor();
     }
 
+    public function testSingleChildMigrationPreservesExistingChild(): void
+    {
+        $path = $this->isolatedDir.'/single-child-upgrade.sqlite';
+        $this->assertSame($this->isolatedDir, realpath(\dirname($path)));
+        $this->assertFileDoesNotExist($path);
+        $this->assertFalse(is_link($path));
+        $connection = $this->createSqliteConnection($path);
+        $connection->executeStatement(<<<'SQL'
+            CREATE TABLE deferred_subagent_child (
+              id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+              batch_lifecycle_id VARCHAR(36) NOT NULL,
+              child_run_id VARCHAR(36) NOT NULL,
+              provider_cache_key VARCHAR(36) DEFAULT NULL,
+              artifact_id VARCHAR(64) NOT NULL,
+              agent_name VARCHAR(255) NOT NULL,
+              task CLOB NOT NULL,
+              launch_model VARCHAR(255) NOT NULL,
+              launch_reasoning VARCHAR(64) NOT NULL,
+              launch_status VARCHAR(32) NOT NULL,
+              child_event_cursor INTEGER NOT NULL,
+              child_lifecycle_projection CLOB DEFAULT NULL,
+              projection_version INTEGER DEFAULT 1 NOT NULL,
+              started_at DATETIME DEFAULT NULL,
+              terminal_completed_at DATETIME DEFAULT NULL,
+              terminal_status VARCHAR(32) DEFAULT NULL,
+              created_at DATETIME NOT NULL,
+              updated_at DATETIME NOT NULL,
+              batch_index INTEGER NOT NULL
+            )
+            SQL);
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_deferred_subagent_child_batch_index ON deferred_subagent_child (batch_lifecycle_id, batch_index)');
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_deferred_subagent_child_run ON deferred_subagent_child (child_run_id)');
+        $row = [
+            'id' => 31,
+            'batch_lifecycle_id' => 'old-batch',
+            'child_run_id' => 'child-run',
+            'provider_cache_key' => 'cache-key',
+            'artifact_id' => 'artifact',
+            'agent_name' => 'scout',
+            'task' => 'inspect',
+            'launch_model' => 'provider/model',
+            'launch_reasoning' => 'low',
+            'launch_status' => 'launched',
+            'child_event_cursor' => 19,
+            'child_lifecycle_projection' => '{"lastCommittedSeq":19}',
+            'projection_version' => 5,
+            'created_at' => '2026-11-20 00:00:00',
+            'updated_at' => '2026-11-20 00:00:17',
+        ];
+        $connection->insert('deferred_subagent_child', $row + ['batch_index' => 1]);
+        $this->recordAppliedMigrationsThrough($connection, 'Version20261121044306');
+
+        (new ApplicationMigrationExecutor($connection, new NullLogger()))();
+
+        $actual = $connection->fetchAssociative('SELECT * FROM deferred_subagent_child');
+        $this->assertIsArray($actual);
+        $this->assertSame($row, array_replace([], ...array_map(static fn (string $key): array => [$key => $actual[$key]], array_keys($row))));
+        $this->assertArrayNotHasKey('batch_index', $actual);
+        $index = $connection->createSchemaManager()->listTableIndexes('deferred_subagent_child')['uniq_deferred_subagent_child_batch'];
+        $this->assertTrue($index->isUnique());
+        $this->assertSame(['batch_lifecycle_id'], $index->getColumns());
+    }
+
     public function testIsAppliedAcceptsFqcnVersionRowsRecordedByConsoleMigrate(): void
     {
         $connection = $this->createSqliteConnection($this->isolatedDir.'/fqcn.sqlite');
@@ -681,8 +744,9 @@ SQL);
         $this->recordAppliedMigrationsThrough($connection, 'Version20261022235428');
 
         // This focused legacy-session fixture omits deferred-work tables;
-        // their index migration is covered against the full schema separately.
+        // their migrations are covered against their own schema separately.
         $connection->insert('doctrine_migration_versions', ['version' => 'Version20261102143815', 'executed_at' => $now, 'execution_time' => 0]);
+        $connection->insert('doctrine_migration_versions', ['version' => 'Version20261127020326', 'executed_at' => $now, 'execution_time' => 0]);
         (new ApplicationMigrationExecutor($connection, new NullLogger()))();
 
         $columns = $connection->createSchemaManager()->listTableColumns('hatfield_session');
@@ -791,6 +855,14 @@ SQL);
             'Version20261020210924',
             'Version20261021034317',
             'Version20261022235428',
+            'Version20261023000232',
+            'Version20261024223528',
+            'Version20261027144431',
+            'Version20261029130139',
+            'Version20261030155748',
+            'Version20261102143815',
+            'Version20261116201719',
+            'Version20261121044306',
         ];
 
         foreach ($ordered as $version) {

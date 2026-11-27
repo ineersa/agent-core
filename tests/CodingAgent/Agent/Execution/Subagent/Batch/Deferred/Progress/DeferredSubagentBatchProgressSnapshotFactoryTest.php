@@ -33,7 +33,6 @@ final class DeferredSubagentBatchProgressSnapshotFactoryTest extends TestCase
         $terminal = new \DateTimeImmutable('2026-01-01T00:02:19Z');
         $batch = $this->singleBatch(
             child: $this->child(
-                index: 1,
                 runId: 'child-1',
                 artifactId: 'agent_1',
                 startedAt: $started,
@@ -87,12 +86,11 @@ final class DeferredSubagentBatchProgressSnapshotFactoryTest extends TestCase
             deadlineAt: null,
             createdAt: $startedAt,
             projectionVersion: 1,
-            children: [$child],
+            child: $child,
         );
     }
 
     private function child(
-        int $index,
         string $runId,
         string $artifactId,
         ?\DateTimeImmutable $startedAt,
@@ -102,7 +100,6 @@ final class DeferredSubagentBatchProgressSnapshotFactoryTest extends TestCase
     ): DeferredSubagentChildProjectionDTO {
         return new DeferredSubagentChildProjectionDTO(
             batchLifecycleId: 'batch-1',
-            batchIndex: $index,
             childRunId: $runId,
             artifactId: $artifactId,
             agentName: $agentName,

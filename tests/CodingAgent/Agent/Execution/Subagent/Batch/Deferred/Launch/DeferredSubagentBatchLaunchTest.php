@@ -118,7 +118,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
     {
         $parentRunId = 'parent-batch-runtime-failure';
         $toolCallId = 'call-batch-runtime-failure';
-        $child = (new DeferredSubagentBatchIdentityFactory())->childIdentity($parentRunId, $toolCallId, 1);
+        $child = (new DeferredSubagentBatchIdentityFactory())->childIdentity($parentRunId, $toolCallId);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
         $agentRunner->expects($this->once())->method('start')->willReturnCallback(static function () use ($registry, $parentRunId, $child): never {
@@ -142,8 +142,8 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         );
         $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($parentRunId, $toolCallId);
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch?->launchStatus);
-        $this->assertCount(1, $batch?->children ?? []);
-        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $batch?->children[0]->launchStatus);
+        $this->assertNotNull($batch?->child);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $batch?->child->launchStatus);
         $this->assertSame(AgentArtifactStatusEnum::Failed, $registry->get($parentRunId, $child['artifactId'])?->status);
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('previously failed');
@@ -179,7 +179,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $batch = $batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId);
         $this->assertNotNull($batch);
-        $this->assertCount(1, $batch->children);
+        $this->assertNotNull($batch->child);
     }
 
     public function testOrdinaryLaunchApiHasNoNullableProfileAndProfiledPathIsRequiredSingleChild(): void
@@ -254,8 +254,8 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $batch = $batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId);
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch?->launchStatus);
         $this->assertNotNull($batch);
-        $this->assertCount(1, $batch->children);
-        foreach ($batch->children as $child) {
+        $this->assertNotNull($batch->child);
+        if (null !== ($child = $batch->child)) {
             $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $child->launchStatus);
         }
 
@@ -272,7 +272,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $toolCallId = 'call-batch-interrupt-before-launch';
         $identityFactory = new DeferredSubagentBatchIdentityFactory();
         $lifecycleId = $identityFactory->batchLifecycleId($parentRunId, $toolCallId);
-        $child = $identityFactory->childIdentity($parentRunId, $toolCallId, 1);
+        $child = $identityFactory->childIdentity($parentRunId, $toolCallId);
 
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $repo->reserveBatch(
@@ -282,7 +282,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             parentToolCallId: $toolCallId,
             parentOrderIndex: 0,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
-            childIntent: new DeferredSubagentBatchChildIntentDTO(1, $child['childRunId'], $child['artifactId'], 'batch-a', 'Late start', 'test-model', 'medium'),
+            childIntent: new DeferredSubagentBatchChildIntentDTO($child['childRunId'], $child['artifactId'], 'batch-a', 'Late start', 'test-model', 'medium'),
         );
         $row = $repo->findEntityByLifecycleId($lifecycleId);
         $this->assertNotNull($row);
@@ -309,7 +309,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
 
         $batch = $repo->findByLifecycleId($lifecycleId);
         $this->assertNotNull($batch);
-        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $batch->children[0]->launchStatus);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $batch->child->launchStatus);
         $this->assertSame(
             DeferredSubagentInterruptionKindEnum::ParentCancelled,
             $batch->interruptionKind,
@@ -348,7 +348,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $em = self::getContainer()->get('doctrine')->getManager();
         $seed = new DeferredSubagentChild();
         $seed->batchLifecycleId = $oldBatchLifecycleId;
-        $seed->batchIndex = 1;
         $seed->childRunId = $childRunId;
         $seed->artifactId = $oldArtifactId;
         $seed->agentName = 'scout';
@@ -365,14 +364,13 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
 
         /** @var DeferredSubagentChildRepository $childRepo */
         $childRepo = self::getContainer()->get(DeferredSubagentChildRepository::class);
-        $intent = new DeferredSubagentBatchChildIntentDTO(1, $childRunId, $newArtifactId, 'scout', 'continue after handoff', 'new/model', 'high');
+        $intent = new DeferredSubagentBatchChildIntentDTO($childRunId, $newArtifactId, 'scout', 'continue after handoff', 'new/model', 'high');
         $childRepo->insertReservedChild($newBatchLifecycleId, $intent);
         $em->clear();
 
         $rebound = $childRepo->findByChildRunId($childRunId);
         $this->assertNotNull($rebound);
         $this->assertSame($newBatchLifecycleId, $rebound->batchLifecycleId);
-        $this->assertSame(1, $rebound->batchIndex);
         $this->assertSame($newArtifactId, $rebound->artifactId);
         $this->assertSame('continue after handoff', $rebound->task);
         $this->assertSame('new/model', $rebound->launchModel);

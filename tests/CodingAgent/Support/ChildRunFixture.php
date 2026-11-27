@@ -32,7 +32,7 @@ final class ChildRunFixture
     {
         $container->get(DeferredSubagentBatchRepository::class)->reserveBatch(
             $artifactId.'-batch', $parentRunId, 1, $artifactId.'-call', 0, new \DateTimeImmutable('+1 hour'),
-            new DeferredSubagentBatchChildIntentDTO(1, $childRunId, $artifactId, $agentName, 'task', 'model', 'medium'),
+            new DeferredSubagentBatchChildIntentDTO($childRunId, $artifactId, $agentName, 'task', 'model', 'medium'),
         );
     }
 }

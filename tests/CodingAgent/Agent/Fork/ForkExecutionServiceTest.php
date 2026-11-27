@@ -160,7 +160,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $this->assertSame([], $inherited[0]->metadata);
         $snapshot = array_values(array_filter($started->messages, static fn (AgentMessage $message): bool => !\in_array($message->role, ['system', 'user-context'], true)));
         $this->assertSame($messages, \array_slice($snapshot, 0, -1), 'Inherited messages keep their identity and metadata.');
-        $child = $container->get(DeferredSubagentChildRepository::class)->findOrderedByBatchLifecycleId($launch->deferredId)[0];
+        $child = $container->get(DeferredSubagentChildRepository::class)->findByBatchLifecycleId($launch->deferredId);
         $childId = $child->childRunId;
         $key = $container->get(DeferredSubagentChildRepository::class)->findProviderCacheKey($childId);
         $this->assertNotNull($key);
@@ -237,7 +237,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $parent, 'first fork', $this->forkLaunchContext($parent), modelOverride: 'openai-codex/gpt-5.5',
         ));
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $launch);
-        $child = $container->get(DeferredSubagentChildRepository::class)->findOrderedByBatchLifecycleId($launch->deferredId)[0];
+        $child = $container->get(DeferredSubagentChildRepository::class)->findByBatchLifecycleId($launch->deferredId);
         $this->assertSame($started[0]->runId, $child->childRunId);
         $store = $container->get(AgentChildRunEventStoreFactory::class)->create($parent, $child->childRunId, $child->artifactId);
         $metadata = $container->get(SerializerInterface::class)->normalize($started[0]->metadata);
@@ -311,7 +311,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $other = $this->withToolContext($parent, 'fork-cache-two', fn () => $fork->execute(
                 $parent, 'different fork', $this->forkLaunchContext($parent), modelOverride: 'openai-codex/gpt-5.5',
             ));
-            $otherChild = $container->get(DeferredSubagentChildRepository::class)->findOrderedByBatchLifecycleId($other->deferredId)[0];
+            $otherChild = $container->get(DeferredSubagentChildRepository::class)->findByBatchLifecycleId($other->deferredId);
             $result = $adapter->invoke(new ModelInvocationRequest('fallback/unused', new ModelInvocationInput(
                 runId: $otherChild->childRunId, messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'different fork']])],
             )));

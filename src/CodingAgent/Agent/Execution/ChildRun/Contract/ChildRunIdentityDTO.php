@@ -19,7 +19,6 @@ final readonly class ChildRunIdentityDTO
         public string $displayName,
         public string $taskSummary,
         public AgentArtifactKindEnum $artifactKind,
-        public int $batchIndex = 1,
     ) {
     }
 }

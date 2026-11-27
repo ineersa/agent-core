@@ -108,7 +108,7 @@ final class DeferredSubagentBatchProgressDeliveryServiceTest extends IsolatedKer
     private function reserve(): DeferredSubagentBatchProjectionDTO
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
-        $repo->reserveBatch('marker-lifecycle', 'marker-parent', 1, 'marker-tool', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, 'marker-child', 'marker-artifact', 'worker', 'task', 'model', 'medium'));
+        $repo->reserveBatch('marker-lifecycle', 'marker-parent', 1, 'marker-tool', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO('marker-child', 'marker-artifact', 'worker', 'task', 'model', 'medium'));
         self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement('UPDATE deferred_subagent_batch SET aggregate_progress_revision = 2 WHERE lifecycle_id = ?', ['marker-lifecycle']);
         $batch = $repo->findByLifecycleId('marker-lifecycle');
         $this->assertNotNull($batch);

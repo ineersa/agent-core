@@ -13,7 +13,6 @@ final readonly class DeferredSubagentChildProjectionDTO
 {
     public function __construct(
         public string $batchLifecycleId,
-        public int $batchIndex,
         public string $childRunId,
         public string $artifactId,
         public string $agentName,

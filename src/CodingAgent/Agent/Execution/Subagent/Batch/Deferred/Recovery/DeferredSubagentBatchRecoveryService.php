@@ -14,7 +14,9 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\Delive
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatch;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
@@ -54,96 +56,97 @@ final readonly class DeferredSubagentBatchRecoveryService
             return;
         }
 
-        $children = $this->childRepository->findOrderedByBatchLifecycleId($batchLifecycleId);
-        foreach ($children as $child) {
-            $batch = $this->batchRepository->findEntityByLifecycleId($batchLifecycleId);
-            if (null === $batch) {
-                return;
-            }
+        // Refresh the owner fence before reading the child cursor: interruption
+        // may have committed since the initial header read.
+        $batch = $this->batchRepository->findEntityByLifecycleId($batchLifecycleId);
+        if (null === $batch) {
+            return;
+        }
 
-            if (null === $batch->terminalCompletionEnqueuedAt && null !== $batch->interruptionKind) {
-                $this->dispatchInterrupt($batchLifecycleId, $batch->interruptionKind);
+        if (null === $batch->terminalCompletionEnqueuedAt && null !== $batch->interruptionKind) {
+            $this->dispatchInterrupt($batchLifecycleId, $batch->interruptionKind);
 
-                return;
-            }
+            return;
+        }
 
-            $childEntity = $this->childRepository->findEntityByBatchLifecycleAndIndex($batchLifecycleId, $child->batchIndex);
-            if (null === $childEntity || null !== $childEntity->terminalStatus) {
-                continue;
-            }
-
-            $cursor = $childEntity->childEventCursor;
-            $childStore = $this->childEventStoreFactory->create($batch->parentRunId, $child->childRunId, $child->artifactId);
-            $tailEvents = $childStore->readAfterSeq($cursor);
-
-            if ([] === $tailEvents) {
-                continue;
-            }
-
-            $summaries = array_map(
-                static fn (RunEvent $event): AfterTurnCommitEventSummary => new AfterTurnCommitEventSummary(
-                    seq: $event->seq,
-                    type: $event->type,
-                    payload: $event->payload,
-                    turnNo: $event->turnNo,
-                    createdAt: $event->createdAt->format(\DateTimeInterface::ATOM),
-                ),
-                $tailEvents,
-            );
-
-            $current = $this->childRepository->decodeChildLifecycleProjection($childEntity->childLifecycleProjection)
-                ?? new DeferredChildRunLifecycleProjectionDTO(
-                    childStatus: RunStatus::Running,
-                    childTurnNo: 0,
-                    lastCommittedSeq: $cursor,
-                    model: $childEntity->launchModel,
-                    reasoning: $childEntity->launchReasoning,
-                    cacheInputTokens: 0 === $cursor ? 0 : null,
-                );
-
-            $maxTurnNo = $current->childTurnNo;
-            foreach ($tailEvents as $event) {
-                $maxTurnNo = max($maxTurnNo, $event->turnNo);
-            }
-
-            $updated = $this->projector->apply(
-                current: $current,
-                summaries: $summaries,
-                committedStatus: null,
-                committedTurnNo: $maxTurnNo,
-            );
-
-            $bumpRevision = $updated->lastCommittedSeq > $cursor;
-
-            try {
-                $this->batchRepository->applyBatchChildLifecycleProjection(
-                    batchLifecycleId: $batchLifecycleId,
-                    batchIndex: $child->batchIndex,
-                    projection: $updated,
-                    childEventCursor: $updated->lastCommittedSeq,
-                    expectedChildProjectionVersion: $childEntity->projectionVersion,
-                    expectedBatchProjectionVersion: $batch->projectionVersion,
-                    bumpAggregateRevision: $bumpRevision,
-                );
-            } catch (OptimisticLockException $exception) {
-                $this->logger->warning('deferred_subagent_batch.recovery_projection_version_conflict', [
-                    'batch_lifecycle_id' => $batchLifecycleId,
-                    'child_run_id' => $child->childRunId,
-                    'batch_index' => $child->batchIndex,
-                    'cursor' => $cursor,
-                    'component' => 'agent.execution',
-                    'event_type' => 'deferred_subagent_batch.recovery_projection_version_conflict',
-                    'exception_class' => $exception::class,
-                ]);
-
-                throw $exception;
-            }
+        $child = $this->childRepository->findEntityByBatchLifecycleId($batchLifecycleId);
+        if (null !== $child && null === $child->terminalStatus) {
+            $this->recoverChild($batch, $child);
         }
 
         // Parent interruption completion can precede child termination. Repair
         // its projection without redelivering the settled parent tool result.
         if (null === $batch->terminalCompletionEnqueuedAt) {
             $this->dispatchDeliver($batchLifecycleId);
+        }
+    }
+
+    private function recoverChild(DeferredSubagentBatch $batch, DeferredSubagentChild $childEntity): void
+    {
+        $batchLifecycleId = $batch->lifecycleId;
+        $cursor = $childEntity->childEventCursor;
+        $childStore = $this->childEventStoreFactory->create($batch->parentRunId, $childEntity->childRunId, $childEntity->artifactId);
+        $tailEvents = $childStore->readAfterSeq($cursor);
+
+        if ([] === $tailEvents) {
+            return;
+        }
+
+        $summaries = array_map(
+            static fn (RunEvent $event): AfterTurnCommitEventSummary => new AfterTurnCommitEventSummary(
+                seq: $event->seq,
+                type: $event->type,
+                payload: $event->payload,
+                turnNo: $event->turnNo,
+                createdAt: $event->createdAt->format(\DateTimeInterface::ATOM),
+            ),
+            $tailEvents,
+        );
+
+        $current = $this->childRepository->decodeChildLifecycleProjection($childEntity->childLifecycleProjection)
+            ?? new DeferredChildRunLifecycleProjectionDTO(
+                childStatus: RunStatus::Running,
+                childTurnNo: 0,
+                lastCommittedSeq: $cursor,
+                model: $childEntity->launchModel,
+                reasoning: $childEntity->launchReasoning,
+                cacheInputTokens: 0 === $cursor ? 0 : null,
+            );
+
+        $maxTurnNo = $current->childTurnNo;
+        foreach ($tailEvents as $event) {
+            $maxTurnNo = max($maxTurnNo, $event->turnNo);
+        }
+
+        $updated = $this->projector->apply(
+            current: $current,
+            summaries: $summaries,
+            committedStatus: null,
+            committedTurnNo: $maxTurnNo,
+        );
+
+        $bumpRevision = $updated->lastCommittedSeq > $cursor;
+
+        try {
+            $this->batchRepository->applyBatchChildLifecycleProjection(
+                batchLifecycleId: $batchLifecycleId,
+                projection: $updated,
+                childEventCursor: $updated->lastCommittedSeq,
+                expectedChildProjectionVersion: $childEntity->projectionVersion,
+                expectedBatchProjectionVersion: $batch->projectionVersion,
+                bumpAggregateRevision: $bumpRevision,
+            );
+        } catch (OptimisticLockException $exception) {
+            $this->logger->warning('deferred_subagent_batch.recovery_projection_version_conflict', [
+                'batch_lifecycle_id' => $batchLifecycleId,
+                'child_run_id' => $childEntity->childRunId,
+                'cursor' => $cursor,
+                'component' => 'agent.execution',
+                'event_type' => 'deferred_subagent_batch.recovery_projection_version_conflict',
+                'exception_class' => $exception::class,
+            ]);
+
+            throw $exception;
         }
     }
 

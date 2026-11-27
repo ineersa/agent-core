@@ -8,14 +8,8 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DTO\D
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 
-/**
- * Durable batch projection with ordered child rows (Piece 4A).
- */
 final readonly class DeferredSubagentBatchProjectionDTO
 {
-    /**
-     * @param list<DeferredSubagentChildProjectionDTO> $children
-     */
     public function __construct(
         public string $lifecycleId,
         public string $parentRunId,
@@ -30,7 +24,7 @@ final readonly class DeferredSubagentBatchProjectionDTO
         public ?\DateTimeImmutable $deadlineAt,
         public \DateTimeImmutable $createdAt,
         public int $projectionVersion,
-        public array $children,
+        public ?DeferredSubagentChildProjectionDTO $child,
         public ?DeferredSubagentInterruptionKindEnum $interruptionKind = null,
         public ?\DateTimeImmutable $interruptionRequestedAt = null,
         public ?\DateTimeImmutable $interruptionProgressEnqueuedAt = null,

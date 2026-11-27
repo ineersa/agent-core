@@ -153,7 +153,6 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
     {
         $repository = static::getContainer()->get(DeferredSubagentChildRepository::class);
         $repository->insertReservedChild('cache-key-batch', new DeferredSubagentBatchChildIntentDTO(
-            batchIndex: 1,
             childRunId: $runId,
             artifactId: 'agent_cache_key',
             agentName: 'worker',
@@ -178,7 +177,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
     public static function childRunIds(): iterable
     {
         yield 'direct UUIDv4' => [Uuid::v4()->toRfc4122()];
-        yield 'deferred UUIDv5' => [(new DeferredSubagentBatchIdentityFactory())->childIdentity('parent', 'tool-call', 1)['childRunId']];
+        yield 'deferred UUIDv5' => [(new DeferredSubagentBatchIdentityFactory())->childIdentity('parent', 'tool-call')['childRunId']];
     }
 
     public function testGrokMapsSessionIdToProviderPromptCacheKey(): void

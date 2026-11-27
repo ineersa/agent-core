@@ -42,6 +42,7 @@ use DoctrineMigrations\Version20261030155748;
 use DoctrineMigrations\Version20261102143815;
 use DoctrineMigrations\Version20261116201719;
 use DoctrineMigrations\Version20261121044306;
+use DoctrineMigrations\Version20261127020326;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -138,6 +139,7 @@ final class ApplicationMigrationExecutor
         Version20261102143815::class,
         Version20261116201719::class,
         Version20261121044306::class,
+        Version20261127020326::class,
     ];
 
     private bool $ran = false;

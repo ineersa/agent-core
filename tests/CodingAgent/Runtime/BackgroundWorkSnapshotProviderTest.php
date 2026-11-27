@@ -15,7 +15,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
-use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
@@ -72,7 +71,7 @@ final class BackgroundWorkSnapshotProviderTest extends IsolatedKernelTestCase
         $root = $container->get(HatfieldSessionStore::class)->createSession('reservation');
         $child = $this->reserveChild($root, 'tool');
         $container->get(DeferredSubagentBatchRepository::class)->markBackgrounded((new DeferredSubagentBatchIdentityFactory())->batchLifecycleId($root, 'tool'), new \DateTimeImmutable());
-        $identity = (new DeferredSubagentBatchIdentityFactory())->childIdentity($root, 'tool', 1);
+        $identity = (new DeferredSubagentBatchIdentityFactory())->childIdentity($root, 'tool');
         $container->get(AgentArtifactRegistry::class)->create($root, $identity['artifactId'], $child, 'scout', AgentArtifactKindEnum::Subagent);
         $correlation = new DeferredToolCompletionCorrelation(Uuid::v7()->toRfc4122(), $child, 1, 'step', 1, 'key', 'host', 'code_mode', [], 0);
         TestToolBatchRegistration::registerDeferredInvocation($container->get(ToolBatchStoreInterface::class), $correlation);
@@ -136,10 +135,12 @@ final class BackgroundWorkSnapshotProviderTest extends IsolatedKernelTestCase
         $this->assertCount(1, $provider->snapshot($root, includeChildHistory: true)->children);
         // Resume rebind clears the durable terminal checkpoint; discovery must
         // not depend on the catalog already knowing the resumed child is active.
-        $this->reserveChild($root, 'resume');
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $container->get(DeferredSubagentChildRepository::class)->rebindExistingChildToResumeBatch(
-            $factory->batchLifecycleId($root, 'resume'), 2, $child, 'resumed', 'fork', 'resume task', 'provider/model', 'low',
+        $container->get(DeferredSubagentBatchRepository::class)->reserveBatch(
+            lifecycleId: $factory->batchLifecycleId($root, 'resume'), parentRunId: $root,
+            parentTurnNo: 1, parentToolCallId: 'resume', parentOrderIndex: 0,
+            deadlineAt: new \DateTimeImmutable('+600 seconds'),
+            childIntent: new DeferredSubagentBatchChildIntentDTO($child, 'resumed', 'fork', 'resume task', 'provider/model', 'low'),
         );
         $this->assertContains($child, array_column($provider->snapshot($root)->children, 'runId'));
     }
@@ -195,12 +196,12 @@ final class BackgroundWorkSnapshotProviderTest extends IsolatedKernelTestCase
     private function reserveChild(string $root, string $tool): string
     {
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $child = $factory->childIdentity($root, $tool, 1);
+        $child = $factory->childIdentity($root, $tool);
         self::getContainer()->get(DeferredSubagentBatchRepository::class)->reserveBatch(
             lifecycleId: $factory->batchLifecycleId($root, $tool), parentRunId: $root,
             parentTurnNo: 1, parentToolCallId: $tool, parentOrderIndex: 0,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
-            childIntent: new DeferredSubagentBatchChildIntentDTO(1, $child['childRunId'], $child['artifactId'], 'scout', 'task', 'provider/model', 'low'),
+            childIntent: new DeferredSubagentBatchChildIntentDTO($child['childRunId'], $child['artifactId'], 'scout', 'task', 'provider/model', 'low'),
         );
 
         return $child['childRunId'];

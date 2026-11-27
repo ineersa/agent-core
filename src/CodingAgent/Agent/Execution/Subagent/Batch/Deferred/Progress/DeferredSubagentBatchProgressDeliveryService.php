@@ -37,7 +37,7 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
         DeferredSubagentBatchProjectionDTO $batch,
         DeferredSubagentInterruptionKindEnum $kind,
     ): void {
-        if ([] === $batch->children) {
+        if (null === $batch->child) {
             // Launch rejects empty tasks; reserveBatch inserts the batch and every
             // planned child in one transaction. Valid reservations cannot be empty.
             throw new \LogicException('Forced progress requires reserved child rows.');
@@ -54,7 +54,7 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
             return false;
         }
 
-        if ([] === $batch->children) {
+        if (null === $batch->child) {
             return false;
         }
 

@@ -40,6 +40,10 @@ final readonly class DeferredSubagentBatchLifecycleDeliveryService
             return;
         }
 
+        if (null === $batch->child) {
+            return;
+        }
+
         // Route persisted interruption to the interruption path before natural completion
         if (null !== $batch->interruptionKind) {
             $this->interruptionCompletion->completeFromInterruption($batch);
@@ -60,6 +64,6 @@ final readonly class DeferredSubagentBatchLifecycleDeliveryService
             }
         }
 
-        $this->naturalCompletion->completeIfAllTerminal($batch);
+        $this->naturalCompletion->completeIfTerminal($batch);
     }
 }

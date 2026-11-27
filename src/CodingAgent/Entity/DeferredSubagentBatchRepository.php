@@ -140,7 +140,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             LEFT JOIN run_operational_state state ON state.run_id = child.child_run_id
             WHERE batch.parent_run_id = :root
                 $selection
-            ORDER BY batch.id, child.batch_index
+            ORDER BY batch.id
             SQL, [
             'root' => $rootRunId,
             'failed_child_launch' => DeferredSubagentChildLaunchStatusEnum::Failed->value,
@@ -167,7 +167,6 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
      */
     public function applyBatchChildLifecycleProjection(
         string $batchLifecycleId,
-        int $batchIndex,
         DeferredChildRunLifecycleProjectionDTO $projection,
         int $childEventCursor,
         int $expectedChildProjectionVersion,
@@ -187,7 +186,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                     terminal_completed_at = COALESCE(terminal_completed_at, :terminal_at),
                     terminal_status = COALESCE(terminal_status, :terminal_status),
                     updated_at = :now, projection_version = projection_version + 1
-                 WHERE batch_lifecycle_id = :batch AND batch_index = :idx AND projection_version = :child_version',
+                 WHERE batch_lifecycle_id = :batch AND projection_version = :child_version',
                 [
                     'projection' => $this->serializer->serialize(
                         $projection,
@@ -199,13 +198,12 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                     'terminal_status' => $terminalStatus,
                     'now' => $now,
                     'batch' => $batchLifecycleId,
-                    'idx' => $batchIndex,
                     'child_version' => $expectedChildProjectionVersion,
                 ],
             );
 
             if (0 === $childAffected) {
-                $childRow = $this->childRepository->findEntityByBatchLifecycleAndIndex($batchLifecycleId, $batchIndex);
+                $childRow = $this->childRepository->findEntityByBatchLifecycleId($batchLifecycleId);
                 if ($childRow instanceof DeferredSubagentChild) {
                     throw OptimisticLockException::lockFailed($childRow);
                 }
@@ -431,13 +429,12 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         try {
             $conn->executeStatement(
                 'UPDATE deferred_subagent_child SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1
-                     WHERE batch_lifecycle_id = :lifecycle AND batch_index = :idx AND launch_status = :reserved',
+                     WHERE batch_lifecycle_id = :lifecycle AND launch_status = :reserved',
                 [
                     'launched' => DeferredSubagentChildLaunchStatusEnum::Launched->value,
                     'started' => $started,
                     'now' => $now,
                     'lifecycle' => $lifecycleId,
-                    'idx' => 1,
                     'reserved' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
                 ],
             );
@@ -632,13 +629,8 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             throw new ToolCallException('Deferred subagent batch for this tool call uses a different lifecycle id than the deterministic launch.', retryable: false);
         }
 
-        $children = $row->children;
-        if (1 !== \count($children)) {
-            throw new ToolCallException('Deferred invocation requires exactly one reserved child.', retryable: false);
-        }
-
-        $child = $children[0];
-        if ($child->batchIndex !== $childIntent->batchIndex
+        $child = $row->child;
+        if (null === $child
             || $child->childRunId !== $childIntent->childRunId
             || $child->artifactId !== $childIntent->artifactId
             || $child->agentName !== $childIntent->agentName
@@ -689,7 +681,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             deadlineAt: null === $row['deadline_at'] ? null : new \DateTimeImmutable($row['deadline_at']),
             createdAt: new \DateTimeImmutable($row['created_at']),
             projectionVersion: (int) $row['projection_version'],
-            children: $this->childRepository->findOrderedByBatchLifecycleId($row['lifecycle_id']),
+            child: $this->childRepository->findByBatchLifecycleId($row['lifecycle_id']),
             interruptionKind: null === $row['interruption_kind'] ? null : DeferredSubagentInterruptionKindEnum::from($row['interruption_kind']),
             interruptionRequestedAt: null === $row['interruption_requested_at'] ? null : new \DateTimeImmutable($row['interruption_requested_at']),
             interruptionProgressEnqueuedAt: null === $row['interruption_progress_enqueued_at'] ? null : new \DateTimeImmutable($row['interruption_progress_enqueued_at']),

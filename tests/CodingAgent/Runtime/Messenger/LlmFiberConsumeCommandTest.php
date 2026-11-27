@@ -104,7 +104,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             [new ExecuteToolCall($parent, 1, 'shell-step', 1, 'shell-key', 'shell', 'bash', [], 0)],
         );
         $batches = self::getContainer()->get(DeferredSubagentBatchRepository::class);
-        $batches->reserveBatch('mixed-batch', $parent, 1, 'child-call', 0, new \DateTimeImmutable('+1 minute'), new DeferredSubagentBatchChildIntentDTO(1, 'mixed-child', 'agent_mixed', 'scout', 'task', 'test/model', 'medium'));
+        $batches->reserveBatch('mixed-batch', $parent, 1, 'child-call', 0, new \DateTimeImmutable('+1 minute'), new DeferredSubagentBatchChildIntentDTO('mixed-child', 'agent_mixed', 'scout', 'task', 'test/model', 'medium'));
         $children = self::getContainer()->get(DeferredSubagentChildRepository::class);
         $deferred = self::getContainer()->get(DeferredToolCompletionRepository::class);
         $invocation = new DeferredToolCompletionCorrelation('mixed-code', $parent, 1, 'step', 1, 'key', 'code-call', 'code_mode', [], 0);

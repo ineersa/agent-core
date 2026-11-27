@@ -1103,7 +1103,6 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $em = self::getContainer()->get('doctrine')->getManager();
         $row = new DeferredSubagentChild();
         $row->batchLifecycleId = 'batch-'.$childRunId;
-        $row->batchIndex = 1;
         $row->childRunId = $childRunId;
         $row->artifactId = $artifactId;
         $row->agentName = $agentName;

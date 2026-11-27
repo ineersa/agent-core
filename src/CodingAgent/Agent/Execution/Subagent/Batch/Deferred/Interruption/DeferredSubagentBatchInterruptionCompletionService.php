@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchCompletionDispatcher;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressDeliveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -33,14 +32,6 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
 
     public function completeFromInterruption(DeferredSubagentBatchProjectionDTO $batch): void
     {
-        if (null !== $batch->terminalCompletionEnqueuedAt) {
-            return;
-        }
-
-        if ($this->completionDispatcher->retryFrozenCompletion($batch)) {
-            return;
-        }
-
         $kind = $batch->interruptionKind ?? throw new \RuntimeException('Interruption completion requires persisted interruption kind.');
 
         $this->completeSingleFromInterruption($batch, $kind);
@@ -61,7 +52,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             }
         }
 
-        $child = $this->requireSingleChild($batch);
+        $child = $batch->child ?? throw new \RuntimeException('Single batch interruption requires a child row.');
         $identity = $this->outcomeFactory->identityFromChild($batch, $child);
         $timeoutSecs = DeferredSubagentInterruptionKindEnum::Timeout === $kind
             ? $this->resolveTimeoutSeconds($batch)
@@ -157,14 +148,5 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         }
 
         return 1;
-    }
-
-    private function requireSingleChild(DeferredSubagentBatchProjectionDTO $batch): DeferredSubagentChildProjectionDTO
-    {
-        if (1 !== \count($batch->children)) {
-            throw new \RuntimeException('Single batch interruption requires exactly one child row.');
-        }
-
-        return $batch->children[0];
     }
 }

@@ -218,7 +218,7 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
     private function seed(int $revision = 1): void
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
-        $repo->reserveBatch('batch', 'parent', 1, 'call', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, 'child', 'artifact', 'scout', 'task', 'model', 'medium'));
+        $repo->reserveBatch('batch', 'parent', 1, 'call', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO('child', 'artifact', 'scout', 'task', 'model', 'medium'));
         $row = $repo->findEntityByLifecycleId('batch');
         $row->aggregateProgressRevision = $revision;
         self::getContainer()->get('doctrine.orm.entity_manager')->flush();

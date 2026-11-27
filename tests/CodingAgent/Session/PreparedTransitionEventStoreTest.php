@@ -63,7 +63,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $summary = new AfterTurnCommitEventSummary(0, 'run_started', []);
         $action = new DeferredAfterTurnCoordinationDTO($run, 0,
             new ObserveDeferredSubagentBatchChildTurnMessage(
-                'decode-batch', 1, $run, RunStatus::Running, 1, [$summary],
+                'decode-batch', $run, RunStatus::Running, 1, [$summary],
             ),
         );
         $effect = new ExecuteLlmStep($run, 1, 'decode-step', 1, 'decode-key', 'tools', [
@@ -109,7 +109,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $summary = new AfterTurnCommitEventSummary(0, 'run_started', []);
         $action = new DeferredAfterTurnCoordinationDTO($run, 0,
             new ObserveDeferredSubagentBatchChildTurnMessage(
-                'evidence-batch', 1, $run, RunStatus::Running, 1, [$summary],
+                'evidence-batch', $run, RunStatus::Running, 1, [$summary],
             ),
         );
         $store->appendTransition([new RunEvent($run, 0, 0, 'run_started', [])], ['run_id' => $run, 'predecessor_seq' => 0, 'after_turn_actions' => [$action]]);
@@ -320,7 +320,6 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $summary = new AfterTurnCommitEventSummary(0, 'agent_end', ['reason' => 'completed']);
         $observation = new ObserveDeferredSubagentBatchChildTurnMessage(
             'batch-cold',
-            1,
             $run,
             RunStatus::Completed,
             1,

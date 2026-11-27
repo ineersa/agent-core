@@ -160,8 +160,9 @@ sequenceDiagram
 
 Recovery uses durable child event cursors and reads the unseen event-log suffix.
 Sequence allocation can leave holes, so `sequence.cursor` is not proof of a committed
-event tail. Parallel batches wait for their required child outcomes; an initial
-accepted launch is not a completed child turn.
+event tail. Each deferred tool call launches at most one child; an accepted launch is not a
+completed child turn. Resume rebinds the child row to a new lifecycle, leaving the
+previous batch without a child.
 
 ## Child tool policy and live views
 

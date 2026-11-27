@@ -19,6 +19,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Handler\HandlerDescriptor;
 use Symfony\Component\Messenger\Handler\HandlersLocatorInterface;
+use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 
 /**
  * Test thesis: normalized deferred batch run_control messages must resolve at least one
@@ -28,6 +29,23 @@ use Symfony\Component\Messenger\Handler\HandlersLocatorInterface;
  */
 final class DeferredSubagentRunControlHandlersWiringTest extends IsolatedKernelTestCase
 {
+    public function testNativeTransportDecodesInFlightObservationWithBatchIndex(): void
+    {
+        $message = new ObserveDeferredSubagentBatchChildTurnMessage('old-batch', 'child', RunStatus::Running, 2, [], 17);
+        $serializer = new PhpSerializer();
+        $encoded = $serializer->encode(new Envelope($message));
+        // Restore the removed property in the native PHP object record, as on the old wire.
+        $body = $encoded['body'];
+        $class = ObserveDeferredSubagentBatchChildTurnMessage::class;
+        $prefix = \sprintf('O:%d:"%s":', \strlen($class), $class);
+        $this->assertStringContainsString(addslashes($prefix.'6:{'), $body);
+        $encoded['body'] = str_replace(addslashes($prefix.'6:{'), addslashes($prefix.'7:{s:10:"batchIndex";i:1;'), $body);
+
+        $decoded = $serializer->decode($encoded)->getMessage();
+        $this->assertEquals($message, $decoded);
+        $this->assertFalse(property_exists($decoded, 'batchIndex'));
+    }
+
     #[DataProvider('runControlMessageProvider')]
     public function testAgentCommandBusHandlersLocatorResolvesHandler(
         object $message,
@@ -69,7 +87,6 @@ final class DeferredSubagentRunControlHandlersWiringTest extends IsolatedKernelT
             'ObserveDeferredSubagentBatchChildTurnMessage' => [
                 new ObserveDeferredSubagentBatchChildTurnMessage(
                     batchLifecycleId: 'batch-wiring-observe',
-                    batchIndex: 1,
                     childRunId: 'child-run-batch-wiring',
                     committedStatus: RunStatus::Running,
                     turnNo: 0,

@@ -11,7 +11,7 @@ use Symfony\Component\Uid\UuidV7;
 #[ORM\Entity]
 #[ORM\Table(name: 'deferred_subagent_child')]
 #[ORM\UniqueConstraint(name: 'uniq_deferred_subagent_child_run', columns: ['child_run_id'])]
-#[ORM\UniqueConstraint(name: 'uniq_deferred_subagent_child_batch_index', columns: ['batch_lifecycle_id', 'batch_index'])]
+#[ORM\UniqueConstraint(name: 'uniq_deferred_subagent_child_batch', columns: ['batch_lifecycle_id'])]
 #[ORM\Index(name: 'idx_child_active', columns: ['terminal_status', 'terminal_completed_at', 'launch_status', 'batch_lifecycle_id'])]
 #[ORM\HasLifecycleCallbacks]
 class DeferredSubagentChild
@@ -25,9 +25,6 @@ class DeferredSubagentChild
 
     #[ORM\Column(name: 'batch_lifecycle_id', type: 'string', length: 36)]
     public string $batchLifecycleId = '';
-
-    #[ORM\Column(name: 'batch_index', type: 'integer')]
-    public int $batchIndex = 0;
 
     #[ORM\Column(name: 'child_run_id', type: 'string', length: 36, unique: true)]
     public string $childRunId = '';

@@ -76,21 +76,12 @@ final readonly class DeferredSubagentBatchInterruptionService
             }
         }
 
-        // Check if all children are naturally terminal before first intent — deliver normally.
-        if (null === $projection->interruptionKind) {
-            $allTerminal = true;
-            foreach ($projection->children as $child) {
-                $cp = $child->childLifecycleProjection;
-                if (null === $cp || !$cp->childStatus->isTerminal()) {
-                    $allTerminal = false;
-                    break;
-                }
-            }
-            if ($allTerminal) {
-                $this->deliveryService->deliver($batchLifecycleId);
+        // Deliver a naturally terminal child before recording interruption intent.
+        if (null === $projection->interruptionKind
+            && true === $projection->child?->childLifecycleProjection?->childStatus->isTerminal()) {
+            $this->deliveryService->deliver($batchLifecycleId);
 
-                return;
-            }
+            return;
         }
 
         $effectiveKind = $projection->interruptionKind ?? $kind;
@@ -131,7 +122,7 @@ final readonly class DeferredSubagentBatchInterruptionService
             // Children may already be launched before parent tool registration.
             // Cancel them immediately on parent-cancel/timeout intent; completion
             // still waits for deferred registration so the parent tool can finish.
-            $this->cancelStartedChildren($projection, $effectiveKind);
+            $this->cancelStartedChild($projection, $effectiveKind);
             $this->logger->info('deferred_subagent_batch.interruption_waiting_for_registration', [
                 'batch_lifecycle_id' => $batchLifecycleId,
                 'kind' => $effectiveKind->value,
@@ -148,12 +139,12 @@ final readonly class DeferredSubagentBatchInterruptionService
             return;
         }
 
-        $this->cancelStartedChildren($projection, $effectiveKind);
+        $this->cancelStartedChild($projection, $effectiveKind);
 
         $this->deliveryService->deliver($batchLifecycleId);
     }
 
-    private function cancelStartedChildren(
+    private function cancelStartedChild(
         DeferredSubagentBatchProjectionDTO $projection,
         DeferredSubagentInterruptionKindEnum $effectiveKind,
     ): void {
@@ -163,20 +154,12 @@ final readonly class DeferredSubagentBatchInterruptionService
             DeferredSubagentInterruptionKindEnum::ParentCancelled => $policy->parentCancelSingleReason,
         };
 
-        foreach ($projection->children as $child) {
-            if (DeferredSubagentChildLaunchStatusEnum::Failed === $child->launchStatus) {
-                continue;
-            }
-            if (DeferredSubagentChildLaunchStatusEnum::Reserved !== $child->launchStatus
-                && DeferredSubagentChildLaunchStatusEnum::Launched !== $child->launchStatus) {
-                continue;
-            }
-            $cp = $child->childLifecycleProjection;
-            if (null !== $cp && $cp->childStatus->isTerminal()) {
-                continue;
-            }
-
-            $this->agentRunner->cancel($child->childRunId, $cancelReason);
+        $child = $projection->child;
+        if (null === $child || !\in_array($child->launchStatus, [DeferredSubagentChildLaunchStatusEnum::Reserved, DeferredSubagentChildLaunchStatusEnum::Launched], true)
+            || true === $child->childLifecycleProjection?->childStatus->isTerminal()) {
+            return;
         }
+
+        $this->agentRunner->cancel($child->childRunId, $cancelReason);
     }
 }
