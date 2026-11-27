@@ -70,10 +70,15 @@ final readonly class ThemePalette
     /**
      * Resolve a palette entry: empty string, vars section, or another color token key.
      *
+     * A circular alias (including a token referring to itself) stays unresolved as
+     * a token name. No token name is a colour name, so ThemeRegistry's load-time
+     * validation drops and logs it instead of recursing forever.
+     *
      * @param array<string, string> $vars
      * @param array<string, string> $rawColors
+     * @param array<string, true>   $visited   token keys already followed on this chain
      */
-    private static function resolveColorSpec(string $value, array $vars, array $rawColors): string
+    private static function resolveColorSpec(string $value, array $vars, array $rawColors, array $visited = []): string
     {
         if ('' === $value) {
             return '';
@@ -84,12 +89,12 @@ final readonly class ThemePalette
         }
 
         if (isset($rawColors[$value])) {
-            $target = $rawColors[$value];
-            if ($target === $value) {
+            if (isset($visited[$value])) {
                 return $value;
             }
+            $visited[$value] = true;
 
-            return self::resolveColorSpec($target, $vars, $rawColors);
+            return self::resolveColorSpec($rawColors[$value], $vars, $rawColors, $visited);
         }
 
         return $value;

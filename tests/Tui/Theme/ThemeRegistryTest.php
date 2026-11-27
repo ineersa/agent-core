@@ -220,6 +220,34 @@ final class ThemeRegistryTest extends TestCase
         $this->assertSame(['colors.0', 'vars.'], $logged);
     }
 
+    public function testCircularColorAliasesAreLoggedAndDroppedAtLoad(): void
+    {
+        file_put_contents($this->tempDir.'/circular.yaml', <<<'YAML'
+            name: circular
+            colors:
+                muted: dim
+                dim: muted
+                warning: warning
+                accent: "#00ffff"
+            YAML);
+        $logger = new TestLogger();
+        $resources = new AppResourceLocator($this->tempDir);
+        $appConfig = new AppConfig(tui: new TuiConfig('circular', [$this->tempDir]), logging: new LoggingConfig());
+
+        $palette = (new ThemeRegistry($appConfig, $resources, $logger))->getOrThrow('circular');
+
+        $this->assertSame('#00ffff', $palette->get(ThemeColorEnum::Accent));
+        foreach ([ThemeColorEnum::Muted, ThemeColorEnum::Dim, ThemeColorEnum::Warning] as $token) {
+            $this->assertNull($palette->get($token), $token->value);
+        }
+        $logged = array_map(
+            static fn (array $record): string => $record['context']['section'].'.'.$record['context']['key'],
+            array_filter($logger->records, static fn (array $record): bool => 'tui.theme.invalid_color' === ($record['context']['event_type'] ?? null)),
+        );
+        sort($logged);
+        $this->assertSame(['colors.dim', 'colors.muted', 'colors.warning'], $logged);
+    }
+
     private function createRegistry(): ThemeRegistry
     {
         $resources = new AppResourceLocator($this->projectRoot);
