@@ -40,11 +40,16 @@ final readonly class LogEntryRenderer
             }
         }
 
+        // Machine formats stay parseable: no entries means no output.
+        if ('jsonl' === $format || 'toon' === $format) {
+            return;
+        }
+
         $io = new SymfonyStyle(new ArrayInput([]), $output);
 
         if (0 === $count) {
             $io->text('No matching log entries.');
-        } elseif ([] !== $rows) {
+        } else {
             $io->table(['Time', 'Level', 'Message'], $rows);
         }
     }

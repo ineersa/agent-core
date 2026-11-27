@@ -50,8 +50,19 @@ final class LogEntryRendererTest extends TestCase
     {
         $output = new BufferedOutput();
 
-        (new LogEntryRenderer())->render([], 'jsonl', $output);
+        (new LogEntryRenderer())->render([], 'table', $output);
 
         $this->assertStringContainsString('No matching log entries.', $output->fetch());
+    }
+
+    public function testEmptyEntriesProduceNoOutputForMachineFormats(): void
+    {
+        foreach (['jsonl', 'toon'] as $format) {
+            $output = new BufferedOutput();
+
+            (new LogEntryRenderer())->render([], $format, $output);
+
+            $this->assertSame('', $output->fetch());
+        }
     }
 }
