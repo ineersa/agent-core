@@ -4,11 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
-<<<<<<< HEAD
 use Ineersa\AgentCore\Contract\DTO\RunOperationalStatusDTO;
-use Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface;
-=======
->>>>>>> main
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
