@@ -219,12 +219,7 @@ final readonly class TranscriptToolRenderer
         $container = new ContainerWidget();
         $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, TranscriptGlyphs::GLYPH_TOOL.' '.$name).$theme->color(ThemeColorEnum::Muted, StringUtils::stripControlBytes($target)).$theme->color($color, ' · '.$status)));
         $content = new ContainerWidget();
-        $contentStyle = new Style(dim: true, italic: true);
-        $bodyColor = $theme->getPalette()->get(ThemeColorEnum::Muted);
-        if ('' !== $bodyColor) {
-            $contentStyle = $contentStyle->withColor($bodyColor);
-        }
-        $content->setStyle($contentStyle);
+        $content->setStyle(new Style(color: $theme->getPalette()->get(ThemeColorEnum::Muted), dim: true, italic: true));
         $container->add($content);
         if (!$this->displayState->previewableBlocksExpanded) {
             $text = $arguments['text'] ?? $arguments['command'] ?? $arguments['script'] ?? '';

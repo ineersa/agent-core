@@ -352,6 +352,25 @@ class ChatScreenTest extends TestCase
         $this->assertStringContainsString('new-session-id', $sessionSegment[0]->text);
     }
 
+    #[Test]
+    public function testMissingThinkingTokenRendersEditorBorderUnstyled(): void
+    {
+        // Green is the only palette colour, so its SGR can only come from the editor frame.
+        $harness = new VirtualTuiHarness(palette: new ThemePalette('sparse', [
+            ThemeColorEnum::ThinkingMedium->value => 'green',
+        ]));
+
+        $harness->screen()->applyEditorBorderColor('medium');
+        $this->assertStringContainsString("\x1b[32m─", $this->renderedFrame($harness));
+
+        // thinking_high is absent from the palette: the frame falls back to the
+        // default foreground instead of throwing or keeping the medium colour.
+        $harness->screen()->applyEditorBorderColor('high');
+        $frame = $this->renderedFrame($harness);
+        $this->assertStringContainsString('─', $frame);
+        $this->assertStringNotContainsString("\x1b[32m", $frame);
+    }
+
     /**
      * Draft sessions (empty session ID) produce no default footer
      * segment, leaving only extension-contributed footer content.
@@ -448,5 +467,12 @@ class ChatScreenTest extends TestCase
                 return new ThemePalette(name: 'test', colors: []);
             }
         };
+    }
+
+    private function renderedFrame(VirtualTuiHarness $harness): string
+    {
+        $harness->terminal()->clearOutput();
+
+        return $harness->ansiOutput();
     }
 }

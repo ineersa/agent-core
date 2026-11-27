@@ -16,6 +16,9 @@ namespace Ineersa\Tui\Theme;
  *  - Empty string '' meaning "no color / default terminal foreground"
  *  - References to other ThemeColorEnum keys for alias support (resolved at load time)
  *
+ * {@see ThemeRegistry} drops specs that Symfony TUI cannot parse when it loads a
+ * theme file, so render code can pass {@see get()} straight to a Style.
+ *
  * Users can change the palette later by loading a different theme YAML or
  * constructing a new palette programmatically.
  */
@@ -32,19 +35,14 @@ final readonly class ThemePalette
     }
 
     /**
-     * Get the color spec for a token, or empty string if absent.
+     * Get the color spec for a token, or null when the token is absent or empty
+     * (no color / default terminal foreground).
      */
-    public function get(ThemeColorEnum $color): string
+    public function get(ThemeColorEnum $color): ?string
     {
-        return $this->colors[$color->value] ?? '';
-    }
+        $spec = $this->colors[$color->value] ?? '';
 
-    /**
-     * Check whether a token has a non-empty color spec.
-     */
-    public function has(ThemeColorEnum $color): bool
-    {
-        return '' !== $this->get($color);
+        return '' !== $spec ? $spec : null;
     }
 
     /**
@@ -72,10 +70,15 @@ final readonly class ThemePalette
     /**
      * Resolve a palette entry: empty string, vars section, or another color token key.
      *
+     * A circular alias (including a token referring to itself) stays unresolved as
+     * a token name. No token name is a colour name, so ThemeRegistry's load-time
+     * validation drops and logs it instead of recursing forever.
+     *
      * @param array<string, string> $vars
      * @param array<string, string> $rawColors
+     * @param array<string, true>   $visited   token keys already followed on this chain
      */
-    private static function resolveColorSpec(string $value, array $vars, array $rawColors): string
+    private static function resolveColorSpec(string $value, array $vars, array $rawColors, array $visited = []): string
     {
         if ('' === $value) {
             return '';
@@ -86,12 +89,12 @@ final readonly class ThemePalette
         }
 
         if (isset($rawColors[$value])) {
-            $target = $rawColors[$value];
-            if ($target === $value) {
+            if (isset($visited[$value])) {
                 return $value;
             }
+            $visited[$value] = true;
 
-            return self::resolveColorSpec($target, $vars, $rawColors);
+            return self::resolveColorSpec($rawColors[$value], $vars, $rawColors, $visited);
         }
 
         return $value;

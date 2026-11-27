@@ -33,8 +33,9 @@ final class ThemePaletteTest extends TestCase
         $this->assertSame('alias-test', $palette->name);
         $this->assertSame('#ebcb8b', $palette->get(ThemeColorEnum::Warning));
         $this->assertSame('#4c566a', $palette->get(ThemeColorEnum::Muted));
-        $this->assertSame('', $palette->get(ThemeColorEnum::Text));
+        $this->assertNull($palette->get(ThemeColorEnum::Text));
         $this->assertSame('#ebcb8b', $palette->get(ThemeColorEnum::ToolArgumentKey));
-        $this->assertSame('', $palette->get(ThemeColorEnum::ToolArgumentValue));
+        $this->assertNull($palette->get(ThemeColorEnum::ToolArgumentValue));
+        $this->assertNull($palette->get(ThemeColorEnum::ThinkingMax));
     }
 }

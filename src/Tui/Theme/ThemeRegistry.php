@@ -10,6 +10,8 @@ use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceConflictDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceItemDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ThemeLoadedResourcesProviderInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Tui\Exception\InvalidArgumentException;
+use Symfony\Component\Tui\Style\Color;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -17,6 +19,10 @@ use Symfony\Component\Yaml\Yaml;
  *
  * Self-loads palettes from config/hatfield theme paths at construction.
  * User-configured theme paths override built-in themes of the same name.
+ *
+ * Color specs are validated once at load: an entry Symfony TUI cannot parse is
+ * logged and dropped, so it renders with the default terminal foreground and
+ * render code can pass palette specs to a Style without guarding.
  *
  * The default theme name is driven by application config
  * ({@see config/hatfield.defaults.yaml}) — this registry itself carries
@@ -234,6 +240,57 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
             throw new \RuntimeException("Invalid YAML structure in theme file: {$path}");
         }
 
-        return ThemePalette::fromArray($data);
+        foreach (['vars', 'colors'] as $section) {
+            if (!isset($data[$section])) {
+                continue;
+            }
+            if (!\is_array($data[$section])) {
+                $this->logInvalidColor($path, $section, '', 'Expected a mapping, got '.get_debug_type($data[$section]).'.');
+                unset($data[$section]);
+
+                continue;
+            }
+            foreach ($data[$section] as $key => $value) {
+                if (!\is_string($value)) {
+                    $this->logInvalidColor($path, $section, (string) $key, 'Expected a string, got '.get_debug_type($value).'.');
+                    unset($data[$section][$key]);
+                }
+            }
+        }
+
+        return $this->withoutInvalidColors(ThemePalette::fromArray($data), $path);
+    }
+
+    private function withoutInvalidColors(ThemePalette $palette, string $path): ThemePalette
+    {
+        $colors = $palette->colors;
+        foreach ($colors as $token => $spec) {
+            if ('' === $spec) {
+                continue;
+            }
+
+            try {
+                Color::from($spec);
+            } catch (InvalidArgumentException $e) {
+                // Intentional degradation: the token renders unstyled instead of
+                // throwing when a Style is built from it.
+                $this->logInvalidColor($path, 'colors', (string) $token, $e->getMessage());
+                unset($colors[$token]);
+            }
+        }
+
+        return new ThemePalette($palette->name, $colors);
+    }
+
+    private function logInvalidColor(string $path, string $section, string $key, string $reason): void
+    {
+        $this->logger->warning('tui.theme.invalid_color', [
+            'component' => 'tui_theme',
+            'event_type' => 'tui.theme.invalid_color',
+            'file' => $path,
+            'section' => $section,
+            'key' => $key,
+            'reason' => $reason,
+        ]);
     }
 }

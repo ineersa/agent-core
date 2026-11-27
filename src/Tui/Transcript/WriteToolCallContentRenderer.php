@@ -86,11 +86,7 @@ final readonly class WriteToolCallContentRenderer
     private function buildMarkdownPreviewWidget(string $previewText, TuiTheme $theme): MarkdownWidget
     {
         $mdWidget = $this->markdown->create($previewText);
-        $colorSpec = $theme->getPalette()->get(ThemeColorEnum::ToolOutput);
-        $style = '' !== $colorSpec
-            ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 4]))
-            : new Style(padding: Padding::from([0, 0, 0, 4]));
-        $mdWidget->setStyle($style);
+        $mdWidget->setStyle(new Style(color: $theme->getPalette()->get(ThemeColorEnum::ToolOutput), padding: Padding::from([0, 0, 0, 4])));
 
         return $mdWidget;
     }
