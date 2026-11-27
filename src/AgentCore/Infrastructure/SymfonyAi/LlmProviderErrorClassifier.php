@@ -81,7 +81,11 @@ final class LlmProviderErrorClassifier
         $details = [];
         foreach (ProviderErrorMetadataValidator::validate($providerError) as $field => $value) {
             $error['response_error_'.$field] = $value;
-            $details[] = $field.'='.$value;
+            // Some bridges already put these fields into the exception
+            // message; repeat only what the message does not show.
+            if (!str_contains($userMessage, $value)) {
+                $details[] = $field.'='.$value;
+            }
         }
         if ([] !== $details) {
             $userMessage .= ' ('.implode(', ', $details).')';

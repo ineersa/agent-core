@@ -98,14 +98,15 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertTrue($result->error['retry_exhausted']);
         foreach (['code' => 'string_above_max_length', 'type' => 'invalid_request_error', 'param' => 'input[3].call_id'] as $field => $value) {
             $this->assertSame($value, $result->error['response_error_'.$field]);
-            $this->assertStringContainsString($field.'='.$value, $result->error['user_message']);
+            $this->assertStringContainsString($value, $result->error['user_message']);
+            $this->assertStringNotContainsString($field.'='.$value, $result->error['user_message']);
         }
         $failed = array_values(array_filter($logger->records, static fn (array $record): bool => 'llm.request.failed' === $record['message']));
         $this->assertCount(1, $failed);
         $this->assertSame('input[3].call_id', $failed[0]['context']['response_error_param']);
         $retry = array_values(array_filter($logger->records, static fn (array $record): bool => 'llm.request.retrying' === $record['message']));
         $this->assertCount(1, $retry);
-        $this->assertStringContainsString('code=string_above_max_length', $retry[0]['context']['reason']);
+        $this->assertStringContainsString('string_above_max_length', $retry[0]['context']['reason']);
         $streamErrors = array_values(array_filter($logger->records, static fn (array $record): bool => 'llm.provider.stream_error' === $record['message']));
         $this->assertCount($stream ? 2 : 0, $streamErrors);
         if ($stream) {

@@ -41,6 +41,24 @@ final class LlmProviderErrorClassifierTest extends TestCase
         $this->assertSame('Request rejected.', $result['user_message']);
     }
 
+    public function testProviderMetadataAlreadyInTheMessageIsNotRepeated(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => BadRequestException::class,
+            'message' => '[string_above_max_length/invalid_request_error]: call_id exceeds maximum length',
+            'response_error_code' => 'string_above_max_length',
+            'response_error_type' => 'invalid_request_error',
+            'response_error_param' => 'input[3].call_id',
+        ]);
+
+        $this->assertSame(
+            '[string_above_max_length/invalid_request_error]: call_id exceeds maximum length (param=input[3].call_id)',
+            $result['user_message'],
+        );
+        $this->assertSame('string_above_max_length', $result['response_error_code']);
+        $this->assertSame('invalid_request_error', $result['response_error_type']);
+    }
+
     #[DataProvider('permanentExceptionProvider')]
     public function testLocalAndCancelledFailuresRemainNonRetryable(string $type, string $category): void
     {
