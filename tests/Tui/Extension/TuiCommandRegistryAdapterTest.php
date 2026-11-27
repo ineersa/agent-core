@@ -13,6 +13,7 @@ use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Extension\TuiCommandRegistryAdapter;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -205,6 +206,31 @@ final class TuiCommandRegistryAdapterTest extends TestCase
 
         $adapter->register(
             new CommandDefinitionDTO(name: 'q'),
+            new readonly class implements ExtensionCommandHandlerInterface {
+                public function handle(string $args, CommandContextInterface $context): void
+                {
+                }
+            },
+        );
+    }
+
+    /**
+     * Built-in names and aliases owned by session-bound commands are seeded when
+     * the catalog is constructed, so they are taken before any extension loads.
+     */
+    #[TestWith(['r'])]
+    #[TestWith(['resume'])]
+    #[TestWith(['cp'])]
+    #[TestWith(['m'])]
+    #[TestWith(['main'])]
+    public function testCommandNameMatchingSessionBoundBuiltInThrows(string $name): void
+    {
+        $adapter = new TuiCommandRegistryAdapter(new SlashCommandCatalog());
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $adapter->register(
+            new CommandDefinitionDTO(name: $name),
             new readonly class implements ExtensionCommandHandlerInterface {
                 public function handle(string $args, CommandContextInterface $context): void
                 {
