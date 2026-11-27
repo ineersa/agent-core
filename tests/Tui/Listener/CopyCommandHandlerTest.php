@@ -10,6 +10,7 @@ use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\CopyCommandHandler;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Utility\Clipboard;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -26,21 +27,16 @@ final class CopyCommandHandlerTest extends TestCase
             $this->buildBlock('b4', TranscriptBlockKindEnum::AssistantMessage, 4, 'I am fine, thanks.'),
         ];
 
-        $capturedText = null;
-        $copyFn = static function (string $text) use (&$capturedText): bool {
-            $capturedText = $text;
+        $clipboard = $this->createMock(Clipboard::class);
+        $clipboard->expects($this->once())->method('copy')->with('I am fine, thanks.')->willReturn(true);
 
-            return true;
-        };
-
-        $handler = new CopyCommandHandler($state, $copyFn);
+        $handler = new CopyCommandHandler($state, $clipboard);
         $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertSame('Copied last model output to clipboard.', $result->text);
         $this->assertSame('system', $result->role);
         $this->assertSame('', $result->style);
-        $this->assertSame('I am fine, thanks.', $capturedText);
     }
 
     #[Test]
@@ -49,21 +45,16 @@ final class CopyCommandHandlerTest extends TestCase
         $state = new TuiSessionState('test-session');
         $state->transcript = [];
 
-        $copyCalled = false;
-        $copyFn = static function (string $text) use (&$copyCalled): bool {
-            $copyCalled = true;
+        $clipboard = $this->createMock(Clipboard::class);
+        $clipboard->expects($this->never())->method('copy');
 
-            return true;
-        };
-
-        $handler = new CopyCommandHandler($state, $copyFn);
+        $handler = new CopyCommandHandler($state, $clipboard);
         $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertSame('Nothing to copy — no model output yet.', $result->text);
         $this->assertSame('system', $result->role);
         $this->assertSame('muted', $result->style);
-        $this->assertFalse($copyCalled, 'Copy function should not be called when no assistant message exists');
     }
 
     #[Test]
@@ -76,20 +67,15 @@ final class CopyCommandHandlerTest extends TestCase
             $this->buildBlock('b3', TranscriptBlockKindEnum::ToolResult, 3, 'Tool output'),
         ];
 
-        $copyCalled = false;
-        $copyFn = static function (string $text) use (&$copyCalled): bool {
-            $copyCalled = true;
+        $clipboard = $this->createMock(Clipboard::class);
+        $clipboard->expects($this->never())->method('copy');
 
-            return true;
-        };
-
-        $handler = new CopyCommandHandler($state, $copyFn);
+        $handler = new CopyCommandHandler($state, $clipboard);
         $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertSame('Nothing to copy — no model output yet.', $result->text);
         $this->assertSame('muted', $result->style);
-        $this->assertFalse($copyCalled);
     }
 
     #[Test]
@@ -108,19 +94,14 @@ final class CopyCommandHandlerTest extends TestCase
             $this->buildBlock('b9', TranscriptBlockKindEnum::AssistantMessage, 9, 'Third assistant — this is the last'),
         ];
 
-        $capturedText = null;
-        $copyFn = static function (string $text) use (&$capturedText): bool {
-            $capturedText = $text;
+        $clipboard = $this->createMock(Clipboard::class);
+        $clipboard->expects($this->once())->method('copy')->with('Third assistant — this is the last')->willReturn(true);
 
-            return true;
-        };
-
-        $handler = new CopyCommandHandler($state, $copyFn);
+        $handler = new CopyCommandHandler($state, $clipboard);
         $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertSame('Copied last model output to clipboard.', $result->text);
-        $this->assertSame('Third assistant — this is the last', $capturedText);
     }
 
     #[Test]
@@ -131,20 +112,15 @@ final class CopyCommandHandlerTest extends TestCase
             $this->buildBlock('b1', TranscriptBlockKindEnum::AssistantMessage, 1, ''),
         ];
 
-        $capturedText = 'NOT_CALLED';
-        $copyFn = static function (string $text) use (&$capturedText): bool {
-            $capturedText = $text;
+        $clipboard = $this->createMock(Clipboard::class);
+        $clipboard->expects($this->once())->method('copy')->with('')->willReturn(true);
 
-            return true;
-        };
-
-        $handler = new CopyCommandHandler($state, $copyFn);
+        $handler = new CopyCommandHandler($state, $clipboard);
         $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertSame('Copied last model output to clipboard.', $result->text);
         $this->assertSame('', $result->style);
-        $this->assertSame('', $capturedText);
     }
 
     #[Test]
@@ -155,11 +131,10 @@ final class CopyCommandHandlerTest extends TestCase
             $this->buildBlock('b1', TranscriptBlockKindEnum::AssistantMessage, 1, 'Some output'),
         ];
 
-        $copyFn = static function (string $text): bool {
-            return false;
-        };
+        $clipboard = $this->createMock(Clipboard::class);
+        $clipboard->expects($this->once())->method('copy')->with('Some output')->willReturn(false);
 
-        $handler = new CopyCommandHandler($state, $copyFn);
+        $handler = new CopyCommandHandler($state, $clipboard);
         $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);

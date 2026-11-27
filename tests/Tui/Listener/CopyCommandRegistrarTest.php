@@ -10,6 +10,7 @@ use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CopyCommandRegistrar;
+use Ineersa\Tui\Utility\Clipboard;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -44,7 +45,7 @@ final class CopyCommandRegistrarTest extends TestCase
         $state = new TuiSessionState('test-session');
         $context = $this->buildContext($state, $catalog);
 
-        $registrar = new CopyCommandRegistrar();
+        $registrar = new CopyCommandRegistrar(new Clipboard());
         $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
@@ -68,7 +69,7 @@ final class CopyCommandRegistrarTest extends TestCase
         $state = new TuiSessionState('test-session');
         $context = $this->buildContext($state, $catalog);
 
-        $registrar = new CopyCommandRegistrar();
+        $registrar = new CopyCommandRegistrar(new Clipboard());
         $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
@@ -86,7 +87,7 @@ final class CopyCommandRegistrarTest extends TestCase
         $state = new TuiSessionState('test-session');
         $context = $this->buildContext($state, $catalog);
 
-        $registrar = new CopyCommandRegistrar();
+        $registrar = new CopyCommandRegistrar(new Clipboard());
         $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
@@ -105,7 +106,7 @@ final class CopyCommandRegistrarTest extends TestCase
         $state = new TuiSessionState('test-session');
         $context = $this->buildContext($state, $catalog);
 
-        $registrar = new CopyCommandRegistrar();
+        $registrar = new CopyCommandRegistrar(new Clipboard());
         $registrar->registerCatalog($catalog);
 
         // First session iteration

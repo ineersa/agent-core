@@ -43,8 +43,6 @@ use Ineersa\Tui\Question\QuestionOverlayPromptRenderer;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
-use Ineersa\Tui\Theme\DefaultTheme;
-use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -133,7 +131,6 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
         try {
             $exit = $mode->run(
                 client: $client,
-                theme: new DefaultTheme(new ThemePalette('test')),
             );
 
             $this->assertSame(0, $exit);
@@ -188,7 +185,6 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
         try {
             $exit = $mode->run(
                 client: $client,
-                theme: new DefaultTheme(new ThemePalette('test')),
             );
 
             $this->assertSame(0, $exit);
@@ -229,7 +225,6 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
             $errorLog = $this->redirectErrorLog();
             $exit = $mode->run(
                 client: $client,
-                theme: new DefaultTheme(new ThemePalette('test')),
             );
             $this->assertSame(ProcessReloadState::EXIT_CODE, $exit);
             $this->assertNotNull(ProcessReloadState::consume());
@@ -254,7 +249,7 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
         $this->tempDirs[] = $cwd;
         TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
         $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default', transcript: $transcript),
+            tui: new TuiConfig(theme: 'nord', transcript: $transcript),
             logging: new LoggingConfig(),
             sessions: new SessionsConfig(),
             cwd: $cwd,
