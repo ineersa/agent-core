@@ -196,6 +196,23 @@ final class TuiCommandRegistryAdapterTest extends TestCase
         );
     }
 
+    public function testCommandNameMatchingExistingAliasThrows(): void
+    {
+        $adapter = new TuiCommandRegistryAdapter(new SlashCommandCatalog());
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("Command 'q' conflicts with alias of registered command 'exit'.");
+
+        $adapter->register(
+            new CommandDefinitionDTO(name: 'q'),
+            new readonly class implements ExtensionCommandHandlerInterface {
+                public function handle(string $args, CommandContextInterface $context): void
+                {
+                }
+            },
+        );
+    }
+
     public function testAcceptsArgumentsRespectedBySlashCommandRegistry(): void
     {
         $catalog = new SlashCommandCatalog();

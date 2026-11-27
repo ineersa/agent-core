@@ -66,4 +66,17 @@ final readonly class SubmissionRouter
         // Normal prompt (including empty) → send to runtime
         return null;
     }
+
+    /**
+     * Canonical name of the registered slash command in submitted text.
+     *
+     * @return string|null the canonical name, or null when the text is not a
+     *                     slash command or names no registered command or alias
+     */
+    public function resolveSlashCommandName(string $submittedText): ?string
+    {
+        $parseResult = $this->parser->parse($submittedText);
+
+        return $parseResult instanceof SlashCommand ? $this->registry->resolveName($parseResult->name) : null;
+    }
 }

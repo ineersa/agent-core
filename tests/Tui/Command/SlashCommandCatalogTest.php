@@ -8,6 +8,7 @@ use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -130,6 +131,35 @@ final class SlashCommandCatalogTest extends TestCase
             new CommandMetadata(name: 'other', aliases: ['existing']),
             $this->createMockHandler(),
         );
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function builtInAliasNames(): iterable
+    {
+        yield 'exit alias q' => ['q', 'exit'];
+        yield 'help alias h' => ['h', 'help'];
+        yield 'help alias ?' => ['?', 'help'];
+    }
+
+    #[Test]
+    #[DataProvider('builtInAliasNames')]
+    public function throwsWhenCommandNameConflictsWithExistingAlias(string $name, string $owner): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("Command '{$name}' conflicts with alias of registered command '{$owner}'.");
+
+        $this->catalog->register(new CommandMetadata(name: $name), $this->createMockHandler());
+    }
+
+    #[Test]
+    public function registerMetadataThrowsWhenNameConflictsWithExistingAlias(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("Command 'quit' conflicts with alias of registered command 'exit'.");
+
+        $this->catalog->registerMetadata(new CommandMetadata(name: 'quit'));
     }
 
     // ─── Metadata access ─────────────────────────────────────────────

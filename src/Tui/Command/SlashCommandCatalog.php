@@ -189,6 +189,12 @@ final class SlashCommandCatalog
             throw new \InvalidArgumentException("Command '{$name}' is already registered.");
         }
 
+        // resolveName() prefers canonical names, so a name equal to an
+        // existing alias would silently take that alias over.
+        if (isset($this->aliasMap[$name])) {
+            throw new \InvalidArgumentException("Command '{$name}' conflicts with alias of registered command '{$this->aliasMap[$name]}'.");
+        }
+
         foreach ($metadata->aliases as $alias) {
             if (isset($this->aliasMap[$alias])) {
                 $existing = $this->aliasMap[$alias];

@@ -135,6 +135,23 @@ final class SubmissionRouterTest extends TestCase
     }
 
     #[Test]
+    public function resolveSlashCommandNameReturnsCanonicalNameForAliases(): void
+    {
+        $this->assertSame('exit', $this->router->resolveSlashCommandName('/q'));
+        $this->assertSame('exit', $this->router->resolveSlashCommandName('  /QUIT now '));
+        $this->assertSame('help', $this->router->resolveSlashCommandName('/help'));
+    }
+
+    #[Test]
+    public function resolveSlashCommandNameReturnsNullForNonCommands(): void
+    {
+        $this->assertNull($this->router->resolveSlashCommandName('/nonexistent'));
+        $this->assertNull($this->router->resolveSlashCommandName('quit'));
+        $this->assertNull($this->router->resolveSlashCommandName('//q'));
+        $this->assertNull($this->router->resolveSlashCommandName('!q'));
+    }
+
+    #[Test]
     public function unknownSlashCommandReturnsTranscriptMessage(): void
     {
         $result = $this->router->route('/nonexistent');
