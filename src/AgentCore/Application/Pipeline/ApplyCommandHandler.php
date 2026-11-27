@@ -337,8 +337,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         $operation = $state->currentOperation;
-        if (null !== $operation
-            && !isset($state->pendingShellToolCalls['sh_'.hash('sha256', $operation->idempotencyKey)])) {
+        if (null !== $operation && !$state->isPendingStandaloneShellOperation($operation)) {
             return true;
         }
 
@@ -946,7 +945,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             'version' => $state->version + 1,
             'lastSeq' => $state->lastSeq + $eventCount,
             'isStreaming' => false,
-            'streamingMessage' => null,
             'pendingToolCalls' => [],
             'currentToolCalls' => [],
             'pendingHumanInputRequests' => [],

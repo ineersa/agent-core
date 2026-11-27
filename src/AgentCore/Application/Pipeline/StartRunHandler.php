@@ -73,7 +73,6 @@ final readonly class StartRunHandler implements RunMessageHandler
             turnNo: 0,
             lastSeq: $state->lastSeq + 1,
             isStreaming: false,
-            streamingMessage: null,
             pendingToolCalls: [],
             errorMessage: null,
             messages: $messages,

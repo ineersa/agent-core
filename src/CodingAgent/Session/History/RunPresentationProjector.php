@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
 /** Reduces presentation without retaining historical event or message bodies. */
@@ -104,7 +105,7 @@ final class RunPresentationProjector
             case RunEventTypeEnum::AgentCommandApplied->value:
                 $kind = $payload['kind'] ?? null;
                 if ('shell_command' === $kind && \is_string($payload['idempotency_key'] ?? null) && '' !== $payload['idempotency_key']) {
-                    $this->shells['sh_'.hash('sha256', $payload['idempotency_key'])] = true;
+                    $this->shells[RunState::standaloneShellToolCallId($payload['idempotency_key'])] = true;
                 }
                 $append = true === AgentCommandKindEnum::fromPayload($kind)?->appendsMessage();
                 if ($append) {

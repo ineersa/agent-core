@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Compaction;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\MessageContentText;
 use Symfony\Component\String\UnicodeString;
 
 /**
@@ -70,35 +71,12 @@ final class CompactionTokenEstimator
      */
     public function messageToText(AgentMessage $message): string
     {
-        $text = $this->extractContentText($message->content);
+        $text = MessageContentText::join($message->content, textPartsOnly: false);
 
         if ($message->isCustomRole()) {
             $text = \sprintf('[%s] %s', $message->role, $text);
         }
 
         return $text;
-    }
-
-    /**
-     * Concatenate text from all 'text' content parts.
-     *
-     * @param array<int, array<string, mixed>> $content
-     */
-    private function extractContentText(array $content): string
-    {
-        $parts = [];
-
-        foreach ($content as $contentPart) {
-            if (!\is_array($contentPart)) {
-                continue;
-            }
-
-            $text = $contentPart['text'] ?? null;
-            if (\is_string($text) && '' !== $text) {
-                $parts[] = $text;
-            }
-        }
-
-        return implode("\n", $parts);
     }
 }

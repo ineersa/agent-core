@@ -77,7 +77,6 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             turnNo: 0,
             lastSeq: 0,
             isStreaming: false,
-            streamingMessage: null,
             pendingToolCalls: [],
             errorMessage: null,
             messages: [
@@ -187,7 +186,6 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             turnNo: 0,
             lastSeq: 0,
             isStreaming: false,
-            streamingMessage: null,
             pendingToolCalls: [],
             errorMessage: null,
             messages: [],
@@ -308,7 +306,6 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             turnNo: 0,
             lastSeq: 0,
             isStreaming: false,
-            streamingMessage: null,
             pendingToolCalls: [],
             errorMessage: null,
             messages: [

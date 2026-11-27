@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
+use Ineersa\AgentCore\Domain\Message\MessageContentText;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
@@ -38,7 +39,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
 
     public function process(ToolResult $result, ToolCall $toolCall): ToolResult
     {
-        $text = $this->extractTextFromContent($result->content);
+        $text = MessageContentText::join($result->content, textPartsOnly: true);
         if ('' === $text) {
             return $result;
         }
@@ -146,30 +147,6 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             details: $safeDetails,
             isError: $isError,
         );
-    }
-
-    /**
-     * Extract concatenated text from ToolResult content parts.
-     *
-     * @param array<int, array<string, mixed>> $content
-     */
-    private function extractTextFromContent(array $content): string
-    {
-        $parts = [];
-        foreach ($content as $part) {
-            if (!\is_array($part)) {
-                continue;
-            }
-            if (($part['type'] ?? null) !== 'text') {
-                continue;
-            }
-            $text = $part['text'] ?? null;
-            if (\is_string($text) && '' !== $text) {
-                $parts[] = $text;
-            }
-        }
-
-        return implode("\n", $parts);
     }
 
     /**

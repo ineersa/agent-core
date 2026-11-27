@@ -8,6 +8,7 @@ use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\MessageContentText;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Psr\Log\LoggerInterface;
@@ -354,22 +355,9 @@ final class SessionCatalogRecoveryService
                 continue;
             }
 
-            $parts = [];
-            foreach ($content as $part) {
-                if (!\is_array($part)) {
-                    continue;
-                }
-                if ('text' !== ($part['type'] ?? null)) {
-                    continue;
-                }
-                $text = $part['text'] ?? null;
-                if (\is_string($text) && '' !== $text) {
-                    $parts[] = $text;
-                }
-            }
-
-            if ([] !== $parts) {
-                return implode("\n", $parts);
+            $text = MessageContentText::join($content, textPartsOnly: true);
+            if ('' !== $text) {
+                return $text;
             }
         }
 
