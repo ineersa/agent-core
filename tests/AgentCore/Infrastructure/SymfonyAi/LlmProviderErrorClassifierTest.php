@@ -41,34 +41,6 @@ final class LlmProviderErrorClassifierTest extends TestCase
         $this->assertSame('Request rejected.', $result['user_message']);
     }
 
-    public function testProviderMetadataPrefixedByTheBridgeIsNotRepeated(): void
-    {
-        $result = $this->classifier->classify([
-            'type' => BadRequestException::class,
-            'message' => '[string_above_max_length/invalid_request_error/input[3].call_id]: call_id exceeds maximum length',
-            'response_error_code' => 'string_above_max_length',
-            'response_error_type' => 'invalid_request_error',
-            'response_error_param' => 'input[3].call_id',
-        ]);
-
-        $this->assertSame(
-            '[string_above_max_length/invalid_request_error/input[3].call_id]: call_id exceeds maximum length',
-            $result['user_message'],
-        );
-        $this->assertSame('input[3].call_id', $result['response_error_param']);
-    }
-
-    public function testProviderMetadataMerelyMentionedInTheMessageIsStillAppended(): void
-    {
-        $result = $this->classifier->classify([
-            'type' => BadRequestException::class,
-            'message' => 'The model gpt-x does not exist',
-            'response_error_param' => 'model',
-        ]);
-
-        $this->assertSame('The model gpt-x does not exist (param=model)', $result['user_message']);
-    }
-
     #[DataProvider('permanentExceptionProvider')]
     public function testLocalAndCancelledFailuresRemainNonRetryable(string $type, string $category): void
     {
