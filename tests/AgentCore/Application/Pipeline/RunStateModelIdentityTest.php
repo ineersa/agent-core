@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
@@ -25,6 +28,7 @@ use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 
 /**
  * Execution identity is resolved at the provider boundary, not scheduled from
@@ -55,7 +59,7 @@ final class RunStateModelIdentityTest extends TestCase
             ),
         ];
 
-        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), $events);
+        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()))->replay(RunState::queued($runId), $events);
         $this->assertSame('deepseek/deepseek-v4-flash', $state->model, 'Historical model still replays for diagnostics.');
         $this->assertNull($state->parentRunId);
 
@@ -65,6 +69,8 @@ final class RunStateModelIdentityTest extends TestCase
                 commandStore: $commandStore,
             ),
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
         $result = $handler->handle(
             new AdvanceRun($runId, 0, 'adv-1', 1, 'ik-1'),
@@ -109,7 +115,7 @@ final class RunStateModelIdentityTest extends TestCase
             ),
         ];
 
-        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), $events);
+        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()))->replay(RunState::queued($runId), $events);
         $this->assertSame('parent-9', $state->parentRunId);
         $this->assertSame('deepseek/deepseek-v4-flash', $state->model);
     }
@@ -135,6 +141,8 @@ final class RunStateModelIdentityTest extends TestCase
         $reducer = new RunStateReducer(
             AttributeSerializerValidatorTestFactory::denormalizer(),
             new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+            messageNormalizer: new AgentMessageNormalizer(),
+            assistantMessageFactory: new ReplayAssistantMessageFactory(),
         );
 
         $this->expectException(\RuntimeException::class);
@@ -170,6 +178,8 @@ final class RunStateModelIdentityTest extends TestCase
         $replayed = (new RunStateReducer(
             AttributeSerializerValidatorTestFactory::denormalizer(),
             new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+            messageNormalizer: new AgentMessageNormalizer(),
+            assistantMessageFactory: new ReplayAssistantMessageFactory(),
         ))->replay(RunState::queued('child-parity-1'), $live->events);
 
         $this->assertSame($live->nextState->parentRunId, $replayed->parentRunId);
@@ -178,7 +188,7 @@ final class RunStateModelIdentityTest extends TestCase
 
     public function testTurnAdvancedReplaysCommittedAdvanceToken(): void
     {
-        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(
+        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()))->replay(
             RunState::queued('run-advance-replay'),
             [new RunEvent(
                 runId: 'run-advance-replay',
@@ -204,6 +214,7 @@ final class RunStateModelIdentityTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: new CommandMailboxPolicy(new InMemoryCommandStore()),
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
             preLlmCompactionGuard: $guard,
         );
         $state = new RunState(runId: 'run-auto-compact', status: RunStatus::Running);
@@ -211,7 +222,7 @@ final class RunStateModelIdentityTest extends TestCase
 
         $started = $handler->handle($advance, $state);
         $this->assertContainsOnlyInstancesOf(CompactRun::class, $started->effects);
-        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay($state, $started->events);
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()))->replay($state, $started->events);
 
         $this->assertSame('advance-key-1', $replayed->lastAppliedAdvanceKey);
         $redelivery = $handler->handle($advance, $replayed);
@@ -221,7 +232,7 @@ final class RunStateModelIdentityTest extends TestCase
 
     public function testHistoricalCompactionStartWithoutOperationKeyReplaysTerminalEventSafely(): void
     {
-        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(
+        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()))->replay(
             RunState::queued('run-legacy-compaction'),
             [
                 new RunEvent(
@@ -250,6 +261,8 @@ final class RunStateModelIdentityTest extends TestCase
                 commandStore: new InMemoryCommandStore(),
             ),
             eventFactory: new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
+            preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
         );
         $result = $handler->handle(new AdvanceRun($runId, 0, 'adv-missing', 1, 'ik-missing'), $state);
 

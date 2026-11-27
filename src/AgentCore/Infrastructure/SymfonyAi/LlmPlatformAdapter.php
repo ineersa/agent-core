@@ -20,7 +20,6 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
-use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Exception\LlmStreamCancelledException;
@@ -44,7 +43,6 @@ use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Clock\ClockInterface;
-use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 final readonly class LlmPlatformAdapter implements PlatformInterface
@@ -54,22 +52,21 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      */
     public function __construct(
         private RunOperationalStatusReaderInterface $statusReader,
-        private AgentMessageConverter $messageConverter,
         private DynamicToolDescriptionProcessor $toolDescriptionProcessor,
         private SymfonyPlatformInterface $platform,
         private iterable $transformContextHooks,
-        private ?ConvertToLlmHookInterface $convertToLlmHook,
-        private ?LlmStreamObserverInterface $streamObserver,
-        private ?CostCalculatorInterface $costCalculator,
+        private ConvertToLlmHookInterface $convertToLlmHook,
+        private LlmStreamObserverInterface $streamObserver,
+        private CostCalculatorInterface $costCalculator,
         private LoggerInterface $logger,
         private DenormalizerInterface $denormalizer,
-        private ?ModelResolverInterface $modelResolver = null,
-        private readonly ProviderRequestPreparer $providerRequestPreparer = new ProviderRequestPreparer(),
-        private readonly LlmProviderErrorClassifier $errorClassifier = new LlmProviderErrorClassifier(),
-        private readonly AgentMessageToolCallSequenceValidator $toolCallSequenceValidator = new AgentMessageToolCallSequenceValidator(),
-        private readonly ?LlmRequestRetryObserverInterface $retryObserver = null,
-        private readonly LlmRequestRetryPolicy $requestRetryPolicy = new LlmRequestRetryPolicy(),
-        private readonly ClockInterface $clock = new NativeClock(),
+        private ModelResolverInterface $modelResolver,
+        private readonly ProviderRequestPreparer $providerRequestPreparer,
+        private readonly LlmProviderErrorClassifier $errorClassifier,
+        private readonly AgentMessageToolCallSequenceValidator $toolCallSequenceValidator,
+        private readonly LlmRequestRetryObserverInterface $retryObserver,
+        private readonly LlmRequestRetryPolicy $requestRetryPolicy,
+        private readonly ClockInterface $clock,
     ) {
     }
 
@@ -118,20 +115,18 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         // Resolve ordinary turns from current session metadata at the provider
         // boundary. RunState is historical and must not be an execution override.
-        $resolvedModel = null !== $this->modelResolver
-            ? $this->modelResolver->resolve(
-                defaultModel: $request->model,
-                hasConversationMessages: $this->hasConversationMessages($messages),
-                input: $request->input,
-                options: new ModelResolutionOptions(array_replace(
-                    $request->options->extraOptions,
-                    // Internal resolver signal only; never a provider wire field.
-                    null !== $request->options->toolsEnabled
-                        ? ['toolsEnabled' => $request->options->toolsEnabled]
-                        : [],
-                )),
-            )
-            : new ResolvedModel($request->model);
+        $resolvedModel = $this->modelResolver->resolve(
+            defaultModel: $request->model,
+            hasConversationMessages: $this->hasConversationMessages($messages),
+            input: $request->input,
+            options: new ModelResolutionOptions(array_replace(
+                $request->options->extraOptions,
+                // Internal resolver signal only; never a provider wire field.
+                null !== $request->options->toolsEnabled
+                    ? ['toolsEnabled' => $request->options->toolsEnabled]
+                    : [],
+            )),
+        );
 
         $messageBag = $this->convertMessages($messages, $cancelToken, $resolvedModel->model);
 
@@ -301,8 +296,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      */
     private function convertMessages(array $messages, CancellationTokenInterface $cancelToken, string $modelName = ''): MessageBag
     {
-        return $this->convertToLlmHook?->convertToLlm($messages, $cancelToken, $modelName)
-            ?? $this->messageConverter->toMessageBagForTarget($messages, $modelName);
+        return $this->convertToLlmHook->convertToLlm($messages, $cancelToken, $modelName);
     }
 
     /**
@@ -901,7 +895,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         // Compute cost from model pricing and token usage.
         // Cost flows through LlmStepResult → events → RuntimeEventTranslator
         // → RuntimeEvent → UsageProjection::accumulate() → TUI footer.
-        if ('' !== $modelName && null !== $this->costCalculator) {
+        if ('' !== $modelName) {
             $cost = $this->costCalculator->calculateCost($modelName, $usage);
             if (0.0 !== $cost) {
                 $usage['cost'] = $cost;
@@ -969,7 +963,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      */
     private function notifyObserver(string $runId, ?string $stepId, string $warningMessage, callable $callback, callable $failureContext): void
     {
-        if (null === $this->streamObserver || '' === $runId) {
+        if ('' === $runId) {
             return;
         }
 

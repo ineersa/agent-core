@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\Exception\RunContextNotLoadedException;
+use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -49,12 +53,14 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: $locks,
-            commands: new InMemoryCommandStore(),
             runCommit: new RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 logger: new NullLogger(),
                 finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus, new TestLogger(), events: new EventDispatcher()), locks: $locks),
+                hookDispatcher: new HookDispatcher([]),
+                tracer: new RunTracer(new NullLogger()),
+                actionValidator: new CoordinationActionValidator(),
             ),
             handlers: [
                 new StartRunHandler(
@@ -62,6 +68,8 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
                     normalizer: TestSerializerFactory::normalizer(),
                 ),
             ],
+            commands: new InMemoryCommandStore(),
+            historyTailDiscard: $this->createStub(HistoryTailDiscardInterface::class),
         );
 
         $message = StartRunMessageBuilder::create('run-start-projection-fail')

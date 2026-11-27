@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
@@ -13,6 +15,7 @@ use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Message\CommitSubagentProgress;
@@ -32,6 +35,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
@@ -127,12 +131,14 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
             eventStore: $store,
             logger: new TestLogger(),
             finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
             actionValidator: self::getContainer()->get(CoordinationActionValidator::class),
         );
         $processor = new RunMessageProcessor($active,
             self::getContainer()->get(RunLockManager::class), $commit,
             [new CommitSubagentProgressHandler(self::getContainer()->get(DeferredSubagentBatchRepository::class), $bus)],
-            self::getContainer()->get(CommandStoreInterface::class));
+            self::getContainer()->get(CommandStoreInterface::class), historyTailDiscard: $this->createStub(HistoryTailDiscardInterface::class));
         $this->expectExceptionMessage('canonical append failed');
         try {
             $processor->process('command.subagent_progress', $this->command(1));

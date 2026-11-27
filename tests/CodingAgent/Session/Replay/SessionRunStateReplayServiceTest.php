@@ -8,9 +8,11 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\Exception\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\Exception\RunStateReplayException;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -58,7 +60,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $sources->method('historySource')->willReturnCallback($store->historySource(...));
         $this->service = new SessionRunStateReplayService($store, new SessionReplayCoordinator(
             $sources,
-            new RunStateReducer($serializer, $codec),
+            new RunStateReducer($serializer, $codec, messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()),
             new RuntimeEventMapper(new RuntimeEventTranslator($dispatcher, $codec, $serializer)),
             $this->createStub(TranscriptProjectorInterface::class),
             new NullLogger(),

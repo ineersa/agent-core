@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -34,8 +33,8 @@ final readonly class ExecuteCompactionStepWorker
     public function __construct(
         private MessageBusInterface $commandBus,
         private PlatformInterface $platform,
-        private ?RunTracer $tracer = null,
-        private LoggerInterface $logger = new NullLogger(),
+        private RunTracer $tracer,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -55,7 +54,7 @@ final readonly class ExecuteCompactionStepWorker
                 return $this->execute($message);
             };
 
-            $result = null === $this->tracer ? $execute() : $this->tracer->inSpan('turn.execution.compaction_worker', [
+            $result = $this->tracer->inSpan('turn.execution.compaction_worker', [
                 'run_id' => $message->runId(),
                 'turn_no' => $message->turnNo(),
                 'step_id' => $message->stepId(),
@@ -113,14 +112,12 @@ final readonly class ExecuteCompactionStepWorker
                 ),
             ));
 
-            $response = null === $this->tracer
-                ? $invoke()
-                : $this->tracer->inSpan('compaction.call', [
-                    'run_id' => $message->runId(),
-                    'turn_no' => $message->turnNo(),
-                    'step_id' => $message->stepId(),
-                    'model' => $model,
-                ], $invoke)
+            $response = $this->tracer->inSpan('compaction.call', [
+                'run_id' => $message->runId(),
+                'turn_no' => $message->turnNo(),
+                'step_id' => $message->stepId(),
+                'model' => $model,
+            ], $invoke)
             ;
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;

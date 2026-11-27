@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
-use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -29,8 +28,8 @@ final readonly class ExecuteLlmStepWorker
     public function __construct(
         private MessageBusInterface $commandBus,
         private PlatformInterface $platform,
-        private ?RunTracer $tracer = null,
-        private LoggerInterface $logger = new NullLogger(),
+        private RunTracer $tracer,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -53,7 +52,7 @@ final readonly class ExecuteLlmStepWorker
                 return $this->execute($message);
             };
 
-            $result = null === $this->tracer ? $execute() : $this->tracer->inSpan('turn.execution.llm_worker', [
+            $result = $this->tracer->inSpan('turn.execution.llm_worker', [
                 'run_id' => $message->runId(),
                 'turn_no' => $message->turnNo(),
                 'step_id' => $message->stepId(),
@@ -102,13 +101,11 @@ final readonly class ExecuteLlmStepWorker
                 ),
             ));
 
-            $response = null === $this->tracer
-                ? $invoke()
-                : $this->tracer->inSpan('llm.call', [
-                    'run_id' => $message->runId(),
-                    'turn_no' => $message->turnNo(),
-                    'step_id' => $message->stepId(),
-                ], $invoke, level: LogLevel::INFO)
+            $response = $this->tracer->inSpan('llm.call', [
+                'run_id' => $message->runId(),
+                'turn_no' => $message->turnNo(),
+                'step_id' => $message->stepId(),
+            ], $invoke, level: LogLevel::INFO)
             ;
 
             // Adapter owns thinking-only / empty-stream recovery inside the shared

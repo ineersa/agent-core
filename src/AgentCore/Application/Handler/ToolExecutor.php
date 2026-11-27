@@ -33,7 +33,6 @@ use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Clock\ClockInterface;
-use Symfony\Component\Clock\MonotonicClock;
 
 final class ToolExecutor implements ToolExecutorInterface
 {
@@ -51,18 +50,18 @@ final class ToolExecutor implements ToolExecutorInterface
         string $defaultMode,
         int $maxParallelism,
         private readonly ToolExecutionResultStore $resultStore,
-        private readonly ?ToolboxInterface $toolbox = null,
-        private readonly ?StackToolExecutionContextAccessor $contextAccessor = null,
-        private readonly ?ToolSetResolverInterface $toolSetResolver = null,
+        private readonly ToolboxInterface $toolbox,
+        private readonly StackToolExecutionContextAccessor $contextAccessor,
+        private readonly ToolSetResolverInterface $toolSetResolver,
+        ClockInterface $clock,
+        private readonly RunTracer $tracer,
         iterable $toolResultProcessors = [],
-        ?ClockInterface $clock = null,
-        private readonly ?RunTracer $tracer = null,
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $maxParallelism);
         $this->toolResultProcessors = \is_array($toolResultProcessors)
             ? array_values($toolResultProcessors)
             : iterator_to_array($toolResultProcessors, false);
-        $this->clock = $clock ?? new MonotonicClock();
+        $this->clock = $clock;
     }
 
     /**
@@ -71,12 +70,12 @@ final class ToolExecutor implements ToolExecutorInterface
     public static function fromSettings(
         ToolExecutionSettingsInterface $settings,
         ToolExecutionResultStore $resultStore,
-        ?ToolboxInterface $toolbox = null,
-        ?StackToolExecutionContextAccessor $contextAccessor = null,
-        ?ToolSetResolverInterface $toolSetResolver = null,
+        ToolboxInterface $toolbox,
+        StackToolExecutionContextAccessor $contextAccessor,
+        ToolSetResolverInterface $toolSetResolver,
+        ClockInterface $clock,
+        RunTracer $tracer,
         iterable $toolResultProcessors = [],
-        ?ClockInterface $clock = null,
-        ?RunTracer $tracer = null,
     ): self {
         return new self(
             defaultMode: $settings->defaultMode(),
@@ -203,7 +202,7 @@ final class ToolExecutor implements ToolExecutorInterface
                     details: $details,
                 );
             } elseif ($exception instanceof ToolNotFoundException) {
-                $names = array_map(static fn (Tool $tool): string => $tool->getName(), $this->toolbox?->getTools() ?? []);
+                $names = array_map(static fn (Tool $tool): string => $tool->getName(), $this->toolbox->getTools());
                 $result = $this->errorResult(
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
@@ -292,22 +291,7 @@ final class ToolExecutor implements ToolExecutorInterface
             throw new ToolCallException('Tool arguments could not be admitted. Execution was not started.', retryable: false);
         }
 
-        if (null === $this->toolbox) {
-            return $this->errorResult(
-                toolCallId: $toolCall->toolCallId,
-                toolName: $toolCall->toolName,
-                message: \sprintf(
-                    'Tool "%s" execution is unavailable (mode=%s). Configure Symfony Toolbox integration.',
-                    $toolCall->toolName,
-                    $policy->mode->value,
-                ),
-                details: [
-                    'unavailable' => true,
-                ],
-            );
-        }
-
-        // Enforce execution allowlist when a toolSetResolver and tools_ref are available.
+        // Enforce execution allowlist when tools_ref is available.
         // This ensures only tools in the same snapshot that was shown to the LLM are executed.
         $allowlistCheck = $this->probe('allowlist', $toolCall, fn () => $this->checkAllowlist($toolCall));
         if (null !== $allowlistCheck) {
@@ -335,10 +319,6 @@ final class ToolExecutor implements ToolExecutorInterface
      */
     private function probe(string $phase, ToolCall $toolCall, callable $operation): mixed
     {
-        if (null === $this->tracer) {
-            return $operation();
-        }
-
         return $this->tracer->inSpan('latency_probe.tool.'.$phase, [
             'latency_probe' => true,
             'run_id' => $this->runId($toolCall),
@@ -358,12 +338,6 @@ final class ToolExecutor implements ToolExecutorInterface
      */
     private function executeWithContext(ToolCall $toolCall, ToolExecutionPolicy $policy, callable $callback): mixed
     {
-        if (null === $this->contextAccessor) {
-            $result = $callback();
-
-            return $result;
-        }
-
         $humanInputAnswer = $toolCall->context['human_input_answer'] ?? null;
         $stepId = $toolCall->context['step_id'] ?? null;
         $runId = $this->runId($toolCall) ?? '';
@@ -679,10 +653,6 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private function checkAllowlist(ToolCall $toolCall): ?ToolResult
     {
-        if (null === $this->toolSetResolver) {
-            return null;
-        }
-
         $toolsRef = $toolCall->context['tools_ref'] ?? null;
         if (!\is_string($toolsRef) || '' === $toolsRef) {
             return null;

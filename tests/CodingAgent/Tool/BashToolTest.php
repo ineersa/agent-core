@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
@@ -26,6 +27,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
@@ -75,6 +77,7 @@ use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\Clock\MonotonicClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -169,6 +172,9 @@ final class BashToolTest extends IsolatedKernelTestCase
             resultStore: new ToolExecutionResultStore(),
             toolbox: new RegistryBackedToolbox($registry, new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()), NativeToolSchemaProbe::schemaFactory()),
             contextAccessor: $this->contextAccessor,
+            toolSetResolver: PlatformCollaborators::toolSetResolver(),
+            clock: new MonotonicClock(),
+            tracer: new RunTracer(new NullLogger()),
         );
         $call = ToolCallBuilder::create('bash-exit')
             ->withToolName('bash')
@@ -464,6 +470,9 @@ final class BashToolTest extends IsolatedKernelTestCase
                 resultStore: new ToolExecutionResultStore(),
                 toolbox: new RegistryBackedToolbox($registry, new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()), NativeToolSchemaProbe::schemaFactory()),
                 contextAccessor: $this->contextAccessor,
+                toolSetResolver: PlatformCollaborators::toolSetResolver(),
+                clock: new MonotonicClock(),
+                tracer: new RunTracer(new NullLogger()),
             );
             $call = ToolCallBuilder::create('tc_bash')->withToolName('bash')->withArguments($arguments)
                 ->withRunId($this->sessionId)->withContext(['cancel_token' => $token, 'turn_no' => 1, 'step_id' => 'accept-first'])->build();
@@ -931,6 +940,9 @@ final class BashToolTest extends IsolatedKernelTestCase
                 resultStore: new ToolExecutionResultStore(),
                 toolbox: new RegistryBackedToolbox($registry, new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()), NativeToolSchemaProbe::schemaFactory()),
                 contextAccessor: $this->contextAccessor,
+                toolSetResolver: PlatformCollaborators::toolSetResolver(),
+                clock: new MonotonicClock(),
+                tracer: new RunTracer(new NullLogger()),
             );
             $call = ToolCallBuilder::create('tc_bash')->withToolName('bash')->withArguments($arguments)
                 ->withRunId($session)->withContext(['cancel_token' => $token, 'turn_no' => 1, 'step_id' => 'detach-step'])->build();

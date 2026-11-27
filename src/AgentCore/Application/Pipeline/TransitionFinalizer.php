@@ -20,7 +20,7 @@ final readonly class TransitionFinalizer
         private LocalMetadataCoordinator $localMetadata,
         private TransitionPlanFactory $plans,
         private RunLockManager $locks,
-        private ?RunTracer $tracer = null,
+        private RunTracer $tracer,
     ) {
     }
 
@@ -53,12 +53,6 @@ final readonly class TransitionFinalizer
     /** @param callable(): void $operation */
     private function probe(string $phase, string $runId, callable $operation): void
     {
-        if (null === $this->tracer) {
-            $operation();
-
-            return;
-        }
-
         $this->tracer->inSpan('latency_probe.finalize.'.$phase, ['latency_probe' => true, 'run_id' => $runId], $operation);
     }
 }

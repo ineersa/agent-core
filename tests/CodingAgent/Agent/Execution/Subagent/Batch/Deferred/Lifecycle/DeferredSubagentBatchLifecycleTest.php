@@ -7,7 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Life
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
@@ -20,6 +22,7 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Exception\RunContextNotLoadedException;
+use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionStatusEnum;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
@@ -106,6 +109,7 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\TestWith;
+use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
@@ -359,6 +363,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 $childStore,
                 new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher()),
             ),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
         $commit->commit(
             $previous,
@@ -954,6 +961,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $deferred,
             new ToolExecutionResultStore(),
             new NullRunOperationalStatusReader(),
+            tracer: new RunTracer(new NullLogger()),
             eventDispatcher: $events,
             launchInputStore: $launchInputs,
         );
@@ -1309,12 +1317,13 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $store = self::getContainer()->get(EventStoreInterface::class);
         $lock = self::getContainer()->get(RunLockManager::class);
 
-        return new class($repo, $store, $lock, $appended) extends SubagentProgressEventAppender {
+        return new class($repo, $store, $lock, $appended, self::createStub(HistoryTailDiscardInterface::class)) extends SubagentProgressEventAppender {
             public function __construct(
                 private DeferredSubagentBatchRepository $repo,
                 private EventStoreInterface $store,
                 private RunLockManager $lock,
                 private array &$appended,
+                private HistoryTailDiscardInterface $historyTailDiscard,
             ) {
             }
 
@@ -1344,9 +1353,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                     eventStore: $this->store,
                     logger: new TestLogger(),
                     finalizer: TestTransitionFinalizerFactory::create($this->store, $dispatcher),
+                    hookDispatcher: new HookDispatcher([]),
+                    tracer: new RunTracer(new NullLogger()),
                     actionValidator: new CoordinationActionValidator([$coordination]),
                 );
-                $processor = new RunMessageProcessor($active, $this->lock, $commit, [$handler], new InMemoryCommandStore());
+                $processor = new RunMessageProcessor($active, $this->lock, $commit, [$handler], new InMemoryCommandStore(), historyTailDiscard: $this->historyTailDiscard);
                 $processor->process('command.subagent_progress', new CommitSubagentProgress(
                     $parentRunId, $parentTurnNo, $lifecycleId, $parentToolCallId, $parentOrderIndex, $revision, $normalized, $interruptionKind,
                 ));

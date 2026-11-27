@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversionCacheIdleSubscriber;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
@@ -19,7 +20,7 @@ final class ConversionCacheIdleSubscriberTest extends TestCase
     public function testIdleEventEvictsExpiredCacheButBusyEventDoesNot(): void
     {
         $clock = new MockClock();
-        $converter = new AgentMessageConverter(clock: $clock);
+        $converter = new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: $clock);
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber(new ConversionCacheIdleSubscriber($converter));
         $worker = new Worker([], $this->createStub(MessageBusInterface::class));

@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Input;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
@@ -114,7 +115,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
 
     public function testWithoutResolverUsesAllToolboxTools(): void
     {
-        $processor = new DynamicToolDescriptionProcessor($this->toolbox);
+        $processor = new DynamicToolDescriptionProcessor($this->toolbox, toolSetResolver: PlatformCollaborators::toolSetResolver());
         $input = new Input('test-model', new MessageBag(), []);
 
         $processor->processInput($input);
@@ -201,7 +202,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
             ->method('resolve')
             ->willReturn(new ActiveToolSet(toolNames: ['read'], allowListNames: ['read']));
 
-        $processor = new DynamicToolDescriptionProcessor(toolbox: null, toolSetResolver: $resolver);
+        $processor = new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: $resolver);
         $input = new Input('test-model', new MessageBag());
 
         $processor->processInput($input, new ModelInvocationInput(toolsRef: 'ref'));
@@ -243,7 +244,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
      */
     public function testEmptyToolsArrayRemovesBothToolsAndToolDescriptions(): void
     {
-        $processor = new DynamicToolDescriptionProcessor($this->toolbox);
+        $processor = new DynamicToolDescriptionProcessor($this->toolbox, toolSetResolver: PlatformCollaborators::toolSetResolver());
         $input = new Input('test-model', new MessageBag(), [
             'tools' => [],
             'tool_descriptions' => ['read' => 'should be removed'],
@@ -263,7 +264,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
      */
     public function testEmptyToolsWithoutToolboxRemovesToolsOption(): void
     {
-        $processor = new DynamicToolDescriptionProcessor(toolbox: null);
+        $processor = new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver());
         $input = new Input('test-model', new MessageBag(), [
             'tools' => [],
         ]);

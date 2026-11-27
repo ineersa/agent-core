@@ -31,7 +31,7 @@ final readonly class RunOrchestrator
 
     public function __construct(
         private RunMessageProcessor $runMessageProcessor,
-        private ?RunTracer $tracer = null,
+        private RunTracer $tracer,
     ) {
     }
 
@@ -175,7 +175,7 @@ final readonly class RunOrchestrator
         $this->withLogContext($message->runId(), $eventType, function () use ($scope, $message, $eventType, $spanAttributes): void {
             $handle = fn () => $this->runMessageProcessor->process($scope, $message);
 
-            if (null === $this->tracer || null === $spanAttributes) {
+            if (null === $spanAttributes) {
                 $handle();
 
                 return;

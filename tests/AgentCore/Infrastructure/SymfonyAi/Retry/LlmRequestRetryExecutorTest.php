@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Revolt\EventLoop;
 use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Message\AssistantMessage;
@@ -47,6 +48,7 @@ final class LlmRequestRetryExecutorTest extends TestCase
             policy: new LlmRequestRetryPolicy(maxRetries: 1, baseDelayMs: 100),
             clock: $clock,
             retryObserver: $observer,
+            logger: new NullLogger(),
         );
         $attempts = 0;
         $result = async(static function () use ($executor, &$attempts, &$events): PlatformInvocationResult {
@@ -79,6 +81,7 @@ final class LlmRequestRetryExecutorTest extends TestCase
             policy: new LlmRequestRetryPolicy(maxRetries: 5, baseDelayMs: 0),
             clock: new MockClock(),
             retryObserver: $observer,
+            logger: new NullLogger(),
         );
 
         $result = $executor->execute(
@@ -168,6 +171,8 @@ final class LlmRequestRetryExecutorTest extends TestCase
         $executor = new LlmRequestRetryExecutor(
             policy: new LlmRequestRetryPolicy(maxRetries: 2, baseDelayMs: 0),
             clock: new MockClock(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
+            logger: new NullLogger(),
         );
 
         $result = $executor->execute(
@@ -204,6 +209,8 @@ final class LlmRequestRetryExecutorTest extends TestCase
         $executor = new LlmRequestRetryExecutor(
             policy: new LlmRequestRetryPolicy(maxRetries: 5, baseDelayMs: 1_000),
             clock: $clock,
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
+            logger: new NullLogger(),
         );
 
         $result = $executor->execute(
@@ -241,6 +248,8 @@ final class LlmRequestRetryExecutorTest extends TestCase
         $executor = new LlmRequestRetryExecutor(
             policy: new LlmRequestRetryPolicy(maxRetries: 5, baseDelayMs: 0),
             clock: new MockClock(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
+            logger: new NullLogger(),
         );
 
         $result = $executor->execute(
@@ -284,6 +293,7 @@ final class LlmRequestRetryExecutorTest extends TestCase
             policy: new LlmRequestRetryPolicy(maxRetries: 5, baseDelayMs: 100, maxDelayMs: 100),
             clock: $clock,
             retryObserver: $observer,
+            logger: new NullLogger(),
         );
 
         $result = $executor->execute(
@@ -322,6 +332,8 @@ final class LlmRequestRetryExecutorTest extends TestCase
         $executor = new LlmRequestRetryExecutor(
             policy: new LlmRequestRetryPolicy(maxRetries: 2, baseDelayMs: 0),
             clock: new MockClock(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
+            logger: new NullLogger(),
         );
 
         $result = $executor->execute(

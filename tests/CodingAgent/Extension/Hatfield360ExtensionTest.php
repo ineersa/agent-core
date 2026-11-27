@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Amp\Future;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\CommandConsumptionPolicyInterface;
+use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\DTO\CommandConsumptionDecisionDTO;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
@@ -41,6 +43,7 @@ use Ineersa\Hatfield\ExtensionApi\Session\SessionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\HatfieldExt\Hatfield360\Hatfield360Extension;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -273,7 +276,7 @@ final class Hatfield360ExtensionTest extends TestCase
                     payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Input']]]],
                 ));
             }
-            $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(), new CommandMailboxPolicy($store, [$policy]), new EventFactory());
+            $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(), new CommandMailboxPolicy($store, [$policy]), new EventFactory(), tracer: new RunTracer(new NullLogger()), preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class));
             $result = $handler->handle(AdvanceRunMessageBuilder::create('42')->withTurnNo(1)->build(), new RunState('42', RunStatus::Completed, turnNo: 1, lastSeq: $seq));
             $starts = array_values(array_filter($result->events, static fn (RunEvent $event): bool => RunEventTypeEnum::TurnAdvanced->value === $event->type));
             $this->assertCount(1, $starts);

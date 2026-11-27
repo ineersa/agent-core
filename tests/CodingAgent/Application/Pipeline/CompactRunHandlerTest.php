@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
@@ -157,6 +158,7 @@ final class CompactRunHandlerTest extends TestCase
         $advance = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             new CommandMailboxPolicy(new InMemoryCommandStore()),
             new EventFactory(),
+            tracer: new RunTracer(new NullLogger()),
             preLlmCompactionGuard: $guard,
         );
         $advanceResult = $advance->handle(new AdvanceRun('run-pre-llm-compact', 0, 'advance-1', 1, 'advance-key'), $state);

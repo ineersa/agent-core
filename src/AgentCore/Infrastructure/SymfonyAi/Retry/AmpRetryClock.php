@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry;
 
 use Symfony\Component\Clock\ClockInterface;
-use Symfony\Component\Clock\NativeClock;
 
 use function Amp\delay;
 
 /** LLM retry waits yield to the same event loop as provider HTTP and keepalive. */
 final readonly class AmpRetryClock implements ClockInterface
 {
-    public function __construct(private ClockInterface $clock = new NativeClock())
+    public function __construct(private ClockInterface $clock)
     {
     }
 

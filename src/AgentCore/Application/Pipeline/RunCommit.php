@@ -22,9 +22,9 @@ final readonly class RunCommit
         private PreparedTransitionEventStoreInterface $eventStore,
         private LoggerInterface $logger,
         private TransitionFinalizer $finalizer,
-        private ?HookDispatcher $hookDispatcher = null,
-        private ?RunTracer $tracer = null,
-        private CoordinationActionValidator $actionValidator = new CoordinationActionValidator(),
+        private HookDispatcher $hookDispatcher,
+        private RunTracer $tracer,
+        private CoordinationActionValidator $actionValidator,
     ) {
     }
 
@@ -44,9 +44,9 @@ final readonly class RunCommit
         $this->assertTransitionReady($state->runId);
         $afterTurnActions = [];
         if ($dispatchAfterTurnHooks || \in_array(RunEventTypeEnum::HistoryTailDiscarded->value, array_column($events, 'type'), true)) {
-            $afterTurnActions = $this->probe('commit.prepare_hooks', $attributes, fn () => $this->hookDispatcher?->prepareAfterTurnCommit(
+            $afterTurnActions = $this->probe('commit.prepare_hooks', $attributes, fn () => $this->hookDispatcher->prepareAfterTurnCommit(
                 AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)), $state->lastSeq,
-            ) ?? []);
+            ));
         }
         foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {
             $this->actionValidator->validate($action);
@@ -99,7 +99,7 @@ final readonly class RunCommit
             }
 
             try {
-                $this->probe('commit.after_turn_observers', $attributes, fn () => $this->hookDispatcher?->dispatchAfterTurnCommit(
+                $this->probe('commit.after_turn_observers', $attributes, fn () => $this->hookDispatcher->dispatchAfterTurnCommit(
                     AfterTurnCommitHookContext::fromRunState($committedState, $persistedEvents, \count($effects)),
                 ));
             } catch (\Throwable $exception) {
@@ -113,10 +113,6 @@ final readonly class RunCommit
 
             return $committedState;
         };
-
-        if (null === $this->tracer) {
-            return $persist();
-        }
 
         return $this->tracer->inSpan('persistence.commit', [
             'run_id' => $nextState->runId,
@@ -142,10 +138,6 @@ final readonly class RunCommit
      */
     private function probe(string $phase, array $attributes, callable $operation): mixed
     {
-        if (null === $this->tracer) {
-            return $operation();
-        }
-
         return $this->tracer->inSpan('latency_probe.'.$phase, ['latency_probe' => true, ...$attributes], $operation);
     }
 

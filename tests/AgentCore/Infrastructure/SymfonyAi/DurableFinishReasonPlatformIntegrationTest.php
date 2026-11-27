@@ -4,13 +4,23 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
+use Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface;
+use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
+use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
@@ -29,6 +39,8 @@ use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\Stream\HttpStreamInterface;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
@@ -71,7 +83,6 @@ final class DurableFinishReasonPlatformIntegrationTest extends TestCase
 
         return new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
                 new class implements ToolboxInterface {
                     public function execute(ToolCall $toolCall): ToolResult
@@ -88,16 +99,22 @@ final class DurableFinishReasonPlatformIntegrationTest extends TestCase
                     {
                         return [];
                     }
-                },
+                }, toolSetResolver: PlatformCollaborators::toolSetResolver(),
             ),
             platform: $platform,
             transformContextHooks: [],
-            convertToLlmHook: null,
-            streamObserver: null,
-            costCalculator: null,
-            modelResolver: null,
+            convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())),
+            streamObserver: $this->createStub(LlmStreamObserverInterface::class),
+            costCalculator: $this->createStub(CostCalculatorInterface::class),
             logger: new NullLogger(),
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            modelResolver: PlatformCollaborators::modelResolver(),
+            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper(), new EventDispatcher()),
+            errorClassifier: new LlmProviderErrorClassifier(),
+            toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
+            requestRetryPolicy: new LlmRequestRetryPolicy(),
+            clock: new NativeClock(),
         );
     }
 }

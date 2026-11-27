@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 
 use Doctrine\DBAL\Connection;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
@@ -33,6 +34,8 @@ use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\Serializer as MessengerSerializer;
 use Symfony\Component\Process\Process;
@@ -135,7 +138,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             return new ToolResult('fork-call', 'fork', [['type' => 'text', 'text' => 'launch failed']], isError: true);
         });
         $bus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $store);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $store);
         $result = $worker($call);
         $this->assertInstanceOf(ToolCallResult::class, $result);
         $this->assertTrue($result->isError);
@@ -229,7 +232,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $inputStore->expects($this->never())->method('read');
         $reference = new ToolLaunchInputReferenceDTO('fork', 'owner', 2, 'step', 'call', 'model', str_repeat('a', 64), 1);
         $call = new ExecuteToolCall('owner', 1, 'step', 1, 'key', 'call', 'fork', [], 0, parentModel: 'model', launchContext: $reference);
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $inputStore);
         $this->assertOwnerVisibleInputFailure($worker($call), 'Tool launch input reference does not match execution envelope.');
     }
 
@@ -239,7 +242,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $executor->expects($this->never())->method('execute');
         $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $reference = new ToolLaunchInputReferenceDTO('fork', 'missing-owner', 1, 'step', 'call', 'model', str_repeat('a', 64), 1);
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $inputStore);
         $this->assertOwnerVisibleInputFailure($worker($this->call($reference)), 'Missing or corrupt tool launch input.');
     }
 
@@ -251,7 +254,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         file_put_contents($this->payloadPath($runId, 'call'), 'corrupt');
         $executor = $this->createMock(ToolExecutorInterface::class);
         $executor->expects($this->never())->method('execute');
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $inputStore);
         $this->assertOwnerVisibleInputFailure($worker($this->call($reference)), 'Missing or corrupt tool launch input.');
     }
 
@@ -262,7 +265,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $executor = $this->createMock(ToolExecutorInterface::class);
         $executor->expects($this->never())->method('execute');
         $reference = new ToolLaunchInputReferenceDTO('fork', 'owner', 1, 'step', 'call', 'model', str_repeat('a', 64), 1);
-        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $inputStore);
         $this->assertOwnerVisibleInputFailure($worker($this->call($reference)), 'Cannot open tool launch input.');
     }
 

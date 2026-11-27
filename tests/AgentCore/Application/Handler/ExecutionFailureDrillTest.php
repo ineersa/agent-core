@@ -6,7 +6,9 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
@@ -21,6 +23,8 @@ use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * Worker-level typed-result drills.
@@ -54,7 +58,7 @@ final class ExecutionFailureDrillTest extends TestCase
             toolsRef: 'toolset:run:run-failure-worker-1:turn:1',
         );
 
-        $result = (new ExecuteLlmStepWorker(commandBus: new TestMessageBus(), platform: $platform))($message);
+        $result = (new ExecuteLlmStepWorker(commandBus: new TestMessageBus(), platform: $platform, tracer: new RunTracer(new NullLogger()), logger: new NullLogger()))($message);
         $this->assertInstanceOf(LlmStepResult::class, $result);
         $this->assertSame('first-attempt', $result->assistantMessage?->asText());
     }
@@ -90,7 +94,7 @@ final class ExecutionFailureDrillTest extends TestCase
             toolExecutor: $toolExecutor,
             deferredToolCompletionRepository: new InMemoryDeferredToolCompletionRepository(),
             resultStore: new ToolExecutionResultStore(),
-            statusReader: new NullRunOperationalStatusReader(),
+            statusReader: new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
         $result = $worker($message);

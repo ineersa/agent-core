@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
@@ -18,6 +21,9 @@ use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Contract\CommandConsumptionPolicyInterface;
+use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
+use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Command\DTO\CommandConsumptionDecisionDTO;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -39,6 +45,7 @@ use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -47,6 +54,7 @@ use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
@@ -447,20 +455,21 @@ final class CommandMailboxPolicyTest extends TestCase
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: new NullLogger(),
-            hookDispatcher: null,
             finalizer: TestTransitionFinalizerFactory::create(
                 $eventStore,
                 $stepDispatcher,
                 batches: $batchStore,
                 commands: $commandStore,
             ),
+            hookDispatcher: new HookDispatcher([]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
 
         $runMessageProcessor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
-            commands: $commandStore,
             handlers: [
                 new StartRunHandler(
                     eventFactory: new EventFactory(),
@@ -470,11 +479,16 @@ final class CommandMailboxPolicyTest extends TestCase
                     commandStore: $commandStore,
                     eventFactory: new EventFactory(),
                     messageNormalizer: new AgentMessageNormalizer(),
+                    toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+                    logger: new NullLogger(),
+                    serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
                     maxPendingCommands: $maxPendingCommands,
                 ),
                 new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
                     commandMailboxPolicy: $commandMailboxPolicy,
                     eventFactory: new EventFactory(),
+                    tracer: new RunTracer(new NullLogger()),
+                    preLlmCompactionGuard: $this->createStub(PreLlmCompactionGuardInterface::class),
                 ),
                 new LlmStepResultHandler(
                     commandMailboxPolicy: $commandMailboxPolicy,
@@ -483,6 +497,11 @@ final class CommandMailboxPolicyTest extends TestCase
                     messageNormalizer: new AgentMessageNormalizer(),
                     normalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
                     toolBatchCollector: $toolBatchCollector,
+                    toolSetResolver: PlatformCollaborators::toolSetResolver(),
+                    toolbox: $this->createStub(ToolboxInterface::class),
+                    tracer: new RunTracer(new NullLogger()),
+                    toolExecutionSettings: PlatformCollaborators::toolSettings(1),
+                    launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
                 ),
                 new ToolCallResultHandler(
                     toolBatchCollector: $toolBatchCollector,
@@ -492,10 +511,12 @@ final class CommandMailboxPolicyTest extends TestCase
                     serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
                 ),
             ],
+            commands: $commandStore,
+            historyTailDiscard: $this->createStub(HistoryTailDiscardInterface::class),
         );
 
         $orchestrator = new RunOrchestrator(
-            runMessageProcessor: $runMessageProcessor,
+            runMessageProcessor: $runMessageProcessor, tracer: new RunTracer(new NullLogger()),
         );
 
         return new CommandMailboxFixture($orchestrator, $activeRunContext, $eventStore, $commandStore, $commandBus, $executionBus);

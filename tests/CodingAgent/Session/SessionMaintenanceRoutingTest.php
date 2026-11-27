@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker;
 use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
@@ -164,8 +165,8 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
 
             return $responses[\count($requests) - 1];
         });
-        $container->set(ExecuteLlmStepWorker::class, new ExecuteLlmStepWorker($container->get('agent.command.bus'), $platform));
-        $container->set(ExecuteCompactionStepWorker::class, new ExecuteCompactionStepWorker($container->get('agent.command.bus'), $platform));
+        $container->set(ExecuteLlmStepWorker::class, new ExecuteLlmStepWorker($container->get('agent.command.bus'), $platform, tracer: new RunTracer(new NullLogger()), logger: new NullLogger()));
+        $container->set(ExecuteCompactionStepWorker::class, new ExecuteCompactionStepWorker($container->get('agent.command.bus'), $platform, tracer: new RunTracer(new NullLogger()), logger: new NullLogger()));
         $consumeOwner = static function () use ($bus, $ownerTransport): void {
             $sent = $ownerTransport->getSent();
             $bus->dispatch($sent[array_key_last($sent)]->with(new ReceivedStamp('run_control')));
@@ -332,7 +333,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
 
                 return new PlatformInvocationResult(SymfonyAiTestMessages::assistantText('Work continued.'));
             });
-            $container->set(ExecuteLlmStepWorker::class, new ExecuteLlmStepWorker($container->get('agent.command.bus'), $platform));
+            $container->set(ExecuteLlmStepWorker::class, new ExecuteLlmStepWorker($container->get('agent.command.bus'), $platform, tracer: new RunTracer(new NullLogger()), logger: new NullLogger()));
             $container->get('agent.execution.bus')->dispatch($envelopes[0]->with(new ReceivedStamp('llm')));
             $llmTransport->ack($envelopes[0]);
             $this->assertNotContains('agent_command_applied', array_column($store->allFor($run), 'type'), 'Cold continuation must not require another user command.');
@@ -405,7 +406,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $platform = $this->createMock(PlatformInterface::class);
         $platform->expects($this->once())->method('invoke')->with($this->callback(static fn (ModelInvocationRequest $request): bool => !$request->options->toolsEnabled && !$request->options->streamObserverEnabled && $run === $request->input->runId))
             ->willReturn(new PlatformInvocationResult(SymfonyAiTestMessages::assistantText('COMPACTED_HISTORY')));
-        $container->set(ExecuteCompactionStepWorker::class, new ExecuteCompactionStepWorker($container->get('agent.command.bus'), $platform));
+        $container->set(ExecuteCompactionStepWorker::class, new ExecuteCompactionStepWorker($container->get('agent.command.bus'), $platform, tracer: new RunTracer(new NullLogger()), logger: new NullLogger()));
 
         $compact = new ApplyCommand($run, 1, 'manual-compact', 1, 'manual-compact-key', CoreCommandKind::Compact);
         $queued = $bus->dispatch($compact);

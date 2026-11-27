@@ -16,7 +16,6 @@ use Symfony\AI\Platform\Message\MessageInterface;
 use Symfony\AI\Platform\Message\ToolCallMessage;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Clock\ClockInterface;
-use Symfony\Component\Clock\NativeClock;
 
 /**
  * Converts AgentCore domain AgentMessages into Symfony AI MessageBag
@@ -72,8 +71,8 @@ final class AgentMessageConverter
     private array $imageReadability = [];
 
     public function __construct(
-        private readonly ConversationHistoryConversion $historyConversion = new ConversationHistoryConversion(),
-        private readonly ClockInterface $clock = new NativeClock(),
+        private readonly ConversationHistoryConversion $historyConversion,
+        private readonly ClockInterface $clock,
     ) {
     }
 

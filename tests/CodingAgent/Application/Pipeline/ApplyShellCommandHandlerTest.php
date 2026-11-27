@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -213,7 +214,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame($expectedStandalone, $effect->standalone);
         $this->assertSame('sh_'.hash('sha256', 'shell-idem-1'), $effect->toolCallId);
 
-        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued('run-shell-1'), $result->events);
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()))->replay(RunState::queued('run-shell-1'), $result->events);
         $this->assertCount(1, $replayed->currentToolCalls);
         $replayedToolCall = $replayed->currentToolCalls[0];
         $this->assertSame($liveToolCall->batchId, $replayedToolCall->batchId);
@@ -244,7 +245,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $runId = 'run-shell-pending-parity';
         $ordinaryPending = $attached ? ['ordinary-pending' => false, 'ordinary-done' => true] : [];
         $codec = new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer());
-        $reducer = new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), $codec);
+        $reducer = new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), $codec, messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory());
         $prefix = [];
         if ($attached) {
             $ordinaryResult = ToolCallResultBuilder::success($runId)
@@ -346,7 +347,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $this->assertSame($llm, $committed->currentOperation);
         $this->assertArrayHasKey('sh_'.hash('sha256', 'shell-attached-key'), $committed->pendingShellToolCalls);
 
-        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(
+        $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()))->replay(
             RunState::queued('run-attached-shell-duplicate'),
             [
                 new RunEvent(
@@ -403,7 +404,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         );
 
         $this->expectException(\UnexpectedValueException::class);
-        (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued('run-malformed-shell'), [$event]);
+        (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()))->replay(RunState::queued('run-malformed-shell'), [$event]);
     }
 
     public function testRejectsInvalidRawInput(): void

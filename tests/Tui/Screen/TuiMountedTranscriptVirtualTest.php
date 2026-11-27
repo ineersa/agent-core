@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
@@ -135,6 +136,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $executor = new LlmRequestRetryExecutor(
             policy: new LlmRequestRetryPolicy(maxRetries: 1, baseDelayMs: 0),
             clock: new MockClock(),
+            retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class),
             logger: $logger,
         );
         $result = $executor->execute(

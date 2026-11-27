@@ -260,7 +260,7 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
             new ProviderRequestPreparer(
                 compatShaper: new ProviderCompatibilityRequestShaper([
                     new ReasoningOptionsFeatureShaper(),
-                ]),
+                ]), eventDispatcher: new EventDispatcher(),
             ),
         );
     }

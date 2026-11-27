@@ -13,6 +13,8 @@ use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface;
+use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
@@ -23,6 +25,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\StartRun;
+use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -31,13 +34,18 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
@@ -78,11 +86,14 @@ use Ineersa\CodingAgent\Tool\DTO\AgentResumeArgumentsDTO;
 use Ineersa\Tui\Tests\Support\AgentTaskPresentationAssertionsTrait;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Factory;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\ProviderInterface;
+use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -469,11 +480,11 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $container->get(DeferredSubagentChildRepository::class), $metadataReader);
 
         return new LlmPlatformAdapter(
-            statusReader: new NullRunOperationalStatusReader(), messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(), platform: new Platform([$provider]),
-            transformContextHooks: [], convertToLlmHook: null, streamObserver: null, costCalculator: null,
+            statusReader: new NullRunOperationalStatusReader(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(toolbox: $this->createStub(ToolboxInterface::class), toolSetResolver: PlatformCollaborators::toolSetResolver()), platform: new Platform([$provider]),
+            transformContextHooks: [], convertToLlmHook: PlatformCollaborators::convertHook(new AgentMessageConverter(historyConversion: new ConversationHistoryConversion(), clock: new NativeClock())), streamObserver: $this->createStub(LlmStreamObserverInterface::class), costCalculator: $this->createStub(CostCalculatorInterface::class),
             logger: new NullLogger(), denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(), modelResolver: $resolver,
-            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper([new ReasoningOptionsFeatureShaper()])),
+            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper([new ReasoningOptionsFeatureShaper()]), eventDispatcher: new EventDispatcher()), errorClassifier: new LlmProviderErrorClassifier(), toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(), retryObserver: $this->createStub(LlmRequestRetryObserverInterface::class), requestRetryPolicy: new LlmRequestRetryPolicy(), clock: new NativeClock(),
         );
     }
 

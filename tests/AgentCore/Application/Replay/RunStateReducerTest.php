@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Replay;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
@@ -110,6 +112,8 @@ final class RunStateReducerTest extends TestCase
         return new RunStateReducer(
             AttributeSerializerValidatorTestFactory::denormalizer(),
             new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+            messageNormalizer: new AgentMessageNormalizer(),
+            assistantMessageFactory: new ReplayAssistantMessageFactory(),
         );
     }
 }

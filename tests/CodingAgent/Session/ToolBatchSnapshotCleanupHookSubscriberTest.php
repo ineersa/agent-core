@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
@@ -31,6 +33,7 @@ use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
@@ -219,8 +222,10 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             activeRunContext: $active,
             eventStore: $eventStore,
             logger: new TestLogger(),
-            hookDispatcher: new HookDispatcher([$this->subscriber($this->createStore(), $inputStore)]),
             finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
+            hookDispatcher: new HookDispatcher([$this->subscriber($this->createStore(), $inputStore)]),
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
         $this->expectExceptionMessage('append failed');
         $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call', 'result' => ['tool_name' => 'fork']]])]);
@@ -294,8 +299,10 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: new TestLogger(),
-            hookDispatcher: $hookDispatcher,
             finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher())),
+            hookDispatcher: $hookDispatcher,
+            tracer: new RunTracer(new NullLogger()),
+            actionValidator: new CoordinationActionValidator(),
         );
     }
 }

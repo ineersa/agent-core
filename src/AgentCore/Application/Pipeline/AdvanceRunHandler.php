@@ -25,8 +25,8 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         private DeferredToolCompletionRepositoryInterface $deferred,
         private CommandMailboxPolicy $commandMailboxPolicy,
         private EventFactory $eventFactory,
-        private ?RunTracer $tracer = null,
-        private ?PreLlmCompactionGuardInterface $preLlmCompactionGuard = null,
+        private RunTracer $tracer,
+        private PreLlmCompactionGuardInterface $preLlmCompactionGuard,
     ) {
     }
 
@@ -125,13 +125,11 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             );
         }
 
-        $mailboxResult = null === $this->tracer
-            ? $this->commandMailboxPolicy->applyPendingTurnStartCommands($state)
-            : $this->tracer->inSpan('command.application.turn_start_boundary', [
-                'run_id' => $runId,
-                'turn_no' => $state->turnNo,
-                'step_id' => $state->activeStepId,
-            ], fn (): CommandApplicationResult => $this->commandMailboxPolicy->applyPendingTurnStartCommands($state))
+        $mailboxResult = $this->tracer->inSpan('command.application.turn_start_boundary', [
+            'run_id' => $runId,
+            'turn_no' => $state->turnNo,
+            'step_id' => $state->activeStepId,
+        ], fn (): CommandApplicationResult => $this->commandMailboxPolicy->applyPendingTurnStartCommands($state))
         ;
 
         $preparedState = $mailboxResult->state;
@@ -239,83 +237,73 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         // and human-wait guards above have already stopped incomplete work.
         // Hold the next request with continuation intent so compaction does
         // not require a final assistant answer or another user command.
-        if (null !== $this->preLlmCompactionGuard) {
-            $shouldCompact = null === $this->tracer
-                ? $this->preLlmCompactionGuard->shouldCompactBeforeLlmStep(
-                    $runId,
-                    $nextTurnNo,
-                    $preparedState->messages,
-                    $preparedState->activeStepId,
-                    $preparedState->model,
-                )
-                : $this->tracer->inSpan('compaction.pre_llm_guard', [
-                    'run_id' => $runId,
-                    'turn_no' => $nextTurnNo,
-                ], fn (): bool => $this->preLlmCompactionGuard->shouldCompactBeforeLlmStep(
-                    $runId,
-                    $nextTurnNo,
-                    $preparedState->messages,
-                    $preparedState->activeStepId,
-                    $preparedState->model,
-                ));
+        $shouldCompact = $this->tracer->inSpan('compaction.pre_llm_guard', [
+            'run_id' => $runId,
+            'turn_no' => $nextTurnNo,
+        ], fn (): bool => $this->preLlmCompactionGuard->shouldCompactBeforeLlmStep(
+            $runId,
+            $nextTurnNo,
+            $preparedState->messages,
+            $preparedState->activeStepId,
+            $preparedState->model,
+        ));
 
-            if ($shouldCompact) {
-                $compactStepId = \sprintf('compact-%d', hrtime(true));
+        if ($shouldCompact) {
+            $compactStepId = \sprintf('compact-%d', hrtime(true));
 
-                // Pre-LLM guard: this compaction is holding a pending LLM turn.
-                // After successful compaction, the conversation must continue
-                // (AdvanceRun effect) so the LLM turn can proceed on the
-                // compacted context.
-                // CompactRun validates against the state turn at handling time.
-                // This request holds the next LLM turn but does not advance the
-                // state turn until that LLM execution is actually scheduled.
-                $compactRequestTurnNo = $preparedState->turnNo;
-                $compactEffect = new CompactRun(
-                    runId: $runId,
-                    turnNo: $compactRequestTurnNo,
-                    stepId: $compactStepId,
-                    attempt: 1,
-                    idempotencyKey: hash('sha256', \sprintf('%s|compact|%d|%s', $runId, $compactRequestTurnNo, $compactStepId)),
-                    trigger: CompactionTriggerEnum::Auto->value,
-                    continueAfterCompaction: true,
-                );
+            // Pre-LLM guard: this compaction is holding a pending LLM turn.
+            // After successful compaction, the conversation must continue
+            // (AdvanceRun effect) so the LLM turn can proceed on the
+            // compacted context.
+            // CompactRun validates against the state turn at handling time.
+            // This request holds the next LLM turn but does not advance the
+            // state turn until that LLM execution is actually scheduled.
+            $compactRequestTurnNo = $preparedState->turnNo;
+            $compactEffect = new CompactRun(
+                runId: $runId,
+                turnNo: $compactRequestTurnNo,
+                stepId: $compactStepId,
+                attempt: 1,
+                idempotencyKey: hash('sha256', \sprintf('%s|compact|%d|%s', $runId, $compactRequestTurnNo, $compactStepId)),
+                trigger: CompactionTriggerEnum::Auto->value,
+                continueAfterCompaction: true,
+            );
 
-                // Persist the request separately from actual compaction start:
-                // the CompactRun effect can be lost after commit, while replay
-                // must still reject this already-applied AdvanceRun before it
-                // drains a newer mailbox command.
-                $compactionRequestSpecs = [
-                    ...$boundaryEventSpecs,
-                    [
-                        'type' => RunEventTypeEnum::ContextCompactionRequested->value,
-                        'payload' => [
-                            'step_id' => $compactStepId,
-                            'turn_no' => $nextTurnNo,
-                            'request_idempotency_key' => $compactEffect->idempotencyKey(),
-                            'advance_idempotency_key' => $message->idempotencyKey(),
-                            'trigger' => CompactionTriggerEnum::Auto->value,
-                        ],
+            // Persist the request separately from actual compaction start:
+            // the CompactRun effect can be lost after commit, while replay
+            // must still reject this already-applied AdvanceRun before it
+            // drains a newer mailbox command.
+            $compactionRequestSpecs = [
+                ...$boundaryEventSpecs,
+                [
+                    'type' => RunEventTypeEnum::ContextCompactionRequested->value,
+                    'payload' => [
+                        'step_id' => $compactStepId,
+                        'turn_no' => $nextTurnNo,
+                        'request_idempotency_key' => $compactEffect->idempotencyKey(),
+                        'advance_idempotency_key' => $message->idempotencyKey(),
+                        'trigger' => CompactionTriggerEnum::Auto->value,
                     ],
-                ];
-                $events = $this->eventFactory->eventsFromSpecs(
-                    $runId,
-                    $preparedState->turnNo,
-                    $state->lastSeq + 1,
-                    $compactionRequestSpecs,
-                );
+                ],
+            ];
+            $events = $this->eventFactory->eventsFromSpecs(
+                $runId,
+                $preparedState->turnNo,
+                $state->lastSeq + 1,
+                $compactionRequestSpecs,
+            );
 
-                $compactedState = $preparedState->with([
-                    'version' => $state->version + 1,
-                    'lastSeq' => $state->lastSeq + \count($events),
-                    'lastAppliedAdvanceKey' => $message->idempotencyKey(),
-                ]);
+            $compactedState = $preparedState->with([
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'lastAppliedAdvanceKey' => $message->idempotencyKey(),
+            ]);
 
-                return new HandlerResult(
-                    nextState: $compactedState,
-                    events: $events,
-                    effects: [$compactEffect],
-                );
-            }
+            return new HandlerResult(
+                nextState: $compactedState,
+                events: $events,
+                effects: [$compactEffect],
+            );
         }
 
         $effect = new ExecuteLlmStep(
