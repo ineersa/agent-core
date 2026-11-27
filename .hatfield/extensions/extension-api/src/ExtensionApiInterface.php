@@ -51,7 +51,7 @@ interface ExtensionApiInterface
      * Register a permanent tool with the Hatfield tool registry.
      *
      * Registered tools become part of the provider schema, execution allowlist,
-     * and system prompt tool listing according to ToolRegistry policy.
+     * and system prompt tool listing according to host tool policy.
      *
      * @param ToolRegistrationDTO $tool the tool definition to register
      */
@@ -129,7 +129,7 @@ interface ExtensionApiInterface
      * Register a slash command with the TUI command registry.
      *
      * The command definition (name, aliases, description, usage) and handler
-     * are forwarded to the SlashCommandRegistry via the TUI adapter bridge.
+     * are forwarded to the host slash-command registry through the TUI adapter.
      *
      * @see CommandDefinitionDTO
      * @see ExtensionCommandHandlerInterface
@@ -175,11 +175,11 @@ interface ExtensionApiInterface
     /**
      * Register a public before-compaction hook.
      *
-     * Invoked synchronously after safe partition preparation for both CompactRun
-     * (paired coverage watermark 1..RunState.lastSeq) and snapshot/fork compaction
-     * (watermark null/null). Hooks may cancel, replace the summary, append
-     * instructions, or attach JSON-safe metadata. Empty/continue leaves the
-     * ordinary model compaction path intact.
+     * Invoked synchronously after safe partition preparation for both run
+     * compaction (paired coverage watermark 1..last committed seq) and
+     * snapshot/fork compaction (watermark null/null). Hooks may cancel,
+     * replace the summary, append instructions, or attach JSON-safe metadata.
+     * Empty/continue leaves the ordinary model compaction path intact.
      */
     public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void;
 

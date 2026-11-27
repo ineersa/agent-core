@@ -43,14 +43,14 @@ sequenceDiagram
     participant Console
     participant Loader as Command loader
     participant Manager as Extension manager
-    participant Autoload as Project autoload
+    participant Autoload as Extension autoloaders
     participant Extension as Enabled extension class
     participant API as Public API adapter
     participant Registry as Registrations
 
     Console->>Loader: Console command event
     Loader->>Manager: Load enabled classes
-    Manager->>Autoload: Load project extension classes
+    Manager->>Autoload: Require project, then user, extension autoloaders
     loop Configured extensions
         Manager->>Extension: Construct extension and inject logger when supported
         Extension->>API: register(...)
@@ -106,7 +106,15 @@ flowchart TD
     Execute --> Artifact[Persist parent-scoped handoff and metadata]
     Artifact --> Settle[Settle waiting parent tool call]
     Retrieve[agent_retrieve] -->|Read only| Artifact
+    Cancel[agent_cancel] -->|"Main-only: active direct child"| Stop[Request child run cancellation]
+    Stop --> Execute
 ```
+
+`agent_cancel` runs as an ordinary tool, only as a top-level call in an active main
+run, for a direct child of the current parent lifetime whose originating call is
+still on the parent's current branch. It returns `cancellation_requested`, not
+proof that the child stopped. Steering and child notices use `agent_steer` and
+`notify_parent`; see [agent communication](agent-communication.md).
 
 | Property | Named subagent | Fork | Resume |
 |---|---|---|---|
@@ -116,46 +124,54 @@ flowchart TD
 | Role configuration | Named definition | Fork configuration and explicit allowed overrides | Existing child configuration |
 | Completion | Deferred handoff | Deferred handoff | New handoff for continued child |
 
+The `agent` transport is only a routing label: the same shared tool consumer reads
+`tool` and `agent`, so launch, fork and resume share its capacity.
+
 A fork is not a Git branch or worktree operation. Filesystem isolation must be chosen
 by the implementation owner. Separate child identities alone do not prevent concurrent
 writers from editing the same checkout.
 
 ## Durable supervision, not one controller per child
 
+All supervision messages below route to `run_control`, the session's single state
+owner, which handles parent and child runs alike.
+
 ```mermaid
 %%{init: {"sequence": {"wrap": true, "width": 160, "actorMargin": 30, "diagramMarginX": 10, "messageMargin": 30}}}%%
 sequenceDiagram
-    participant Parent as Parent run_control
-    participant Launch as agent or tool consumer
-    participant Prepare as Child launch preparation
+    participant RC as run_control
+    participant Tool as Shared tool consumer
     participant Batch as Deferred batch records
     participant Child as Child run on shared queues
-    participant Observe as Lifecycle observer
     participant Artifact as Handoff artifacts
 
-    Parent->>Launch: ExecuteToolCall for subagent, fork, or resume
-    Launch->>Prepare: Validate launch or existing child identity
-    Prepare->>Prepare: Resolve policy and construct child input
-    Prepare->>Batch: Persist batch and child supervision records
-    Prepare->>Child: Start child or continue existing child
-    Launch-->>Parent: Deferred waiting outcome, not final handoff
-    Batch->>Parent: Durable batch interruption at deadline
-    loop Child progress
-        Child->>Child: LLM and tools through shared consumer pools
-        Child-->>Observe: Child lifecycle observation
-        Observe->>Batch: Advance durable observation cursor
+    RC->>Tool: ExecuteToolCall for subagent, fork, or agent_resume
+    Tool->>Batch: Validate, resolve policy, persist batch and child rows
+    Tool->>Child: Start child or continue existing child
+    Tool-->>RC: Deferred outcome, not final handoff
+    Tool->>RC: DeferredToolCompletionRegisteredEvent sends DeliverDeferredSubagentBatchLifecycleMessage
+    opt Batch has a deadline
+        Tool->>RC: InterruptDeferredSubagentBatchMessage with DelayStamp
+    end
+    opt backgrounded true
+        Tool->>RC: BackgroundChildInvocationDTO
+    end
+    loop Each child turn commit
+        Child->>RC: ObserveDeferredSubagentBatchChildTurnMessage
+        RC->>Batch: Read unseen child events, advance observation cursor
+        RC->>RC: CommitSubagentProgress for the parent progress card
     end
     alt Child terminal outcome
-        Child->>Artifact: Store handoff, metadata, bounded summaries
-        Observe->>Batch: Record child settlement
-        Observe->>Parent: CompleteDeferredToolCall when batch settles
-        Parent->>Parent: Commit parent tool result and continue
+        Child->>Artifact: Finalize handoff, metadata, bounded summaries
+        RC->>Batch: DeliverDeferredSubagentBatchLifecycleMessage settles batch
+        RC->>RC: CompleteDeferredToolCall, or DeliverBackgroundCompletionDTO if backgrounded
     else Parent cancellation or deadline
-        Parent->>Observe: Interrupt unfinished batch
-        Observe->>Child: Request cancellation
-        Observe->>Batch: Persist interruption outcome
-        Observe->>Parent: Settle deferred parent continuation
+        RC->>RC: InterruptDeferredSubagentBatchMessage
+        RC->>Child: Request cancellation
+        RC->>Batch: Persist interruption outcome
+        RC->>RC: Settle deferred parent call
     end
+    Note over RC,Batch: On run_control worker start, RecoverDeferredSubagentBatchLifecycleMessage reconciles unfinished batches
 ```
 
 Recovery uses durable child event cursors and reads the unseen event-log suffix.
@@ -168,13 +184,13 @@ accepted launch is not a completed child turn.
 ```mermaid
 flowchart LR
     Role[Agent definition] --> Tools[Non-MCP tool allowlist]
-    Global["MCP availability: all"] --> MCP[Child MCP selection]
+    Global["MCP servers with availability: all"] --> MCP[Child MCP selection]
     Selectors["mcp selectors; mcp:- denies"] --> MCP
     Tools --> Merge[Merged candidate toolset]
     MCP --> Merge
-    Merge --> Deny[Apply child exclusions and nested-launch prohibition]
+    Merge --> Deny["Strip launch, resume, steer and main-only tools; apply exclusions"]
     Deny --> Child[Child's actual toolset]
-    Always[Always-on extensions] --> Extensions[Child extension set]
+    Always["agents.extensions.always_on"] --> Extensions[Child extension set]
     Explicit[Definition extensions] --> Extensions
     ChildEvents[(Child events.jsonl)] --> Open[Open /agents-live]
     Open --> Rebuild[Rebuild selected child transcript]
@@ -192,30 +208,40 @@ be retrieved or resumed from an unrelated parent session.
 %%{init: {"sequence": {"wrap": true, "width": 160, "actorMargin": 30, "diagramMarginX": 10, "messageMargin": 30}}}%%
 sequenceDiagram
     participant Hook as Extension hook
-    participant Dispatcher as Job dispatcher
+    participant Dispatcher as ExtensionAgentJobDispatcher
     participant Queue as extension_agent transport
-    participant Runner as Public extension agent runner
-    participant Model as Isolated model invocation
-    participant Package as Package storage
-    participant UI as Runtime status event
+    participant Worker as ExtensionAgentJobWorker
+    participant Handler as Registered job handler
+    participant UI as Runtime event stream
 
     Hook->>Dispatcher: Submit extension job payload
-    Dispatcher->>Queue: Enqueue registered job
-    Note over Dispatcher,Queue: Sync transport is refused<br/>Model work must not run inline in the hook
-    Queue->>Runner: Invoke registered extension job handler
-    Runner->>Model: Extension context and private tools
-    Model-->>Runner: Job outcome
-    Runner->>Package: Persist extension result
+    Dispatcher->>Queue: Enqueue ExtensionAgentJobMessage
+    Note over Dispatcher,Queue: sync:// transport is refused<br/>Model work must not run inline in the hook
+    Queue->>Worker: Consume job
+    Worker->>Worker: Skip if a child run's extension allowlist excludes the owner
+    Worker->>Handler: handle(ExtensionApi, payload, jobId, correlationId)
+    Handler->>Handler: Extension-owned work and storage
     opt Job fails after Messenger retries
-        Queue-->>UI: Surface exhausted-job failure
+        Worker-->>UI: ExtensionAgentJobFailedEventSubscriber emits exhausted-job event
     end
 ```
 
-Observational memory owns its observer and reflector data inside its package. Its
-jobs are not named subagents, and their results do not universally return as
+The controller launches the `extension_agent` consumer only when at least one job
+handler is registered. Recurring jobs from `registerRecurringJobSource()` take a
+different route: `ExtensionRecurringJobRegistry` redispatches them to the `tool`
+transport, where the shared tool consumer runs the same `ExtensionAgentJobWorker`.
+See [scheduling](code-mode-and-scheduling.md#scheduling).
+
+Observational memory is one such package: an after-turn hook enqueues its observer
+job handler. Its jobs are not named subagents, and their results do not return as
 `ToolCallResult` to the parent conversation.
 
 Sources: [agents](../docs/agents.md), [agent settings](../docs/settings-agents.md),
 [ExtensionManager](../src/CodingAgent/Extension/ExtensionManager.php),
+[update service](../src/CodingAgent/Extension/ExtensionUpdateService.php),
+[agent_cancel](../src/CodingAgent/Agent/Tool/AgentCancelTool.php),
+[deferred batch supervision](../src/CodingAgent/Agent/Execution/Subagent/Batch/Deferred),
+[child tool policy](../src/CodingAgent/Agent/Execution/AgentToolPolicyResolver.php),
+[extension job worker](../src/CodingAgent/Extension/Agent/ExtensionAgentJobWorker.php),
 [public Extension API](../.hatfield/extensions/extension-api/docs/extension-api.md),
 [Messenger configuration](../config/packages/messenger.yaml).

@@ -34,18 +34,24 @@ use Psr\Log\LoggerInterface;
 /**
  * Process-isolated implementation of AgentSessionClient.
  *
- * Spawns `bin/console agent --controller` and communicates via JSONL over
+ * Spawns `agent --controller` through RuntimeProcessConfig::executableCommand()
+ * (source, PHAR, or native executable) and communicates via JSONL over
  * long-lived stdin/stdout pipes. Symfony Process intentionally is not used for
  * this parent/child control channel: Process input is designed for finite input
  * known before start(), and its pipe implementation closes stdin when the input
  * iterator is initially empty. The controller protocol needs write-after-start,
  * so this class owns proc_open() pipes directly.
  *
- * The controller process launches messenger:consume run_control, llm, and tool
- * subprocesses, enabling fully async execution. Stderr is reserved for
- * logs/debug output and is included in transport failure exceptions.
+ * The controller process launches its Messenger consumer subprocesses
+ * (run_control, llm, tool, mcp, scheduler_default, and optionally
+ * extension_agent) through ConsumerSupervisor, enabling fully async execution.
+ * Stderr is reserved for logs/debug output and is included in transport
+ * failure exceptions.
  *
- * @todo Implement full process lifecycle, reconnection, heartbeat detection.
+ * A dead controller is restarted with rate limiting (MAX_RESTARTS per
+ * RESTART_WINDOW).
+ *
+ * @todo Implement reconnection to a running controller and heartbeat detection.
  */
 final class JsonlProcessAgentSessionClient implements AgentSessionClient
 {

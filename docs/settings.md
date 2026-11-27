@@ -70,6 +70,9 @@ Related focused references:
 | `<cwd>/.hatfield/settings.yaml` | Project overrides |
 | `<cwd>/.hatfield/sessions/` | Session storage (ignored by git) |
 | `<cwd>/.hatfield/tmp/` | Tool/output-cap/bg temp data |
+| `<cwd>/.hatfield/logs/` | Application logs (default `logging.path`) |
+| `~/.hatfield/extensions/`, `<cwd>/.hatfield/extensions/` | User-wide and project Composer extension installations |
+| `~/.hatfield/skills/` | User skills, including materialized built-in skills (see [skills.md](skills.md)) |
 | `~/.hatfield/agents/`, `<cwd>/.hatfield/agents/` | Agent definitions |
 | `~/.hatfield/prompts/`, `<cwd>/.hatfield/prompts/` | Prompt templates |
 | `~/.hatfield/mcp.json`, `<cwd>/.hatfield/mcp.json` | MCP servers |
@@ -97,12 +100,12 @@ Relative paths in settings resolve against the **active project CWD** (not the i
 
 ### Sessions and logging
 
-| Key | Meaning |
-|---|---|
-| `sessions.path` | Base directory for sessions (relative → CWD) |
-| `logging.path` | Log directory |
-| `logging.level` | Monolog level |
-| `logging.max_files` | Rotated file retention |
+| Key | Meaning | Default |
+|---|---|---|
+| `sessions.path` | Base directory for sessions (relative → CWD) | `.hatfield/sessions` |
+| `logging.path` | Log directory (relative → CWD) | `.hatfield/logs` |
+| `logging.level` | Minimum PSR-3 level: `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency` | `warning` |
+| `logging.max_files` | Daily rotated log files to retain | `2` |
 
 ### ChatGPT reasoning effort
 
@@ -110,13 +113,13 @@ ChatGPT sends the selected reasoning level through request-level `reasoning.effo
 
 ### Compaction (summary)
 
-| Key | Meaning |
-|---|---|
-| `compaction.auto_enabled` | Automatic compaction |
-| `compaction.compact_after_tokens` | Threshold |
-| `compaction.keep_recent_tokens` | Retained tail |
-| `compaction.model` / `thinking_level` | Compaction model selection |
-| `compaction.provider_overrides` / `model_overrides` | Sparse overrides |
+| Key | Meaning | Default |
+|---|---|---|
+| `compaction.auto_enabled` | Automatic compaction (manual `/compact` is always available) | `true` |
+| `compaction.compact_after_tokens` | Threshold | `120000` |
+| `compaction.keep_recent_tokens` | Retained tail | `20000` |
+| `compaction.model` / `thinking_level` | Compaction model selection; `null` uses the session's | `null` |
+| `compaction.provider_overrides` / `model_overrides` | Sparse overrides | empty |
 
 Full compaction behavior: [compaction.md](compaction.md).
 
@@ -124,8 +127,8 @@ Full compaction behavior: [compaction.md](compaction.md).
 
 | Key | Meaning |
 |---|---|
-| `context_budget_reminders.early_input_tokens` | Early wrap-up advisory threshold |
-| `context_budget_reminders.urgent_remaining_tokens` | Urgent remaining-token reserve |
+| `context_budget_reminders.early_input_tokens` | Early wrap-up advisory threshold. Default `200000`. |
+| `context_budget_reminders.urgent_remaining_tokens` | Urgent remaining-token reserve. Default `25000`. |
 | `context_budget_reminders.disable_for_main` | Suppress early and urgent reminders in parent sessions. Default `true`. |
 | `context_budget_reminders.disable_for_forks` | Suppress early and urgent reminders in forks. Default `false`. |
 | `context_budget_reminders.disable_for_subagents` | Suppress early and urgent reminders in named subagents. Default `false`. |
@@ -167,7 +170,7 @@ a successful late result into a timeout failure.
 | Key | Meaning | Default |
 |---|---|---|
 | `tools.execution.default_mode` | `sequential` or `parallel` | `sequential` |
-| `tools.execution.max_parallelism` | Concurrent tool workers | `4` |
+| `tools.execution.max_parallelism` | Maximum concurrently admitted calls per tool batch (not a worker count) | `4` |
 | `forks.enabled` | Make the `fork` tool visible and callable; independent of named subagents | `true` |
 
 ### Output cap
@@ -197,6 +200,8 @@ a successful late result into a timeout failure.
 |---|---|
 | `tools.bash.default_timeout_seconds` | `30` |
 | `tools.bash.max_timeout_seconds` | `null` (uncapped; set a positive integer for an operator cap) |
+| `tools.bash.poll_interval_micros` | `100000` (supervision poll interval in microseconds) |
+| `tools.bash.log_tail_chars` | `20000` (maximum log characters returned as command output) |
 | `tools.background_process.path` | `.hatfield/tmp/bg` |
 | `tools.background_process.stop_grace_seconds` | `5` |
 | `tools.background_process.log_tail_chars` | `5000` |
@@ -211,8 +216,8 @@ a successful late result into a timeout failure.
 want that capability. Direct PHP filesystem and process calls inside the script
 bypass toolbox hooks and approvals. Any launcher sandbox, such as `hatfield-safe`
 with bubblewrap, is inherited rather than created by the tool. Scripts use a
-60-second wall budget by default (`timeout_seconds`, max 300) and a 256 MiB PHP
-memory limit (`memory_limit_mb`, max 1024). Nested handlers remain cooperative
+1800-second wall budget by default (`timeout_seconds`, no tool-specific maximum)
+and a 256 MiB PHP memory limit (`memory_limit_mb`, max 1024). Nested handlers remain cooperative
 while blocked. Checkout and PHAR reuse the launching PHP CLI. Fused/static binaries
 still need `php` on `PATH`. See [tools.md](tools.md).
 
@@ -308,7 +313,7 @@ plugins disabled, before extension classes load. Restart Hatfield to check for u
 
 - Settings and extension enablement are project/user config.
 - Sessions, tmp, cache, logs are runtime and should stay untracked.
-- Extensions load from `.hatfield/extensions` Composer autoload when enabled. Task workflow and observational memory document setup and settings in their package-local READMEs. For task workflow, read the installed `ineersa/hatfield-ext-task-workflow` package's `README.md`.
+- Extensions load from the project `.hatfield/extensions` and user `~/.hatfield/extensions` Composer autoloaders when enabled; project packages win collisions. Task workflow and observational memory document setup and settings in their package-local READMEs. For task workflow, read the installed `ineersa/hatfield-ext-task-workflow` package's `README.md`.
 - Built-in docs for the model are selected with `builtin: true` under approved roots; repository-only docs stay unmarked.
 
 ## Validation tip

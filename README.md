@@ -17,8 +17,9 @@ tools from your MCP servers while you follow its progress in the conversation.
 
 ## Install
 
-Hatfield supports Linux and macOS on x86_64 and ARM64. Windows is not supported.
-The native binary includes PHP. Install it into `~/.local/bin`:
+Hatfield supports Linux and macOS. Windows is not supported. The native binary
+includes PHP and is available for Linux on x86_64 and ARM64 and for Apple Silicon
+macOS. Install it into `~/.local/bin`:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
@@ -37,8 +38,9 @@ The installer checks the release checksum and tests the executable before replac
 an existing installation. Run it again to upgrade. Add `--version=vX.Y.Z` to select
 a release.
 
-If you already have PHP 8.5 or later with the
-[required extensions](docs/phar-packaging.md), install the PHAR instead:
+Intel macOS has no native binary, and the installer refuses `--static` there. On
+Intel macOS, or if you already have PHP 8.5 or later with the
+[required extensions](docs/installation.md#install-the-phar), install the PHAR instead:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
@@ -134,7 +136,9 @@ Built-in [SafeGuard](docs/approvals.md) checks tool calls and can allow, block, 
 request approval before execution. It is separate from optional extension packages.
 
 The optional `code_mode` tool can run PHP scripts that call other tools. It stays
-disabled until you set `tools.code_mode.enabled: true` and restart. Raw PHP inside
+disabled until you set `tools.code_mode.enabled: true` and restart. The native
+binary does not provide a PHP CLI for those scripts, so it also needs `php` on
+`PATH`. Raw PHP inside
 those scripts bypasses toolbox hooks, and any launcher sandbox such as
 `hatfield-safe` is inherited rather than added by the tool. See the
 [tool catalog](docs/tools.md) and [settings](docs/settings.md).

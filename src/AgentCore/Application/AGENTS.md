@@ -1,6 +1,6 @@
 # Application
 
-Topology map for AgentCore application handlers. Authoritative routing: `config/packages/messenger.yaml`. Domain message list: `../Domain/Message/AGENTS.md`.
+Topology map for AgentCore application handlers. Authoritative routing: `config/packages/messenger.yaml` plus its bus middleware (`ToolPayloadMiddleware` and the subagent/MCP routing middleware stamp tool messages that have no YAML route). Domain message list: `../Domain/Message/AGENTS.md`.
 
 ## Command → orchestrator entry
 
@@ -28,18 +28,18 @@ Code-mode caller acknowledgements use `tool_call_acknowledged`; ordinary termina
 
 ## Async workers (`agent.execution.bus`)
 
-| Message | Transport (messenger.yaml) | Worker |
+| Message | Transport | Worker |
 |---|---|---|
-| `ExecuteLlmStep` | `llm` | `ExecuteLlmStepWorker` |
-| `ExecuteToolCall` | `tool` (subagent/MCP middleware may re-stamp) | `ExecuteToolCallWorker` |
-| `ExecuteShellToolCall` | `tool` | `Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker` |
-| `ExecuteCompactionStep` | `llm` | `ExecuteCompactionStepWorker` |
+| `ExecuteLlmStep` | `llm` (messenger.yaml) | `ExecuteLlmStepWorker` |
+| `ExecuteToolCall` | No YAML route. `tool` by default via `ToolPayloadMiddleware`; subagent/agent_resume → `agent`, MCP-backed → `mcp` via routing middleware | `ExecuteToolCallWorker` |
+| `ExecuteShellToolCall` | `tool` (no YAML route; `ToolPayloadMiddleware` default) | `Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker` |
+| `ExecuteCompactionStep` | `llm` (messenger.yaml) | `ExecuteCompactionStepWorker` |
 
 Tool requests and outcomes cross the broker as bounded `ToolPayloadMessage` references. `ToolPayloadMiddleware` seals immutable JSON data before sending, then reconstructs local request/result values only after existing admission. Subagent and MCP routing inspect the small tool identity before sealing. Child launch bodies remain separate immutable files referenced by invocation data. Obsolete deferred completions may carry the original correlation reference plus deferred ID without reading its body. All deferred envelopes route to run_control regardless of prior execution stamps. The owner settles obsolete identity before hydration; an active correlation-only receipt is rejected rather than treated as a result. LLM and compaction transport formats are unchanged.
 
 Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`) back onto `agent.command.bus` → `run_control`. Provider/request/stream retries for one LLM invocation are owned by `LlmRequestRetryExecutor` inside `LlmPlatformAdapter` (settings: `ai.http.max_retries`, default five). After that budget is exhausted the result is terminal (`retryable: false`). A failed result send is logged as intentional degradation and requires explicit repair. No generic worker claims or sealed result store remain. Failed `run_control` deliveries reset the default Doctrine connection and manager after Messenger decides retry eligibility but before permanent-failure terminalization, so redelivery and `agent_end` persistence never reuse failed transaction state. `WorkerFailedEventSubscriber` handles permanent owner failures under `RunLockManager` and commits the terminal transition through `RunCommit`, including normal sequence/state publication and post-commit cleanup hooks. A failed load, lock, append, or publication is logged without an alternate canonical writer.
 
-The controller runs one Fiber execution consumer for `tool` and `agent` together.
+The controller runs one Fiber execution consumer for `tool`, `agent` and `code_mode_requests` together.
 The agent transport remains a durable routing destination, not a separate process.
 Shared worker admission has no concurrency cap; `tools.execution.max_parallelism`
 still limits each batch. Run-lock reentrancy and release callbacks belong to the

@@ -629,8 +629,9 @@ services:
   # ─── Controller event loop ───
 
   # Command handlers (ControllerCommandEvent listeners) receive the
-  # in-process client so they can dispatch commands to the run_control,
-  # llm, and tool transports without spawning subprocesses.
+  # in-process client so they can dispatch commands on agent.command.bus
+  # (run_control) without spawning subprocesses; LLM and tool work follows
+  # later as run_control effects.
   #
   # Controller command handlers type-hint against the AgentSessionClient
   # interface so they remain testable with test spies (InProcessAgentSessionClient

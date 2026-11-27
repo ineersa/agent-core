@@ -9,6 +9,10 @@ Use `ask_human` when a genuine user decision or missing information blocks progr
 Inspect observable behavior yourself instead of asking the user to guess it.
 Tool-policy approvals are a separate flow: see [approvals](approvals.md).
 
+`ask_human` fails while a [session goal](terminal-usage.md#session-goals) is active,
+including for subagents of that session: continue with the available evidence and
+existing authorization instead of clearing the goal just to ask.
+
 ## Call shapes
 
 ```json

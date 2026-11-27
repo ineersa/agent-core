@@ -1,7 +1,7 @@
 ---
 name: task-workflow
 description: Set up task workflow for this project, or plan, implement, validate, and deliver work tracked in GitHub issues.
-version: 2.4.0
+version: 2.4.1
 ---
 
 # Task workflow
@@ -74,7 +74,7 @@ The shared validate hook runs at review in the task worktree (`HATFIELD_TASK_REA
 At completion it runs again in the primary checkout (`HATFIELD_TASK_REASON=done`), after merge,
 base update, cleanup and verified worktree removal, before remote DONE publication.
 Hook cwd applies only to its subprocess, not the agent's cwd. Tool results show
-stdout/stderr tails independently (up to 2,000 characters each), not full streamed output.
+stdout/stderr tails of a failed hook independently (up to the last 2,000 bytes each), not full streamed output.
 Failed completion validation retains pending recovery
 and does not publish DONE; retry the same finalization, not implementation.
 

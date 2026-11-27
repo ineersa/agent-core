@@ -19,7 +19,8 @@ The skill ships with Hatfield and is materialized automatically through normal
 hatfield agents:init
 ```
 
-Existing definitions are not overwritten by default. To update installed starters,
+Definitions install into `~/.hatfield/agents/`. If any bundled filename already
+exists there, the command lists the collisions and installs nothing. To update installed starters,
 inspect/back up your customizations first, then deliberately use
 `hatfield agents:init --force`. This overwrites **all bundled agent filenames**, not
 just the three review agents, including a model line you customized; unrelated

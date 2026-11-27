@@ -55,7 +55,10 @@ use Symfony\Component\Uid\Uuid;
  * All data is still mapped through RuntimeEvent protocol DTOs so that
  * TUI code never sees agent-core domain objects.
  *
- * This is the default transport during development. It must stay
+ * The AgentSessionClient service alias points here, so the controller's own
+ * command handlers use this client inside the controller process. AgentCommand
+ * also uses it for --headless mode and for the TUI when --transport is not
+ * "process"; the TUI default is JsonlProcessAgentSessionClient. It must stay
  * behaviorally equivalent to JsonlProcessAgentSessionClient.
  */
 final class InProcessAgentSessionClient implements AgentSessionClient

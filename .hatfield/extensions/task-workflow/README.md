@@ -327,8 +327,8 @@ cleanup normally does nothing. Retained hook data allows cleanup after a task
 directory disappears. It is deleted only after confirmed remote finalization.
 
 Hooks own generated files/project resources, never PR merges, Workflow updates or
-worktree deletion. Hook diagnostics visible to the model in tool results retain
-stdout and stderr tails independently, up to 2,000 characters each; they are not
+worktree deletion. Failed-hook diagnostics visible to the model in tool results
+retain stdout and stderr tails independently, up to the last 2,000 bytes each; they are not
 full streamed hook output, and noisy stdout cannot displace stderr. Diagnostics
 are not automatically appended to issues; summarize actual outcomes in QA.
 Dependency provisioning, editor setup and validation commands belong to the
@@ -398,7 +398,7 @@ reconnect with `/mcp` if it timed out.
   are at the plugin root.
 - The server is started once per Claude Code session. After changing settings,
   reconnect it with `/mcp`. Tool calls may run project hooks for up to their
-  configured timeouts; the plugin allows each call up to one hour.
+  configured timeouts; the plugin allows each call up to four hours.
 - Pressing Esc does not stop a running hook: the server finishes the transition
   and its usual recovery state applies.
 

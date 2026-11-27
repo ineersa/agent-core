@@ -8,11 +8,10 @@ namespace Ineersa\Hatfield\ExtensionApi\Command;
  * Narrow provider interface consumed by the TUI adapter to register
  * extension-provided slash commands.
  *
- * Implemented by the TUI-layer adapter and injected into
- * ExtensionToolRegistryBridge so commands registered by extensions
- * flow through to SlashCommandRegistry.
+ * Implemented by the host TUI adapter so commands registered by extensions
+ * flow through to the host slash-command registry.
  *
- * This is the public contract — the concrete adapter lives in src/Tui/.
+ * This is the public contract; the concrete adapter is host-owned.
  */
 interface CommandRegistryInterface
 {

@@ -58,6 +58,8 @@ interface ApprovalAnswerHookInterface
      * the answer vocabulary (e.g. "✅ Allow", "❌ Deny")
      * and the reasons/denied strings for blocked results.
      *
+     * Returning RequireApproval is rejected and the tool call is denied.
+     *
      * @param ApprovalAnswerContextDTO $context the human's answer + metadata
      *
      * @return ToolCallDecisionDTO Allow, Block, or ReplaceResult

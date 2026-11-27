@@ -11,8 +11,8 @@ namespace Ineersa\Hatfield\ExtensionApi\Agent;
  * `openai/gpt-5` or `llama_cpp_test/test`. Alias forms (for example `@compaction`)
  * are not accepted by this API.
  *
- * Optional maxToolCalls bounds the native AgentProcessor tool loop. When null,
- * Hatfield uses the framework default (50). Callers that need exactly-one tool
+ * Optional maxToolCalls bounds the agent tool loop. When null, Hatfield uses
+ * its default (50). Callers that need exactly-one tool
  * recording (Observer) should set a small positive limit (for example 3) so a
  * model can correct once or twice without unbounded tool loops.
  */
@@ -25,7 +25,7 @@ final readonly class AgentCallRequestDTO
      * @param string                 $input              user/input content for this invocation
      * @param list<AgentToolDTO>     $tools              isolated tools available only for this call
      * @param string|null            $correlationId      optional extra correlation token for diagnostics
-     * @param int|null               $maxToolCalls       optional AgentProcessor tool-loop ceiling (>= 1); null = framework default
+     * @param int|null               $maxToolCalls       optional tool-loop ceiling (>= 1); null = Hatfield default (50)
      * @param int|null               $maxDurationSeconds optional Symfony HttpClient idle timeout and max_duration for this call only (>= 1); null = shared client defaults
      * @param ThinkingLevelEnum|null $thinkingLevel      optional Hatfield thinking level override for this call only (off|minimal|low|medium|high|xhigh|max); null = session/default reasoning
      */

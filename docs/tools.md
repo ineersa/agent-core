@@ -19,7 +19,7 @@ bypass approvals or sandbox it.
 | `view_image` | Inspect JPEG/PNG/GIF/WebP content; size/dimension limits apply. |
 | `bash` | Shell commands with local permissions, timeout and cancellation limits. |
 | `bg_status` | List/log/stop accepted session-owned background Bash. |
-| `ask_human` | Ask for text, confirmation or a choice; cancellation is not approval. |
+| `ask_human` | Ask for text, confirmation or a choice; cancellation is not approval. Unavailable while a session goal is active. |
 | `code_mode` | Opt-in PHP scripts calling tools through `tool(name, arguments)`. |
 | `hatfield_docs` | `list` available product guides, then `read` by logical ID. |
 | `get_goal` / `set_goal` / `clear_goal` | Main-only tools to read, replace, or complete/remove the session objective. |

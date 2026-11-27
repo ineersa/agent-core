@@ -161,21 +161,24 @@ final class HeadlessController
             $this->consumerSupervisor->launch('run_control');
             // Admission is configured independently for the llm and tool roles.
             $this->consumerSupervisor->launch('llm');
-            // One shared Fiber worker consumes both tool and durable agent queues.
+            // One shared Fiber worker consumes the tool, durable agent, and
+            // code_mode_requests queues.
             // Deferred child launch releases admission before the child finishes.
             $this->consumerSupervisor->launch('tool');
             // - run_control consumes StartRun, ApplyCommand, run results, and
             //   AdvanceRun/CompactRun transitions as the single state owner
-            // - llm consumes ExecuteLlmStep (ASYNC-04)
-            // - tool consumes generic tools and child launch/resume execution
+            // - llm consumes ExecuteLlmStep and ExecuteCompactionStep
+            // - tool consumes generic tools, child launch/resume execution, and
+            //   code-mode nested call requests
             // - mcp consumes McpInitializeSessionCommand, McpRefreshCatalogCommand,
-            //   McpDisconnectSessionCommand, and McpCallToolCommand (MCP-05).
+            //   McpDisconnectSessionCommand, and MCP-backed tool calls stamped by
+            //   McpExecuteToolCallRoutingMiddleware.
             //   Exactly ONE mcp consumer per session — serialized MCP calls and
             //   single owner for STDIO child processes.
             // Scheduler consumer: dispatches recurring background tasks such as
-            // file mention index refresh.  All future periodic background work
-            // should use Scheduler scheduled tasks, not ad-hoc TUI tick process
-            // spawning.
+            // session resource sampling and extension recurring jobs.  All future
+            // periodic background work should use Scheduler scheduled tasks, not
+            // ad-hoc TUI tick process spawning.
             $this->consumerSupervisor->launch('scheduler_default');
             $this->consumerSupervisor->launch('mcp');
             // Dedicated extension-agent worker: isolated from llm/tool/run_control so

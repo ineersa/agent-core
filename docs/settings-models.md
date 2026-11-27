@@ -23,7 +23,7 @@ Core settings overview: [settings.md](settings.md).
 |---|---|
 | `ai.default_model` | Default `provider/model` reference |
 | `ai.default_reasoning` | Default reasoning/thinking level when supported |
-| `ai.favorite_models` | Optional quick-pick list for the TUI model picker |
+| `ai.favorite_models` | Ordered `provider/model` list cycled by Ctrl+P and managed with `/model-favourites` (saved to user settings) |
 
 Every selectable model must be listed under its provider. Unknown model names are rejected even if a backend could load arbitrary models.
 
@@ -121,21 +121,22 @@ ai:
 context, 128K output, thinking levels `low`/`high`/`max`) is available through the
 GLM Coding Plan only; its Model API access is still pending security assessment and
 no pay-as-you-go rates are published, so the catalog entry intentionally omits
-`cost` (unknown, not free). Requests to GLM-5.2/GLM-5.1 route to GLM-5.3 as usual.
-The bundled `thinking_level_map` and `zai_tool_stream`/`supports_reasoning_effort`
+`cost` (unknown, not free). The bundled `thinking_level_map` and `zai_tool_stream`/`supports_reasoning_effort`
 compatibility mirror GLM 5.3/Flash.
 
 Common fields:
 
 | Field | Meaning |
 |---|---|
-| `type` | Provider bridge type (for example `generic`, `mistral`, `chatgpt`, `grok`) |
+| `type` | Provider bridge type: `generic` (default, OpenAI-compatible chat completions), `mistral`, `opencode-go`, `chatgpt`, or `grok` |
 | `enabled` | Whether the provider is active |
 | `base_url` | API base URL |
-| `api` | Wire API family (for example `openai-completions`) |
+| `api` | Descriptive wire API label in catalog entries (for example `openai-completions`); the bridge is selected by `type`, not this field |
 | `api_key` | Secret or `env:NAME` |
 | `completions_path` | Completions path when non-default |
-| `supports_completions` / `supports_embeddings` | Capability flags |
+| `embeddings_path` | Embeddings path when non-default (default `/v1/embeddings`) |
+| `supports_completions` / `supports_embeddings` | Capability flags (defaults `true` / `false`) |
+| `supports_thinking_levels` | Set `false` to disable reasoning-level cycling for the provider's models (default `true`) |
 | `compatibility` | Transport quirks (thinking format, required fields) |
 | `models` | Map of model id → model metadata |
 
@@ -147,13 +148,17 @@ OAuth providers:
 ChatGPT uses HTTP/SSE only at `https://api.openai.com/v1/responses` and sends full history on every request. There are no `transport` or WebSocket-cache settings. Remove old `type: codex` overrides; they are unsupported. The configured YAML model list is not proof of account entitlement. `/usage` shows the plan-management URL, not a numeric ChatGPT quota.
 
 Model metadata typically includes display `name`, `context_window`, `max_tokens`,
-`input` modalities, `tool_calling`, `reasoning`, optional `thinking_level_map`, and `cost`.
+`input` modalities, `tool_calling`, `reasoning`, optional `thinking_level_map`, `cost`,
+and optional per-model `compatibility` (for example `pin_context_window`).
 
 ## Reasoning / thinking levels
 
 When a model advertises reasoning support, Hatfield maps user-facing levels
-(`minimal`, `low`, `medium`, `high`, `xhigh`, …) through the model’s `thinking_level_map`
-or provider compatibility rules. Unsupported levels are rejected or coerced per provider bridge.
+(`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) through the model’s
+`thinking_level_map` and provider compatibility rules. A level the map does not
+cover, or maps to `null`, sends no reasoning option, so the provider default applies.
+`off` is the exception for z.ai and DeepSeek thinking formats, which explicitly
+disable thinking.
 
 `ai.default_reasoning` supplies the session default; TUI `/model` flows may persist sparse overrides.
 

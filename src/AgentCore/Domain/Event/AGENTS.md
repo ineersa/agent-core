@@ -16,7 +16,7 @@ Retained lifecycle cases on `RunEventTypeEnum` use underscore wire values. `RunS
 
 Pipeline/compaction/history cases (`RunStarted`, `WaitingHuman`, `HistoryPositionSet`, `HistoryTailDiscarded`, compaction, etc.) live on the same enum — read the enum file for the full set. `ContextCompactionRequested` records a committed pre-LLM compaction request before its synchronous `CompactRun` effect, so replay can reject the already-consumed `AdvanceRun`. Do not maintain a second exhaustive catalog here.
 
-Ordering constraints are enforced at each event write/commit call site; there is no separate `LifecycleOrderValidator`. Example: a standalone shell worker writes `tool_execution_*` then `AgentEnd`.
+Ordering constraints are enforced at each event write/commit call site; there is no separate `LifecycleOrderValidator`. Example: for direct shell, CodingAgent's `ApplyShellCommandHandler` commits `tool_execution_start` before dispatching `ExecuteShellToolCall`; the shell worker has no event store and only posts `ToolCallResult`; `ToolCallResultHandler` then commits `tool_execution_end`, followed by `agent_end` for a standalone shell run.
 
 `ToolCallAcknowledged` resolves a caller wait without claiming physical execution ended. Its payload uses the existing tool-result codec.
 

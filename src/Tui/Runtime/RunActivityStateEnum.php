@@ -12,8 +12,8 @@ namespace Ineersa\Tui\Runtime;
  * user messages should be routed as follow_up (idle) or steer (active).
  *
  * Transitions are maintained by SubmitListener (on send/start/cancel) and
- * by RuntimeEventPoller::updateActivity() on each poll cycle based on
- * observed RuntimeEventTypeEnum values.
+ * by TuiRuntimeEventApplier through ActivityStateMachine for each applied
+ * runtime event, based on observed RuntimeEventTypeEnum values.
  */
 enum RunActivityStateEnum: string
 {

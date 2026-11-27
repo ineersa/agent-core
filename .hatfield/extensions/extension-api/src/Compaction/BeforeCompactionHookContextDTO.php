@@ -7,11 +7,11 @@ namespace Ineersa\Hatfield\ExtensionApi\Compaction;
 /**
  * Public before-compaction context for extension hooks.
  *
- * Scalar / JSON-safe only. No RunState, AgentCore messages, Symfony AI types,
+ * Scalar / JSON-safe only. No host run state, host messages, Symfony AI types,
  * Messenger, Doctrine, or mutable prompt lists.
  *
  * Optional paired coverage watermark {@see $requiredStartSeq}..{@see $requiredEndSeq}:
- * - CompactRun: both present (MVP: 1..RunState.lastSeq captured under the run lock)
+ * - run compaction: both present (1..last committed seq, captured under the run lock)
  * - Snapshot/fork in-memory compaction: both null (no canonical event range)
  */
 final readonly class BeforeCompactionHookContextDTO

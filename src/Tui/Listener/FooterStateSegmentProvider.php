@@ -180,8 +180,9 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
      * Accent/Warning/Dim) for consistent reasoning-level colouring
      * across the diamond, model name, and any future thinking indicators.
      *
-     * Public so callers that need the same mapping (e.g. editor border colour)
-     * can reuse it without duplicating the logic.
+     * Delegates to {@see ThemeColorEnum::forReasoning()}, which owns the
+     * mapping; other callers such as the editor border colour use that
+     * method directly.
      */
     public static function thinkingColor(string $reasoning): ThemeColorEnum
     {

@@ -80,7 +80,7 @@ session at invocation. `/om-status` and the local activity poller are removed.
 Do not deploy the thin-client cutover until all gates are verified: Librarian OM
 is merged and deployed; fresh projects are discoverable without `om.sqlite`;
 legacy import and single-writer ownership are coordinated safely; and backup
-restore drills pass. Preparing this unmerged checkout does not switch live memory
+restore drills pass. Installing this version does not switch live memory
 writers or import data. Preserve existing SQLite files for the coordinated import;
 this extension does not remove them. Local processing settings are no longer
 used; only the five top-level legacy keys listed above are accepted and discarded.

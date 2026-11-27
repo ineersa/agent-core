@@ -14,11 +14,17 @@ $api->registerCommand(
 );
 ```
 
-Handlers receive `CommandContextInterface` for notifications and host interactions exposed publicly.
+`CommandDefinitionDTO(name, aliases = [], description = '', usage = '', acceptsArguments = false)`
+describes the command. Handlers implement `ExtensionCommandHandlerInterface::handle(string $args,
+CommandContextInterface $context): void`; `$args` is the trimmed text after the command name.
+The context exposes only `notify(string $message, string $level = 'info')` with levels
+`info`, `success`, `warning` and `error`.
 
 ## Prompt contributors
 
-`registerPromptContributor()` appends markdown to the system prompt after static host append content.
+`registerPromptContributor()` takes a `PromptContributorInterface`. Its `contribute(): string`
+runs once per prompt build and its markdown is appended after static host append content;
+return an empty string to contribute nothing.
 
 ## Exec
 
@@ -33,16 +39,25 @@ $result = $api->exec()->exec(
 );
 ```
 
-No shell string evaluation. Check exit codes via `ExecResultDTO`.
+No shell string evaluation. `ExecOptionsDTO` also accepts `env` (merged over the inherited
+environment) and a `cancellationToken`. `ExecResultDTO` exposes `stdout`, `stderr`,
+`exitCode`, `timedOut` and `cancelled`; check them rather than assuming success.
 
 ## After-turn commit hooks
 
 `registerAfterTurnCommitHook()` runs when a turn reaches a stable committed boundary
-(useful for checkpoints, indexes, side ledgers). Context includes event summaries — not private host services.
+(useful for checkpoints, indexes, side ledgers). Implement
+`AfterTurnCommitHookInterface::onAfterTurnCommit(AfterTurnCommitHookContextDTO $context)`.
+The context carries `runId`, `turnNo`, `status`, `effectsCount` and `events`: the committed
+batch as `AfterTurnCommitEventSummaryDTO` (`seq`, `type`, `payload`, nullable `turnNo` and
+ISO-8601 `createdAt`) — not private host services. Delivery is best effort; repair gaps
+from `sessionEvents()` during recovery or compaction.
 
 ## Session-start hooks
 
-`registerSessionStartHook()` runs once when an interactive controller session starts,
+`registerSessionStartHook()` takes an `AfterSessionStartHookInterface`; its
+`onAfterSessionStart(AfterSessionStartHookContextDTO $context)` (carrying the session
+`runId`) runs once when an interactive controller session starts,
 before the event loop and before any turn. Use it for startup background work that must
 call `dispatchExtensionAgentJob()` on the async extension_agent transport. The TUI parent
 process remains fail-closed for that dispatch path.
@@ -62,8 +77,12 @@ when it is dispatched. Parent-side fork snapshot hooks carry the parent's run ID
 
 ## Session events
 
-`sessionEvents()` returns a `SessionEventReaderInterface` for canonical session events.
-Treat access as recovery/read-only analytics, not a substitute for missing public APIs.
+`sessionEvents()` returns a `SessionEventReaderInterface`. `readRange(string $runId,
+int $startSeq, int $endSeq): iterable` yields `SessionEventDTO` (`runId`, `seq`, `turnNo`,
+`type`, `payload`, `createdAt`) with inclusive bounds; unknown or empty sessions yield
+nothing, and read failures throw `SessionEventReaderException`. Implementations may scan
+the whole log: use it for recovery/compaction catch-up, not on every turn, and not as a
+substitute for missing public APIs.
 
 ## Selected session and live events
 
@@ -106,15 +125,22 @@ A listener exception is logged and does not stop delivery of that event to other
 
 ## Compaction hooks
 
-`registerBeforeCompactionHook()` can contribute notes or influence compaction input via
-`BeforeCompactionHookResultDTO` within the public contract. Do not reach into compaction internals.
+`registerBeforeCompactionHook()` takes a `BeforeCompactionHookInterface`;
+`beforeCompaction(BeforeCompactionHookContextDTO): BeforeCompactionHookResultDTO` runs
+synchronously before summarization. The context is scalar only: `runId`, `turnNo`, `trigger`,
+token and message counts, prior-summary flag, custom instructions, model, thinking level and
+a paired `requiredStartSeq`/`requiredEndSeq` coverage watermark (both `null` for snapshot or
+fork compaction; see `hasCoverageWatermark()`). Return `continue()`, `cancel($reason)`,
+`replaceSummary($text)`, or construct the DTO with `additionalInstructions` and JSON-safe
+`metadata`. Do not reach into compaction internals.
 
 ## Agent runner and async jobs
 
-- `agent()` → `AgentRunnerInterface` for isolated agent calls with explicit provider/model and tool lists as required by the DTO contracts.
+- `agent()` → `AgentRunnerInterface`. `run(AgentCallRequestDTO $request): void` blocks until the call and its tool loop finish; failures throw. `contextWindow(string $exactModel): ?int` reads the configured window; treat `null` as a configuration error, not a default.
+- `AgentCallRequestDTO` requires `model` (an exact configured `provider/model`; `@alias` forms are rejected), `sessionId`, `instructions` and `input`. Optional `tools` is a list of `AgentToolDTO(name, description, parametersJsonSchema, handler)` with an `ExtensionToolHandlerInterface` handler, available only to that call. Optional `correlationId` tags logs; `maxToolCalls` (default 50) bounds the tool loop.
 - Optional `AgentCallRequestDTO::maxDurationSeconds` sets both Symfony HttpClient idle `timeout` and total `max_duration` for that call only. Omit it to keep the shared LLM client defaults.
 - Optional `AgentCallRequestDTO::thinkingLevel` overrides Hatfield thinking for that call only (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). PHP callers migrating from strings should pass `Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum` cases, e.g. `thinkingLevel: ThinkingLevelEnum::Off` instead of `thinkingLevel: 'off'`. Configuration and wire values remain strings. Pass `null` or omit the argument to keep session/default reasoning. An explicit `Off` may add provider disable options only when the model catalog declares a supported `thinking_format` (for example `llama_cpp` → `chat_template_kwargs.enable_thinking=false`). Session/default `off` without this field does not add that flag.
-- `registerExtensionAgentJobHandler($id, $handler)` + `dispatchExtensionAgentJob($request)` for asynchronous extension jobs with JSON-safe payloads.
+- `registerExtensionAgentJobHandler($id, $handler)` + `dispatchExtensionAgentJob($request)` for asynchronous extension jobs. `ExtensionAgentJobRequestDTO(handlerId, payload = [], jobId = null, correlationId = null)` rejects non-JSON-safe payloads. The worker calls `ExtensionAgentJobHandlerInterface::handle(ExtensionApiInterface $api, array $payload, ?string $jobId, ?string $correlationId)` with its own process-local API.
 
 Failures are bounded to the job/call; do not assume shared mutable memory across host processes.
 

@@ -7,9 +7,9 @@ namespace Ineersa\Hatfield\ExtensionApi\Tool;
 /**
  * Narrow provider interface for retrieving registered rewrite hooks.
  *
- * Implemented by ExtensionHookRegistry (AppExtension) and consumed by
- * RegistryBackedToolbox (AppTool) through the AppExtensionApi public contract,
- * avoiding a direct AppTool → AppExtension dependency.
+ * Implemented by the host extension hook registry and consumed by host tool
+ * execution through this public contract, so tool execution does not depend
+ * on the extension registry implementation.
  *
  * @see ToolCallRewriteHookInterface
  */
@@ -18,8 +18,8 @@ interface ToolCallRewriteHookProviderInterface
     /**
      * Get rewrite hooks for a specific tool name.
      *
-     * Returns hooks registered for the exact tool name plus hooks
-     * registered for the wildcard '*', in registration order.
+     * Returns hooks registered for the exact tool name, then hooks
+     * registered for the wildcard '*', each group in registration order.
      *
      * @return list<ToolCallRewriteHookInterface>
      */

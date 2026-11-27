@@ -13,6 +13,9 @@ namespace Ineersa\Hatfield\ExtensionApi\Tool;
  * to keep or replace the result.
  *
  * Hooks run in registration order. Each hook sees the latest result state.
+ * The host currently treats result hooks as observational: replacement
+ * decisions are visible to later hooks but are not applied to the live tool
+ * result.
  */
 interface ToolResultHookInterface
 {

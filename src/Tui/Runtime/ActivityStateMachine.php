@@ -13,9 +13,10 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
  *
  * Given the current activity state and a runtime event, computes
  * the next activity state. Terminal states (Completed, Failed, Cancelled)
- * are never overridden.
+ * are kept except for the continuation and compaction events allowed
+ * by transition().
  *
- * Extracted from RuntimeEventPoller::updateActivity().
+ * TuiRuntimeEventApplier::apply() calls this for each applied runtime event.
  */
 final class ActivityStateMachine
 {
@@ -58,8 +59,9 @@ final class ActivityStateMachine
         // Only cancel-class and terminal events move out of Cancelling.
         //
         // The new-run path is safe because the TUI explicitly sets activity
-        // to Starting when dispatching a fresh run after cancellation completes
-        // (see RuntimeEventPoller::poll() lines 102-117). The stickiness gate
+        // to Starting when it dispatches new work: SubmitListener on start or
+        // follow_up, and RuntimeEventPoller::dispatchDeferredInput() for
+        // follow-ups queued until cancellation completes. The stickiness gate
         // only blocks mid-turn deltas on the dying run — a clean RunStarted
         // or TurnStarted for a genuinely new run arrives with current=Starting,
         // not Cancelling, and transitions normally.

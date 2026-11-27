@@ -6,11 +6,11 @@
 
 Configuration and migrations live at the project root:
 
-- `config/packages/doctrine.yaml` maps entities on the default `.hatfield/state.sqlite` connection. Messenger uses a separate SQLite connection.
+- `config/packages/doctrine.yaml` maps this directory and `src/CodingAgent/Entity` on the default `.hatfield/state.sqlite` connection. Messenger queues use the session-owned sqlite-queue broker, not a Doctrine connection.
 - `config/packages/doctrine_migrations.yaml` maps `DoctrineMigrations` to `migrations/application/`.
 - Generate migrations from entity metadata with `bin/console doctrine:migrations:diff`.
 - Register new migrations in `CodingAgent/Migrations/ApplicationMigrationExecutor` for runtime and PHAR startup.
 
 The command store is a pending mailbox, not a source-delivery receipt ledger. Do not create terminal-only identity rows. Canonical transition coordination uses the existing pending journal and shared finalizer.
 
-Test DB isolation and DAMA rollback: `tests/AGENTS.md` + testing skill.
+Test DB isolation and DAMA rollback: `tests/AGENTS.md` + testing skill (`references/helpers.md`).

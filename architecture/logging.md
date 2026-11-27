@@ -11,19 +11,26 @@ separate streams with different retention and privacy rules.
 ```mermaid
 flowchart TD
     Producers["Independent log producers<br/>TUI, controller, AgentCore,<br/>LLM, tools, extensions"] --> PSR[Psr LoggerInterface]
-    PSR --> Monolog[Monolog logger and service handler wiring]
-    Processor["LogContextProcessor<br/>ambient run scope, PID, memory"]
-    Monolog --> Processor
-    Processor --> Filter[Main handler level and channel selection]
-    Filter --> Handler[HatfieldRotatingLogHandler]
+    PSR --> Channel["Monolog channel logger"]
+    Channel -.->|"event, doctrine, console: main handler not attached"| Excluded[Not written by this handler]
+    Channel --> Precheck{"Main handler accepts<br/>original level?"}
+    Precheck -->|No| Dropped[Record discarded]
+    Precheck -->|Yes| Processors["Logger processors<br/>LogContextProcessor: PID, memory, ambient run scope, session_key<br/>FrameworkChannelLevelProcessor: INFO to DEBUG on messenger, http_client, lock"]
+    Processors --> Recheck{"Processed level still<br/>at or above logging.level?"}
+    Recheck -->|No| Dropped
+    Recheck -->|Yes| Handler[HatfieldRotatingLogHandler]
     Handler --> JSON[JsonFormatter with newline and stack traces]
     JSON --> Files[("resolved logDir/agent-YYYY-MM-DD.log")]
-    Filter -.->|"event, doctrine, console excluded from main handler"| Excluded[Not written by this handler]
 ```
 
-The processor enriches records; it is not a secret scrubber. Main-handler exclusions
-are channel names, not guarantees that all database or console-related information
-is absent from every application log message.
+Monolog runs logger processors only once a handler accepts the record's original
+level, then the handler checks the processed level again. That second check is what
+makes the framework-channel demotion effective at `logging.level: info`; warnings and
+errors on those channels keep their level.
+
+The processors enrich and relevel records; they are not secret scrubbers. Main-handler
+exclusions are channel names, not guarantees that all database or console-related
+information is absent from every application log message.
 
 ## Directory, format, and retention
 
@@ -82,6 +89,7 @@ sequenceDiagram
     Processor->>Context: current()
     Context-->>Processor: Merged nested scope
     Processor->>Processor: Fill missing fields<br/>Explicit call-site fields win
+    Processor->>Processor: Derive session_key from effective session_id
     Processor->>Sink: Enriched record
     Operation-->>Worker: Return or throw
     Worker->>Context: Leave scopes during cleanup
@@ -96,7 +104,8 @@ a previous run's context active.
 | `run_id`, `session_id` | Call-site or ambient worker scope; workers set session identity explicitly |
 | `component`, `handler`, `worker`, `message_type`, `tool_name` | The operation that enters scope or writes the record |
 | `event_type` | Explicit event fields override broader ambient values |
-| `pid`, `memory_usage`, `memory_allocated` | Processor defaults when absent |
+| `pid`, `sampler_pid`, `memory_usage`, `memory_allocated`, `memory_peak`, `memory_limit` | Processor defaults when absent; `sampler_pid` is always the producing process, `pid` only unless the call site set it |
+| `session_key` | Derived after the merge from the effective `session_id`: project-cwd hash plus session ID, via `TelemetrySessionKeyProvider`. Absent when `session_id` is missing, empty or `unknown` |
 | `queue` | Scope label; some call sites record a bus name, not a transport name |
 
 Do not equate `queue=agent.execution.bus` with a physical queue or infer process
@@ -107,14 +116,15 @@ ownership from that field alone. Correlate worker, PID, run, and message identit
 ```mermaid
 %%{init: {"sequence": {"wrap": true, "width": 180, "actorMargin": 30, "diagramMarginX": 10, "messageMargin": 30}}}%%
 sequenceDiagram
-    participant Worker
+    participant Caller as Orchestrator or worker
     participant Tracer as RunTracer
     participant Logger
     participant Operation as LLM, tool, or persistence operation
 
-    Worker->>Tracer: inSpan(name, attributes, operation)
-    Tracer->>Tracer: Allocate local span ID and parent span ID
-    Tracer->>Logger: agent_loop.trace.start
+    Caller->>Tracer: inSpan(name, attributes, operation, root, level)
+    Tracer->>Tracer: Allocate span ID, parent is top of this Fiber's stack unless root
+    Tracer->>Tracer: Push span on the current Fiber's stack
+    Tracer->>Logger: agent_loop.trace.start at level
     Tracer->>Operation: Invoke operation
     alt Operation succeeds
         Operation-->>Tracer: Result
@@ -123,14 +133,31 @@ sequenceDiagram
         Operation-->>Tracer: Exception propagates through finally
         Tracer->>Tracer: status remains error
     end
-    Tracer->>Logger: agent_loop.trace.finish, duration_ms, status
+    Tracer->>Tracer: Restore this Fiber's previous stack
+    Tracer->>Logger: agent_loop.trace.finish at level, duration_ms, status
 ```
 
 Span IDs are log-local identifiers (`span-1`, `span-2`) used to correlate start and
 finish records, including `parent_span_id` nesting. They are not external trace IDs.
-Log-derived metrics filter on `message:agent_loop.trace.finish` and the canonical span
-name; see [Datadog setup](../docs/datadog.md). This sequence assumes logging succeeds;
-a failed log write can itself interrupt execution.
+Like `RunLogContext`, `RunTracer` keeps one span stack per Fiber in a `WeakMap`
+plus one for non-Fiber code, so a suspended sibling never becomes another span's
+parent.
+
+| Span names | Level | Opened by |
+|---|---|---|
+| Run-control message event type (for example `command.subagent_progress`), `root: true` | DEBUG | `RunOrchestrator::dispatch()` |
+| `turn.execution.llm_worker`, `turn.execution.tool_worker`, `turn.execution.compaction_worker`, `compaction.call` | DEBUG | Execution workers |
+| `llm.call`, `tool.call` | INFO | `ExecuteLlmStepWorker`, `ExecuteToolCallWorker` |
+| `run_control.consume`, `root: true` | DEBUG | `OwnerRunInitializationMiddleware` |
+| `persistence.commit`, `command.application.*`, `compaction.pre_llm_guard` | DEBUG | `RunCommit`, `AdvanceRunHandler`, `LlmStepResultHandler` |
+| `latency_probe.*` | DEBUG | Commit, finalization, tool execution, publication and stdout sink probes |
+
+`inSpan()` defaults to DEBUG. With the shipped `logging.level: warning`, no trace
+records are written; the canonical `llm.call` / `tool.call` metric spans need
+`info`, and the rest need `debug`. Log-derived metrics filter on
+`message:agent_loop.trace.finish` and the canonical span name; see
+[Datadog setup](../docs/datadog.md). This sequence assumes logging succeeds; a
+failed log write can itself interrupt execution.
 
 ## Extension-free Datadog inputs
 
@@ -147,11 +174,17 @@ flowchart TB
     Match[Configured command-line match patterns] --> Check
     Check --> Metrics[system.processes metrics]
     Metrics --> Dashboards
+    Launch["castor run:agent<br/>HATFIELD_SESSION_RESOURCE_SAMPLER=1"] --> Sampler["SessionResourceSamplerTask<br/>scheduler_default, every 60 s"]
+    Sampler -->|"Best-effort DogStatsD UDP"| Gauges[hatfield.session.* gauges]
+    Gauges --> Dashboards
     QA[Castor QA launch environment] --> Off[Disable ddtrace tracing and log injection; isolate transport DSNs]
 ```
 
-The application never talks to Datadog. It writes JSONL logs; the Agent collects the
-files it is configured to read. File collection requires a separately configured
+Application work never depends on Datadog. It writes JSONL logs; the Agent collects
+the files it is configured to read. The only direct emission is the opt-in session
+resource sampler: `castor run:agent` enables it, direct binary and PHAR launches do
+not, and a failed sample logs `session.resource_sample.failed` instead of
+interrupting scheduled work. File collection requires a separately configured
 Datadog Agent: installing the application does not ship log files. Process metrics
 come from the Agent's Process Check, not from Monolog or `RunTracer`. Log-based
 metrics are defined in Datadog and derived from the same collected logs.
@@ -173,7 +206,7 @@ flowchart TB
     Diagnostic[Application diagnostic calls] --> Logs[(Rotated agent JSONL logs)]
     Bash[Shell stdout and stderr] --> BG[(Owned bash log sidecars)]
     Cap[Oversized tool text] --> Temp[(Output-cap temporary files)]
-    Capture[Explicit raw provider stream capture] --> Sensitive[(Sensitive capture artifact)]
+    Capture["HATFIELD_LLM_RAW_STREAM_CAPTURE=1<br/>generic completions providers"] --> Sensitive[("var/tmp/llm-raw-stream-capture-*.jsonl, mode 0600")]
     Canonical --> Replay[Resume and transcript rebuild]
     Logs --> Investigate[Operational investigation]
     BG --> ToolRead[bg_status log or foreground result]
@@ -188,20 +221,31 @@ flowchart TB
   log calls can still expose sensitive values.
 - Datadog regex masking happens after local file creation. It covers known patterns,
   not arbitrary private data, and cannot sanitize an already-written local file.
-- Explicit raw provider capture can contain generated text and tool arguments.
+- Raw provider stream capture (`castor run:agent-capture`, or
+  `HATFIELD_LLM_RAW_STREAM_CAPTURE=1` with an optional
+  `HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH`) records raw chunks and converted deltas from
+  generic completions providers. It can contain generated text and tool arguments.
   Treat it as sensitive debugging output rather than ordinary operational logging.
-- A committed effect-dispatch failure is logged without rolling back canonical events.
-  Tool failure may become a model-visible tool result. These are different from a
+- Effects are dispatched after the transition commits. A failed send logs
+  `runtime.effect_send_failed` and raises a transient `dispatch_failed` notification;
+  canonical events are not rolled back. Tool failure may become a model-visible tool
+  result. These are different from a
   logging sink failure, which can propagate.
 
 ## Owning source
 
 - [Monolog wiring](../config/packages/monolog.yaml)
 - [Handler](../src/CodingAgent/Logging/HatfieldRotatingLogHandler.php)
-- [Processor](../src/CodingAgent/Logging/LogContextProcessor.php)
+- [Context processor](../src/CodingAgent/Logging/LogContextProcessor.php)
+- [Framework channel processor](../src/CodingAgent/Logging/FrameworkChannelLevelProcessor.php)
+- [Processor service wiring](../config/services.yaml)
 - [Ambient context](../src/AgentCore/Infrastructure/RunLogContext.php)
 - [LoggingConfig](../src/CodingAgent/Config/LoggingConfig.php)
 - [RunTracer](../src/AgentCore/Application/Handler/RunTracer.php)
+- [Root run-control spans](../src/AgentCore/Application/Pipeline/RunOrchestrator.php)
+- [Effect dispatch](../src/AgentCore/Application/Handler/StepDispatcher.php)
+- [Raw stream capture](../src/CodingAgent/Infrastructure/SymfonyAi/SymfonyAiProviderFactory.php)
+- [Session resource sampler](../src/CodingAgent/Logging/SessionResourceSamplerTask.php)
 - [Castor launch environment](../.castor/env.php)
 - [Datadog log collection](../ops/datadog/hatfield.d/conf.yaml)
 - [Datadog process metrics](../ops/datadog/process.d/conf.yaml)

@@ -30,7 +30,7 @@ Type a request in the editor and press Enter to submit it. For example:
 > Explain this project's entry point. Do not change files.
 
 Use `/hotkeys` to display the active editor bindings, including the multiline newline
-binding. Tab opens or accepts completion suggestions. When the editor is empty,
+binding (Shift+Enter or Ctrl+J by default). Tab opens or accepts completion suggestions. When the editor is empty,
 Up and Down navigate submitted prompt history. Open completion menus use those keys
 to navigate suggestions instead.
 
@@ -59,6 +59,9 @@ them to read their full text and source details. Human messages always appear in
 full. Automatic messages do not appear in the pending steering queue. This does
 not change your saved settings.
 
+When the startup loaded-resources block is shown, Ctrl+R expands or collapses its
+source paths.
+
 The agent can read and edit files and execute commands with your local permissions.
 Inspect changes before committing them. Approval policy can block a call or ask you
 to authorize it, but tool access is not a sandbox. See [approvals](approvals.md).
@@ -70,25 +73,35 @@ to use `bg_status` for background Bash jobs. See
 
 ## Session commands
 
-| Command | Purpose |
-|---|---|
-| `/help` | Display available commands. |
-| `/hotkeys` | Display keyboard shortcuts. |
-| `/new` | Start a new session. |
-| `/resume` | Select a saved session and continue it. |
-| `/rename` | Change the session's display name. |
-| `/history` | Navigate conversation history, not file restore. |
-| `/goal [objective]` | Show or replace the session objective; `edit` prefills it, `clear` or `cancel` removes it. |
-| `/model` | Select an enabled model. |
-| `/settings-show` | Inspect settings through the session UI. |
-| `/compact` | Compact model-visible conversation context. |
-| `/bg` | Inspect and stop background processes in the visible session. |
-| `/mcp` | Inspect MCP server status and discovered tools. |
-| `/agents-live` | Select a child agent's live view. |
-| `/agents-main` | Return from a child view to the parent. |
-| `/code-review [request]` | Run skill-orchestrated [code review](code-review.md) when its skill is discovered. |
+| Command | Aliases | Purpose |
+|---|---|---|
+| `/help [command]` | `/h`, `/?` | Display available commands, or details for one command. |
+| `/hotkeys` | `/hk` | Display keyboard shortcuts. |
+| `/new` | | Start a new session. |
+| `/resume [session id]` | `/r` | Select a saved session and continue it. |
+| `/rename [session id] [new name]` | | Change a session's display name. |
+| `/reload` | | Reload settings and restart the session. Extension PHP code is not reloaded. |
+| `/history` | | Navigate conversation history, not file restore. |
+| `/goal [objective]` | | Show or replace the session objective; `edit` prefills it, `clear` or `cancel` removes it. |
+| `/model [provider/model]` | `/m` | Select an enabled model. |
+| `/model-favourites [provider/model]` | `/model-favourite` | Open the favourites picker, or toggle one model in `ai.favorite_models`. |
+| `/settings-show [group-or-path]` | | Inspect effective settings with their sources. |
+| `/compact [instructions]` | `/cmp` | Compact model-visible conversation context. |
+| `/usage` | | Show session usage plus ChatGPT and z.ai quota status. |
+| `/copy` | `/cp` | Copy the last model output to the clipboard. |
+| `/export [path]` | `/exp` | Export the current session transcript to a file. |
+| `/clear` | `/cls` | Clear the visible transcript. Model context and the saved session are unchanged. |
+| `/bg` | | Inspect and stop background processes in the visible session. |
+| `/mcp [reconnect]` | | Inspect MCP server status and discovered tools; `reconnect` reconnects all servers. |
+| `/agents-live` | | Select a child agent's live view. |
+| `/agents-main` | `/main` | Return from a child view to the parent. |
+| `/repair` | | Repair a stale cancellation for the active session. See [sessions](session-storage.md). |
+| `/code-review [request]` | | Run skill-orchestrated [code review](code-review.md) when its skill is discovered. |
+| `/exit` | `/quit`, `/q` | Exit the TUI. |
 
-Extensions and discovered prompt templates can add commands. `/help` reflects the
+Discovered skills add `/skill:<name>` commands, and discovered prompt templates add
+`/<name>` commands. Enabled extensions can add more, such as `/schedule` from the
+built-in Scheduling extension or `/om-view` from observational memory. `/help` reflects the
 commands available in your installation. For reusable instructions, see
 [skills](skills.md) and [prompt templates](prompt-templates.md).
 
@@ -137,7 +150,9 @@ Explicit user `/goal clear` or `/goal cancel` remains unconditional.
 
 `/model` lists selectable models from your effective configuration. Provider definitions
 ship disabled, so configure them with the Providers tab in `hatfield setup` before model use.
-Ctrl+P cycles available models. Shift+Tab cycles reasoning levels.
+Ctrl+P cycles through your favourite models (`ai.favorite_models`, managed with
+`/model-favourites`); it does nothing when no favourites are set. Shift+Tab cycles
+reasoning levels when the current model supports them.
 
 Available reasoning levels depend on the model. See [model settings](settings-models.md)
 and [the provider catalog](ai-catalog.md). Changing a selection does not install a

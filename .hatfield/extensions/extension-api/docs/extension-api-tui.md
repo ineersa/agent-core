@@ -6,15 +6,17 @@ description: TUI extension interfaces for overlays, status-panel rows, focus, ti
 # TUI Extension API
 
 TUI-capable extensions implement `TuiExtensionInterface` in addition to
-`HatfieldExtensionInterface` (or compose registration accordingly). Context is
-`TuiExtensionContextInterface`.
+`HatfieldExtensionInterface`. The interactive host calls
+`registerTui(TuiExtensionContextInterface $context): void`; keep the context for later
+overlay, status and render calls.
 
 ## Approved dependency
 
 Generic TUI contracts intentionally depend on **Symfony TUI** public widgets/events/input.
 That is part of the public API. Do **not** depend on in-repo `Ineersa\Tui\*` classes.
 
-`TuiProjectExtensionInterface` is a deprecated compatibility alias — prefer `TuiExtensionInterface`.
+`TuiProjectExtensionInterface` is a deprecated empty sub-interface of `TuiExtensionInterface`;
+implement `TuiExtensionInterface` directly.
 
 ## Capabilities (public context)
 
