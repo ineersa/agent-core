@@ -48,10 +48,26 @@ use Symfony\Component\Process\Process;
  *
  * Atomic-write strategy:
  *   1. Acquire a non-blocking named lock via LockFactory.
- *   2. Stream entries into a temp file.
+ *   2. Stream entries into a temp file that is a sibling of the index.
  *   3. fflush and close.
  *   4. rename(tmp, target) — atomic on the same filesystem.
  *   5. Release lock.
+ *
+ * The temp file + rename is written by hand on purpose. Do not replace it
+ * with Symfony Filesystem::dumpFile() or PHP tempnam(): both pick the temp
+ * location themselves and silently fall back to the system temp directory
+ * when the temp file cannot be created beside the index (directory not
+ * writable, disk full, out of inodes). If that directory is on another
+ * filesystem, rename() degrades to copy-then-unlink over the live index,
+ * which is not atomic and can leave readers a truncated index. dumpFile()
+ * also writes through a symlinked index path instead of replacing the link.
+ * Keeping the temp file beside the index means a build that cannot create
+ * it fails and leaves the previous index untouched.
+ *
+ * Known and accepted: individual fwrite() results are not checked. The index
+ * is a cache rebuilt by the scheduler every 30 seconds and the reader skips
+ * unparseable lines, so a short write costs incomplete `@` completion until
+ * the next refresh.
  *
  * Caps the output to prevent pathological repos from producing
  * unusably large index files. MAX_ENTRIES counts files and inferred
@@ -112,6 +128,8 @@ final class FileMentionIndexBuilder
         }
 
         try {
+            // Must stay a sibling of the index so the rename below is atomic;
+            // see "Atomic-write strategy" in the class docblock.
             $this->tmpPath = $this->indexPath.'.tmp.'.getmypid().'.'.hrtime(true);
             $count = $this->scanAndWrite($this->tmpPath);
 
