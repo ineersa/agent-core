@@ -145,11 +145,7 @@ final readonly class TranscriptBlockRenderer
     private function buildInsetMarkdownWidget(string $prompt, TuiTheme $theme, ThemeColorEnum $color): MarkdownWidget
     {
         $mdWidget = $this->markdown->create($prompt);
-        $colorSpec = $theme->getPalette()->get($color);
-        $style = '' !== $colorSpec
-            ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
-            : new Style(padding: Padding::from([0, 0, 0, 2]));
-        $mdWidget->setStyle($style);
+        $mdWidget->setStyle(new Style(color: $theme->getPalette()->get($color), padding: Padding::from([0, 0, 0, 2])));
 
         return $mdWidget;
     }

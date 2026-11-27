@@ -16,6 +16,9 @@ namespace Ineersa\Tui\Theme;
  *  - Empty string '' meaning "no color / default terminal foreground"
  *  - References to other ThemeColorEnum keys for alias support (resolved at load time)
  *
+ * {@see ThemeRegistry} drops specs that Symfony TUI cannot parse when it loads a
+ * theme file, so render code can pass {@see get()} straight to a Style.
+ *
  * Users can change the palette later by loading a different theme YAML or
  * constructing a new palette programmatically.
  */
@@ -32,19 +35,14 @@ final readonly class ThemePalette
     }
 
     /**
-     * Get the color spec for a token, or empty string if absent.
+     * Get the color spec for a token, or null when the token is absent or empty
+     * (no color / default terminal foreground).
      */
-    public function get(ThemeColorEnum $color): string
+    public function get(ThemeColorEnum $color): ?string
     {
-        return $this->colors[$color->value] ?? '';
-    }
+        $spec = $this->colors[$color->value] ?? '';
 
-    /**
-     * Check whether a token has a non-empty color spec.
-     */
-    public function has(ThemeColorEnum $color): bool
-    {
-        return '' !== $this->get($color);
+        return '' !== $spec ? $spec : null;
     }
 
     /**

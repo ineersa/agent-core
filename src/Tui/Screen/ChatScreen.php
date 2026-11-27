@@ -215,7 +215,7 @@ final class ChatScreen
 
         // Theme the native working loader with the existing Working palette token.
         $workingColor = $this->theme->getPalette()->get(ThemeColorEnum::Working);
-        if ('' !== $workingColor) {
+        if (null !== $workingColor) {
             $workingStyle = new Style(color: $workingColor);
             $tui->addStyleSheet(new StyleSheet([
                 LoaderWidget::class.'::spinner' => $workingStyle,
@@ -471,12 +471,10 @@ final class ChatScreen
             return;
         }
 
-        $colorEnum = ThemeColorEnum::forReasoning($reasoning);
-        $colorSpec = $this->theme->getPalette()->get($colorEnum);
-
-        $style = new Style(color: $colorSpec);
+        // A missing thinking token yields null, which resets the frame to the
+        // default terminal foreground instead of keeping the previous level's colour.
         $this->tui->addStyleSheet(new StyleSheet([
-            EditorWidget::class.'::frame' => $style,
+            EditorWidget::class.'::frame' => new Style(color: $this->theme->getPalette()->get(ThemeColorEnum::forReasoning($reasoning))),
         ]));
 
         // Invalidate the editor widget so its cached render (which

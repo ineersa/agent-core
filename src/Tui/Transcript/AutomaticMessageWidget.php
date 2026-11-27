@@ -54,8 +54,7 @@ final class AutomaticMessageWidget extends AbstractWidget implements ParentInter
         $this->summary = str_replace("\t", str_repeat(' ', AnsiUtils::TAB_WIDTH), explode("\n", trim($summary), 2)[0]);
         $this->body->add(new TextWidget($theme->color(ThemeColorEnum::Accent, TranscriptGlyphs::GLYPH_SYSTEM_INFO.' '.$this->label)));
         $content = $markdown->create($body);
-        $color = $theme->getPalette()->get(ThemeColorEnum::Muted);
-        $content->setStyle(new Style(color: '' === $color ? null : $color, dim: true, italic: true, padding: Padding::from([0, 0, 0, 2])));
+        $content->setStyle(new Style(color: $theme->getPalette()->get(ThemeColorEnum::Muted), dim: true, italic: true, padding: Padding::from([0, 0, 0, 2])));
         $this->body->add($content);
         $details = new TextWidget($theme->color(ThemeColorEnum::Dim, StringUtils::stripControlBytes(StringUtils::sanitizeUtf8(Yaml::dump($producer, 5, 2)))));
         $details->setStyle(new Style(dim: true, italic: true, padding: Padding::from([0, 0, 0, 2])));
