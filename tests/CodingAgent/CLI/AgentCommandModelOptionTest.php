@@ -44,7 +44,7 @@ final class AgentCommandModelOptionTest extends IsolatedKernelTestCase
     private HatfieldSessionStore $sessionStore;
     private string $sessionId = '';
 
-    /** @var array{async: bool, sigterm: callable|int|string|null, sigint: callable|int|string|null, themes: array<string, ThemePalette>, migratorRan: ?bool}|null */
+    /** @var array{async: bool, sigterm: callable|int|string|null, sigint: callable|int|string|null, themes: array<string, ThemePalette>, migratorRan: bool}|null */
     private ?array $armedCleanup = null;
 
     protected function setUp(): void
@@ -322,17 +322,14 @@ YAML);
 
         $agentCommand = $this->resolveContainerAgentCommand();
         $migratorProperty = new \ReflectionProperty(AgentCommand::class, 'startupDatabaseMigrator');
-        /** @var StartupDatabaseMigrator|null $migrator */
+        /** @var StartupDatabaseMigrator $migrator */
         $migrator = $migratorProperty->getValue($agentCommand);
-        $migratorRan = null;
-        if (null !== $migrator) {
-            $ranProperty = new \ReflectionProperty($migrator, 'ran');
-            $migratorRan = (bool) $ranProperty->getValue($migrator);
-            // IsolatedKernelTestCase already migrated the test DB. Mark the shared
-            // StartupDatabaseMigrator as ran so AgentCommand skips WAL re-entry
-            // under DAMA before the resume override path under test.
-            $ranProperty->setValue($migrator, true);
-        }
+        $ranProperty = new \ReflectionProperty($migrator, 'ran');
+        $migratorRan = (bool) $ranProperty->getValue($migrator);
+        // IsolatedKernelTestCase already migrated the test DB. Mark the shared
+        // StartupDatabaseMigrator as ran so AgentCommand skips WAL re-entry
+        // under DAMA before the resume override path under test.
+        $ranProperty->setValue($migrator, true);
 
         $interactiveProperty = new \ReflectionProperty(AgentCommand::class, 'interactiveMode');
         /** @var InteractiveMode $interactiveMode */
@@ -381,12 +378,10 @@ YAML);
         $agentCommand = $this->resolveContainerAgentCommand();
 
         $migratorProperty = new \ReflectionProperty(AgentCommand::class, 'startupDatabaseMigrator');
-        /** @var StartupDatabaseMigrator|null $migrator */
+        /** @var StartupDatabaseMigrator $migrator */
         $migrator = $migratorProperty->getValue($agentCommand);
-        if (null !== $migrator && null !== $cleanup['migratorRan']) {
-            $ranProperty = new \ReflectionProperty($migrator, 'ran');
-            $ranProperty->setValue($migrator, $cleanup['migratorRan']);
-        }
+        $ranProperty = new \ReflectionProperty($migrator, 'ran');
+        $ranProperty->setValue($migrator, $cleanup['migratorRan']);
 
         $interactiveProperty = new \ReflectionProperty(AgentCommand::class, 'interactiveMode');
         /** @var InteractiveMode $interactiveMode */

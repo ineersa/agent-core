@@ -4,16 +4,21 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionBuilder;
+use Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionProvider;
+use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
+use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 
-final class SubagentToolDefinitionBuilderTest extends TestCase
+final class SubagentToolDefinitionProviderTest extends TestCase
 {
-    public function testBuildDefinesSingleChildCallsWithoutToolExecutorTimeout(): void
+    public function testDefinitionDescribesSingleChildCallsWithoutToolExecutorTimeout(): void
     {
-        $handler = new \stdClass();
-        $def = SubagentToolDefinitionBuilder::build($handler);
+        $accessor = new StackToolExecutionContextAccessor();
+        $handler = new SubagentToolHandler($accessor, new ToolRuntime($accessor), new ServiceLocator([]));
+        $def = (new SubagentToolDefinitionProvider($handler))->definition();
 
         $this->assertNull($def->timeoutSeconds);
         $this->assertSame($handler, $def->handler);

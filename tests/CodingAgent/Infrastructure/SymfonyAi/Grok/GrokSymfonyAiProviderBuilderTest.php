@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\Grok;
 use Ineersa\CodingAgent\Auth\GrokAuthRecord;
 use Ineersa\CodingAgent\Auth\GrokAuthStorage;
 use Ineersa\CodingAgent\Auth\GrokOAuthService;
+use Ineersa\CodingAgent\Auth\GrokTokenRefresher;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
@@ -18,6 +19,7 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Grok\GrokSymfonyAiProviderBuild
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -37,7 +39,7 @@ final class GrokSymfonyAiProviderBuilderTest extends TestCase
 
         $store = new FlockStore($this->tmpDir);
         $lockFactory = new LockFactory($store);
-        $this->authStorage = new GrokAuthStorage($this->tmpDir, $lockFactory);
+        $this->authStorage = new GrokAuthStorage($this->tmpDir, $lockFactory, $this->createStub(GrokTokenRefresher::class), new NullLogger());
     }
 
     protected function tearDown(): void

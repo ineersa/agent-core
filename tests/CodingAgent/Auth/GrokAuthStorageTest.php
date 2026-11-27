@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Auth\GrokOAuthConfig;
 use Ineersa\CodingAgent\Auth\GrokTokenRefresher;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -26,7 +27,7 @@ final class GrokAuthStorageTest extends TestCase
 
         $store = new FlockStore($this->tmpDir);
         $lockFactory = new LockFactory($store);
-        $this->storage = new GrokAuthStorage($this->tmpDir, $lockFactory);
+        $this->storage = new GrokAuthStorage($this->tmpDir, $lockFactory, $this->createStub(GrokTokenRefresher::class), new NullLogger());
     }
 
     protected function tearDown(): void
@@ -72,33 +73,12 @@ final class GrokAuthStorageTest extends TestCase
         $this->assertSame('grok-one', $this->storage->loadCredentialsRaw()?->access);
     }
 
-    public function testExpiredRecordWithoutRefresherReturnsExpired(): void
+    public function testExpiredRecordThrowsOnRefreshFailure(): void
     {
-        $expiredRecord = new GrokAuthRecord(
-            access: 'expired-access',
-            refresh: 'i-will-be-refreshed',
-            expires: time() - 3600,
-        );
+        $failingRefresher = $this->createStub(GrokTokenRefresher::class);
+        $failingRefresher->method('refresh')->willThrowException(new \RuntimeException('Simulated refresh failure.'));
 
-        $this->storage->saveCredentials($expiredRecord);
-
-        $loaded = $this->storage->loadCredentials();
-
-        $this->assertNotNull($loaded);
-        $this->assertTrue($loaded->isExpired());
-        $this->assertSame('expired-access', $loaded->access);
-    }
-
-    public function testExpiredRecordWithRefresherThrowsOnRefreshFailure(): void
-    {
-        $failingRefresher = new class extends GrokTokenRefresher {
-            public function refresh(string $refreshToken): GrokAuthRecord
-            {
-                throw new \RuntimeException('Simulated refresh failure.');
-            }
-        };
-
-        $storageWithRefresh = new GrokAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $failingRefresher);
+        $storageWithRefresh = new GrokAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $failingRefresher, new NullLogger());
 
         $expiredRecord = new GrokAuthRecord(
             access: 'expired-access',
@@ -114,7 +94,7 @@ final class GrokAuthStorageTest extends TestCase
         $storageWithRefresh->loadCredentials();
     }
 
-    public function testExpiredRecordWithRefresherReturnsRefreshedRecord(): void
+    public function testExpiredRecordReturnsRefreshedRecord(): void
     {
         $fresh = new GrokAuthRecord(
             access: 'fresh-access',
@@ -122,23 +102,10 @@ final class GrokAuthStorageTest extends TestCase
             expires: time() + 3600,
         );
 
-        $succeedingRefresher = new class($fresh) extends GrokTokenRefresher {
-            public string $seenRefresh = '';
+        $succeedingRefresher = $this->createMock(GrokTokenRefresher::class);
+        $succeedingRefresher->expects($this->once())->method('refresh')->with('i-will-be-refreshed')->willReturn($fresh);
 
-            public function __construct(private GrokAuthRecord $fresh)
-            {
-                parent::__construct();
-            }
-
-            public function refresh(string $refreshToken): GrokAuthRecord
-            {
-                $this->seenRefresh = $refreshToken;
-
-                return $this->fresh;
-            }
-        };
-
-        $storageWithRefresh = new GrokAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $succeedingRefresher);
+        $storageWithRefresh = new GrokAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $succeedingRefresher, new NullLogger());
 
         $expiredRecord = new GrokAuthRecord(
             access: 'expired-access',
@@ -150,7 +117,6 @@ final class GrokAuthStorageTest extends TestCase
 
         $loaded = $storageWithRefresh->loadCredentials();
 
-        $this->assertSame('i-will-be-refreshed', $succeedingRefresher->seenRefresh);
         $this->assertNotNull($loaded);
         $this->assertSame('fresh-access', $loaded->access);
         $this->assertSame('fresh-refresh', $loaded->refresh);
@@ -170,14 +136,10 @@ final class GrokAuthStorageTest extends TestCase
             expires: time() - 3600,
         );
 
-        $failingRefresher = new class extends GrokTokenRefresher {
-            public function refresh(string $refreshToken): GrokAuthRecord
-            {
-                throw new \RuntimeException('Should not be called by loadCredentialsRaw.');
-            }
-        };
+        $failingRefresher = $this->createStub(GrokTokenRefresher::class);
+        $failingRefresher->method('refresh')->willThrowException(new \RuntimeException('Should not be called by loadCredentialsRaw.'));
 
-        $storageWithRefresh = new GrokAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $failingRefresher);
+        $storageWithRefresh = new GrokAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $failingRefresher, new NullLogger());
         $storageWithRefresh->saveCredentials($expiredRecord);
 
         $raw = $storageWithRefresh->loadCredentialsRaw();

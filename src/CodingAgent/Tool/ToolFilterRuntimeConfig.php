@@ -45,7 +45,7 @@ final class ToolFilterRuntimeConfig
      * Unknown names throw via {@see ToolRegistryInterface::setAllowedToolNames()} /
      * {@see ToolRegistryInterface::setExcludedToolNames()}.
      */
-    public function applyFromCli(string $tools, string $toolsExcluded, ?ToolRegistryInterface $toolRegistry): void
+    public function applyFromCli(string $tools, string $toolsExcluded, ToolRegistryInterface $toolRegistry): void
     {
         $this->tools = $tools;
         $this->toolsExcluded = $toolsExcluded;
@@ -75,17 +75,9 @@ final class ToolFilterRuntimeConfig
         }
     }
 
-    public function applyToRegistry(?ToolRegistryInterface $toolRegistry): void
+    public function applyToRegistry(ToolRegistryInterface $toolRegistry): void
     {
         $excluded = $this->effectiveExcludedToolNames();
-
-        if (null === $toolRegistry) {
-            if ('' !== $this->tools || [] !== $excluded) {
-                throw new \RuntimeException('--tools and --tools-excluded require ToolRegistry to be wired.');
-            }
-
-            return;
-        }
 
         if ('' !== $this->tools) {
             $toolRegistry->setAllowedToolNames(self::parseToolNameList($this->tools));

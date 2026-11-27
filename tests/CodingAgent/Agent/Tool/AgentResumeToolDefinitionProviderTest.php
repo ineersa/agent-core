@@ -4,19 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Tool;
 
-use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolDefinitionBuilder;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolDefinitionProvider;
 use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
+use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 
-#[CoversClass(AgentResumeToolDefinitionBuilder::class)]
-final class AgentResumeToolDefinitionBuilderTest extends TestCase
+#[CoversClass(AgentResumeToolDefinitionProvider::class)]
+final class AgentResumeToolDefinitionProviderTest extends TestCase
 {
     public function testDefinitionMentionsForkResumeWithoutWorkflowRequirements(): void
     {
-        $definition = AgentResumeToolDefinitionBuilder::build(
-            new \stdClass(),
-        );
+        $accessor = new StackToolExecutionContextAccessor();
+        $handler = new AgentResumeToolHandler($accessor, new ToolRuntime($accessor), new ServiceLocator([]));
+        $definition = (new AgentResumeToolDefinitionProvider($handler))->definition();
 
         $this->assertSame(AgentResumeToolHandler::NAME, $definition->name);
         $this->assertStringContainsString('subagent or fork', $definition->description);

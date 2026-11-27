@@ -22,7 +22,6 @@ final class GrokOAuthService
 {
     public function __construct(
         private GrokAuthStorage $storage,
-        private ?GrokTokenRefresher $tokenRefresher = null,
     ) {
     }
 
@@ -126,22 +125,7 @@ final class GrokOAuthService
      */
     public function refreshCredentials(): GrokAuthRecord
     {
-        if (null === $this->tokenRefresher) {
-            throw new \RuntimeException('Token refresh is not available (no refresher configured).');
-        }
-
-        if (null === $this->storage->loadCredentialsRaw()) {
-            $hint = GrokOAuthConfig::authCommandHint();
-            throw new \RuntimeException(\sprintf('No stored Grok credentials found. Run %s first.', $hint));
-        }
-
-        try {
-            return $this->storage->refreshWithLock($this->tokenRefresher);
-        } catch (\Throwable $e) {
-            $hint = GrokOAuthConfig::authCommandHint();
-
-            throw new \RuntimeException("Token refresh failed for stored Grok credentials. Run {$hint} to re-authenticate.", previous: $e);
-        }
+        return $this->storage->refreshWithLock();
     }
 
     /**

@@ -66,9 +66,9 @@ final class AgentCommand
         private ToolFilterRuntimeConfig $toolFilterConfig,
         private LoggerInterface $logger,
         private readonly ProjectGitignoreInitializer $projectGitignoreInitializer,
-        private readonly ?StartupDatabaseMigrator $startupDatabaseMigrator = null,
-        private ?HeadlessController $controller = null,
-        private readonly ?ToolRegistryInterface $toolRegistry = null,
+        private readonly StartupDatabaseMigrator $startupDatabaseMigrator,
+        private HeadlessController $controller,
+        private readonly ToolRegistryInterface $toolRegistry,
     ) {
     }
 
@@ -178,9 +178,7 @@ final class AgentCommand
             // Applies explicit generated application then transport migration lists.
             // Running here ensures migrations complete before any
             // controller/TUI/headless path accesses the DB.
-            if (null !== $this->startupDatabaseMigrator) {
-                ($this->startupDatabaseMigrator)();
-            }
+            ($this->startupDatabaseMigrator)();
 
             // Extension loading is handled by ExtensionLoaderSubscriber
             // (fires on ConsoleEvents::COMMAND) which loads extensions in
@@ -281,10 +279,6 @@ final class AgentCommand
 
     private function runController(): int
     {
-        if (null === $this->controller) {
-            throw new \RuntimeException('Controller service not available');
-        }
-
         return $this->controller->run();
     }
 

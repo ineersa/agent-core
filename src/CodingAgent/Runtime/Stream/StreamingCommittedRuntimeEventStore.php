@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
 use Ineersa\AgentCore\Application\Handler\RunTracer;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\DTO\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -20,7 +19,7 @@ final class StreamingCommittedRuntimeEventStore implements PreparedTransitionEve
     private array $pendingEvents = [];
 
     public function __construct(
-        private readonly EventStoreInterface $inner,
+        private readonly PreparedTransitionEventStoreInterface $inner,
         private readonly RuntimeEventMapper $mapper,
         private readonly RuntimeEventSinkInterface $stdoutSink,
         private readonly bool $streamCommittedEventsToStdout,
@@ -31,9 +30,6 @@ final class StreamingCommittedRuntimeEventStore implements PreparedTransitionEve
 
     public function appendTransition(array $events, array $work): array
     {
-        if (!$this->inner instanceof PreparedTransitionEventStoreInterface) {
-            throw new \LogicException('Configured canonical store lacks transition preparation.');
-        }
         $persisted = $this->inner->appendTransition($events, $work);
         $runId = $events[0]->runId ?? $work['run_id'] ?? null;
         if (!\is_string($runId) || '' === $runId) {
@@ -48,47 +44,29 @@ final class StreamingCommittedRuntimeEventStore implements PreparedTransitionEve
 
     public function verifiedPendingTransition(string $runId): ?VerifiedTransitionDTO
     {
-        $store = $this->inner;
-        if (!$store instanceof PreparedTransitionEventStoreInterface) {
-            throw new \LogicException('Configured canonical store lacks transition preparation.');
-        }
-
-        return $store->verifiedPendingTransition($runId);
+        return $this->inner->verifiedPendingTransition($runId);
     }
 
     public function verifiedPendingBatch(string $runId, VerifiedTransitionDTO $verified): array
     {
-        $store = $this->inner;
-        if (!$store instanceof PreparedTransitionEventStoreInterface) {
-            throw new \LogicException('Configured canonical store lacks transition preparation.');
-        }
-
-        return $store->verifiedPendingBatch($runId, $verified);
+        return $this->inner->verifiedPendingBatch($runId, $verified);
     }
 
     public function assertVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
     {
-        if (!$this->inner instanceof PreparedTransitionEventStoreInterface) {
-            throw new \LogicException('Configured canonical store lacks transition preparation.');
-        }
         $this->inner->assertVerifiedTransition($runId, $verified);
     }
 
     public function finalizeVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
     {
-        $store = $this->inner;
-        if (!$store instanceof PreparedTransitionEventStoreInterface) {
-            throw new \LogicException('Configured canonical store lacks transition preparation.');
-        }
-
         $hotBatch = $this->pendingEvents[$runId] ?? null;
         if (null === $hotBatch) {
             // Cold recovery uses owner-only staged bytes. Public range readers still honor the cut.
-            $hotBatch = $store->verifiedPendingBatch($runId, $verified);
+            $hotBatch = $this->inner->verifiedPendingBatch($runId, $verified);
         }
         $this->assertVerifiedBatch($verified, $hotBatch);
 
-        $this->probe('canonical_finalize', $runId, static fn () => $store->finalizeVerifiedTransition($runId, $verified));
+        $this->probe('canonical_finalize', $runId, fn () => $this->inner->finalizeVerifiedTransition($runId, $verified));
         unset($this->pendingEvents[$runId]);
         foreach ($hotBatch as $event) {
             $this->probe('listeners', $runId, fn () => $this->dispatcher->dispatch(new RunEventPublishedEvent($event)));
@@ -98,9 +76,6 @@ final class StreamingCommittedRuntimeEventStore implements PreparedTransitionEve
 
     public function assertTransitionReady(string $runId): void
     {
-        if (!$this->inner instanceof PreparedTransitionEventStoreInterface) {
-            throw new \LogicException('Configured canonical store lacks transition preparation.');
-        }
         $this->inner->assertTransitionReady($runId);
     }
 
