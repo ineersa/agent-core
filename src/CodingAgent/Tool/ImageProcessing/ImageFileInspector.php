@@ -12,12 +12,7 @@ use League\MimeTypeDetection\FinfoMimeTypeDetector;
 /** Inspects mutable image files once; callers own their user-facing refusal messages. */
 final readonly class ImageFileInspector
 {
-    private const array EXTENSIONS = [
-        'image/jpeg' => 'jpg',
-        'image/png' => 'png',
-        'image/gif' => 'gif',
-        'image/webp' => 'webp',
-    ];
+    private const array SUPPORTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
     public function __construct(private ImageToolConfig $config)
     {
@@ -48,7 +43,7 @@ final readonly class ImageFileInspector
         }
 
         $mediaType = (new FinfoMimeTypeDetector())->detectMimeTypeFromBuffer($header);
-        if (null === $mediaType || !isset(self::EXTENSIONS[$mediaType])) {
+        if (null === $mediaType || !\in_array($mediaType, self::SUPPORTED_MIME_TYPES, true)) {
             return new ImageInspectionRefusalDTO(ImageInspectionRefusalReasonEnum::UnsupportedType, $this->config, mediaType: $mediaType);
         }
 
@@ -73,12 +68,16 @@ final readonly class ImageFileInspector
         }
         $mediaType = (new FinfoMimeTypeDetector())->detectMimeTypeFromBuffer($header);
 
-        return null !== $mediaType && isset(self::EXTENSIONS[$mediaType]);
+        return null !== $mediaType && \in_array($mediaType, self::SUPPORTED_MIME_TYPES, true);
     }
 
     /** Unknown processor cache formats retain the existing binary extension fallback. */
     public static function extensionForMime(string $mediaType): string
     {
-        return self::EXTENSIONS[$mediaType] ?? 'bin';
+        if (!\in_array($mediaType, self::SUPPORTED_MIME_TYPES, true)) {
+            return 'bin';
+        }
+
+        return (new FinfoMimeTypeDetector())->lookupExtension($mediaType) ?? 'bin';
     }
 }

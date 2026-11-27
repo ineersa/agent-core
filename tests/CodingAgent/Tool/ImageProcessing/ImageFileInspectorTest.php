@@ -116,8 +116,18 @@ final class ImageFileInspectorTest extends TestCase
         });
     }
 
-    public function testUnknownCacheFormatKeepsBinaryFallback(): void
+    #[DataProvider('unsupportedCacheTypes')]
+    public function testUnknownCacheFormatKeepsBinaryFallback(string $mediaType): void
     {
-        $this->assertSame('bin', ImageFileInspector::extensionForMime('application/octet-stream'));
+        $this->assertSame('bin', ImageFileInspector::extensionForMime($mediaType));
+    }
+
+    public static function unsupportedCacheTypes(): iterable
+    {
+        yield ['application/octet-stream'];
+        yield ['application/pdf'];
+        yield ['text/plain'];
+        yield ['image/apng'];
+        yield ['image/avif'];
     }
 }
