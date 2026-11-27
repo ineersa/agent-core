@@ -705,26 +705,53 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     }
 
     #[Test]
-    public function promptAfterFirstInputShellKeepsDraftModelSelection(): void
+    public function firstInputShellMovesDraftModelSelectionToSession(): void
     {
-        // /new --model draft (or picker selection) followed by a first-input
-        // ! command must not drop the selected model from the next LLM run.
-        $this->state->sessionId = 'test-session';
+        // /new --model draft followed by a first-input ! command: the shell
+        // promotes the draft, so the session row becomes the selection
+        // authority. The draft model/reasoning must land there (not stay on
+        // the pending request) so later picker changes win on the next run.
+        $this->state->sessionId = '';
         $this->state->handle = null;
         $this->state->activity = RunActivityStateEnum::Idle;
         $this->state->request = new StartRunRequest(
             prompt: '',
-            runId: 'test-session',
             cwd: '/work',
             options: ['draft' => true],
             model: 'llama_cpp_test/test',
             reasoning: 'high',
         );
 
+        $nextId = 1;
+        $entityById = [];
+        $persisted = null;
+        $em = $this->createStub(EntityManagerInterface::class);
+        $em->method('persist')->willReturnCallback(static function ($entity) use (&$persisted): void {
+            $persisted = $entity;
+        });
+        $em->method('flush')->willReturnCallback(
+            static function () use (&$persisted, &$nextId, &$entityById): void {
+                if ($persisted instanceof HatfieldSession) {
+                    $persisted->id = $nextId++;
+                    $entityById[(string) $persisted->id] = $persisted;
+                    $persisted = null;
+                }
+            },
+        );
+        $em->method('find')->willReturnCallback(
+            static function (string $class, mixed $id) use (&$entityById): ?HatfieldSession {
+                return $entityById[(string) $id] ?? null;
+            },
+        );
+        $sessionStore = new HatfieldSessionStore(
+            appConfig: self::footerAppConfig($this->tempCwd),
+            entityManager: $em,
+            dispatcher: new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
+
         $this->client->expects($this->once())
             ->method('shellExecute')
-            ->with('!ls', 'test-session', '/work')
-            ->willReturn(new RunHandle('test-session'));
+            ->with('!ls', '1', '/work')
+            ->willReturn(new RunHandle('1'));
         $started = null;
         $this->client->expects($this->once())
             ->method('start')
@@ -734,16 +761,27 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 return new RunHandle('fresh-run');
             });
 
-        $this->dispatchSubmit('!ls');
-        $this->assertTrue($this->state->isShellRun);
-        $this->dispatchSubmit('explain the listing');
+        $this->dispatchSubmit('!ls', $sessionStore);
+
+        $session = $entityById['1'] ?? null;
+        $this->assertInstanceOf(HatfieldSession::class, $session);
+        $this->assertSame('llama_cpp_test/test', $session->model);
+        $this->assertSame('high', $session->reasoning);
+        $this->assertNull($this->state->request?->model);
+        $this->assertNull($this->state->request?->reasoning);
+
+        // A picker change after promotion writes session metadata only
+        // (PendingModelSelection leaves the pending request alone).
+        $sessionStore->updateMetadata('1', ['model' => 'llama_cpp_test/other', 'reasoning' => 'low']);
+
+        $this->dispatchSubmit('explain the listing', $sessionStore);
 
         $this->assertInstanceOf(StartRunRequest::class, $started);
         $this->assertSame('explain the listing', $started->prompt);
         $this->assertSame('/work', $started->cwd);
         $this->assertSame(['draft' => true], $started->options);
-        $this->assertSame('llama_cpp_test/test', $started->model);
-        $this->assertSame('high', $started->reasoning);
+        $this->assertNull($started->model, 'Session metadata must decide the model, not a stale draft value');
+        $this->assertNull($started->reasoning);
     }
 
     // ── Normal prompt still works after refactor ────────────────────

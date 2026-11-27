@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -510,9 +511,10 @@ final class SubmitListener implements TuiListenerRegistrar
     /**
      * Start a fresh LLM run for the submitted prompt.
      *
-     * Carries the current request's cwd, options, model and reasoning forward
-     * (from a /new --model draft or a picker selection, including after a
-     * first-input shell command) so the run starts on the selected model.
+     * Carries the pending request's cwd, options, model and reasoning forward.
+     * On first submit that is the draft selection (/new --model, picker);
+     * after a first-input shell command the selection already lives on the
+     * session row (see moveDraftModelSelectionToSession()).
      */
     private static function startRun(
         string $text,
@@ -564,6 +566,37 @@ final class SubmitListener implements TuiListenerRegistrar
         }
     }
 
+    /**
+     * Hand a draft's model/reasoning to the session row a shell command just created.
+     *
+     * Once the session exists, PendingModelSelection writes picker changes to
+     * session metadata only. Leaving the draft values on the pending request
+     * would let them override later picker changes on the next start().
+     */
+    private static function moveDraftModelSelectionToSession(TuiSessionState $state, HatfieldSessionStore $sessionStore): void
+    {
+        $request = $state->request;
+        if (null === $request || (null === $request->model && null === $request->reasoning)) {
+            return;
+        }
+
+        $meta = [];
+        $model = null !== $request->model ? AiModelReference::tryParse($request->model) : null;
+        if (null !== $model) {
+            $meta['model'] = $model->toString();
+            $meta['model_provider'] = $model->providerId;
+            $meta['model_name'] = $model->modelName;
+        }
+        if (null !== $request->reasoning) {
+            $meta['reasoning'] = $request->reasoning;
+        }
+        if ([] !== $meta) {
+            $sessionStore->updateMetadata($state->sessionId, $meta);
+        }
+
+        $state->request = $request->withModel(null)->withReasoning(null);
+    }
+
     private static function handleShellCommand(
         DispatchShellCommand $shellCommand,
         TuiSessionState $state,
@@ -586,6 +619,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     'event_type' => 'draft_promoted_shell',
                     'session_id' => $state->sessionId,
                 ]);
+                self::moveDraftModelSelectionToSession($state, $sessionStore);
             }
 
             // No local transcript echo: canonical agent_command_applied
