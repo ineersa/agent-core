@@ -12,7 +12,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ModelNotificationProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
 use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
@@ -21,7 +21,7 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 final class UserMessageProjectionSubscriberTest extends TestCase
 {
     private TranscriptProjector $projector;
-    private RuntimeEventTranslator $translator;
+    private RuntimeEventMapper $mapper;
 
     protected function setUp(): void
     {
@@ -30,13 +30,13 @@ final class UserMessageProjectionSubscriberTest extends TestCase
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
         $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber($serializer));
         $this->projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
-        $this->translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec($serializer), $serializer);
+        $this->mapper = new RuntimeEventMapper(new EventDispatcher(), new ToolExecutionEndPayloadCodec($serializer), $serializer);
     }
 
     public function testInitialMessagesRetainHostMetadataButExcludePrivateContext(): void
     {
         $task = ['agent_task' => ['artifact_id' => 'child-artifact']];
-        $runtime = $this->translator->translate(new RunEvent('run', 1, 0, 'run_started', ['payload' => ['messages' => [
+        $runtime = $this->mapper->toRuntimeEvent(new RunEvent('run', 1, 0, 'run_started', ['payload' => ['messages' => [
             ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Delegated task']]],
             ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Delegated task']], 'metadata' => $task],
             ['role' => 'user', 'content' => [['type' => 'text', 'text' => '!echo human']]],
@@ -62,7 +62,7 @@ final class UserMessageProjectionSubscriberTest extends TestCase
     {
         $origin = ['kind' => $kind, 'identity' => 'opaque-id', 'run_id' => 'original-source', 'tool_call_id' => 'call'];
         foreach ([[], ['background_completion' => $origin]] as $index => $metadata) {
-            $runtime = $this->translator->translate(new RunEvent('run', $index + 1, 1, 'agent_command_applied', [
+            $runtime = $this->mapper->toRuntimeEvent(new RunEvent('run', $index + 1, 1, 'agent_command_applied', [
                 'kind' => 'append_message', 'idempotency_key' => 'key-'.$index,
                 'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $text]], 'metadata' => $metadata],
             ]));
@@ -83,7 +83,7 @@ final class UserMessageProjectionSubscriberTest extends TestCase
                 'kind' => 'append_message', 'idempotency_key' => 'key-'.$index,
                 'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Subagent scout completed.']], 'metadata' => $metadata],
             ]);
-            $runtime = $this->translator->translate($canonical);
+            $runtime = $this->mapper->toRuntimeEvent($canonical);
             if (0 === $index) {
                 $this->assertSame('user.message_queued', $runtime->type);
             } else {
@@ -97,7 +97,7 @@ final class UserMessageProjectionSubscriberTest extends TestCase
     public function testSubmittedHostReminderKeepsProvenanceWithoutRelabelingAHumanQuote(): void
     {
         foreach ([[], ['system_reminder' => true]] as $index => $metadata) {
-            $this->projector->accept($this->translator->translate(new RunEvent('run', $index + 1, 1, 'agent_command_applied', [
+            $this->projector->accept($this->mapper->toRuntimeEvent(new RunEvent('run', $index + 1, 1, 'agent_command_applied', [
                 'kind' => 'append_message', 'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => '<system-reminder>Reminder</system-reminder>']], 'metadata' => $metadata],
             ])));
         }

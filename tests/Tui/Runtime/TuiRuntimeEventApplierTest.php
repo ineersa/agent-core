@@ -18,7 +18,6 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -45,7 +44,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
 
     public function testAgentNotificationDoesNotSubmitHumanActivityOrAlterPendingHumanInput(): void
     {
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer()));
+        $mapper = new RuntimeEventMapper(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
         $applier = $this->buildApplier();
         foreach (['agent_steer', 'notify_parent'] as $tool) {
             $event = $mapper->toRuntimeEvent(new RunEvent('run-agent', 12, 1, 'agent_command_applied', [
@@ -190,7 +189,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
     public function testIdleFollowUpQueuedEventDoesNotPopulatePendingQueue(): void
     {
         // Thesis: idle follow_up should not emit user.message_queued (no ⏳ flicker).
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer()));
+        $mapper = new RuntimeEventMapper(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
         $runEvent = new RunEvent(
             runId: 'run-fu',
             seq: 2,

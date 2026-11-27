@@ -47,7 +47,7 @@ flowchart LR
     StreamSubs -->|"Transient seq 0"| ConsumerOut["Consumer stdout pipe<br/>or in-process sink"]
     Commit["run_control transition commit"] --> Log[(events.jsonl)]
     Commit --> Publish["StreamingCommittedRuntimeEventStore<br/>finalized hot batch"]
-    Publish --> Mapper["RuntimeEventMapper / RuntimeEventTranslator"]
+    Publish --> Mapper["RuntimeEventMapper"]
     Mapper -->|"Committed events"| ConsumerOut
     ConsumerOut --> Controller["ConsumerStdoutPoller<br/>controller stdout"]
     Controller --> Client["AgentSessionClient"]

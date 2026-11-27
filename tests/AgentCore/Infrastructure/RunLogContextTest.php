@@ -4,11 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure;
 
+use Amp\DeferredFuture;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
+use Ineersa\AgentCore\Tests\Support\IsolatedEventLoop;
 use PHPUnit\Framework\TestCase;
+use Revolt\EventLoop;
+
+use function Amp\async;
 
 final class RunLogContextTest extends TestCase
 {
+    use IsolatedEventLoop;
+
     protected function setUp(): void
     {
         $this->clearDefaultContext();
@@ -217,6 +224,66 @@ final class RunLogContextTest extends TestCase
         // Fiber finished. Main thread should be empty.
         $this->assertSame([], RunLogContext::current());
         $this->assertTrue($fiber->isTerminated());
+    }
+
+    /* ----- Revolt event-loop tests ----- */
+
+    public function testScopeSurvivesAwaitInsideAsyncWhileSiblingRuns(): void
+    {
+        $gate = new DeferredFuture();
+        $owner = async(static function () use ($gate): array {
+            RunLogContext::enter(['run_id' => 'owner']);
+            try {
+                $gate->getFuture()->await();
+
+                return RunLogContext::current();
+            } finally {
+                RunLogContext::leave();
+            }
+        });
+        $sibling = async(static function () use ($gate): array {
+            $seen = RunLogContext::current();
+            RunLogContext::enter(['run_id' => 'sibling']);
+            try {
+                $gate->complete();
+
+                return $seen;
+            } finally {
+                RunLogContext::leave();
+            }
+        });
+
+        $this->assertSame([], $sibling->await(), 'A sibling must not see a suspended owner scope.');
+        $this->assertSame(['run_id' => 'owner'], $owner->await(), 'The owner scope must survive its await.');
+        $this->assertSame([], RunLogContext::current());
+    }
+
+    public function testUnbalancedScopeIsDroppedWhenItsCallbackReturns(): void
+    {
+        $seen = null;
+        EventLoop::defer(static function (): void {
+            RunLogContext::enter(['run_id' => 'leaked']);
+        });
+        EventLoop::defer(static function () use (&$seen): void {
+            $seen = RunLogContext::current();
+        });
+
+        EventLoop::run();
+
+        $this->assertSame([], $seen, 'A scope left open by an earlier callback must not reach the next one.');
+    }
+
+    public function testMainScopeSurvivesEventLoopRunStartedFromMain(): void
+    {
+        RunLogContext::enter(['run_id' => 'main']);
+        try {
+            $seen = async(static fn (): array => RunLogContext::current())->await();
+
+            $this->assertSame([], $seen, 'Loop callbacks must not inherit the main scope.');
+            $this->assertSame(['run_id' => 'main'], RunLogContext::current());
+        } finally {
+            RunLogContext::leave();
+        }
     }
 
     private function clearDefaultContext(): void

@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
+use Ineersa\AgentCore\Application\Handler\Exception\HumanInputRedriveException;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
@@ -160,7 +161,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             payload: [
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),
-                // Serialized steer/follow_up text so RuntimeEventTranslator can emit
+                // Serialized steer/follow_up text so RuntimeEventMapper can emit
                 // user.message_queued for immediate TUI pending feedback (mirrors
                 // CommandMailboxPolicy including message on agent_command_applied).
                 'message' => $message->payload['message'] ?? null,
@@ -390,7 +391,9 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // Durable post-commit redrive: if RunState already advanced past WaitingHuman
         // for this human_response (commit succeeded, effect dispatch failed), re-emit
         // the exact ExecuteToolCall effect from durable batch answer metadata without
-        // mutating RunState again. markApplied runs only after effects succeed.
+        // mutating RunState again. A completed match is acknowledged without effects.
+        // Missing answers fall through as late no-ops; invalid matches reject.
+        // markApplied runs only after effects succeed.
         if (RunStatus::WaitingHuman !== $state->status
             && null !== $questionId
             && \array_key_exists('answer', $message->payload)
@@ -427,7 +430,8 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             // applied (batch durable, status still WaitingHuman because q2 remains).
             // If Messenger redelivers q1's human_response, do not reject against active
             // q2 — redrive the exact stored call when the durable answer is equivalent.
-            // Conflicts / missing stored answer still fail closed below.
+            // Ambiguous or conflicting matches reject immediately; missing stored
+            // answers fall through to the pending-question checks below.
             if (\array_key_exists('answer', $message->payload)) {
                 $redrive = $this->tryRedriveToolCallHumanResponse($state, $message, $questionId);
                 if (null !== $redrive) {
@@ -637,7 +641,11 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 $questionId,
                 $message->payload['answer'],
             );
-        } catch (\LogicException) {
+        } catch (HumanInputRedriveException $exception) {
+            return $this->rejectCommand($state, $message, 'human_response rejected: '.$exception->getMessage());
+        }
+
+        if (null === $prepared) {
             return null;
         }
 

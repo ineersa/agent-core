@@ -37,12 +37,6 @@ parameters:
 			path: src/AgentCore/Application/Handler/ToolExecutor.php
 
 		-
-			message: '#^Catch block must rethrow, log through Psr\\Log\\LoggerInterface, pass the caught exception to a call, or return a typed result built from it\.$#'
-			identifier: hatfield.silentCatch
-			count: 1
-			path: src/AgentCore/Application/Pipeline/ApplyCommandHandler.php
-
-		-
 			message: '#^Constructor parameter \$nextState of Ineersa\\AgentCore\\Application\\Pipeline\\HandlerResult is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
 			identifier: hatfield.nullableCollaborator
 			count: 1
@@ -191,12 +185,6 @@ parameters:
 			identifier: hatfield.nullableCollaborator
 			count: 1
 			path: src/CodingAgent/Config/AppConfig.php
-
-		-
-			message: '#^Catch block must rethrow, log through Psr\\Log\\LoggerInterface, pass the caught exception to a call, or return a typed result built from it\.$#'
-			identifier: hatfield.silentCatch
-			count: 1
-			path: src/CodingAgent/Config/AppConfigLoader.php
 
 		-
 			message: '#^Constructor parameter \$aiCatalog of Ineersa\\CodingAgent\\Config\\AppConfigLoader is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'

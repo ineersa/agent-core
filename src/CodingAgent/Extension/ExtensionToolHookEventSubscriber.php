@@ -126,6 +126,15 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                     'error_type' => $exception::class,
                 ]));
 
+                $this->logger?->error('extension.tool_call_hook_failed', [
+                    'component' => 'extension.tool_hook_subscriber',
+                    'event_type' => 'extension.tool_call_hook_failed',
+                    'tool_name' => $toolCall->getName(),
+                    'tool_call_id' => $toolCall->getId(),
+                    'run_id' => $context->runId ?? '',
+                    'error_type' => $exception::class,
+                ]);
+
                 return;
             }
 
@@ -186,14 +195,14 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         // Resumed answer must be consumed by its originating hook. If no registered hook
         // matched (hook unloaded/disabled), fail closed — never fall through to the real handler.
         if ($humanInputAnswer instanceof ToolCallHumanInputAnswerDTO) {
-            $event->setResult(new ToolResult($toolCall, Toon::encode([
+            $event->setResult(new ToolResult($toolCall, [
                 'denied' => true,
                 'reason' => 'approval_origin_hook_unavailable',
                 'message' => \sprintf(
                     'Tool "%s" was denied: the originating approval hook is unavailable.',
                     $toolCall->getName(),
                 ),
-            ])));
+            ]));
 
             $payloadHookId = $humanInputAnswer->requestPayload['hook_id'] ?? null;
             $payloadHookClass = $humanInputAnswer->requestPayload['hook_class'] ?? null;

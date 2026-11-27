@@ -35,7 +35,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
@@ -91,7 +91,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $state = new TuiSessionState(self::SESSION_ID);
         $state->handle = new RunHandle(self::SESSION_ID);
         $applier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
-        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
+        $mapper = new RuntimeEventMapper(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
         $harness = new VirtualTuiHarness(columns: 120, rows: 30, sessionId: self::SESSION_ID);
         $harness->screen()->setWorkingVisible(false);
         $client = $this->createMock(AgentSessionClient::class);
@@ -101,7 +101,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $handler = new CompactCommandHandler($client, $state);
         $command = new SlashCommand('compact', '', '/compact');
 
-        $cancelled = $translator->translate(new RunEvent(self::SESSION_ID, 1, 1, 'agent_end', ['reason' => 'cancelled']));
+        $cancelled = $mapper->toRuntimeEvent(new RunEvent(self::SESSION_ID, 1, 1, 'agent_end', ['reason' => 'cancelled']));
         $this->assertNotNull($cancelled);
         $applier->apply($state, $cancelled);
         $state->applyTranscriptChangeSet($applier->drainProjectedChanges());
@@ -120,7 +120,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
             ? new RuntimeEvent('command.rejected', self::SESSION_ID, 0, [
                 'commandId' => 'compact-request', 'commandType' => 'compact', 'reason' => 'Run is already cancelled.',
             ])
-            : $translator->translate(new RunEvent(self::SESSION_ID, 2, 1, 'agent_command_rejected', [
+            : $mapper->toRuntimeEvent(new RunEvent(self::SESSION_ID, 2, 1, 'agent_command_rejected', [
                 'kind' => 'compact', 'reason' => 'Run is already cancelled.',
             ]));
         $this->assertNotNull($rejected);
@@ -134,7 +134,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $retry = $handler->handle($command);
         $this->assertInstanceOf(TranscriptMessage::class, $retry);
         $this->assertSame('Compaction requested.', $retry->text);
-        $started = $translator->translate(new RunEvent(self::SESSION_ID, 3, 1, 'context_compaction_started', ['trigger' => 'manual']));
+        $started = $mapper->toRuntimeEvent(new RunEvent(self::SESSION_ID, 3, 1, 'context_compaction_started', ['trigger' => 'manual']));
         $this->assertNotNull($started);
         $applier->apply($state, $started);
         $state->applyTranscriptChangeSet($applier->drainProjectedChanges());
@@ -142,7 +142,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $this->assertStringContainsString('Compacting conversation', $harness->plainScreenText());
         $this->assertSame(RunActivityStateEnum::Compacting, $state->activity);
 
-        $completed = $translator->translate(new RunEvent(self::SESSION_ID, 4, 1, 'context_compacted', []));
+        $completed = $mapper->toRuntimeEvent(new RunEvent(self::SESSION_ID, 4, 1, 'context_compacted', []));
         $this->assertNotNull($completed);
         $applier->apply($state, $completed);
         $state->applyTranscriptChangeSet($applier->drainProjectedChanges());
@@ -455,7 +455,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $result = $executor->execute($call);
         $message = new ExecuteToolCall(self::SESSION_ID, 1, 'step-1', 1, 'execute-bash', $call->toolCallId, $call->toolName, $call->arguments, 0);
         $codec = new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer());
-        $translator = new RuntimeEventTranslator(new EventDispatcher(), $codec, AttributeSerializerValidatorTestFactory::serializer());
+        $mapper = new RuntimeEventMapper(new EventDispatcher(), $codec, AttributeSerializerValidatorTestFactory::serializer());
         $events = [
             new RunEvent(self::SESSION_ID, 1, 1, RunEventTypeEnum::ToolExecutionStart->value, [
                 'tool_call_id' => $call->toolCallId,
@@ -484,7 +484,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
             );
             $harness->screen()->setWorkingVisible(false);
             foreach ($events as $event) {
-                $runtimeEvent = $translator->translate($event);
+                $runtimeEvent = $mapper->toRuntimeEvent($event);
                 $this->assertNotNull($runtimeEvent);
                 $projector->accept($runtimeEvent);
                 if ('live' === $phase) {

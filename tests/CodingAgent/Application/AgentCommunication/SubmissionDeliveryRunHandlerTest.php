@@ -22,7 +22,7 @@ use Ineersa\CodingAgent\Application\AgentCommunication\DTO\DeliverSubmissionDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\SubmissionDeliveryRunHandler;
 use Ineersa\CodingAgent\Application\AgentCommunication\SubmissionRunHandler;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Tests\Support\SubmissionFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -115,7 +115,7 @@ final class SubmissionDeliveryRunHandlerTest extends IsolatedKernelTestCase
         $handler = $c->get(SubmissionDeliveryRunHandler::class);
         $result = $handler->handle($delivery, $f->childState);
         Assert::assertCount(1, $result->events);
-        Assert::assertNull($c->get(RuntimeEventTranslator::class)->translate($result->events[0]));
+        Assert::assertNull($c->get(RuntimeEventMapper::class)->toRuntimeEvent($result->events[0]));
         $this->commit($f->childState, $result);
         $state = $result->nextState;
         Assert::assertSame($f->childState->pendingToolCalls, $state->pendingToolCalls);

@@ -5,17 +5,22 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure;
 
 use Ineersa\CodingAgent\Logging\LogContextProcessor;
+use Revolt\EventLoop\FiberLocal;
 
 /**
  * Per-fiber logging correlation context for long-lived workers.
  *
- * Each PHP {@see \Fiber} maintains its own context stack so concurrent
- * fibers do not share or corrupt each other's correlation fields.
- * Code running outside any fiber (e.g. the main event loop) uses a
- * separate default stack.
+ * Each PHP {@see \Fiber} maintains its own context stack in a Revolt
+ * {@see FiberLocal}, so concurrent fibers do not share or corrupt each
+ * other's correlation fields. Code running outside any fiber (e.g. the
+ * main event loop caller) uses FiberLocal's main-fiber storage, which
+ * is process-global and never cleared automatically.
  *
  * Each scope is entered via {@see enter()} and must leave via
- * {@see leave()} in a try/finally block.
+ * {@see leave()} in a try/finally block within the same event-loop
+ * callback: Revolt clears FiberLocal storage on its reusable callback
+ * Fibers after every callback, so a scope left open when its callback
+ * returns is dropped instead of leaking into the next callback.
  *
  * This lives in AgentCore so core pipeline code can scope context
  * without depending on CodingAgent. The Monolog processor
@@ -26,16 +31,8 @@ use Ineersa\CodingAgent\Logging\LogContextProcessor;
  */
 final class RunLogContext
 {
-    /**
-     * Per-fiber context stacks. Fibers are GC'd automatically when
-     * they finish, and WeakMap entries are released with them.
-     *
-     * @var \WeakMap<\Fiber<mixed, mixed, mixed, mixed>, list<array<string, mixed>>>
-     */
-    private static ?\WeakMap $fiberStacks = null;
-
-    /** @var list<array<string, mixed>> */
-    private static array $defaultStack = [];
+    /** @var FiberLocal<list<array<string, mixed>>>|null */
+    private static ?FiberLocal $stack = null;
 
     /**
      * Push new correlation context onto the current fiber's stack.
@@ -46,10 +43,10 @@ final class RunLogContext
      */
     public static function enter(array $context): void
     {
-        $stack = self::readStack();
+        $stack = self::stack()->get();
         $parent = [] !== $stack ? $stack[array_key_last($stack)] : [];
         $stack[] = [...$parent, ...$context];
-        self::writeStack($stack);
+        self::stack()->set($stack);
     }
 
     /**
@@ -58,11 +55,15 @@ final class RunLogContext
      */
     public static function leave(): void
     {
-        $stack = self::readStack();
-        if ([] !== $stack) {
-            array_pop($stack);
-            self::writeStack($stack);
+        $stack = self::stack()->get();
+        array_pop($stack);
+        if ([] === $stack) {
+            self::stack()->unset();
+
+            return;
         }
+
+        self::stack()->set($stack);
     }
 
     /**
@@ -72,47 +73,20 @@ final class RunLogContext
      */
     public static function current(): array
     {
-        $stack = self::readStack();
+        $stack = self::stack()->get();
 
-        if ([] === $stack) {
-            return [];
-        }
-
-        return $stack[array_key_last($stack)];
+        return [] === $stack ? [] : $stack[array_key_last($stack)];
     }
 
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private static function readStack(): array
+    /** @return FiberLocal<list<array<string, mixed>>> */
+    private static function stack(): FiberLocal
     {
-        $fiber = \Fiber::getCurrent();
-
-        if (null === $fiber) {
-            return self::$defaultStack;
-        }
-
-        if (null === self::$fiberStacks || !self::$fiberStacks->offsetExists($fiber)) {
-            return [];
-        }
-
-        return self::$fiberStacks[$fiber];
+        return self::$stack ??= new FiberLocal(self::emptyStack(...));
     }
 
-    /**
-     * @param list<array<string, mixed>> $stack
-     */
-    private static function writeStack(array $stack): void
+    /** @return list<array<string, mixed>> */
+    private static function emptyStack(): array
     {
-        $fiber = \Fiber::getCurrent();
-
-        if (null === $fiber) {
-            self::$defaultStack = $stack;
-
-            return;
-        }
-
-        self::$fiberStacks ??= new \WeakMap();
-        self::$fiberStacks->offsetSet($fiber, $stack);
+        return [];
     }
 }

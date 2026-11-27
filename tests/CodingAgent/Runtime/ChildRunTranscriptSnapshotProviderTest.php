@@ -20,7 +20,6 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -152,8 +151,7 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
     private function createProviderWithStore(EventStoreInterface $store): ChildRunTranscriptSnapshotProvider
     {
         $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
-        $translator = new RuntimeEventTranslator($eventDispatcher, new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
-        $eventMapper = new RuntimeEventMapper($translator);
+        $eventMapper = new RuntimeEventMapper($eventDispatcher, new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
 
         $dispatcher = new EventDispatcher();
         $projectionState = new TranscriptProjectionState();
