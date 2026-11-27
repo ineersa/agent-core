@@ -12,8 +12,9 @@ are read-only. Setup preserves the Markdown body and asks for confirmation befor
 deletion, showing the exact target and any definition that would become active.
 Deleting a skill removes its entire directory including assets. Setup does not
 materialize built-in skills on a fresh home; they appear here after normal skill
-discovery. You can edit them in their owning scope, but normal discovery can overwrite edits. You cannot delete them in
-setup.
+discovery. You can edit them in their owning scope, but Hatfield rewrites
+built-in skill directories whenever it discovers skills (normally at agent startup),
+discarding those edits. You cannot delete them in setup.
 
 Skills are Markdown packages (`SKILL.md` + optional references) that teach the
 agent specialized workflows. Hatfield discovers them from bundled, project, and
@@ -136,3 +137,8 @@ enabled).
 
 Built-in skills under `src/CodingAgent/Resources/skills` are mirrored into
 `~/.hatfield/skills/` even when `--no-skills` suppresses the current-run scan.
+Each built-in's directory there is replaced wholesale; other skill directories in
+`~/.hatfield/skills/` are left untouched.
+
+Each location is scanned recursively for `SKILL.md`. A directory containing
+`SKILL.md` is a skill root, and its subdirectories are not scanned for more skills.

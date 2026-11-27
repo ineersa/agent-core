@@ -26,8 +26,8 @@ curl --proto '=https' --tlsv1.2 -fsSL \
 
 Before installing, provide PHP 8.5 or later with these extensions:
 
-- `pdo_sqlite`, `mbstring`, `xml`, `intl`, `curl`, `openssl`
-- `pcntl`, `posix`, `tokenizer`, `ctype`, `filter`, `iconv`, `phar`
+- `pdo_sqlite`, `sqlite3`, `mbstring`, `xml`, `intl`, `curl`, `openssl`
+- `pcntl`, `posix`, `tokenizer`, `ctype`, `fileinfo`, `filter`, `iconv`, `phar`
 
 Optional: `zstd` enables ChatGPT request compression. The PHAR works without it.
 

@@ -14,7 +14,9 @@ Related: [distribution.md](distribution.md) · [phar-packaging.md](phar-packagin
 | `hatfield.linux-arm64` | `ubuntu-24.04-arm` |
 | `hatfield.darwin-arm64` | `macos-15` |
 
-Local builds support the **host** target only. The three-target matrix runs on tag `v*` releases.
+Local builds support the **host** target only; there is no cross-compilation. The
+Release workflow runs the three-target matrix on `v*` tag releases and on manual
+runs from the default branch, which prepare runtimes without publishing an app release.
 Intel macOS has no native target; use the [PHAR with system PHP](installation.md#install-the-phar).
 
 ## Pin file
@@ -42,6 +44,10 @@ castor distribution:verify
 2. Clone/checkout pinned SPC + phpmicro; apply tracked Linux self-path patch when required.
 3. `spc download` / `spc build` with pin extensions and micro/cli targets.
 4. Combine micro SFX with the exact PHAR bytes; smoke the native artifact.
+
+Compiling a runtime needs host build tools (`cc`/`gcc`/`clang`, `make`, `cmake`,
+`re2c`, `flex`, `gperf`); Castor checks them before SPC runs. See
+[host prerequisites](../tools/static/README.md#host-prerequisites).
 
 Native binaries embed the same packaged resources as the PHAR (selected docs included). They do not add project extension packages.
 

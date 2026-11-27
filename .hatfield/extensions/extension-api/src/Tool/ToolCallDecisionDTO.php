@@ -60,9 +60,10 @@ final readonly class ToolCallDecisionDTO
     /**
      * Request human approval via the HITL interrupt flow.
      *
-     * The tool call is replaced by an interrupt payload that pauses the run at
-     * WaitingHuman. The human response (from TUI or controller) is fed back to
-     * the LLM as a user message, allowing the LLM to retry the blocked call.
+     * The run pauses for a human answer. On answer, the host resumes the exact
+     * tool call and passes the answer to the originating hook's
+     * ApprovalAnswerHookInterface; Allow runs the original call without an
+     * extra model turn.
      *
      * @param array<string, mixed> $schema  JSON Schema for the expected answer shape
      * @param array<string, mixed> $details extension-specific metadata (category, command, path, etc.)

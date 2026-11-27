@@ -12,7 +12,10 @@ castor test --coverage --suite=agent-core
 
 `--coverage` collects line coverage. `--coverage-paths` implies `--coverage` and
 adds Xdebug branch/path coverage. Both use sequential PHPUnit, including when
-only a suite is selected. Normal `castor test` and `castor check` remain unchanged.
+only a suite is selected. Without these options, `castor test` and `castor check`
+collect no coverage. Coverage runs exclude the `tui-e2e-replay` and
+`controller-replay` groups; without `--filter` they also exclude the `phar` and
+`native-artifact` groups.
 Coverage reuses the existing isolated HOME, database/cache bootstrap, strict
 PHPUnit checks, process ownership and timeout limits. Branch/path collection can
 be expensive: prefer focused tests rather than increasing timeout budgets.

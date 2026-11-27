@@ -58,15 +58,21 @@ Each server entry is either **STDIO** (`command`) or **HTTP** (`url`). Transport
 | `command` | STDIO executable (implies STDIO transport) | — |
 | `args` | STDIO argv list | `[]` |
 | `env` | Extra env for STDIO child | `{}` |
-| `cwd` | Working directory for STDIO child | inherit |
+| `cwd` | Working directory for STDIO child; relative paths resolve against the project directory | inherit |
 | `url` | HTTP endpoint (implies HTTP transport) | — |
 | `headers` | HTTP request headers | `{}` |
 | `timeoutMs` | Per-request timeout (ms) | `30000` |
 | `startupTimeoutMs` | Startup/connect timeout (ms) | `30000` |
 | `availability` | `all` (global inherit) or `specific` (selector-only) | `all` |
-| `excludeTools` | Tool names to hide from the registry | `[]` |
+| `excludeTools` | Server-side MCP tool names (not Hatfield names) to hide from the registry | `[]` |
 
-Unknown fields are rejected by the config loader. Prefer least-privilege env vars. Do not commit secrets.
+Unknown fields are rejected by the config loader. Fields that do not apply to the
+derived transport (`args`, `env` or `cwd` on an HTTP server; `headers` on a STDIO
+server) are ignored rather than rejected.
+
+`env` and `headers` values may reference environment variables as `${NAME}`. A
+referenced variable that is unset or empty fails configuration loading. Use this to
+keep tokens out of `mcp.json`; prefer least-privilege env vars and do not commit secrets.
 
 ## Availability and child inheritance
 
@@ -100,7 +106,7 @@ Child denylist `agents.subagent_excluded_tools` still removes named tools after 
 ## Runtime behavior
 
 - MCP tools are registered into the Hatfield tool registry for the session after servers connect and advertise tools.
-- Tool names are namespaced/unique per registry rules to avoid collisions with built-ins.
+- Hatfield tool names are `<server>_<tool>`, with characters other than letters, digits, `_` and `-` replaced by `_`. If two servers' tools map to the same name, the later one is skipped with a warning.
 - Invocations use the MCP client session for the active run; transient disconnects may reconnect according to client manager policy.
 - MCP-backed `ExecuteToolCall` messages route to the dedicated `mcp` transport (one consumer per session). Repository maintainers: see `architecture/processes-and-queues.md`.
 - MCP calls use the run's cancellation token. The call deadline is the shorter of

@@ -30,9 +30,16 @@ it before canonical suffix catch-up and `session.ready`.
   command IDs are not a durable deduplication ledger. Resubmission can repeat input.
 - Active batch rows retain scheduling order, admission and human/deferred waits.
   Call/result rows hold bounded references, not serialized envelopes or arguments.
-- Bodies live in private immutable JSON files under
-  `runtime/tool-payloads/<call-id-sha256>/<body-sha256>.json`. References carry
-  producer identity, SHA-256 and byte length, never arbitrary paths.
+- Bodies live in private immutable JSON files under the run's session (or child
+  artifact) directory at
+  `runtime/tool-payloads/<call-id-sha256>/<body-sha256>.json`. A retained
+  first-result reference sits beside them as `first-<sha256>.json`, keyed by turn,
+  step, attempt, operation key and order. References carry producer identity,
+  SHA-256 and byte length, never arbitrary paths.
+- Tool attachments live at
+  `runtime/tool-attachments/<call-id-sha256>/<random>.txt`. Transcript
+  references point at them, so they outlive batch bodies and remain until
+  permanent session deletion.
 - Publication seals files before SQL/transport references become visible. Reads
   validate size, identity and digest. Missing/corrupt **active** data fails closed;
   superseded deliveries need not reopen legitimately cleaned files.
@@ -41,6 +48,15 @@ it before canonical suffix catch-up and `session.ready`.
   unreferenced files within that critical section. Human/deferred waits retain data.
 - Tool execution, direct shell, ordinary results and deferred completions cross
   the broker as bounded `ToolPayloadMessage` references while retaining routing.
+
+```mermaid
+flowchart LR
+    Msg["ExecuteToolCall / ExecuteShellToolCall / ToolCallResult"] --> Seal["SessionToolPayloadStore: write immutable 0600 JSON"]
+    Seal --> Ref["ToolPayloadReferenceDTO: identity, SHA-256, bytes"]
+    Ref --> Bus["ToolPayloadMessage on broker"]
+    Bus --> Read["Receiver, under run lock: admit, validate size, identity, digest"]
+    Read --> Handler["Original message to its handler"]
+```
 
 Ordinary shutdown retains pending metadata. Permanent deletion captures descendant
 ownership paths before its metadata transaction, then removes payload directories
@@ -54,8 +70,7 @@ Delivery is at-least-once. Control/result handlers validate current turn, step,
 attempt, batch/call identity and operation key before committing. Completed/stale
 messages are no-ops where that lifecycle provides a guard; the pending-only
 command mailbox is not a completed-command receipt ledger. Command admission is
-core-only. Replay ignores the obsolete `options` field on historical command
-events.
+core-only.
 
 Tool execution can reuse stored same-call outcomes, but that does not exclude
 concurrent duplicate side effects. Bash also has native launch evidence. Child
@@ -79,13 +94,20 @@ created when its original database metadata is lost. New session paths use atomi
 exclusive creation and refuse occupied files/directories/symlinks.
 
 Output-cap artifacts live under `tools.output_cap.path/run-<sha256(run_id)>/`.
-Controller start/resume, shutdown and explicit deletion clean owned parent/child
-scopes; ordinary turn completion/cancellation does not. Replay never reads these
-artifacts. The 24-hour first-use stale cleanup is a crash fallback, not archival
-storage. Historical custom root files require separate operator review, not a
-recursive deletion policy.
+`OutputCapControllerSessionLifecycleListener` cleans owned parent/child scopes
+on every controller start (including resume) and shutdown; ordinary turn
+completion/cancellation does not. Replay never reads these artifacts. A
+first-use stale sweep older than `tools.output_cap.retention` (default 24 hours)
+is a crash fallback, not archival storage. It removes only hashed run scopes and
+legacy `YYYYMMDD-<hex>.txt` files; unknown root entries and symlinks are left for
+operator review.
 
 Sources: [RunCommit](../src/AgentCore/Application/Pipeline/RunCommit.php),
 [session store](../src/CodingAgent/Session/HatfieldSessionStore.php),
 [tool payload middleware](../src/CodingAgent/Runtime/Messenger/ToolPayloadMiddleware.php),
+[tool payload store](../src/CodingAgent/Session/SessionToolPayloadStore.php),
+[command store](../src/AgentCore/Infrastructure/Storage/DoctrineCommandStore.php),
+[catalog recovery](../src/CodingAgent/Session/SessionCatalogRecoveryService.php),
+[bootstrap delivery](../src/CodingAgent/Runtime/Controller/SessionBootstrapDelivery.php),
+[output cap](../src/CodingAgent/Tool/OutputCap.php),
 [session usage](../docs/session-storage.md).

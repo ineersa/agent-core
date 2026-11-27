@@ -11,7 +11,7 @@ use Revolt\EventLoop;
 use Symfony\Component\Process\Process;
 
 /**
- * Manages messenger:consume child processes for the controller.
+ * Manages Messenger consumer child processes for the controller.
  *
  * Launches Symfony Process-based consumers for a given role (llm and tool use
  * hatfield:messenger:consume-llm; other roles use messenger:consume),
@@ -19,7 +19,7 @@ use Symfony\Component\Process\Process;
  * with exponential backoff, and gracefully stops them on shutdown.
  *
  * Tracks each instance by a composite key: transportName#instanceId.
- * The tool role consumes both tool and agent queues in one process.
+ * The tool role consumes the tool, agent and code_mode_requests queues in one process.
  *
  * Restart policy:
  * - Up to 3 restarts within a 60-second window per consumer key.
@@ -107,10 +107,14 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     }
 
     /**
-     * Launch a messenger:consume child process for the given transport.
+     * Launch a consumer child process for the given transport.
      *
-     * Multiple instances of the same transport can be launched with
-     * different $instanceId values (e.g. 0, 1, 2 for tool workers).
+     * llm and tool run `hatfield:messenger:consume-llm --transport=<name>`;
+     * every other transport runs stock `messenger:consume <name>`.
+     *
+     * $instanceId distinguishes processes of the same transport in the
+     * consumer key and the tool reply slot. The controller currently launches
+     * only instance 0 of each transport; restarts reuse the original id.
      */
     public function launch(string $transportName, int $instanceId = 0): void
     {

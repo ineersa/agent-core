@@ -12,7 +12,7 @@ namespace Ineersa\Hatfield\ExtensionApi\Tool;
  * for provider schema exposure, execution allowlist, and system prompt summary.
  *
  * This DTO is immutable. All properties are readonly.
- * Dynamic tool management uses separate ToolRegistry APIs and is not exposed
+ * Dynamic tool management uses separate host APIs and is not exposed
  * through the public Extension API in v1.
  *
  * Handler may be an argument-only handler or a contextual handler that

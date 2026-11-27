@@ -9,8 +9,17 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 /**
  * Request-time target-model conversion policy for AgentMessage lists.
  *
- * Canonical stored events are never rewritten. This helper remaps tool-call IDs,
- * converts thinking for foreign models, and sets preserve_native_item_ids metadata.
+ * Canonical stored events are never rewritten. For assistant messages from a
+ * different (or unknown) source model, this helper remaps tool-call IDs, strips
+ * source-model text signatures, appends `details.thinking` as a text part, and
+ * drops thinking signatures and ordered thinking parts; tool results follow the
+ * remapped IDs. Exact same-model messages keep their IDs.
+ *
+ * Assistant metadata `preserve_native_item_ids` (METADATA_PRESERVE_NATIVE_ITEM_IDS)
+ * records the outcome: true for exact same-model messages, false for converted
+ * ones. Only this class reads it (an already-marked same-model message is
+ * returned unchanged); no request serializer currently consumes it.
+ *
  * {@see AgentMessageConverter} owns the active MessageBag and when to apply this
  * policy.
  */

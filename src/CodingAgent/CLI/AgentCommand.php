@@ -351,7 +351,7 @@ final class AgentCommand
         $runId = $this->sessionStore->createSession($prompt);
 
         // Non-blocking: dispatches StartRun to run_control transport.
-        // Events flow through EventStore / publish transport, not stdout.
+        // Events are committed to the canonical event store, not written to stdout.
         $handle = $client->start(new StartRunRequest(
             prompt: $prompt,
             runId: $runId,
@@ -367,8 +367,8 @@ final class AgentCommand
         )));
 
         // Note: --headless mode does NOT forward subsequent events to stdout.
-        // Use --controller for full event forwarding via EventStore drain
-        // and publish transport polling.
+        // Use --controller for full event forwarding: the controller streams
+        // committed and transient runtime events on its stdout.
     }
 
     private function handleHeadlessResume(RuntimeCommand $command, OutputInterface $output): void

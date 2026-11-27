@@ -51,7 +51,7 @@ Freshness (`phar:ensure`) fingerprints the complete packaged input set including
 
 ## Runtime model
 
-Writable state lives under the runtime CWD (`.hatfield/`), not inside the archive.
+Writable state lives under the runtime CWD (`.hatfield/`) and the user's `~/.hatfield/`, never inside the archive.
 `AppResourceLocator` resolves bundled defaults/themes/docs from the app root (`phar://…` when running the archive).
 
 ## Tests

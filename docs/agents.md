@@ -59,8 +59,8 @@ System prompt body for the child agent…
 
 MCP entries inside `tools` use `mcp:` selectors — see [mcp.md](mcp.md).
 
-In setup, press Enter on **Model**, **Thinking**, or **System prompt mode** to
-open a picker. Model and thinking can inherit the parent/default value. The
+In setup, press Enter on **Model**, **Thinking**, **System prompt mode** or
+**Inherit project context** to open a picker. Model and thinking can inherit the parent/default value. The
 thinking picker shows levels for the selected model, or the configured default
 model when there is no override. In **Extensions**, Space toggles an optional
 extension and Enter applies the selection. The list uses parent-enabled classes;
@@ -99,7 +99,7 @@ main-orchestrated workflow and safe starter-update instructions.
 - Concurrent writers must respect file and worktree ownership. Never assign concurrent writers to the same worktree.
 - Responses over 50,000 characters omit inline handoffs and return a notice with artifact references. The full handoffs remain available through `agent_retrieve`.
 - Default child denylist includes `hatfield_docs` (`agents.subagent_excluded_tools`). Empty list disables the denylist.
-- **Always stripped on every child:** `subagent`, `fork`, and `agent_resume` (no nested child launches/resumes), plus parent-only `agent_steer` and `agent_cancel`.
+- **Always stripped on every child:** `subagent`, `fork`, and `agent_resume` (no nested child launches/resumes), plus parent-only `agent_steer` and main-only tools such as `agent_cancel`, `get_goal`/`set_goal`/`clear_goal` and `schedule`. Neither an omitted nor an explicit `tools` list can restore them.
 - Durable timeout: `agents.subagent_tool_timeout_seconds` (default `86400`, min `60`) schedules deferred-batch interruption. This is not a generic ToolExecutor cap.
 - Child extensions: `agents.extensions.always_on` ∪ per-agent frontmatter `extensions` only (does **not** use `forks.extensions.*` or parent `extensions.enabled`).
 

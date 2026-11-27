@@ -72,7 +72,8 @@ An expanded `/other` is not recursively invoked as another template.
 
 Only `description` affects help/completion; otherwise the first nonempty body
 line supplies a short description. Unknown keys, including `argument-hint`, do
-nothing. Malformed YAML logs a diagnostic and leaves the original content as body.
+nothing. Malformed YAML logs a warning and ignores the metadata; the body is still
+the content after the frontmatter block.
 
 Templates are flat text substitution: no conditionals, model/reasoning override,
 recursive expansion or extension resource-manifest loader. No templates ship by

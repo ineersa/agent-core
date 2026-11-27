@@ -7,7 +7,7 @@
 - Application LLM retries emit transient `llm.request_retrying` (seq=`0`) for TUI working-status progress. Retry observer wiring is independent of `streamObserverEnabled`; compaction keeps stream deltas suppressed.
 - TUI may depend on CodingAgent directly for ordinary service ownership; do not add Runtime/Contract catalog interfaces solely to isolate TUI from CodingAgent modules. Follow `depfile.yaml`.
 - CodingAgent must not depend on TUI.
-- `Runtime/InProcess` calls AgentCore directly; `Runtime/Process` uses headless JSONL subprocess.
+- `Runtime/InProcess` calls AgentCore directly; `Runtime/Process` talks JSONL to an `agent --controller` subprocess (`HeadlessController`).
 - `src/CodingAgent/CLI/AgentCommand.php` wires TUI via `Ineersa\Tui\Application\InteractiveMode`.
 - Canonical source: `.hatfield/sessions/<id>/events.jsonl` via `EventStoreInterface`. Overview: `architecture/runtime.md`.
 

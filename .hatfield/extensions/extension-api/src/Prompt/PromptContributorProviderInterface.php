@@ -7,9 +7,9 @@ namespace Ineersa\Hatfield\ExtensionApi\Prompt;
 /**
  * Narrow provider interface for reading registered prompt contributors.
  *
- * Implemented by ExtensionHookRegistry (AppExtension layer) and consumed
- * by SystemPromptBuilder (AppSystemPrompt layer) through the AppExtensionApi
- * public contract, avoiding a direct AppSystemPrompt → AppExtension dependency.
+ * Implemented by the host extension hook registry and consumed by the host
+ * system prompt builder through this public contract, so prompt building does
+ * not depend on the extension registry implementation.
  *
  * @see PromptContributorInterface
  */

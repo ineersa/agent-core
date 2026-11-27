@@ -7,15 +7,18 @@ namespace Ineersa\CodingAgent\PromptTemplate;
 /**
  * Substitutes placeholders in a prompt-template body with argument values.
  *
- * Substitution order (important — prevents later passes from corrupting
- * structured placeholder syntax):
+ * Substitution runs as sequential passes in this fixed order:
  *  1. Positional placeholders ($1, $2, ...)
  *  2. Slices (${@:N}, ${@:N:L})
  *  3. $ARGUMENTS
  *  4. $@
  *
- * No recursive substitution: argument values inserted into the result are
- * never scanned for further placeholders.
+ * A pass does not rescan its own replacements, but each later pass scans the
+ * whole result of the earlier passes. An argument value that contains
+ * placeholder syntax handled by a later pass (for example a $1 value containing
+ * `$ARGUMENTS` or `${@:1}`, or any inserted value containing `$@`) is therefore
+ * expanded by that later pass. Values inserted by the final $@ pass are not
+ * rescanned.
  *
  * Edge behaviour:
  *  - $0 and out-of-range positional placeholders become empty strings.
@@ -71,7 +74,7 @@ final class PromptTemplateSubstitutor
             $content,
         );
 
-        // 3 & 4. $ARGUMENTS, then $@ (order matters: $@ is a substring of $ARGUMENTS)
+        // 3 & 4. $ARGUMENTS, then $@ (the $@ pass also scans values inserted for $ARGUMENTS)
         $allArgs = implode(' ', $args);
         $content = str_replace('$ARGUMENTS', $allArgs, $content);
         $content = str_replace('$@', $allArgs, $content);

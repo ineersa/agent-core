@@ -70,6 +70,17 @@ Built-in skills ship under the install tree (`src/CodingAgent/Resources/skills`)
 `--no-skills` only disables auto-discovery scanning of project/user/extension skill dirs for the current run.
 CLI `--skills-path` entries are always scanned. Extensions may `registerSkill()` for package-local skills (lowest precedence when auto-discovery is on).
 
+Search order (first match by name wins):
+
+1. CLI `--skills-path` entries
+2. `<cwd>/.hatfield/skills`
+3. `~/.hatfield/skills` (includes materialized built-in skills)
+4. `<cwd>/.agents/skills`
+5. `~/.agents/skills`
+6. Extension-registered skill directories
+
+Steps 2–6 are skipped with `--no-skills`. Use `--skills <name>` (repeatable) to preload a skill.
+
 Behavioral detail (discoverable vs on-demand-only, `/skill:<name>`, frontmatter): [skills.md](skills.md).
 
 ## Extensions (`extensions:`)
@@ -77,9 +88,11 @@ Behavioral detail (discoverable vs on-demand-only, `/skill:<name>`, frontmatter)
 | Key | Meaning |
 |---|---|
 | `extensions.enabled` | List of fully-qualified extension classes to load for the parent session |
+| `extensions.project_extensions` | Project settings only: classes appended to the resolved `extensions.enabled` list (see [settings.md](settings.md)) |
 | `extensions.settings.<key>` | Opaque settings bag returned by `ExtensionApiInterface::getSettings()` |
 
-Extensions load from project `.hatfield/extensions/vendor/autoload.php` when present.
+Extensions load from project `.hatfield/extensions/vendor/autoload.php`, then user
+`~/.hatfield/extensions/vendor/autoload.php`, when present; project packages win collisions.
 Registrations are process-local and load on console command startup, including
 workers. Restart Hatfield after changing extension code or enablement; `/new`
 inside an already running host does not reload PHP classes.

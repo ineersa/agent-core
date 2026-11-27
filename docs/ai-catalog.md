@@ -64,8 +64,8 @@ settings (`enabled`, `api_key`) and use `ai.favorite_models` for a lean picker.
 3. **Sync** fetches `https://models.dev/api.json` and refreshes allowlisted
    metadata on matching model ids. A model with `compatibility.pin_context_window: true`
    keeps its catalog `context_window` — models.dev reports the raw model window,
-   while curated caps encode real cost policy (GPT-6 and GPT-5.6 models are
-   pinned to the 272k cheap pricing tier). Partial upstream `cost` maps refresh
+   while curated caps encode real cost policy (the bundled GPT-6.x and GPT-5.6
+   models are pinned to the 272k cheap pricing tier). Partial upstream `cost` maps refresh
    only the fields they provide and keep existing `cache_read` / `cache_write`
    values when those fields are absent. Explicit numeric zeros still apply.
    Every other metadata key still syncs. Unknown
@@ -125,7 +125,7 @@ Related: [settings.md](settings.md), [settings-models.md](settings-models.md).
 ## Cost estimates
 
 Catalog `cost` values are Standard short-context API rates in USD per 1M tokens.
-For GPT-6 and GPT-5.6 models, Hatfield pins `context_window` to 272000 so
+For the bundled GPT-6.x and GPT-5.6 models, Hatfield pins `context_window` to 272000 so
 estimates stay on that flat tier. Only the documented default 30m cache-write
 rate is modeled. The 272k pin does not select or price 12h retention. ChatGPT
 subscription sessions still show API-priced estimates, not billed subscription

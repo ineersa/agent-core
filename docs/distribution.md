@@ -38,6 +38,7 @@ is unsupported for normal product runs even with a downloaded PHAR.
 ## Local orchestration
 
 ```bash
+castor distribution:info
 castor distribution:build
 castor distribution:build-static
 castor distribution:checksums
@@ -45,6 +46,14 @@ castor distribution:verify
 castor distribution:verify --skip-topology --allow-missing-native
 scripts/build-distribution.sh --version=1.2.3 --commit=$(git rev-parse HEAD)
 ```
+
+`distribution:info` prints the dist directory, host target, static pins and the
+state of each release artifact. `distribution:build` writes a smoked PHAR and its
+`SHA256SUMS` entry. `distribution:build-static` builds the host target only;
+cross-compilation is not supported. `distribution:verify` requires the PHAR, the
+host native artifact and `SHA256SUMS` unless the `--allow-missing-*` flags say
+otherwise. The wrapper script runs the same tasks under a worktree-local lock and
+builds only the PHAR unless you pass `--static`.
 
 Run `castor package:local` to build a fresh PHAR and a host-native binary from
 the current checkout, then install it as `~/.local/bin/hatfield`. Use
@@ -59,7 +68,8 @@ to use the new binary; the task does not stop or restart them.
 |---|---|
 | `HATFIELD_DIST_DIR` | Dist directory (default `var/tmp/dist`) |
 | `HATFIELD_BUILD_VERSION` / `HATFIELD_BUILD_COMMIT` | Embedded identity |
-| `HATFIELD_BINARY_PATH` / `HATFIELD_NATIVE_BINARY_PATH` | Test overrides |
+| `HATFIELD_BINARY_PATH` | Executable override for Hatfield subprocesses and packaged-artifact tests |
+| `HATFIELD_NATIVE_BINARY_PATH` | Native artifact for native topology and artifact-boot tests |
 
 ## Canonical PHAR handoff
 
@@ -71,13 +81,20 @@ to use the new binary; the task does not stop or restart them.
 
 ## Release workflow
 
+`.github/workflows/release.yml` runs on `v*` tag pushes and on manual dispatch from
+the default branch. A tag run builds the PHAR and the three native targets, publishes
+the app release, then updates the extension package mirrors. A manual run builds the
+PHAR and native targets only to prepare [cached native runtimes](static-packaging.md#compiled-runtime-cache);
+it publishes no app release. Manual runs on other branches do nothing.
+
 The workflow checks for all seven payload assets and verifies their checksums before
 publishing. It checks for clean system PHP startup before Composer, without
 provisioning optional `zstd` for system PHP. Native runtimes must include `zstd`.
 
 Native jobs share a GitHub concurrency group per target to avoid concurrent runtime
 publication for that target. The group allows one running and one pending job;
-with three overlapping runs, a newer job can replace the pending one.
+with three overlapping runs, a newer job can replace the pending one. A replaced
+job is cancelled; if it belonged to a tag run, that release is not published.
 
 ## Installer
 

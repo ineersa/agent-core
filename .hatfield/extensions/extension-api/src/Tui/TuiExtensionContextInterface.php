@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Hatfield\ExtensionApi\Tui;
 
-use Ineersa\Tui\Runtime\BridgeTuiExtensionContext;
-use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
@@ -13,7 +11,7 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
  *
  * Uses Symfony TUI widget types on purpose: project extensions under `.hatfield/extensions/`
  * implement {@see TuiExtensionInterface} and mount their own {@see AbstractWidget} trees
- * below the editor via the host bridge ({@see BridgeTuiExtensionContext}).
+ * below the editor through the host TUI bridge.
  *
  * Must stay free of Hatfield feature-specific DTOs and must not reference `Ineersa\Tui\*` internals.
  */
@@ -24,8 +22,8 @@ interface TuiExtensionContextInterface
     /**
      * Set or remove a keyed status-panel row.
      *
-     * Pass null to clear. Statuses are panel-only; footer content uses explicit
-     * footer widget/segment-provider APIs, not this method.
+     * Pass null to clear. Statuses are panel-only; this contract offers no
+     * footer API.
      */
     public function setStatus(string $key, ?string $text): void;
 
@@ -48,7 +46,7 @@ interface TuiExtensionContextInterface
     /**
      * Register an idle-safe TUI tick callback.
      *
-     * Invoked via the host {@see TuiTickDispatcher}. The bridge
+     * Invoked by the host TUI tick loop. The host
      * always discards the listener return value so extensions cannot request the
      * 100Hz busy tick cadence. Pollers that need work while idle must self-throttle
      * (Symfony TUI idle interval is ~250ms).

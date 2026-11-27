@@ -40,11 +40,13 @@ use Symfony\Component\Tui\Widget\LoaderWidget;
  * Production screen bridge between the TUI layout/widget system and Symfony TUI.
  *
  * ChatScreen owns:
- *  - Status entries + working message/visibility state (sole owner/writer; syncs the
- *    native StatusPanelWidget/LoaderWidget directly)
- *  - Directly mounted native Symfony widgets for the chrome regions: header,
- *    loaded resources, transcript, pending, working loader, status panel,
- *    compact header, prompt editor, footer.
+ *  - Status entries + working message/visibility state (sole owner/writer; syncs
+ *    StatusPanelWidget and the Symfony LoaderWidget directly)
+ *  - Directly mounted widgets for the chrome regions: project widgets built on
+ *    Symfony's AbstractWidget/ContainerWidget (header, loaded resources,
+ *    transcript, pending, status panel, compact header, background-work rows,
+ *    footer) plus Symfony's own LoaderWidget (working loader) and EditorWidget
+ *    (prompt editor).
  *  - A PromptEditor facade (DI service) wrapping a real Symfony EditorWidget
  *  - LiveTextWidget ONLY for the blank top margin and the three responsive
  *    separator rows: Symfony TextWidget drops whitespace-only text and no
@@ -57,7 +59,7 @@ use Symfony\Component\Tui\Widget\LoaderWidget;
  *
  * ## Resize responsiveness
  *
- * The native chrome widgets render through the Symfony widget tree with the
+ * The chrome widgets render through the Symfony widget tree with the
  * live RenderContext, so terminal resize reflows them automatically.
  * Working status is a single mounted native {@see LoaderWidget} (circle spinner)
  * driven through start/stop + finished-indicator states. The transcript is a
@@ -69,7 +71,7 @@ final class ChatScreen
     /** Number of blank lines rendered before the header logo. */
     private const int TOP_MARGIN_LINES = 4;
 
-    /* ── Native Symfony chrome widgets (directly mounted) ── */
+    /* ── Chrome widgets (directly mounted in the Symfony widget tree) ── */
     private readonly LiveTextWidget $topMarginWidget;
     private readonly HeaderWidget $headerWidget;
     private readonly LiveTextWidget $headerSepWidget;
@@ -398,7 +400,7 @@ final class ChatScreen
 
         // Panel-only: keyed statuses never fan out into the footer bar.
         // Footer content comes from explicit FooterSegmentProvider APIs.
-        // Push the full entry map so the native StatusPanelWidget repaints.
+        // Push the full entry map so StatusPanelWidget repaints.
         if (null === $text) {
             unset($this->statusEntries[$key]);
         } else {
@@ -460,9 +462,8 @@ final class ChatScreen
      * corresponding theme thinking-colour tokens and updates the Symfony TUI
      * stylesheet so the EditorWidget frame is rendered in that colour.
      *
-     * Uses {@see FooterStateSegmentProvider::thinkingColor()} so the
-     * mapping stays consistent between the footer diamond/model and the
-     * editor border.
+     * Uses {@see ThemeColorEnum::forReasoning()}, the same mapping the
+     * footer diamond/model colours use, so both stay consistent.
      */
     public function applyEditorBorderColor(string $reasoning): void
     {
@@ -577,9 +578,10 @@ final class ChatScreen
      *
      *   … → editor → overlay → backgroundRows → footerSep → footer
      *
-     * Used by completion menus that should appear below the prompt
-     * while the editor keeps focus (unlike question/picker overlays
-     * which steal focus and render above the editor).
+     * Used by completion menus, which leave focus on the editor, and by
+     * picker overlays (including extension pickers), which take focus
+     * themselves. Question overlays use {@see insertOverlayBeforeEditor()}
+     * and render above the editor.
      *
      * @throws \LogicException when the screen has not been mounted yet
      */

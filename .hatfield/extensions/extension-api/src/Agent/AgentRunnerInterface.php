@@ -28,9 +28,9 @@ interface AgentRunnerInterface
     public function run(AgentCallRequestDTO $request): void;
 
     /**
-     * Exact provider/model reference such as "llama_cpp/flash".
+     * Context window of an exact provider/model reference such as "llama_cpp/flash".
      *
-     * Resolve only via HatfieldModelCatalog / AiModelReference.
+     * Resolved only from the host model catalog.
      * Null or non-positive is a durable configuration failure at every call site.
      * No fallback table. No invented default window. Not retryable/transient.
      */

@@ -99,7 +99,9 @@ castor datadog:smoke-log    # append one JSONL smoke line under project .hatfiel
 ## Agent log collection
 
 1. Enable logs in the Datadog Agent (`logs_enabled: true`).
-2. Install the sample config from this repo:
+2. Install the sample config from this repo. Its two `path:` entries are absolute
+   globs for one maintainer's main checkout and worktree root. Install a copy whose
+   paths match your checkout, worktree layout and any custom log directory.
 
 ```bash
 castor datadog:log-config
@@ -113,8 +115,8 @@ sudo install -o dd-agent -g dd-agent -m 0644 \
 3. Ensure the Agent user can traverse to and read Hatfield log files under the active
    log directory (`logging.path` / `HATFIELD_LOG_DIR`, default project `.hatfield/logs/`).
    On Linux this often means ACL execute on parent dirs and read on the log dir
-   (`setfacl`). Exact paths depend on your checkout layout, so adapt the hints printed
-   by `castor datadog:log-config`.
+   (`setfacl`). The `setfacl` hints printed by `castor datadog:log-config` use the
+   same hard-coded maintainer paths, so replace them with your own directories.
 4. Restart the Agent and write a smoke line:
 
 ```bash
@@ -144,8 +146,10 @@ sudo install -o dd-agent -g dd-agent -m 0644 \
 sudo systemctl restart datadog-agent
 ```
 
-The config matches Hatfield PHAR processes and source launches through
-`bin/console`. It tags the resulting `system.processes.*` metrics with
+The config matches command lines containing `hatfield.phar`, `bin/console agent`
+or `bin/console messenger:consume`. An installed `hatfield` executable, whether a
+native binary or a PHAR installed under that name, does not match until you add a
+search string for its path. It tags the resulting `system.processes.*` metrics with
 `service:hatfield`, `env:dev`, and `app:hatfield`.
 
 Check the integration after the Agent has completed one collection interval:
@@ -354,8 +358,9 @@ Intentionally lost with the extension:
 - Profiling and database statement spans (`PDOStatement.execute`).
 - The span-based dashboard widgets. Six were rebuilt as log queries, and the
   Database operations and Messenger consume widgets were removed because their data
-  existed only in APM spans. See the Datadog skill's dashboard reference for the
-  current widget set.
+  existed only in APM spans. See the [dashboard definition](../ops/datadog/dashboard.yaml)
+  and the Datadog skill's `.hatfield/skills/datadog/references/hatfield-dashboard.md`
+  for the current widget set.
 
 Verify extension-free operation:
 

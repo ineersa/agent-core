@@ -14,8 +14,8 @@ This package is the stable surface extensions depend on. Host Hatfield provides 
 ## What it provides
 
 - `HatfieldExtensionInterface` — startup `register(ExtensionApiInterface $api)` entry for enabled extensions.
-- `ExtensionApiInterface` — tools, tool call/result/rewrite hooks, slash commands, settings/cwd access, after-turn-commit hooks, session-start hooks, before-compaction hooks, exec, session event reading, extension-agent jobs, and related DTOs under `Agent\`, `Approval\`, `Command\`, `Compaction\`, `Exec\`, `Lifecycle\`, `Prompt\`, `Session\`, `Tool\`.
-- `Tui\TuiExtensionInterface` / `Tui\TuiProjectExtensionInterface` and `Tui\TuiExtensionContextInterface` — generic TUI extension registration and overlay/slot APIs.
+- `ExtensionApiInterface` — tools, standalone tool invocation, owner notifications, recurring job sources, tool call/result/rewrite hooks, slash commands, prompt contributors, skills, settings/cwd access, after-turn-commit, session-start, session-deleted and before-compaction hooks, exec, session event reading, extension-agent jobs, and related types under `Agent\`, `Approval\`, `Command\`, `Compaction\`, `DTO\`, `Exec\`, `Lifecycle\`, `Path\`, `Prompt\`, `Scheduler\`, `Session\`, `Tool\`.
+- `Tui\TuiExtensionInterface` and `Tui\TuiExtensionContextInterface` — generic TUI extension registration and overlay/status APIs (`Tui\TuiProjectExtensionInterface` is deprecated).
 - `Session\SessionContextInterface` — the session selected in the interactive process: ID, title and background snapshot (`Session\DTO\BackgroundSnapshotDTO`, `Session\DTO\ScheduleDTO`).
 - `Session\Event\*` — live session, turn, assistant message, tool, input, child and background-job events for Symfony event subscribers.
 
@@ -49,4 +49,4 @@ Prefer released tags. In the Hatfield monorepo, root and `.hatfield/extensions` 
 See monorepo docs:
 
 - [docs/distribution.md](https://github.com/ineersa/agent-core/blob/main/docs/distribution.md) — package split, shared versioning, external install
-- [AGENTS.md](https://github.com/ineersa/agent-core/blob/main/AGENTS.md) — Extension API boundary rules
+- [AGENTS.md](https://github.com/ineersa/agent-core/blob/main/.hatfield/extensions/extension-api/AGENTS.md) — Extension API boundary rules

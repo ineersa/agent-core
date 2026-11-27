@@ -19,7 +19,8 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
  * survive resetTurn().  The cache-hit percentage is derived from
  * cache-read tokens divided by accumulated input tokens.
  *
- * Extracted from RuntimeEventPoller::extractFooterUsage().
+ * TuiRuntimeEventApplier resets the turn on TurnStarted and calls
+ * accumulate() on AssistantMessageCompleted runtime events.
  */
 final class UsageProjection
 {

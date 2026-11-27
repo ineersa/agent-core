@@ -9,11 +9,10 @@
 # BEGIN IMMEDIATE on the default connection makes competing app-state writers
 # wait before taking a read snapshot instead of failing on read→write upgrade.
 #
-# ORM entities on the default connection:
-#   - background_process  — BackgroundProcessManager durable tracking
-#   - tool_batch          — DoctrineToolBatchStore scheduling metadata
-#   - tool_batch_call     — individually encoded batch invocations
-#   - tool_batch_result   — individually encoded collected results
+# ORM entities on the default connection are the attribute-mapped classes in
+# the two mapping directories below: src/AgentCore/Infrastructure/Doctrine
+# (run_command) and src/CodingAgent/Entity (sessions, tool batches, background
+# processes, deferred completions, operational run state, and similar tables).
 #
 
 doctrine:

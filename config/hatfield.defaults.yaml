@@ -160,7 +160,8 @@ context_budget_reminders:
 tools:
     execution:
         # Default execution mode: sequential (one tool at a time) or parallel.
-        # Parallel mode requires TOOLS-R05 / multi-consumer tool dispatch.
+        # Parallel calls run concurrently as Fibers in the single shared tool
+        # consumer; MCP-backed calls stay serialized on the mcp consumer.
         default_mode: sequential
 
         # No global tool timeout setting. Potentially blocking tools must own and enforce
@@ -168,9 +169,9 @@ tools:
         # MCP transport timeout, per-tool ToolDefinitionDTO/ToolRegistrationDTO budgets).
         # ToolExecutor never rewrites a successful late result into a timeout failure.
 
-        # Maximum parallelism: how many tool calls to run concurrently.
-        # Also controls the number of parallel messenger:consume tool
-        # worker processes launched by the controller.
+        # Maximum parallelism: how many calls of one tool batch are admitted
+        # concurrently. It is a per-batch admission limit, not a worker count;
+        # the controller always launches one tool consumer.
         max_parallelism: 4
 
         # Execution mode per tool is set at registration time by the tool

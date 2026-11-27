@@ -26,9 +26,30 @@ $api->registerTool(new ToolRegistrationDTO(
 ));
 ```
 
-Handlers implement `ExtensionToolHandlerInterface` (arguments only) or
-`ContextualExtensionToolHandlerInterface` (arguments + `ToolInvocationContextDTO`).
-Respect `ToolCancellationTokenInterface` when performing long work.
+Handlers implement one of:
+
+| Interface | Method |
+|---|---|
+| `ExtensionToolHandlerInterface` | `__invoke(array $arguments): mixed` |
+| `ContextualExtensionToolHandlerInterface` | `__invoke(array $arguments, ToolInvocationContextDTO $context): mixed` |
+
+`ToolInvocationContextDTO` carries `runId`, optional `cancellationToken`
+(`ToolCancellationTokenInterface::isCancellationRequested()`) and optional
+`timeoutSeconds`. Poll the token during long work; the host cannot preempt PHP
+handlers. Return a string or array; output capping happens after execution.
+
+## Hook interfaces
+
+| Register with | Implement | Method |
+|---|---|---|
+| `registerToolCallRewriteHook` | `ToolCallRewriteHookInterface` | `rewriteArguments(ToolCallContextDTO): ?array` |
+| `registerToolCallHook` | `ToolCallHookInterface` | `onToolCall(ToolCallContextDTO): ToolCallDecisionDTO` |
+| (same hook object) | `ApprovalAnswerHookInterface` | `onApprovalAnswered(ApprovalAnswerContextDTO): void`, `resolveApprovalAnswer(ApprovalAnswerContextDTO): ToolCallDecisionDTO` |
+| `registerToolResultHook` | `ToolResultHookInterface` | `onToolResult(ToolResultContextDTO): ToolResultDecisionDTO` |
+
+`ToolCallContextDTO` has `toolCallId`, `toolName`, `arguments`, `orderIndex`,
+nullable `runId`, `turnNo`, `cwd`, and `metadata`. `ToolResultContextDTO` adds
+`isError`, `content` blocks and `details` (no `orderIndex`).
 
 ## Tool-call hooks
 
@@ -41,13 +62,24 @@ ToolCallDecisionDTO::replaceResult($result, $details);
 ToolCallDecisionDTO::requireApproval($prompt, $questionId, $schema, $details);
 ```
 
-When requiring approval, implement `ApprovalAnswerHookInterface` to map the human answer
-to allow / block / replace-result. Allow re-runs the **exact** original tool call.
+A hook that throws denies the call (`extension_tool_call_hook_failed`).
+
+When requiring approval, implement `ApprovalAnswerHookInterface` on the same hook to map
+the human answer to allow / block / replace-result. The run pauses for the answer,
+then the host resumes the **exact** original tool call and calls
+`onApprovalAnswered()` and then `resolveApprovalAnswer()` on the originating hook only.
+`ApprovalAnswerContextDTO` carries `questionId`, `answer` (string), `toolName`,
+`approvalContext` (the original decision details), and nullable `runId` / `toolCallId`.
+Allow runs the original call without an extra model turn. Returning
+`requireApproval()` again, or throwing, denies the call (`approval_resume_failed`).
 
 ## Argument rewrites
 
-`registerToolCallRewriteHook($toolName, $hook)` can adjust arguments for a specific tool
-before handler execution (policy normalization, path rewriting, etc.).
+`registerToolCallRewriteHook($toolName, $hook)` adjusts arguments for one tool name, or
+for every tool with `'*'`, before tool-call hooks (including SafeGuard) and the handler
+see them. Hooks for the exact name run first, then `'*'` hooks, each group in registration
+order; each receives the latest arguments. Return the full rewritten map, or `null` to leave it unchanged.
+Rewrite contexts set only `toolCallId`, `toolName`, `arguments` and `orderIndex`.
 
 ### Argument shapes
 
@@ -55,7 +87,10 @@ Rewrite and result hooks receive the flat provider-visible argument map (typed b
 
 ## Tool-result hooks
 
-`registerToolResultHook()` runs after tool execution in registration order.
+`registerToolResultHook()` runs after tool execution in registration order. Return
+`ToolResultDecisionDTO::keep()` or `ToolResultDecisionDTO::replace(?bool $isError,
+?array $content, ?array $details)`; later hooks see the replaced values. A throwing
+result hook is logged and skipped.
 
 **Host behavior today is observational:** Symfony AI `ToolCallSucceeded` / `ToolCallFailed`
 events expose readonly result data, so replacement decisions from
@@ -77,6 +112,6 @@ See also [extension-api.md](extension-api.md) and [extension-api-runtime.md](ext
 
 `notifyOwner(OwnerNotificationDTO)` submits text through the canonical background-completion mailbox. The notification identity is idempotent at admission. An interrupted invocation must set `interrupted`; native admission and consumption retire interrupted notifications without reviving the owner. Notification delivery does not imply immediate model execution.
 
-`registerRecurringJobSource()` contributes extension-owned definitions to Symfony Scheduler. Sources return `RecurringJobDTO` values with a stable ID, registered handler ID, JSON-safe payload, interval and lifetime. The handler must belong to the same enabled extension. Due occurrences use the existing extension-job worker on the tool transport; ordinary extension-agent dispatch retains its dedicated transport. Registration installs reconciliation only when an enabled extension contributes a source.
+`registerRecurringJobSource($sourceId, $source)` contributes extension-owned definitions to Symfony Scheduler; `$sourceId` must be unique and nonempty. The host periodically calls `RecurringJobSourceInterface::jobs(string $runId)` with the session run ID. Sources return `RecurringJobDTO(id, handlerId, payload, every, from, until)`: a stable ID, a handler registered with `registerExtensionAgentJobHandler()`, a JSON-safe payload, a Symfony Scheduler interval such as `'10 minutes'`, and a lifetime. Jobs are skipped before `from` and from `until`; the first eligible occurrence runs on discovery. The handler must belong to the same enabled extension. Due occurrences use the existing extension-job worker on the tool transport; ordinary extension-agent dispatch retains its dedicated transport. Registration installs reconciliation only when an enabled extension contributes a source.
 
 Set `ToolRegistrationDTO::mainOnly` for tools unavailable to children, including explicit child tool lists and nested calls.

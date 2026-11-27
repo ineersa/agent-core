@@ -115,7 +115,12 @@ current work, so first check whether a command or remote tool already performed
 its external action. Repair does not roll back effects or promise exactly-once
 execution. Restarting a worker alone is not repair of a stranded effect.
 
-Repair refuses unsafe/ambiguous cases and does not redispatch human-input waits.
+It can also finish a cancellation that never settled, recording unfinished tool
+calls as cancelled, and add missing tool results to a malformed finished session.
+If nothing needs repair it reports so and changes nothing.
+
+Repair refuses while a response is streaming, refuses unsafe/ambiguous cases and
+does not redispatch human-input waits.
 Abandoned child waits can be cancelled and settled without launching replacements;
 artifacts and completed child results remain. A failed send can be partial: inspect
 state before retrying. Do not force recovery by editing queue rows.
