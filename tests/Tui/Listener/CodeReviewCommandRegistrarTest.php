@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -95,6 +96,8 @@ final class CodeReviewCommandRegistrarTest extends TestCase
             extractor: $extractor,
             resources: new AppResourceLocator(\dirname(__DIR__, 3)),
             filesystem: new Filesystem(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            validator: AttributeSerializerValidatorTestFactory::create()[1],
         );
 
         return new CodeReviewCommandRegistrar($discovery, new SkillsContextBuilder(

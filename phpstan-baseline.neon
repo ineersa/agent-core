@@ -691,12 +691,6 @@ parameters:
 			path: src/CodingAgent/Skills/SkillDiscovery.php
 
 		-
-			message: '#^Constructor parameter \$logger of Ineersa\\CodingAgent\\Skills\\SkillRegistry is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
-			identifier: hatfield.nullableCollaborator
-			count: 1
-			path: src/CodingAgent/Skills/SkillRegistry.php
-
-		-
 			message: '#^Constructor parameter \$logger of Ineersa\\CodingAgent\\Skills\\SkillsContextBuilder is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
 			identifier: hatfield.nullableCollaborator
 			count: 1

@@ -256,6 +256,8 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            validator: AttributeSerializerValidatorTestFactory::create()[1],
         );
     }
 

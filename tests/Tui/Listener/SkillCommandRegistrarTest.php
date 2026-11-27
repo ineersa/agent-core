@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -165,6 +166,8 @@ final class SkillCommandRegistrarTest extends TestCase
             extractor: $extractor,
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            validator: AttributeSerializerValidatorTestFactory::create()[1],
         );
 
         $contextBuilder = new SkillsContextBuilder(

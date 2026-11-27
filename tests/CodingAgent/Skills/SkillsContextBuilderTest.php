@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Skills;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -16,6 +18,8 @@ use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
 
 /**
@@ -189,6 +193,44 @@ ARCH_BODY_UNIQUE');
         $this->assertStringNotContainsString('<available_skills>', $attached);
     }
 
+    public function testBuildExcludesSkillWithoutDescriptionFromCatalog(): void
+    {
+        mkdir($this->tmpDir.'/.hatfield/skills/nodesc', 0777, true);
+        file_put_contents($this->tmpDir.'/.hatfield/skills/nodesc/SKILL.md', "---\nname: nodesc\n---\n\nNo description body");
+
+        $this->assertSame('', $this->createBuilder(cwd: $this->tmpDir)->build());
+    }
+
+    public function testBuildForResolvesNamesCaseInsensitivelyOnce(): void
+    {
+        mkdir($this->tmpDir.'/.hatfield/skills/foo', 0777, true);
+        file_put_contents($this->tmpDir.'/.hatfield/skills/foo/SKILL.md', "---\nname: Foo\ndescription: Foo skill\n---\n\nFOO_BODY");
+
+        $output = $this->createBuilder(cwd: $this->tmpDir)->buildFor(['foo', 'FOO']);
+
+        $this->assertSame(1, substr_count($output, '<skill name="Foo"'));
+        $this->assertStringContainsString('FOO_BODY', $output);
+    }
+
+    public function testUnreadablePreloadBodyIsLoggedAndNotRenderedEmpty(): void
+    {
+        mkdir($this->tmpDir.'/.hatfield/skills/gone', 0777, true);
+        file_put_contents($this->tmpDir.'/.hatfield/skills/gone/SKILL.md', "---\nname: gone\ndescription: Gone skill\n---\n\nGone body");
+
+        $logger = new TestLogger();
+        $builder = $this->createBuilder(cwd: $this->tmpDir, logger: $logger);
+        // Populate the discovery cache, then remove the file before the body read.
+        $this->assertStringContainsString('<name>gone</name>', $builder->build());
+        unlink($this->tmpDir.'/.hatfield/skills/gone/SKILL.md');
+
+        $this->assertSame('', $builder->buildFor(['gone']));
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('warning', $logger->records[0]['level']);
+        $this->assertSame('skills.context', $logger->records[0]['context']['component']);
+        $this->assertSame('skill_body_unreadable', $logger->records[0]['context']['event_type']);
+        $this->assertSame('gone', $logger->records[0]['context']['skill_name']);
+    }
+
     public function testBuildForReturnsEmptyForEmptyNames(): void
     {
         $builder = $this->createBuilder(cwd: $this->tmpDir);
@@ -198,6 +240,7 @@ ARCH_BODY_UNIQUE');
     private function createBuilder(
         ?string $cwd = null,
         ?SkillsConfig $config = null,
+        LoggerInterface $logger = new NullLogger(),
     ): SkillsContextBuilder {
         $projectDir = $this->tmpDir;
         $homeDir = $this->tmpDir.'/home';
@@ -217,6 +260,8 @@ ARCH_BODY_UNIQUE');
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            validator: AttributeSerializerValidatorTestFactory::create()[1],
         );
 
         return new SkillsContextBuilder(
@@ -224,6 +269,7 @@ ARCH_BODY_UNIQUE');
             config: $skillsConfig,
             renderer: new SkillContextRenderer(),
             extractor: new MarkdownFrontmatterExtractor(),
+            logger: $logger,
         );
     }
 }

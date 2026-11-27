@@ -81,7 +81,7 @@ not see the skill in `<available_skills>` and will not autonomously select it.
 
 Semantics are identical for bundled, project, user, and extension-registered
 skills. Existing precedence and name-collision rules are unchanged (first
-discovered wins).
+discovered wins; names compare case-insensitively, so `Foo` and `foo` collide).
 
 ## Skill commands
 
@@ -106,11 +106,14 @@ commands are rejected before dispatch.
 |---|---|---|
 | `name` | No | Skill name; defaults to the parent directory name |
 | `description` | Recommended | Catalog description; empty description excludes the skill from the model-visible catalog |
-| `disable-model-invocation` | No | When truthy, omit from the model catalog; keep `/skill:` and agent `skills` loading |
+| `disable-model-invocation` | No | When `true`, omit from the model catalog; keep `/skill:` and agent `skills` loading |
 
-The parsed value is coerced to boolean. Missing and false values keep the skill
-discoverable. Malformed YAML frontmatter falls back to parser defaults
-(directory name, empty description, model invocation enabled).
+`name` and `description` must be strings, and `name` must not be blank.
+`disable-model-invocation` must be a YAML boolean (`true` / `false`); a quoted
+`"false"` is rejected, not coerced. A SKILL.md with an invalid value is skipped
+with a warning log; other skills still load. Malformed YAML frontmatter falls
+back to parser defaults (directory name, empty description, model invocation
+enabled).
 
 ## Discovery order (high → low)
 

@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Extension;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
@@ -645,6 +646,8 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
                 extractor: new MarkdownFrontmatterExtractor(),
                 resources: new AppResourceLocator('' !== $appConfig->cwd ? $appConfig->cwd : '/tmp'),
                 filesystem: new Filesystem(),
+                denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+                validator: AttributeSerializerValidatorTestFactory::create()[1],
             ),
             toolInvoker: $this->unusedToolInvoker(),
             children: $this->createStub(ChildRunExtensionAllowlistReaderInterface::class),
