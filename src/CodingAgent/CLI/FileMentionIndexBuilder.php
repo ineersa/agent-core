@@ -176,6 +176,8 @@ final class FileMentionIndexBuilder
             throw new \RuntimeException("Cannot open temp index file for writing: {$tmpPath}");
         }
 
+        $closed = false;
+
         try {
             $count = 0;
 
@@ -196,8 +198,9 @@ final class FileMentionIndexBuilder
                 // A short write (e.g. a full disk) must not survive the rename
                 // and be published as a truncated index.
                 $payload = $line."\n";
-                if (\strlen($payload) !== @fwrite($handle, $payload)) {
-                    throw new \RuntimeException('Short write while building file mention index.');
+                $written = @fwrite($handle, $payload);
+                if (\strlen($payload) !== $written) {
+                    throw new \RuntimeException(\sprintf('Short write to temp index file "%s": wrote %d of %d bytes.', $tmpPath, (int) $written, \strlen($payload)));
                 }
                 ++$count;
             }
@@ -209,9 +212,17 @@ final class FileMentionIndexBuilder
                 throw new \RuntimeException('Failed to flush buffered writes for file mention index.');
             }
 
+            // Some filesystems (NFS, quotas) report a failed write only at close.
+            $closed = true;
+            if (!fclose($handle)) {
+                throw new \RuntimeException(\sprintf('Failed to close temp index file "%s".', $tmpPath));
+            }
+
             return $count;
         } finally {
-            fclose($handle);
+            if (!$closed) {
+                fclose($handle);
+            }
         }
     }
 

@@ -71,13 +71,18 @@ final class FileMentionIndexReader
      * Flat list of lowercased paths for cheap substring/prefix
      * matching in providers.
      *
-     * Index position matches {@see getEntries()}.
+     * Index position matches the last {@see getEntries()} result; call that first.
      *
      * @return list<string>
      */
     public function getPathsLower(): array
     {
-        $this->ensureLoaded();
+        // No refresh check here: a rebuild landing between the getters of one
+        // completion request would otherwise return arrays from two different
+        // index versions. getEntries() is the only call that picks up a refresh.
+        if (!$this->loaded) {
+            $this->ensureLoaded();
+        }
 
         return $this->pathsLower;
     }
@@ -85,13 +90,18 @@ final class FileMentionIndexReader
     /**
      * Flat list of lowercased basenames for cheap matching.
      *
-     * Index position matches {@see getEntries()}.
+     * Index position matches the last {@see getEntries()} result; call that first.
      *
      * @return list<string>
      */
     public function getBasenamesLower(): array
     {
-        $this->ensureLoaded();
+        // No refresh check here: a rebuild landing between the getters of one
+        // completion request would otherwise return arrays from two different
+        // index versions. getEntries() is the only call that picks up a refresh.
+        if (!$this->loaded) {
+            $this->ensureLoaded();
+        }
 
         return $this->basenamesLower;
     }

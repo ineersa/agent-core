@@ -334,7 +334,7 @@ final class FileMentionIndexBuilderTest extends TestCase
     }
 
     #[Test]
-    public function keepsOldIndexWhenWriteFails(): void
+    public function keepsOldIndexWhenTempFileCannotBeCreated(): void
     {
         touch($this->tmpDir.'/new.php');
 
@@ -354,12 +354,15 @@ final class FileMentionIndexBuilderTest extends TestCase
 
             $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
 
+            $failure = null;
             try {
                 $builder->build();
-                $this->fail('Expected RuntimeException when the index directory is not writable.');
             } catch (\RuntimeException $e) {
-                $this->assertStringStartsWith("Cannot open temp index file for writing: {$indexPath}.tmp.", $e->getMessage());
+                $failure = $e;
             }
+
+            $this->assertNotNull($failure, 'Build must fail when the temp file cannot be created beside the index.');
+            $this->assertStringStartsWith("Cannot open temp index file for writing: {$indexPath}.tmp.", $failure->getMessage());
 
             $this->assertSame('{"path":"old.php","dir":false}'."\n", file_get_contents($indexPath));
             $this->assertSame(['index.jsonl'], array_values(array_diff(scandir($indexDir) ?: [], ['.', '..'])));
