@@ -20,6 +20,7 @@ declare(strict_types=1);
  * =========================================================================
  */
 
+use Castor\Attribute\AsOption;
 use Castor\Attribute\AsTask;
 use ParaTest\ParaTestCommand;
 
@@ -81,8 +82,18 @@ function build_sequential_phpunit_command(string $pharEnv): string
  * MAINT-05F: Added --suite option to target specific test suites.
  */
 #[AsTask(name: 'test', description: 'Run unit/integration tests (ParaTest parallel by default)')]
-function test(?string $filter = null, ?string $suite = null): void
-{
+function test(
+    ?string $filter = null,
+    ?string $suite = null,
+    #[AsOption(description: 'Generate HTML, Clover XML and text coverage reports (requires Xdebug; sequential)')]
+    bool $coverage = false,
+    #[AsOption(description: 'Include branch/path coverage; implies --coverage (slower)')]
+    bool $coveragePaths = false,
+): void {
+    $coverage = $coverage || $coveragePaths;
+    if ($coverage && !extension_loaded('xdebug')) {
+        fail_quality('Coverage requires Xdebug in the PHP CLI used by Castor.');
+    }
     \CastorTasks\initialize_standalone_qa_run();
     // Test DB schema readiness (bounded setup; session-reaped on hang).
     @mkdir('var/test', 0755, true);
@@ -110,17 +121,29 @@ function test(?string $filter = null, ?string $suite = null): void
         $suiteFlag = ' --testsuite='.escapeshellarg($suite);
     }
 
-    if (null !== $filter) {
-        // Filtered runs use single PHPUnit (ParaTest --filter can be unreliable).
+    if (null !== $filter || $coverage) {
+        // Filtered and coverage runs use single PHPUnit (ParaTest --filter can be unreliable).
+        // Reuse the isolated, bounded runner rather than introducing a second harness.
         // Exclude groups that require live LLM or tmux. Keep phar/native-artifact
         // available so --filter=PharSmokeTest / NativeProcessTopologyTest can run
         // when the caller supplies the packaged artifact env vars.
         // Process-isolated tests also need their own DB/cache, as in ParaTest.
-        $phpunitCmd = qa_observability_env_command().' APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit'
+        $coverageFlags = '';
+        if ($coverage) {
+            $coverageFlags = ' --coverage-html='.escapeshellarg(report_path('coverage-html'))
+                .' --coverage-clover='.escapeshellarg(report_path('coverage-clover.xml'))
+                .' --coverage-text='.escapeshellarg(report_path('coverage.txt'))
+                .($coveragePaths ? ' --path-coverage' : '');
+            echo 'Coverage reports: '.report_path('coverage-html/index.html')."\n";
+        }
+        $phpunitCmd = qa_observability_env_command().($coverage ? ' XDEBUG_MODE=coverage' : '')
+            .' APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit'
             .' --bootstrap='.escapeshellarg(paratest_bootstrap_path())
             .$suiteFlag
-            .' --filter='.escapeshellarg($filter)
+            .(null === $filter ? ' --exclude-group=phar --exclude-group=native-artifact' : ' --filter='.escapeshellarg($filter))
             .' --exclude-group=tui-e2e-replay --exclude-group=controller-replay'
+            .$coverageFlags
+            .($coverage ? ' --fail-on-empty-test-suite' : '')
             .' '.phpunit_strict_issue_flags()
             .' --colors=never --no-progress --log-junit='.report_path('phpunit-filter.junit.xml');
         $result = run_test_command_bounded('unit-filter', $phpunitCmd, castor_test_runner_max_seconds());
@@ -135,6 +158,13 @@ function test(?string $filter = null, ?string $suite = null): void
         if (0 !== $result['exitCode']) {
             echo sprintf("\nTests FAILED (%.1fs)\n", $duration);
             exit($result['exitCode']);
+        }
+        if ($coverage) {
+            foreach (['coverage-html/index.html', 'coverage-clover.xml', 'coverage.txt'] as $report) {
+                if (!is_file(report_path($report)) || 0 === filesize(report_path($report))) {
+                    fail_quality('Coverage report missing or empty: '.report_path($report));
+                }
+            }
         }
         echo sprintf("\nTests OK (%.1fs)\n", $duration);
         exit(0);

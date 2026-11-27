@@ -7,6 +7,9 @@ description: "Load before test work or runtime, TUI, Messenger, and database val
 
 - Run QA only through Castor in the exact worktree. Start with `castor test --filter=X` for focused unit/integration proof.
 - Read `tests/AGENTS.md` before test work. Every agent and fork must follow this prerequisite.
+- Before production changes, check coverage of the behavior being changed with `castor test --coverage --filter=X` (use `--coverage-paths` for branch/path evidence). Inspect affected methods and assertions, not just aggregate percentages.
+- Fill coverage gaps with tests first, rerun coverage, and confirm the relevant paths are exercised before implementation. Record expected failing bug regressions explicitly. After changes, rerun tests and required QA.
+- Coverage requires Xdebug and produces HTML, Clover XML and text reports in the printed run-scoped directory. See `../../../docs/test-coverage.md` for report interpretation, limitations and failure checks.
 - Prove behavior at the lowest correct layer. Use provider cassettes or tmux only for contracts unavailable below.
 - Every changed user-visible TUI behavior needs automated proof; use the layer selection in [E2E](references/e2e.md).
 - Keep cases <=10 seconds under normal load and relevant contention.

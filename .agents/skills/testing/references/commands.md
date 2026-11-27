@@ -5,6 +5,8 @@ Run commands from the exact worktree. Use `castor list` for unlisted tasks and o
 | Command | Use |
 |---|---|
 | `castor test --filter=X` | Focused unit or integration tests, sequential |
+| `castor test --coverage --filter=X` | Sequential line coverage; HTML, Clover XML and text reports; requires Xdebug |
+| `castor test --coverage-paths --filter=X` | Also collect branch/path coverage; implies `--coverage` |
 | `castor test --suite=X` | Selected suite, ParaTest |
 | `castor test` | Unit and integration, ParaTest; excludes controller and TUI process groups |
 | `castor test:controller-replay` | Offline controller JSONL/process contracts |
