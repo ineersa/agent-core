@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageFileInspector;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandRegistry;
@@ -201,7 +202,7 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
             logger: new NullLogger(),
             pastedImageSubmissionService: new PastedImageSubmissionService(
                 new PastedImageValidationService(
-                    new ImageToolConfig(),
+                    new ImageFileInspector(new ImageToolConfig()),
                     new TestLogger(),
                 ),
                 $context->sessionStore,

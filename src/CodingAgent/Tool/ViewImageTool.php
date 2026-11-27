@@ -7,12 +7,13 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\ToolResultType;
-use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
+use Ineersa\CodingAgent\Tool\ImageProcessing\DTO\ImageInspectionRefusalDTO;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageAttachmentProcessor;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageFileInspector;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageInspectionRefusalReasonEnum;
 use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
-use League\MimeTypeDetection\FinfoMimeTypeDetector;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
@@ -37,12 +38,9 @@ final class ViewImageTool implements HatfieldToolProviderInterface
 
     public const string DESCRIPTION = 'View an image file by attaching it to the next provider request and return compact metadata (media type, dimensions, file size). Supports JPEG, PNG, GIF, and WebP.';
 
-    /** @var list<string> Magic-byte MIME types accepted by view_image. */
-    public const array SUPPORTED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
-        private readonly ImageToolConfig $config,
+        private readonly ImageFileInspector $inspector,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ?RunVisionCheckService $visionCheck = null,
         private readonly ?ImageAttachmentProcessor $processor = null,
@@ -73,48 +71,14 @@ final class ViewImageTool implements HatfieldToolProviderInterface
                 }
             }
 
-            if (!is_file($resolvedPath) || !is_readable($resolvedPath)) {
-                throw new ToolCallException(\sprintf('File "%s" does not exist or is not readable.', $resolvedPath), retryable: false, hint: 'Check the file path. Use absolute paths or paths relative to the working directory.');
+            $inspection = $this->inspector->inspect($resolvedPath);
+            if ($inspection instanceof ImageInspectionRefusalDTO) {
+                throw $this->inspectionFailure($resolvedPath, $inspection);
             }
-
-            $fileSize = @filesize($resolvedPath);
-            if (false === $fileSize) {
-                throw new ToolCallException(\sprintf('Failed to determine file size for "%s".', $resolvedPath), retryable: true, hint: 'The file may be damaged or unreadable.');
-            }
-
-            if ($fileSize > $this->config->maxBytes) {
-                throw new ToolCallException(\sprintf('Image file "%s" exceeds maximum allowed size of %d bytes (actual: %d bytes).', $resolvedPath, $this->config->maxBytes, $fileSize), retryable: false, hint: 'Resize the image or increase the max_bytes setting.');
-            }
-
-            $fh = @fopen($resolvedPath, 'rb');
-            if (false === $fh) {
-                throw new ToolCallException(\sprintf('Failed to open file "%s" for reading.', $resolvedPath), retryable: true, hint: 'Check file permissions and that the file is not locked by another process.');
-            }
-
-            $headerBytes = @fread($fh, 8192);
-            @fclose($fh);
-
-            if (false === $headerBytes || '' === $headerBytes) {
-                throw new ToolCallException(\sprintf('Failed to read header bytes from "%s".', $resolvedPath), retryable: true, hint: 'The file appears empty or unreadable; try downloading it again.');
-            }
-
-            $detector = new FinfoMimeTypeDetector();
-            $mediaType = $detector->detectMimeTypeFromBuffer($headerBytes);
-            if (null === $mediaType || !\in_array($mediaType, self::SUPPORTED_TYPES, true)) {
-                $displayType = null !== $mediaType ? $mediaType : 'unknown';
-                throw new ToolCallException(\sprintf('Unsupported image type "%s" for file "%s".', $displayType, $resolvedPath), retryable: false, hint: 'Use JPEG, PNG, GIF, or WebP format.');
-            }
-
-            $imageInfo = @getimagesize($resolvedPath);
-            if (false === $imageInfo) {
-                throw new ToolCallException(\sprintf('Failed to determine dimensions for image "%s".', $resolvedPath), retryable: true, hint: 'The file may be corrupted or not a valid image.');
-            }
-
-            $width = $imageInfo[0];
-            $height = $imageInfo[1];
-            if ($width > $this->config->maxWidth || $height > $this->config->maxHeight) {
-                throw new ToolCallException(\sprintf('Image "%s" dimensions (%dx%d) exceed maximum allowed (%dx%d).', $resolvedPath, $width, $height, $this->config->maxWidth, $this->config->maxHeight), retryable: false, hint: 'Resize the image to fit within the maximum allowed dimensions or increase max_width/max_height settings.');
-            }
+            $mediaType = $inspection->mediaType;
+            $fileSize = $inspection->bytes;
+            $width = $inspection->width;
+            $height = $inspection->height;
 
             $effectivePath = $resolvedPath;
             $effectiveMediaType = $mediaType;
@@ -185,5 +149,19 @@ final class ViewImageTool implements HatfieldToolProviderInterface
                 'The actual image data is attached to the next provider request as a real image attachment; the tool result contains only compact metadata.',
             ],
         );
+    }
+
+    private function inspectionFailure(string $path, ImageInspectionRefusalDTO $refusal): ToolCallException
+    {
+        return match ($refusal->reason) {
+            ImageInspectionRefusalReasonEnum::NotReadable => new ToolCallException(\sprintf('File "%s" does not exist or is not readable.', $path), retryable: false, hint: 'Check the file path. Use absolute paths or paths relative to the working directory.'),
+            ImageInspectionRefusalReasonEnum::SizeUnavailable => new ToolCallException(\sprintf('Failed to determine file size for "%s".', $path), retryable: true, hint: 'The file may be damaged or unreadable.'),
+            ImageInspectionRefusalReasonEnum::TooLarge => new ToolCallException(\sprintf('Image file "%s" exceeds maximum allowed size of %d bytes (actual: %d bytes).', $path, $refusal->limits->maxBytes, $refusal->bytes), retryable: false, hint: 'Resize the image or increase the max_bytes setting.'),
+            ImageInspectionRefusalReasonEnum::OpenFailed => new ToolCallException(\sprintf('Failed to open file "%s" for reading.', $path), retryable: true, hint: 'Check file permissions and that the file is not locked by another process.'),
+            ImageInspectionRefusalReasonEnum::HeaderUnreadable => new ToolCallException(\sprintf('Failed to read header bytes from "%s".', $path), retryable: true, hint: 'The file appears empty or unreadable; try downloading it again.'),
+            ImageInspectionRefusalReasonEnum::UnsupportedType => new ToolCallException(\sprintf('Unsupported image type "%s" for file "%s".', $refusal->mediaType ?? 'unknown', $path), retryable: false, hint: 'Use JPEG, PNG, GIF, or WebP format.'),
+            ImageInspectionRefusalReasonEnum::DimensionsUnavailable => new ToolCallException(\sprintf('Failed to determine dimensions for image "%s".', $path), retryable: true, hint: 'The file may be corrupted or not a valid image.'),
+            ImageInspectionRefusalReasonEnum::DimensionsExceeded => new ToolCallException(\sprintf('Image "%s" dimensions (%dx%d) exceed maximum allowed (%dx%d).', $path, $refusal->width, $refusal->height, $refusal->limits->maxWidth, $refusal->limits->maxHeight), retryable: false, hint: 'Resize the image to fit within the maximum allowed dimensions or increase max_width/max_height settings.'),
+        };
     }
 }

@@ -41,6 +41,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
 use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageFileInspector;
 use Ineersa\Tui\Application\TuiSessionCompositionFactory;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
@@ -404,7 +405,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends IsolatedKernelTestCase
                 subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
                 logger: new NullLogger(),
                 pastedImageSubmissionService: new PastedImageSubmissionService(
-                    new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+                    new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
                     $container->get(HatfieldSessionStore::class),
                     new AppConfig(
                         tui: new TuiConfig(theme: 'default'),

@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\ImagePaste;
 
-use Ineersa\CodingAgent\Config\ImageToolConfig;
-use League\MimeTypeDetection\FinfoMimeTypeDetector;
+use Ineersa\CodingAgent\Tool\ImageProcessing\DTO\ImageInspectionRefusalDTO;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageFileInspector;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageInspectionRefusalReasonEnum;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -16,11 +17,8 @@ use Psr\Log\LoggerInterface;
  */
 final class PastedImageValidationService
 {
-    /** @var list<string> */
-    private const array SUPPORTED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-
     public function __construct(
-        private readonly ImageToolConfig $imageConfig,
+        private readonly ImageFileInspector $inspector,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -30,62 +28,19 @@ final class PastedImageValidationService
      */
     public function validateFile(string $path): PastedImageValidatedDTO
     {
-        if (!is_file($path) || !is_readable($path)) {
-            throw new \RuntimeException('Pasted image file is not readable.');
+        $inspection = $this->inspector->inspect($path);
+        if ($inspection instanceof ImageInspectionRefusalDTO) {
+            throw new \RuntimeException(match ($inspection->reason) {
+                ImageInspectionRefusalReasonEnum::NotReadable => 'Pasted image file is not readable.', ImageInspectionRefusalReasonEnum::SizeUnavailable => 'Failed to determine pasted image size.', ImageInspectionRefusalReasonEnum::TooLarge => \sprintf('Pasted image exceeds maximum size of %d bytes (actual: %d).', $inspection->limits->maxBytes, $inspection->bytes), ImageInspectionRefusalReasonEnum::OpenFailed => 'Failed to open pasted image for validation.', ImageInspectionRefusalReasonEnum::HeaderUnreadable => 'Pasted image appears empty.', ImageInspectionRefusalReasonEnum::UnsupportedType => \sprintf('Unsupported pasted image type "%s".', $inspection->mediaType ?? 'unknown'), ImageInspectionRefusalReasonEnum::DimensionsUnavailable => 'Failed to read pasted image dimensions.', ImageInspectionRefusalReasonEnum::DimensionsExceeded => \sprintf('Pasted image dimensions (%dx%d) exceed maximum allowed (%dx%d).', $inspection->width, $inspection->height, $inspection->limits->maxWidth, $inspection->limits->maxHeight),
+            });
         }
 
-        $fileSize = @filesize($path);
-        if (false === $fileSize) {
-            throw new \RuntimeException('Failed to determine pasted image size.');
-        }
-
-        if ($fileSize > $this->imageConfig->maxBytes) {
-            throw new \RuntimeException(\sprintf('Pasted image exceeds maximum size of %d bytes (actual: %d).', $this->imageConfig->maxBytes, $fileSize));
-        }
-
-        $fh = @fopen($path, 'rb');
-        if (false === $fh) {
-            throw new \RuntimeException('Failed to open pasted image for validation.');
-        }
-
-        $headerBytes = @fread($fh, 8192);
-        @fclose($fh);
-
-        if (false === $headerBytes || '' === $headerBytes) {
-            throw new \RuntimeException('Pasted image appears empty.');
-        }
-
-        $detector = new FinfoMimeTypeDetector();
-        $mediaType = $detector->detectMimeTypeFromBuffer($headerBytes);
-
-        if (null === $mediaType || !\in_array($mediaType, self::SUPPORTED_TYPES, true)) {
-            $display = null !== $mediaType ? $mediaType : 'unknown';
-            throw new \RuntimeException(\sprintf('Unsupported pasted image type "%s".', $display));
-        }
-
-        $imageInfo = @getimagesize($path);
-        if (false === $imageInfo) {
-            throw new \RuntimeException('Failed to read pasted image dimensions.');
-        }
-
-        $width = $imageInfo[0];
-        $height = $imageInfo[1];
-
-        if ($width > $this->imageConfig->maxWidth || $height > $this->imageConfig->maxHeight) {
-            throw new \RuntimeException(\sprintf('Pasted image dimensions (%dx%d) exceed maximum allowed (%dx%d).', $width, $height, $this->imageConfig->maxWidth, $this->imageConfig->maxHeight));
-        }
-
-        return new PastedImageValidatedDTO(self::extensionForMime($mediaType));
+        return new PastedImageValidatedDTO(ImageFileInspector::extensionForMime($inspection->mediaType));
     }
 
     public function isSupportedImageFile(string $path): bool
     {
-        $header = @file_get_contents($path, false, null, 0, 8192);
-        if (false === $header || '' === $header) {
-            return false;
-        }
-
-        return \in_array((new FinfoMimeTypeDetector())->detectMimeTypeFromBuffer($header), self::SUPPORTED_TYPES, true);
+        return $this->inspector->isSupportedImageFile($path);
     }
 
     /**
@@ -101,16 +56,5 @@ final class PastedImageValidationService
             'event_type' => $eventType,
             'exception' => $e,
         ]);
-    }
-
-    private static function extensionForMime(string $mediaType): string
-    {
-        return match ($mediaType) {
-            'image/jpeg' => 'jpg',
-            'image/png' => 'png',
-            'image/gif' => 'gif',
-            'image/webp' => 'webp',
-            default => throw new \LogicException(\sprintf('Unsupported MIME type "%s" after validation.', $mediaType)),
-        };
     }
 }

@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageFileInspector;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
 use Ineersa\Tui\ImagePaste\ClipboardImageReadResultDTO;
@@ -90,7 +91,7 @@ final class ImagePasteInputVirtualTest extends TestCase
         $reader = new DelayedFakeClipboardImageReader(ClipboardImageReadResultDTO::image($temp), delayPolls: 3);
         $listener = new ImagePasteInputListener(
             $reader,
-            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
             new TranscriptBlockFactory(),
             new TestLogger(),
         );
@@ -126,7 +127,7 @@ final class ImagePasteInputVirtualTest extends TestCase
         );
         $listener = new ImagePasteInputListener(
             $reader,
-            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
             new TranscriptBlockFactory(),
             new TestLogger(),
         );
@@ -153,7 +154,7 @@ final class ImagePasteInputVirtualTest extends TestCase
 
         $listener = new ImagePasteInputListener(
             new FakeClipboardImageReader(ClipboardImageReadResultDTO::noImage('no image')),
-            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
             new TranscriptBlockFactory(),
             new TestLogger(),
         );
@@ -187,7 +188,7 @@ final class ImagePasteInputVirtualTest extends TestCase
         $reader = new DelayedFakeClipboardImageReader(ClipboardImageReadResultDTO::image($temp), delayPolls: 5);
         $listener = new ImagePasteInputListener(
             $reader,
-            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
             new TranscriptBlockFactory(),
             new TestLogger(),
         );
@@ -230,7 +231,7 @@ final class ImagePasteInputVirtualTest extends TestCase
                 $this->createStub(EntityManagerInterface::class),
                 new EventDispatcher(), lockFactory: new LockFactory(new FlockStore())),
             new PastedImageSubmissionService(
-                new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+                new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
                 new HatfieldSessionStore(
                     new AppConfig(
                         tui: new TuiConfig(theme: 'default'),
@@ -419,7 +420,7 @@ final class ImagePasteInputVirtualTest extends TestCase
             ->build();
         $listener = new ImagePasteInputListener(
             new FakeClipboardImageReader(ClipboardImageReadResultDTO::noImage('no image')),
-            new PastedImageValidationService($config ?? new ImageToolConfig(), new TestLogger()),
+            new PastedImageValidationService(new ImageFileInspector($config ?? new ImageToolConfig()), new TestLogger()),
             new TranscriptBlockFactory(),
             new TestLogger(),
         );

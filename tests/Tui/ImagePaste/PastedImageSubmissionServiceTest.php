@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageFileInspector;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\ImagePaste\ClipboardImageReadResultDTO;
@@ -85,7 +86,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
         self::getContainer()->get(SubmitListener::class)->register($context);
         (new ImagePasteInputListener(
             new FakeClipboardImageReader(ClipboardImageReadResultDTO::image($staged)),
-            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
             new TranscriptBlockFactory(),
             new TestLogger(),
         ))->register($context);
@@ -121,7 +122,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
             ->withState($state)->withSessionStore($store)->build();
         (new ImagePasteInputListener(
             new FakeClipboardImageReader(ClipboardImageReadResultDTO::noImage('no image')),
-            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
             new TranscriptBlockFactory(),
             new TestLogger(),
         ))->register($context);
@@ -203,7 +204,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
         $appConfig = self::getContainer()->get(AppConfig::class);
 
         $service = new PastedImageSubmissionService(
-            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
             $store,
             $appConfig,
             new TranscriptBlockFactory(),
@@ -251,7 +252,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
         $appConfig = self::getContainer()->get(AppConfig::class);
 
         $service = new PastedImageSubmissionService(
-            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
             $store,
             $appConfig,
             new TranscriptBlockFactory(),
@@ -296,7 +297,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
         $appConfig = self::getContainer()->get(AppConfig::class);
 
         $service = new PastedImageSubmissionService(
-            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
             $store,
             $appConfig,
             new TranscriptBlockFactory(),
@@ -339,7 +340,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
         $appConfig = self::getContainer()->get(AppConfig::class);
 
         $service = new PastedImageSubmissionService(
-            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
             $store,
             $appConfig,
             new TranscriptBlockFactory(),

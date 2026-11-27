@@ -24,6 +24,7 @@ use Ineersa\CodingAgent\Config\ToolSettings;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageFileInspector;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook;
 use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
@@ -72,7 +73,7 @@ final class ViewImageToolTest extends TestCase
 
         $this->viewImageTool = new ViewImageTool(
             $this->toolRuntime,
-            $this->imageConfig,
+            new ImageFileInspector($this->imageConfig),
             $this->contextAccessor,
         );
     }
@@ -233,7 +234,8 @@ final class ViewImageToolTest extends TestCase
             ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $filePath));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('Unsupported image type', $e->getMessage());
+            $this->assertSame('Unsupported image type "text/plain" for file "'.$filePath.'".', $e->getMessage());
+            $this->assertFalse($e->retryable());
             $this->assertSame('Use JPEG, PNG, GIF, or WebP format.', $e->hint());
         }
     }
@@ -260,7 +262,8 @@ final class ViewImageToolTest extends TestCase
             ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $filePath));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('Failed to read header bytes', $e->getMessage());
+            $this->assertSame('Failed to read header bytes from "'.$filePath.'".', $e->getMessage());
+            $this->assertTrue($e->retryable());
             $this->assertSame('The file appears empty or unreadable; try downloading it again.', $e->hint());
         }
     }
@@ -270,7 +273,7 @@ final class ViewImageToolTest extends TestCase
     public function testRejectsFileExceedingMaxBytes(): void
     {
         $smallConfig = new ImageToolConfig(maxBytes: 50, maxWidth: 4096, maxHeight: 2000);
-        $tool = new ViewImageTool($this->toolRuntime, $smallConfig, $this->contextAccessor);
+        $tool = new ViewImageTool($this->toolRuntime, new ImageFileInspector($smallConfig), $this->contextAccessor);
 
         $img = imagecreatetruecolor(1, 1);
         $imagePath = $this->tmpDir.'/large.png';
@@ -280,7 +283,8 @@ final class ViewImageToolTest extends TestCase
             ($tool)(new ViewImageArgumentsDTO(path: $imagePath));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('exceeds maximum allowed size', $e->getMessage());
+            $this->assertSame('Image file "'.$imagePath.'" exceeds maximum allowed size of 50 bytes (actual: '.filesize($imagePath).' bytes).', $e->getMessage());
+            $this->assertFalse($e->retryable());
             $this->assertSame('Resize the image or increase the max_bytes setting.', $e->hint());
         }
     }
@@ -288,7 +292,7 @@ final class ViewImageToolTest extends TestCase
     public function testAcceptsFileWithinMaxBytes(): void
     {
         $largeConfig = new ImageToolConfig(maxBytes: 50_000_000, maxWidth: 4096, maxHeight: 2000);
-        $tool = new ViewImageTool($this->toolRuntime, $largeConfig, $this->contextAccessor);
+        $tool = new ViewImageTool($this->toolRuntime, new ImageFileInspector($largeConfig), $this->contextAccessor);
 
         $imagePath = $this->tmpDir.'/ok.png';
         $this->createPng1x1($imagePath);
@@ -302,7 +306,7 @@ final class ViewImageToolTest extends TestCase
     public function testRejectsImageExceedingMaxWidth(): void
     {
         $smallConfig = new ImageToolConfig(maxBytes: 10_485_760, maxWidth: 2, maxHeight: 2000);
-        $tool = new ViewImageTool($this->toolRuntime, $smallConfig, $this->contextAccessor);
+        $tool = new ViewImageTool($this->toolRuntime, new ImageFileInspector($smallConfig), $this->contextAccessor);
 
         $imagePath = $this->tmpDir.'/wide.png';
         $img = imagecreatetruecolor(10, 1);
@@ -312,15 +316,16 @@ final class ViewImageToolTest extends TestCase
             ($tool)(new ViewImageArgumentsDTO(path: $imagePath));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('dimensions', $e->getMessage());
-            $this->assertStringContainsString('exceed maximum allowed', $e->getMessage());
+            $this->assertSame('Image "'.$imagePath.'" dimensions (10x1) exceed maximum allowed (2x2000).', $e->getMessage());
+            $this->assertFalse($e->retryable());
+            $this->assertSame('Resize the image to fit within the maximum allowed dimensions or increase max_width/max_height settings.', $e->hint());
         }
     }
 
     public function testRejectsImageExceedingMaxHeight(): void
     {
         $smallConfig = new ImageToolConfig(maxBytes: 10_485_760, maxWidth: 4096, maxHeight: 2);
-        $tool = new ViewImageTool($this->toolRuntime, $smallConfig, $this->contextAccessor);
+        $tool = new ViewImageTool($this->toolRuntime, new ImageFileInspector($smallConfig), $this->contextAccessor);
 
         $imagePath = $this->tmpDir.'/tall.png';
         $img = imagecreatetruecolor(1, 10);
@@ -330,8 +335,23 @@ final class ViewImageToolTest extends TestCase
             ($tool)(new ViewImageArgumentsDTO(path: $imagePath));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('dimensions', $e->getMessage());
-            $this->assertStringContainsString('exceed maximum allowed', $e->getMessage());
+            $this->assertSame('Image "'.$imagePath.'" dimensions (1x10) exceed maximum allowed (4096x2).', $e->getMessage());
+            $this->assertFalse($e->retryable());
+            $this->assertSame('Resize the image to fit within the maximum allowed dimensions or increase max_width/max_height settings.', $e->hint());
+        }
+    }
+
+    public function testDamagedImagePreservesDimensionFailureResponse(): void
+    {
+        $path = $this->tmpDir.'/damaged.gif';
+        $this->writeFixture($path, 'GIF89a');
+        try {
+            ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $path));
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertSame('Failed to determine dimensions for image "'.$path.'".', $e->getMessage());
+            $this->assertTrue($e->retryable());
+            $this->assertSame('The file may be corrupted or not a valid image.', $e->hint());
         }
     }
 
@@ -352,7 +372,8 @@ final class ViewImageToolTest extends TestCase
             ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $this->tmpDir.'/nonexistent.png'));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('does not exist or is not readable', $e->getMessage());
+            $this->assertSame('File "'.$this->tmpDir.'/nonexistent.png" does not exist or is not readable.', $e->getMessage());
+            $this->assertFalse($e->retryable());
             $this->assertSame('Check the file path. Use absolute paths or paths relative to the working directory.', $e->hint());
         }
     }
@@ -364,7 +385,7 @@ final class ViewImageToolTest extends TestCase
 
         $visionCheck = $this->createStub(RunVisionCheckService::class);
         $visionCheck->method('isModelVisionCapable')->willReturn(false);
-        $tool = new ViewImageTool($this->toolRuntime, $this->imageConfig, $this->contextAccessor, $visionCheck);
+        $tool = new ViewImageTool($this->toolRuntime, new ImageFileInspector($this->imageConfig), $this->contextAccessor, $visionCheck);
 
         $token = $this->createStub(CancellationTokenInterface::class);
         $token->method('isCancellationRequested')->willReturn(false);
@@ -388,7 +409,7 @@ final class ViewImageToolTest extends TestCase
 
         $visionCheck = $this->createStub(RunVisionCheckService::class);
         $visionCheck->method('isModelVisionCapable')->willReturn(true);
-        $tool = new ViewImageTool($this->toolRuntime, $this->imageConfig, $this->contextAccessor, $visionCheck);
+        $tool = new ViewImageTool($this->toolRuntime, new ImageFileInspector($this->imageConfig), $this->contextAccessor, $visionCheck);
 
         $token = $this->createStub(CancellationTokenInterface::class);
         $token->method('isCancellationRequested')->willReturn(false);
@@ -440,7 +461,7 @@ final class ViewImageToolTest extends TestCase
         $resultStore = new ToolExecutionResultStore();
         $contextAccessor = new StackToolExecutionContextAccessor();
         $toolRuntime = new ToolRuntime($contextAccessor);
-        $tool = new ViewImageTool($toolRuntime, $this->imageConfig, $contextAccessor);
+        $tool = new ViewImageTool($toolRuntime, new ImageFileInspector($this->imageConfig), $contextAccessor);
         $registry = new ToolRegistry([$tool]);
         $toolbox = new RegistryBackedToolbox(
             $registry,

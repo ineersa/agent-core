@@ -22,6 +22,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageFileInspector;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommand;
@@ -190,7 +191,7 @@ final class SubagentLiveScenarioHarness
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
             pastedImageSubmissionService: new PastedImageSubmissionService(
-                new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+                new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
                 $context->sessionStore,
                 new AppConfig(
                     tui: new TuiConfig(theme: 'default'),

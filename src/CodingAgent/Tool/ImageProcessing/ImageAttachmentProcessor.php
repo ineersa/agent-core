@@ -143,7 +143,7 @@ final class ImageAttachmentProcessor
 
             $b64Len = \strlen(base64_encode($blob));
             $exceedsLimit = $b64Len > $this->config->encodedMaxBytes;
-            $outPath = $this->writeCache($blob, $this->formatExtension($mediaType));
+            $outPath = $this->writeCache($blob, ImageFileInspector::extensionForMime($mediaType));
 
             // Cache write failed — fall back to the original file
             if (null === $outPath) {
@@ -613,20 +613,6 @@ final class ImageAttachmentProcessor
         }
 
         return $outPath;
-    }
-
-    /**
-     * Map MIME type to a file extension for cache storage.
-     */
-    private function formatExtension(string $mediaType): string
-    {
-        return match ($mediaType) {
-            'image/jpeg' => 'jpg',
-            'image/png' => 'png',
-            'image/gif' => 'gif',
-            'image/webp' => 'webp',
-            default => 'bin',
-        };
     }
 
     private function tempDir(): string

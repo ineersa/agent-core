@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommandTypeEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageFileInspector;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommand;
@@ -257,7 +258,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
             pastedImageSubmissionService: new PastedImageSubmissionService(
-                new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+                new PastedImageValidationService(new ImageFileInspector(new ImageToolConfig()), new TestLogger()),
                 $context->sessionStore,
                 new AppConfig(
                     tui: new TuiConfig(theme: 'default'),
