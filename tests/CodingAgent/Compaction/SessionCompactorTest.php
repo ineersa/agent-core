@@ -7,12 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Compaction;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
-use Ineersa\CodingAgent\Compaction\CompactionPreparationDTO;
-use Ineersa\CodingAgent\Compaction\CompactionPreparationResultDTO;
 use Ineersa\CodingAgent\Compaction\CompactionPromptBuilder;
 use Ineersa\CodingAgent\Compaction\CompactionSkipReasonEnum;
 use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
-use Ineersa\CodingAgent\Compaction\CompactResultDTO;
 use Ineersa\CodingAgent\Compaction\SessionCompactor;
 use Ineersa\CodingAgent\Compaction\ToolResultDigestService;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -26,9 +23,6 @@ use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
 #[CoversClass(SessionCompactor::class)]
-#[CoversClass(CompactionPreparationDTO::class)]
-#[CoversClass(CompactResultDTO::class)]
-#[CoversClass(CompactionPreparationResultDTO::class)]
 #[CoversClass(CompactionSkipReasonEnum::class)]
 #[CoversClass(CompactionConfig::class)]
 #[CoversClass(CompactionPromptBuilder::class)]
@@ -114,14 +108,14 @@ final class SessionCompactorTest extends TestCase
     {
         $result0 = $this->compactor->prepare([], $this->settings);
         $this->assertFalse($result0->isReady());
-        $this->assertSame(CompactionSkipReasonEnum::TooFewMessages, $result0->skipReason);
+        $this->assertSame(CompactionSkipReasonEnum::TooFewMessages->value, $result0->failureReason);
 
         $result1 = $this->compactor->prepare(
             [$this->makeMessage('user', 'hello')],
             $this->settings,
         );
         $this->assertFalse($result1->isReady());
-        $this->assertSame(CompactionSkipReasonEnum::TooFewMessages, $result1->skipReason);
+        $this->assertSame(CompactionSkipReasonEnum::TooFewMessages->value, $result1->failureReason);
     }
 
     /**
@@ -137,7 +131,7 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertFalse($result->isReady());
-        $this->assertSame(CompactionSkipReasonEnum::BelowKeepRecentTokens, $result->skipReason);
+        $this->assertSame(CompactionSkipReasonEnum::BelowKeepRecentTokens->value, $result->failureReason);
     }
 
     // ── prepare(): long session partitions ───────────────────────────
@@ -154,15 +148,15 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertTrue($result->isReady(), 'Should produce preparation for long session');
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
-        $this->assertGreaterThan(0, $prep->messagesCompacted, 'Should compact some messages');
-        $this->assertGreaterThan(0, $prep->messagesRetained, 'Should retain some messages');
-        $this->assertSame($total, $prep->messagesCompacted + $prep->messagesRetained, 'All messages accounted for');
-        $this->assertSame($prep->messagesCompacted, $prep->firstRetainedIndex, 'First retained index matches compacted count');
-        $this->assertGreaterThan(0, $prep->tokenEstimateBefore, 'Token estimate before should be positive');
-        $this->assertSameSize($prep->messagesToSummarize, range(0, $prep->messagesCompacted - 1));
-        $this->assertSameSize($prep->retainedTailMessages, range(0, $prep->messagesRetained - 1));
+        $this->assertNotNull($result->messagesToSummarize);
+        $this->assertNotNull($result->retainedTailMessages);
+        $this->assertGreaterThan(0, $result->messagesCompacted, 'Should compact some messages');
+        $this->assertGreaterThan(0, $result->messagesRetained, 'Should retain some messages');
+        $this->assertSame($total, $result->messagesCompacted + $result->messagesRetained, 'All messages accounted for');
+        $this->assertSame($result->messagesCompacted, $result->firstRetainedIndex, 'First retained index matches compacted count');
+        $this->assertGreaterThan(0, $result->tokenEstimateBefore, 'Token estimate before should be positive');
+        $this->assertSameSize($result->messagesToSummarize, range(0, $result->messagesCompacted - 1));
+        $this->assertSameSize($result->retainedTailMessages, range(0, $result->messagesRetained - 1));
     }
 
     /**
@@ -178,12 +172,11 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertTrue($result->isReady());
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->retainedTailMessages);
 
         // Count leading prologue messages in retained tail.
         $prologueInRetained = 0;
-        foreach ($prep->retainedTailMessages as $msg) {
+        foreach ($result->retainedTailMessages as $msg) {
             if ('system' === $msg->role || 'user-context' === $msg->role) {
                 ++$prologueInRetained;
             } else {
@@ -194,15 +187,15 @@ final class SessionCompactorTest extends TestCase
         // The first body message in retainedTailMessages (after prologue)
         // should match the original at firstRetainedIndex.
         $this->assertSame(
-            $messages[$prep->firstRetainedIndex],
-            $prep->retainedTailMessages[$prologueInRetained],
+            $messages[$result->firstRetainedIndex],
+            $result->retainedTailMessages[$prologueInRetained],
             'First body message in retained tail must match original at firstRetainedIndex',
         );
 
         // firstRetainedIndex accounts for prologue offset.
         $this->assertGreaterThanOrEqual(
             $prologueInRetained,
-            $prep->firstRetainedIndex,
+            $result->firstRetainedIndex,
             'firstRetainedIndex must be >= prologue count',
         );
     }
@@ -231,9 +224,8 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertTrue($result->isReady());
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
-        $this->assertTrue($prep->priorSummaryPresent, 'Should detect prior compact summary');
+        $this->assertNotNull($result->messagesToSummarize);
+        $this->assertTrue($result->priorSummaryPresent, 'Should detect prior compact summary');
     }
 
     /**
@@ -246,9 +238,8 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertTrue($result->isReady());
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
-        $this->assertFalse($prep->priorSummaryPresent);
+        $this->assertNotNull($result->messagesToSummarize);
+        $this->assertFalse($result->priorSummaryPresent);
     }
 
     // ── Safe cut: user boundary ─────────────────────────────────────
@@ -273,10 +264,9 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertTrue($result->isReady());
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
-        $this->assertGreaterThan(0, $prep->messagesCompacted);
-        $this->assertGreaterThan(0, $prep->messagesRetained);
+        $this->assertNotNull($result->messagesToSummarize);
+        $this->assertGreaterThan(0, $result->messagesCompacted);
+        $this->assertGreaterThan(0, $result->messagesRetained);
     }
 
     // ── Safe cut: assistant tool-call groups ─────────────────────────
@@ -296,16 +286,15 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertTrue($result->isReady(), 'Tool-call group near end should still produce a compaction');
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->retainedTailMessages);
 
-        $retainedRoles = array_map(static fn (AgentMessage $m): string => $m->role, $prep->retainedTailMessages);
+        $retainedRoles = array_map(static fn (AgentMessage $m): string => $m->role, $result->retainedTailMessages);
 
         $this->assertContains('assistant', $retainedRoles, 'Assistant tool-call expected in retained tail');
         $this->assertContains('tool', $retainedRoles, 'Tool results expected in retained tail');
 
         $retainedCallIds = [];
-        foreach ($prep->retainedTailMessages as $msg) {
+        foreach ($result->retainedTailMessages as $msg) {
             if ('tool' === $msg->role) {
                 $retainedCallIds[] = $msg->toolCallId;
             }
@@ -335,10 +324,9 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertTrue($result->isReady(), 'Orphan early in history should still produce compaction');
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->retainedTailMessages);
 
-        foreach ($prep->retainedTailMessages as $msg) {
+        foreach ($result->retainedTailMessages as $msg) {
             if ('tool' === $msg->role && 'orphan_call' === $msg->toolCallId) {
                 $this->fail('Orphan tool result retained — its assistant call was summarized away');
             }
@@ -360,12 +348,12 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertTrue($result->isReady());
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->messagesToSummarize);
+        $this->assertNotNull($result->retainedTailMessages);
 
         $summarizeIds = [];
 
-        foreach ($prep->messagesToSummarize as $msg) {
+        foreach ($result->messagesToSummarize as $msg) {
             $toolCalls = $msg->metadata['tool_calls'] ?? null;
 
             if (\is_array($toolCalls)) {
@@ -377,7 +365,7 @@ final class SessionCompactorTest extends TestCase
             }
         }
 
-        foreach ($prep->retainedTailMessages as $msg) {
+        foreach ($result->retainedTailMessages as $msg) {
             if ('tool' === $msg->role && null !== $msg->toolCallId) {
                 $this->assertArrayNotHasKey(
                     $msg->toolCallId,
@@ -403,13 +391,13 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertTrue($result->isReady(), 'Compaction should succeed: boundary moved earlier');
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->messagesToSummarize);
+        $this->assertNotNull($result->retainedTailMessages);
 
         $foundInSummarize = false;
         $foundInRetain = false;
 
-        foreach ($prep->messagesToSummarize as $msg) {
+        foreach ($result->messagesToSummarize as $msg) {
             if ('tool' === $msg->role && 'boundary_call' === $msg->toolCallId) {
                 $foundInSummarize = true;
             }
@@ -425,7 +413,7 @@ final class SessionCompactorTest extends TestCase
             }
         }
 
-        foreach ($prep->retainedTailMessages as $msg) {
+        foreach ($result->retainedTailMessages as $msg) {
             if ('tool' === $msg->role && 'boundary_call' === $msg->toolCallId) {
                 $foundInRetain = true;
             }
@@ -459,10 +447,9 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
         $this->assertTrue($result->isReady());
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->messagesToSummarize);
 
-        $summarizationMessages = $this->compactor->buildSummarizationMessages($prep, null);
+        $summarizationMessages = $this->compactor->buildSummarizationMessages($result, null);
 
         // Last message is the user prompt.
         $last = \count($summarizationMessages) - 1;
@@ -474,7 +461,7 @@ final class SessionCompactorTest extends TestCase
 
         // Messages before the prompt are the digested summarize partition.
         $digestedCount = \count($summarizationMessages) - 1; // all except the prompt
-        $this->assertCount($prep->messagesCompacted, \array_slice($summarizationMessages, 0, $digestedCount));
+        $this->assertCount($result->messagesCompacted, \array_slice($summarizationMessages, 0, $digestedCount));
     }
 
     /**
@@ -486,11 +473,10 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
         $this->assertTrue($result->isReady());
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->messagesToSummarize);
 
         $summarizationMessages = $this->compactor->buildSummarizationMessages(
-            $prep,
+            $result,
             'summarize only database decisions',
         );
         $last = \count($summarizationMessages) - 1;
@@ -509,10 +495,9 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
         $this->assertTrue($result->isReady());
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->messagesToSummarize);
 
-        $summarizationMessages = $this->compactor->buildSummarizationMessages($prep, '   ');
+        $summarizationMessages = $this->compactor->buildSummarizationMessages($result, '   ');
         $last = \count($summarizationMessages) - 1;
         $promptText = $summarizationMessages[$last]->content[0]['text'];
 
@@ -543,10 +528,9 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
         $this->assertTrue($result->isReady());
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->messagesToSummarize);
 
-        $summarizationMessages = $this->compactor->buildSummarizationMessages($prep, null);
+        $summarizationMessages = $this->compactor->buildSummarizationMessages($result, null);
 
         // Find tool messages in the digest partition (before the prompt).
         $foundDigest = false;
@@ -591,10 +575,9 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
         $this->assertTrue($result->isReady());
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->messagesToSummarize);
 
-        $summarizationMessages = $this->compactor->buildSummarizationMessages($prep, null);
+        $summarizationMessages = $this->compactor->buildSummarizationMessages($result, null);
 
         $foundMarker = false;
         $lastPrompt = \count($summarizationMessages) - 1;
@@ -625,12 +608,11 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
         $this->assertTrue($result->isReady());
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->retainedTailMessages);
 
         $compacted = $this->compactor->buildCompactedMessages(
             'This is the summary text.',
-            $prep,
+            $result,
         );
 
         $summaryMessage = $compacted->compactedMessages[0];
@@ -646,10 +628,10 @@ final class SessionCompactorTest extends TestCase
         $this->assertStringContainsString('This is the summary text.', $summaryMessage->content[0]['text']);
         $this->assertStringContainsString('</summary>', $summaryMessage->content[0]['text']);
 
-        $this->assertCount($prep->messagesRetained + 1, $compacted->compactedMessages);
-        $this->assertSame($prep->retainedTailMessages, \array_slice($compacted->compactedMessages, 1));
+        $this->assertCount($result->messagesRetained + 1, $compacted->compactedMessages);
+        $this->assertSame($result->retainedTailMessages, \array_slice($compacted->compactedMessages, 1));
 
-        $this->assertSame($prep->tokenEstimateBefore, $compacted->tokenEstimateBefore);
+        $this->assertSame($result->tokenEstimateBefore, $compacted->tokenEstimateBefore);
         $this->assertGreaterThan(0, $compacted->tokenEstimateAfter);
         $this->assertGreaterThan(
             $compacted->tokenEstimateAfter,
@@ -657,9 +639,9 @@ final class SessionCompactorTest extends TestCase
             'Token estimate after should be less than before',
         );
 
-        $this->assertSame($prep->messagesCompacted, $compacted->messagesCompacted);
-        $this->assertSame($prep->messagesRetained, $compacted->messagesRetained);
-        $this->assertSame($prep->firstRetainedIndex, $compacted->firstRetainedIndex);
+        $this->assertSame($result->messagesCompacted, $compacted->messagesCompacted);
+        $this->assertSame($result->messagesRetained, $compacted->messagesRetained);
+        $this->assertSame($result->firstRetainedIndex, $compacted->firstRetainedIndex);
     }
 
     // ── Partition validity ───────────────────────────────────────────
@@ -686,7 +668,7 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $tightSettings);
 
         $this->assertFalse($result->isReady());
-        $this->assertSame(CompactionSkipReasonEnum::NoSafeBoundary, $result->skipReason);
+        $this->assertSame(CompactionSkipReasonEnum::NoSafeBoundary->value, $result->failureReason);
     }
 
     /**
@@ -713,7 +695,7 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $tightSettings);
 
         $this->assertFalse($result->isReady());
-        $this->assertSame(CompactionSkipReasonEnum::NoSafeBoundary, $result->skipReason);
+        $this->assertSame(CompactionSkipReasonEnum::NoSafeBoundary->value, $result->failureReason);
     }
 
     /**
@@ -740,10 +722,9 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $tightSettings);
 
         $this->assertTrue($result->isReady(), 'Valid tool-call group should not block compaction');
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->retainedTailMessages);
 
-        $retained = $prep->retainedTailMessages;
+        $retained = $result->retainedTailMessages;
         $foundAssistant = false;
         $foundTc1 = false;
         $foundTc2 = false;
@@ -797,10 +778,9 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $tightSettings);
 
         $this->assertTrue($result->isReady(), 'Compaction should succeed with orphan tool group early in history');
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->retainedTailMessages);
 
-        foreach ($prep->retainedTailMessages as $msg) {
+        foreach ($result->retainedTailMessages as $msg) {
             $this->assertFalse(
                 'tool' === $msg->role && 'orphan_tc' === $msg->toolCallId,
                 'Orphan tool result must not appear in retained tail',
@@ -830,11 +810,11 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertTrue($result->isReady(), 'Should produce preparation');
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->messagesToSummarize);
+        $this->assertNotNull($result->retainedTailMessages);
 
         // Prologue must NOT be in the summarization partition.
-        foreach ($prep->messagesToSummarize as $msg) {
+        foreach ($result->messagesToSummarize as $msg) {
             $this->assertNotSame(
                 'system',
                 $msg->role,
@@ -848,8 +828,8 @@ final class SessionCompactorTest extends TestCase
         }
 
         // Prologue must be at the front of retainedTailMessages.
-        $this->assertSame('system', $prep->retainedTailMessages[0]->role);
-        $this->assertSame('user-context', $prep->retainedTailMessages[1]->role);
+        $this->assertSame('system', $result->retainedTailMessages[0]->role);
+        $this->assertSame('user-context', $result->retainedTailMessages[1]->role);
 
         // firstRetainedIndex reflects the global index (prologue + body boundary).
         // Since prologue is at indices 0-1, first body message retained is at
@@ -857,7 +837,7 @@ final class SessionCompactorTest extends TestCase
         $prologueCount = 2;
         $this->assertGreaterThanOrEqual(
             $prologueCount,
-            $prep->firstRetainedIndex,
+            $result->firstRetainedIndex,
             'firstRetainedIndex must be at least prologue count',
         );
 
@@ -865,8 +845,8 @@ final class SessionCompactorTest extends TestCase
         // (not prologue).  firstRetainedIndex > messagesCompacted when
         // prologue exists.
         $this->assertLessThan(
-            $prep->firstRetainedIndex,
-            $prep->messagesCompacted,
+            $result->firstRetainedIndex,
+            $result->messagesCompacted,
             'messagesCompacted must be less than firstRetainedIndex when prologue exists',
         );
 
@@ -874,7 +854,7 @@ final class SessionCompactorTest extends TestCase
         $totalMessages = \count($messages);
         $this->assertSame(
             $totalMessages,
-            $prep->messagesCompacted + $prep->messagesRetained,
+            $result->messagesCompacted + $result->messagesRetained,
             'All messages accounted for (compacted + retained = total)',
         );
     }
@@ -893,7 +873,7 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertFalse($result->isReady());
-        $this->assertSame(CompactionSkipReasonEnum::TooFewMessages, $result->skipReason);
+        $this->assertSame(CompactionSkipReasonEnum::TooFewMessages->value, $result->failureReason);
     }
 
     /**
@@ -913,7 +893,7 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertFalse($result->isReady());
-        $this->assertSame(CompactionSkipReasonEnum::BelowKeepRecentTokens, $result->skipReason);
+        $this->assertSame(CompactionSkipReasonEnum::BelowKeepRecentTokens->value, $result->failureReason);
     }
 
     /**
@@ -934,12 +914,11 @@ final class SessionCompactorTest extends TestCase
 
         $result = $this->compactor->prepare($messages, $this->settings);
         $this->assertTrue($result->isReady());
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->retainedTailMessages);
 
         $compacted = $this->compactor->buildCompactedMessages(
             'Summary of the old conversation.',
-            $prep,
+            $result,
         );
 
         // Prologue must be at the very front.
@@ -955,7 +934,7 @@ final class SessionCompactorTest extends TestCase
 
         // Body tail starts after summary.
         $this->assertSame(
-            \count($prep->retainedTailMessages) + 1,
+            \count($result->retainedTailMessages) + 1,
             \count($compacted->compactedMessages),
             'compactedMessages = prologue + summary + body tail',
         );
@@ -989,12 +968,11 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertTrue($result->isReady(), 'Should produce preparation');
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->messagesToSummarize);
 
         $this->assertSame(
             $fullEstimate,
-            $prep->tokenEstimateBefore,
+            $result->tokenEstimateBefore,
             'tokenEstimateBefore must be the full pre-compaction estimate including prologue',
         );
     }
@@ -1029,13 +1007,13 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $this->settings);
 
         $this->assertTrue($result->isReady(), 'Should produce preparation');
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->messagesToSummarize);
+        $this->assertNotNull($result->retainedTailMessages);
 
         // All 25 prologue messages must be in retainedTailMessages.
         $prologueInRetained = 0;
 
-        foreach ($prep->retainedTailMessages as $msg) {
+        foreach ($result->retainedTailMessages as $msg) {
             if ('system' === $msg->role || 'user-context' === $msg->role) {
                 ++$prologueInRetained;
             } else {
@@ -1050,7 +1028,7 @@ final class SessionCompactorTest extends TestCase
         );
 
         // None must leak into messagesToSummarize.
-        foreach ($prep->messagesToSummarize as $msg) {
+        foreach ($result->messagesToSummarize as $msg) {
             $this->assertNotSame('system', $msg->role, 'No system message in summarization partition');
             $this->assertNotSame('user-context', $msg->role, 'No user-context message in summarization partition');
         }
@@ -1059,14 +1037,14 @@ final class SessionCompactorTest extends TestCase
         // (prologue offset + body safe boundary).
         $this->assertGreaterThanOrEqual(
             $prologueCount,
-            $prep->firstRetainedIndex,
+            $result->firstRetainedIndex,
             'firstRetainedIndex must be >= prologue count',
         );
 
         // All messages accounted for.
         $this->assertSame(
             \count($messages),
-            $prep->messagesCompacted + $prep->messagesRetained,
+            $result->messagesCompacted + $result->messagesRetained,
             'All messages accounted for (compacted + retained = total)',
         );
     }
@@ -1118,8 +1096,7 @@ final class SessionCompactorTest extends TestCase
         $result = $this->compactor->prepare($messages, $tightSettings);
 
         $this->assertTrue($result->isReady(), 'Should produce a useful compaction');
-        $prep = $result->preparation;
-        $this->assertNotNull($prep);
+        $this->assertNotNull($result->messagesToSummarize);
 
         // The boundary must be in the tool-call region (second half of
         // messages), not collapsed to the oldest user message at index ~16.
@@ -1133,10 +1110,10 @@ final class SessionCompactorTest extends TestCase
         $totalMessages = \count($messages);
         $this->assertGreaterThan(
             (int) ($totalMessages / 2),
-            $prep->firstRetainedIndex,
+            $result->firstRetainedIndex,
             \sprintf(
                 'Boundary (%d) should be in second half of %d messages, not collapsed to oldest user',
-                $prep->firstRetainedIndex,
+                $result->firstRetainedIndex,
                 $totalMessages,
             ),
         );
@@ -1146,7 +1123,7 @@ final class SessionCompactorTest extends TestCase
         // + user request + most tool-call groups).
         $this->assertGreaterThan(
             15,
-            $prep->messagesCompacted,
+            $result->messagesCompacted,
             'Should compact a useful number of messages, not just a handful',
         );
 
@@ -1155,10 +1132,10 @@ final class SessionCompactorTest extends TestCase
         // With 48 messages, a boundary > 24 means we're in the second half.
         $this->assertGreaterThan(
             30,
-            $prep->firstRetainedIndex,
+            $result->firstRetainedIndex,
             \sprintf(
                 'Boundary should be deep in tool-call region, got firstRetainedIndex=%d',
-                $prep->firstRetainedIndex,
+                $result->firstRetainedIndex,
             ),
         );
     }

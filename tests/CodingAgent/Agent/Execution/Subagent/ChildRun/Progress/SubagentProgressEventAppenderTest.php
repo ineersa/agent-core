@@ -13,7 +13,6 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -68,7 +67,7 @@ final class SubagentProgressEventAppenderTest extends TestCase
     private function appender(MessageBusInterface $bus, RuntimeEventSinkInterface $sink, bool $stream): SubagentProgressEventAppender
     {
         return new SubagentProgressEventAppender($bus, SubagentProgressSerializerTestSupport::normalizer(), SubagentProgressSerializerTestSupport::validator(), $sink,
-            new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer())), $stream);
+            new RuntimeEventMapper(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer()), $stream);
     }
 
     private function progress(string $status): SubagentProgressSnapshotDTO

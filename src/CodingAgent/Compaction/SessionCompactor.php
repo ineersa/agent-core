@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Compaction;
 
+use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
+use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 
@@ -71,7 +73,7 @@ final class SessionCompactor
      * @param list<AgentMessage> $messages Current message list
      * @param CompactionConfig   $settings Compaction settings (budgets, enabled flag)
      */
-    public function prepare(array $messages, CompactionConfig $settings): CompactionPreparationResultDTO
+    public function prepare(array $messages, CompactionConfig $settings): CompactionPrepareResult
     {
         // ── Extract immutable prologue ────────────────────────────
         //
@@ -99,9 +101,7 @@ final class SessionCompactor
 
         // Nothing to compact with 0 or 1 body messages.
         if ($bodyCount < 2) {
-            return CompactionPreparationResultDTO::skipped(
-                CompactionSkipReasonEnum::TooFewMessages,
-            );
+            return CompactionPrepareResult::failed(CompactionSkipReasonEnum::TooFewMessages->value);
         }
 
         // Full pre-compaction token estimate used for user-visible
@@ -114,27 +114,21 @@ final class SessionCompactor
 
         // No need to compact if the compactable body fits within keepRecentTokens.
         if ($bodyTokenEstimate <= $settings->keepRecentTokens) {
-            return CompactionPreparationResultDTO::skipped(
-                CompactionSkipReasonEnum::BelowKeepRecentTokens,
-            );
+            return CompactionPrepareResult::failed(CompactionSkipReasonEnum::BelowKeepRecentTokens->value);
         }
 
         // Walk backward accumulating tokens until we retain at least keepRecentTokens.
         $boundary = $this->boundarySelector->findBoundary($body, $settings->keepRecentTokens);
 
         if (null === $boundary) {
-            return CompactionPreparationResultDTO::skipped(
-                CompactionSkipReasonEnum::NoBoundary,
-            );
+            return CompactionPrepareResult::failed(CompactionSkipReasonEnum::NoBoundary->value);
         }
 
         // Move the boundary to a safe cut point.
         $safeBoundary = $this->boundarySelector->findSafeBoundary($body, $boundary);
 
         if (null === $safeBoundary) {
-            return CompactionPreparationResultDTO::skipped(
-                CompactionSkipReasonEnum::NoSafeBoundary,
-            );
+            return CompactionPrepareResult::failed(CompactionSkipReasonEnum::NoSafeBoundary->value);
         }
 
         // Compactable region: body messages before the safe boundary.
@@ -150,16 +144,14 @@ final class SessionCompactor
 
         $priorSummaryPresent = $this->detectPriorCompactSummary($messagesToSummarize);
 
-        return CompactionPreparationResultDTO::ready(
-            new CompactionPreparationDTO(
-                messagesToSummarize: $messagesToSummarize,
-                retainedTailMessages: $retainedTail,
-                tokenEstimateBefore: $fullTokenEstimate,
-                messagesCompacted: \count($messagesToSummarize),
-                messagesRetained: \count($retainedTail),
-                firstRetainedIndex: $globalFirstRetainedIndex,
-                priorSummaryPresent: $priorSummaryPresent,
-            ),
+        return CompactionPrepareResult::ready(
+            messagesToSummarize: $messagesToSummarize,
+            retainedTailMessages: $retainedTail,
+            tokenEstimateBefore: $fullTokenEstimate,
+            messagesCompacted: \count($messagesToSummarize),
+            messagesRetained: \count($retainedTail),
+            firstRetainedIndex: $globalFirstRetainedIndex,
+            priorSummaryPresent: $priorSummaryPresent,
         );
     }
 
@@ -177,13 +169,13 @@ final class SessionCompactor
      * files (same precedence as SYSTEM.md). Custom instructions are
      * injected via the {custom_instructions_part} placeholder.
      *
-     * @param CompactionPreparationDTO $preparation        Prepared partitions
-     * @param string|null              $customInstructions Optional user-provided instructions
+     * @param CompactionPrepareResult $preparation        Prepared partitions
+     * @param string|null             $customInstructions Optional user-provided instructions
      *
      * @return list<AgentMessage>
      */
     public function buildSummarizationMessages(
-        CompactionPreparationDTO $preparation,
+        CompactionPrepareResult $preparation,
         ?string $customInstructions,
     ): array {
         $renderedPrompt = $this->promptBuilder->build($customInstructions);
@@ -193,7 +185,7 @@ final class SessionCompactor
             content: [['type' => 'text', 'text' => $renderedPrompt]],
         );
 
-        $digestedMessages = $this->digestService->digestToolResults($preparation->messagesToSummarize);
+        $digestedMessages = $this->digestService->digestToolResults($preparation->messagesToSummarize ?? []);
 
         return [
             ...$digestedMessages,
@@ -214,17 +206,17 @@ final class SessionCompactor
      * so the full system prompt and agent-instruction context remain at the
      * front for prompt-cache locality.
      *
-     * Returns a CompactResultDTO containing:
+     * Returns a CompactResult containing:
      *   - The full compacted message list (summary included)
      *   - Before/after token estimates
      *
-     * @param string                   $summaryText Raw summary text from the model
-     * @param CompactionPreparationDTO $preparation Preparation result
+     * @param string                  $summaryText Raw summary text from the model
+     * @param CompactionPrepareResult $preparation Preparation result
      */
     public function buildCompactedMessages(
         string $summaryText,
-        CompactionPreparationDTO $preparation,
-    ): CompactResultDTO {
+        CompactionPrepareResult $preparation,
+    ): CompactResult {
         $summaryPrefix = self::SUMMARY_PREFIX.$summaryText.self::SUMMARY_SUFFIX;
 
         $summaryMessage = new AgentMessage(
@@ -240,7 +232,7 @@ final class SessionCompactor
         $bodyTail = [];
         $inPrologue = true;
 
-        foreach ($preparation->retainedTailMessages as $msg) {
+        foreach ($preparation->retainedTailMessages ?? [] as $msg) {
             if ($inPrologue && ('system' === $msg->role || 'user-context' === $msg->role)) {
                 $prologue[] = $msg;
             } else {
@@ -257,7 +249,7 @@ final class SessionCompactor
 
         $tokenEstimateAfter = $this->tokenEstimator->estimateTokens($compactedMessages);
 
-        return new CompactResultDTO(
+        return new CompactResult(
             compactedMessages: $compactedMessages,
             tokenEstimateBefore: $preparation->tokenEstimateBefore,
             tokenEstimateAfter: $tokenEstimateAfter,

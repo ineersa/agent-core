@@ -893,7 +893,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         ], static fn (mixed $value): bool => null !== $value);
 
         // Compute cost from model pricing and token usage.
-        // Cost flows through LlmStepResult → events → RuntimeEventTranslator
+        // Cost flows through LlmStepResult → events → RuntimeEventMapper
         // → RuntimeEvent → UsageProjection::accumulate() → TUI footer.
         if ('' !== $modelName) {
             $cost = $this->costCalculator->calculateCost($modelName, $usage);

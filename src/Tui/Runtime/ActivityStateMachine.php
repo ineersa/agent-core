@@ -70,7 +70,7 @@ final class ActivityStateMachine
                 // Cancel-request events: remain in Cancelling (confirming state)
                 RuntimeEventTypeEnum::CancellationRequested->value,
                 RuntimeEventTypeEnum::OperationCancelled->value => RunActivityStateEnum::Cancelling,
-                // Terminal tool end (including user-cancelled tool result mapped by RuntimeEventTranslator)
+                // Terminal tool end (including user-cancelled tool result mapped by RuntimeEventMapper)
                 RuntimeEventTypeEnum::ToolExecutionCancelled->value,
                 RuntimeEventTypeEnum::ToolExecutionFailed->value,
                 RuntimeEventTypeEnum::ToolExecutionCompleted->value => RunActivityStateEnum::Cancelled,

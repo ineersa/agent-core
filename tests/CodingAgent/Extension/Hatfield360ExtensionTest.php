@@ -24,7 +24,7 @@ use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\DTO\BackgroundSnapshotDTO;
 use Ineersa\Hatfield\ExtensionApi\Session\DTO\ScheduleDTO;
@@ -255,9 +255,9 @@ final class Hatfield360ExtensionTest extends TestCase
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber($extension);
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
-        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec($serializer), $serializer);
-        $observe = static function (RunEvent $event) use ($translator, $dispatcher): void {
-            $runtime = $translator->translate($event);
+        $mapper = new RuntimeEventMapper(new EventDispatcher(), new ToolExecutionEndPayloadCodec($serializer), $serializer);
+        $observe = static function (RunEvent $event) use ($mapper, $dispatcher): void {
+            $runtime = $mapper->toRuntimeEvent($event);
             self::assertNotNull($runtime);
             $mapped = ExtensionSessionEventMapper::map($runtime);
             self::assertNotNull($mapped);

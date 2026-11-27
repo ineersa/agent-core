@@ -7,9 +7,7 @@ namespace Ineersa\CodingAgent\Compaction;
 /**
  * Reason why SessionCompactor::prepare() skipped compaction.
  *
- * Returned inside {@see CompactionPreparationResultDTO} so the future
- * compaction pipeline (COMP-02) can distinguish skip/failure reasons
- * without inspecting bare null.
+ * Its string value is returned to the compaction pipeline as the failure reason.
  */
 enum CompactionSkipReasonEnum: string
 {

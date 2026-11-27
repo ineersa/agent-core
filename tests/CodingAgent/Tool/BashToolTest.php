@@ -48,7 +48,7 @@ use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -209,7 +209,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             new RunEvent($this->sessionId, 2, 1, RunEventTypeEnum::ToolExecutionEnd->value,
                 $codec->toEventPayload(ToolCallResultFactory::fromExecuteToolCallAndToolResult($message, $result))),
         ];
-        $translator = self::getContainer()->get(RuntimeEventTranslator::class);
+        $mapper = self::getContainer()->get(RuntimeEventMapper::class);
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), self::getContainer()->get('serializer')));
         $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
@@ -227,7 +227,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         );
         $harness->screen()->setWorkingVisible(false);
         foreach ($events as $event) {
-            $runtimeEvent = $translator->translate($event);
+            $runtimeEvent = $mapper->toRuntimeEvent($event);
             $this->assertNotNull($runtimeEvent);
             $projector->accept($runtimeEvent);
             $harness->screen()->setTranscriptBlocks($projector->blocks());

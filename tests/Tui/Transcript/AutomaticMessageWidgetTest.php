@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\Tui\Listener\PreviewExpansionInputListener;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -168,10 +168,10 @@ final class AutomaticMessageWidgetTest extends TestCase
     public function testRealQueueTranslationKeepsHumanSteeringButOmitsAutomaticHandoff(): void
     {
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
-        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec($serializer), $serializer);
+        $mapper = new RuntimeEventMapper(new EventDispatcher(), new ToolExecutionEndPayloadCodec($serializer), $serializer);
         $state = new TuiSessionState('run');
         foreach ([['human', 'Real human steering', []], ['automatic', 'Hidden automatic handoff', ['background_completion' => ['kind' => 'subagent', 'identity' => 'automatic']]]] as $index => [$identity, $text, $metadata]) {
-            $event = $translator->translate(new RunEvent('run', $index + 1, 1, 'agent_command_queued', [
+            $event = $mapper->toRuntimeEvent(new RunEvent('run', $index + 1, 1, 'agent_command_queued', [
                 'kind' => 'steer', 'idempotency_key' => $identity,
                 'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $text]], 'metadata' => $metadata],
             ]));
