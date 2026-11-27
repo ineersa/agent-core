@@ -14,7 +14,9 @@ use Ineersa\CodingAgent\CLI\FileMentionIndexBuilder;
  * Loads a JSONL index file produced by
  * {@see FileMentionIndexBuilder},
  * caches the parsed entries in memory, and reloads automatically when
- * the index file's mtime changes.
+ * the index file's inode, mtime, or size changes.  The builder replaces
+ * the file by rename, so the inode changes on every refresh even when
+ * the rewrite lands within the same mtime second.
  *
  * Missing or unreadable index files are treated as empty — the caller
  * never receives an exception from index access.  This is intentional
@@ -35,7 +37,8 @@ final class FileMentionIndexReader
     /** @var list<FileMentionIndexEntryDTO> */
     private array $entries = [];
 
-    private int $loadedMtime = -1;
+    /** @var array{int, int, int}|null inode, mtime, size of the last loaded file; null when absent */
+    private ?array $loadedStat = null;
 
     private bool $loaded = false;
 
@@ -96,14 +99,14 @@ final class FileMentionIndexReader
 
     private function ensureLoaded(): void
     {
-        $currentMtime = $this->indexMtime();
+        $currentStat = $this->indexStat();
 
-        if ($this->loaded && $currentMtime === $this->loadedMtime) {
+        if ($this->loaded && $currentStat === $this->loadedStat) {
             return;
         }
 
         $this->reload();
-        $this->loadedMtime = $currentMtime;
+        $this->loadedStat = $currentStat;
         $this->loaded = true;
     }
 
@@ -112,7 +115,7 @@ final class FileMentionIndexReader
         if (!is_file($this->indexPath) || !is_readable($this->indexPath)) {
             // Index missing or unreadable — keep previous data if any,
             // or start empty.
-            if ($this->loadedMtime < 0) {
+            if (null === $this->loadedStat) {
                 $this->entries = [];
                 $this->pathsLower = [];
                 $this->basenamesLower = [];
@@ -159,14 +162,21 @@ final class FileMentionIndexReader
         }
     }
 
-    private function indexMtime(): int
+    /**
+     * @return array{int, int, int}|null
+     */
+    private function indexStat(): ?array
     {
+        // A long-running TUI would otherwise keep serving PHP's cached
+        // stat result for the index path and miss refreshes.
+        clearstatcache(true, $this->indexPath);
+
         if (!is_file($this->indexPath)) {
-            return -1;
+            return null;
         }
 
-        $mtime = filemtime($this->indexPath);
+        $stat = stat($this->indexPath);
 
-        return false === $mtime ? -1 : $mtime;
+        return false === $stat ? null : [$stat['ino'], $stat['mtime'], $stat['size']];
     }
 }

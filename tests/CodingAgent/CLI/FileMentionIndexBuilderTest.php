@@ -245,8 +245,8 @@ final class FileMentionIndexBuilderTest extends TestCase
 
         $this->assertFileExists($indexPath);
 
-        // No leftover tmp files after build.
-        $tmpFiles = glob($this->tmpDir.'/*.tmp.*');
+        // No leftover dumpFile() temp siblings (index.jsonl + random suffix).
+        $tmpFiles = glob($this->tmpDir.'/index.jsonl?*');
         $this->assertEmpty($tmpFiles, 'No temp files should remain after atomic rename.');
     }
 
@@ -331,6 +331,41 @@ final class FileMentionIndexBuilderTest extends TestCase
         $content = file_get_contents($indexPath);
         $this->assertNotFalse($content);
         $this->assertStringContainsString('old.php', $content);
+    }
+
+    #[Test]
+    public function keepsOldIndexWhenWriteFails(): void
+    {
+        touch($this->tmpDir.'/new.php');
+
+        $indexDir = $this->tmpDir.'/readonly-index';
+        mkdir($indexDir, 0755);
+        $indexPath = $indexDir.'/index.jsonl';
+        file_put_contents($indexPath, '{"path":"old.php","dir":false}'."\n");
+
+        // The scan succeeds; only the write into the unwritable index
+        // directory fails, so the atomic replace must not happen.
+        chmod($indexDir, 0555);
+
+        try {
+            if (is_writable($indexDir)) {
+                $this->markTestSkipped('Directory permissions are not enforced for this user.');
+            }
+
+            $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
+
+            try {
+                $builder->build();
+                $this->fail('Expected RuntimeException when the index directory is not writable.');
+            } catch (\RuntimeException) {
+                // Expected — write failed.
+            }
+
+            $this->assertSame('{"path":"old.php","dir":false}'."\n", file_get_contents($indexPath));
+            $this->assertSame(['index.jsonl'], array_values(array_diff(scandir($indexDir) ?: [], ['.', '..'])));
+        } finally {
+            chmod($indexDir, 0755);
+        }
     }
 
     /**

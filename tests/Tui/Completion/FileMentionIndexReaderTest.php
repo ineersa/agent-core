@@ -81,6 +81,30 @@ final class FileMentionIndexReaderTest extends TestCase
     }
 
     #[Test]
+    public function reloadsWhenIndexIsReplacedWithinSameSecond(): void
+    {
+        $path = $this->tmpDir.'/index.jsonl';
+        file_put_contents($path, '{"path":"first.php","dir":false}');
+
+        $reader = new FileMentionIndexReader($path);
+        $this->assertSame('first.php', $reader->getEntries()[0]->path);
+
+        // Replace by rename like the builder does: same size, and the
+        // replacement is pinned to the original mtime so only the inode
+        // differs.
+        $mtime = filemtime($path);
+        $this->assertNotFalse($mtime);
+        $replacement = $this->tmpDir.'/index.jsonl.next';
+        file_put_contents($replacement, '{"path":"other.php","dir":false}');
+        touch($replacement, $mtime);
+        rename($replacement, $path);
+
+        $entries = $reader->getEntries();
+        $this->assertCount(1, $entries);
+        $this->assertSame('other.php', $entries[0]->path);
+    }
+
+    #[Test]
     public function skipsInvalidJsonLines(): void
     {
         $path = $this->tmpDir.'/index.jsonl';
