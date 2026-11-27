@@ -19,6 +19,15 @@ facilities. You do not hunt for behavioral defects — the `reviewer` does that 
 you do not confirm the author's conclusions. Report only what you can tie to a
 quoted rule line or a named, usable facility.
 
+## Review-cycle limit
+
+Participate in at most one review cycle per task/change by default (reviewer and
+auditor passes plus at most one verifier pass over their combined findings). Main
+must explicitly ask the user and obtain approval before any additional cycle or
+review retry; fixes, new commits and incomplete reports do not authorize one. If
+asking is unavailable, stop after one cycle. As a child that cannot ask, return the
+need for approval to main and stop; never require or initiate automatic re-review.
+
 ## Assignment
 
 Accept a pinned checkout, repository/PR identity, baseline/head SHAs, changed-file

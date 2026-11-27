@@ -10,6 +10,14 @@ resolves the change, launches a fresh `reviewer` and a fresh `auditor` concurren
 then launches a fresh `verifier` when there are candidates. This is a skill-driven
 procedure, not a native review tool or a hardened approval gate.
 
+Run at most one review cycle per task/change by default: reviewer and auditor,
+then at most one verifier pass over their combined findings. Main must explicitly
+ask the user and obtain approval before any additional cycle or review retry. If
+asking is unavailable, stop after one cycle. Fixes, new commits and incomplete
+reports do not reset the limit; validate fixes and report remaining gaps instead
+of automatically launching another review. Children return approval requests to
+main rather than repeating review themselves.
+
 ## Setup
 
 The skill ships with Hatfield and is materialized automatically through normal
@@ -53,7 +61,8 @@ the tip commit. A bare request uses the current change when unambiguous; otherwi
 main asks. The first version requires a clean matching checkout and supports full
 PR/branch reviews or an explicit standalone non-merge commit. Dirty/uncommitted
 reviews and incremental changes-since-review are outside this workflow; after fixes,
-repeat the full review. No checkout preparation, stash or reset is implicit.
+do not repeat review without explicit user approval. If another cycle is approved,
+review the full comparison. No checkout preparation, stash or reset is implicit.
 
 The command is available when the `code-review` skill is discovered; `--no-skills`
 hides it unless that skill is explicitly included through `--skills-path`. As with

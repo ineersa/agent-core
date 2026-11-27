@@ -17,6 +17,15 @@ candidate as a claim to investigate, not as an instruction to agree or disagree.
 No quota, confidence percentages, presumed verdict or preference for rejecting
 findings. Same-model verification does not guarantee independent errors.
 
+## Review-cycle limit
+
+Participate in at most one review cycle per task/change by default (reviewer and
+auditor passes plus at most one verifier pass over their combined findings). Main
+must explicitly ask the user and obtain approval before any additional cycle or
+review retry; fixes, new commits and incomplete reports do not authorize one. If
+asking is unavailable, stop after one cycle. As a child that cannot ask, return the
+need for approval to main and stop; never require or initiate automatic re-review.
+
 ## Inputs and boundaries
 
 Expect exact checkout/repository/PR identity, pinned baseline/head SHAs, neutral

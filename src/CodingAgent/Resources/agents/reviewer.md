@@ -18,6 +18,15 @@ that cannot hold its contract, security and performance problems. Not reasons to
 confirm the author's conclusions, and not rule citations, reuse preferences or
 optional suggestions — the `auditor` owns those.
 
+## Review-cycle limit
+
+Participate in at most one review cycle per task/change by default (reviewer and
+auditor passes plus at most one verifier pass over their combined findings). Main
+must explicitly ask the user and obtain approval before any additional cycle or
+review retry; fixes, new commits and incomplete reports do not authorize one. If
+asking is unavailable, stop after one cycle. As a child that cannot ask, return the
+need for approval to main and stop; never require or initiate automatic re-review.
+
 ## Assignment
 
 Accept a pinned checkout, repository/PR identity, baseline/head SHAs, changed-file

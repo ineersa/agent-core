@@ -14,6 +14,18 @@ fixes, tests, publication, task transitions or merging. Honor explicit manual/sk
 review choices; a direct review request authorizes only this additional review.
 Implementation children do not orchestrate reviews.
 
+## One-cycle limit
+
+Run at most one review cycle per task/change by default: one reviewer and auditor
+pair, followed by at most one verifier pass over their combined findings. Before
+any additional cycle, replacement review pass, or review retry, main MUST explicitly
+ask the user and obtain approval. If asking is unavailable, stop after one cycle.
+Fixes, new commits, changed scope, and incomplete/failed reports do not reset this
+limit or grant approval. After fixes, run focused validation and report what changed
+and any remaining review gaps; do not automatically restart review. A request to
+fix, continue implementation, or merge is not approval for another review cycle.
+Children that cannot ask must return the need for approval to main, not repeat work.
+
 ## Resolve the scope
 
 - Resolve the user's free-form request from the session and read-only Git/PR/task
@@ -32,7 +44,8 @@ Implementation children do not orchestrate reviews.
   use existing authorized workflows separately.
 - Requests for uncommitted review or changes-since-review are not supported here.
   Explain the limitation and obtain agreement on a full committed review rather
-  than quietly changing scope. After fixes, repeat a full review.
+  than quietly changing scope. After fixes, do not repeat review without explicit
+  user approval under the one-cycle limit. If approved, review the full comparison.
 - Resolve source-attributed finalized requirements and mandatory project rules.
   User focus adds emphasis, not a silent exclusion of other changed contracts.
 
