@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -326,18 +327,7 @@ final class SubmitListener implements TuiListenerRegistrar
             // repaint so the user sees the indicator instantly instead of
             // staring at a blank editor until the work completes.
             $screen->setWorkingMessage('Working...');
-            try {
-                $tui->requestRender();
-                $tui->processRender();
-            } catch (\Throwable $e) {
-                // Non-fatal: render may fail if the terminal is in a
-                // transient state.  The next tick will render normally.
-                $logger->debug('SubmitListener: immediate render failed (non-fatal)', [
-                    'component' => 'SubmitListener',
-                    'exception' => $e,
-                    'session_id' => $state->sessionId,
-                ]);
-            }
+            self::renderNow($tui, $state, $logger, 'working_indicator');
 
             // Start a run if this is the first message
             if ($shouldStartFirstRun) {
@@ -355,29 +345,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     'draft_promoted',
                 );
 
-                // Merge any pre-configured draft request (e.g. from /new --model)
-                // with the submitted text so model/reasoning metadata carries
-                // forward and the run starts with the user-typed prompt.
-                $draftRequest = $state->request;
-                $mergedRequest = new StartRunRequest(
-                    prompt: $text,
-                    runId: $state->sessionId,
-                    cwd: null !== $draftRequest ? $draftRequest->cwd : '',
-                    options: null !== $draftRequest ? $draftRequest->options : [],
-                    model: null !== $draftRequest ? $draftRequest->model : null,
-                    reasoning: null !== $draftRequest ? $draftRequest->reasoning : null,
-                );
-                $state->request = $mergedRequest;
-                $state->handle = $client->start($state->request);
-                $state->activity = RunActivityStateEnum::Starting;
-                $sessionStore->updateMetadata(
-                    $state->sessionId,
-                    [
-                        'run_id' => $state->sessionId,
-                        'prompt' => $text,
-                    ],
-                );
-                $state->lastSeq = 0;
+                self::startRun($text, $state, $client, $sessionStore);
             } elseif (null !== $state->handle && $state->isShellRun && $state->activity->isTerminal()) {
                 // The previous run was a standalone shell command (first-input
                 // !) that completed without ever calling runner->start().
@@ -386,22 +354,7 @@ final class SubmitListener implements TuiListenerRegistrar
                 // for this normal prompt.
                 $state->isShellRun = false;
                 $state->handle = null;
-
-                $state->request = new StartRunRequest(
-                    prompt: $text,
-                    runId: $state->sessionId,
-                    cwd: $state->request->cwd ?? '',
-                );
-                $state->handle = $client->start($state->request);
-                $state->activity = RunActivityStateEnum::Starting;
-                $sessionStore->updateMetadata(
-                    $state->sessionId,
-                    [
-                        'run_id' => $state->sessionId,
-                        'prompt' => $text,
-                    ],
-                );
-                $state->lastSeq = 0;
+                self::startRun($text, $state, $client, $sessionStore);
             } elseif (null !== $state->handle) {
                 // Route subsequent chat messages as follow_up or steer
                 // based on authoritative run activity state:
@@ -429,19 +382,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     $queuedMessages = [...$state->queuedUserMessages, ...$state->queuedFollowUps];
                     $screen->syncQueuedUserMessages($queuedMessages);
                     $screen->setWorkingMessage('Message queued — waiting for compaction to complete...');
-                    try {
-                        $tui->requestRender();
-                        $tui->processRender();
-                    } catch (\Throwable $e) {
-                        // Non-fatal: the next tick will render the queued message.
-                        $logger->error('submit_listener.queued_message_render_failed', [
-                            'run_id' => $state->handle->runId,
-                            'session_id' => $state->sessionId,
-                            'component' => 'SubmitListener',
-                            'event_type' => 'submit_queued_message_render_failed',
-                            'exception' => $e,
-                        ]);
-                    }
+                    self::renderNow($tui, $state, $logger, 'queued_message');
                 } elseif ($state->activity->isActive()) {
                     $client->send(
                         $state->handle->runId,
@@ -567,6 +508,95 @@ final class SubmitListener implements TuiListenerRegistrar
         return $pastedImageSubmissionService->resolveSubmittedText($text, $state, $screen);
     }
 
+    /**
+     * Start a fresh LLM run for the submitted prompt.
+     *
+     * Carries the pending request's cwd, options, model and reasoning forward.
+     * On first submit that is the draft selection (/new --model, picker);
+     * after a first-input shell command the selection already lives on the
+     * session row (see moveDraftModelSelectionToSession()).
+     */
+    private static function startRun(
+        string $text,
+        TuiSessionState $state,
+        AgentSessionClient $client,
+        HatfieldSessionStore $sessionStore,
+    ): void {
+        $current = $state->request;
+        $state->request = new StartRunRequest(
+            prompt: $text,
+            runId: $state->sessionId,
+            cwd: $current->cwd ?? '',
+            options: $current->options ?? [],
+            model: $current?->model,
+            reasoning: $current?->reasoning,
+        );
+        $state->handle = $client->start($state->request);
+        $state->activity = RunActivityStateEnum::Starting;
+        $sessionStore->updateMetadata(
+            $state->sessionId,
+            [
+                'run_id' => $state->sessionId,
+                'prompt' => $text,
+            ],
+        );
+        $state->lastSeq = 0;
+    }
+
+    /**
+     * Force an immediate repaint so submit feedback shows before synchronous work.
+     *
+     * Non-fatal: render may fail while the terminal is in a transient state;
+     * the next tick renders normally.
+     */
+    private static function renderNow(Tui $tui, TuiSessionState $state, LoggerInterface $logger, string $reason): void
+    {
+        try {
+            $tui->requestRender();
+            $tui->processRender();
+        } catch (\Throwable $e) {
+            $logger->warning('submit_listener.render_failed', [
+                'run_id' => $state->handle?->runId,
+                'session_id' => $state->sessionId,
+                'component' => 'SubmitListener',
+                'event_type' => 'submit_listener.render_failed',
+                'render_reason' => $reason,
+                'exception' => $e,
+            ]);
+        }
+    }
+
+    /**
+     * Hand a draft's model/reasoning to the session row a shell command just created.
+     *
+     * Once the session exists, PendingModelSelection writes picker changes to
+     * session metadata only. Leaving the draft values on the pending request
+     * would let them override later picker changes on the next start().
+     */
+    private static function moveDraftModelSelectionToSession(TuiSessionState $state, HatfieldSessionStore $sessionStore): void
+    {
+        $request = $state->request;
+        if (null === $request || (null === $request->model && null === $request->reasoning)) {
+            return;
+        }
+
+        $meta = [];
+        $model = null !== $request->model ? AiModelReference::tryParse($request->model) : null;
+        if (null !== $model) {
+            $meta['model'] = $model->toString();
+            $meta['model_provider'] = $model->providerId;
+            $meta['model_name'] = $model->modelName;
+        }
+        if (null !== $request->reasoning) {
+            $meta['reasoning'] = $request->reasoning;
+        }
+        if ([] !== $meta) {
+            $sessionStore->updateMetadata($state->sessionId, $meta);
+        }
+
+        $state->request = $request->withModel(null)->withReasoning(null);
+    }
+
     private static function handleShellCommand(
         DispatchShellCommand $shellCommand,
         TuiSessionState $state,
@@ -589,6 +619,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     'event_type' => 'draft_promoted_shell',
                     'session_id' => $state->sessionId,
                 ]);
+                self::moveDraftModelSelectionToSession($state, $sessionStore);
             }
 
             // No local transcript echo: canonical agent_command_applied
