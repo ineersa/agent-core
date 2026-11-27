@@ -6,11 +6,13 @@ namespace Ineersa\Tui\Tests\Utility;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Utility\Clipboard;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 final class ClipboardTest extends TestCase
 {
-    public function testFindsOptionalBackendWithoutWhich(): void
+    #[Test]
+    public function findsOptionalBackendWithoutWhich(): void
     {
         $directory = TestDirectoryIsolation::createOsTempDir('clipboard-lookup');
         $path = getenv('PATH');

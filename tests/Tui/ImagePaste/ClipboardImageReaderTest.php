@@ -207,8 +207,13 @@ while true; do sleep 1; done');
     {
         $path = $this->tempDir.'/final-output.png';
         $process = $this->createMock(Process::class);
-        $process->method('isRunning')->willReturn(true, false);
-        $process->expects($this->exactly(2))->method('getIncrementalOutput')->willReturn('first', 'tail');
+        $runningChecks = 0;
+        $process->method('isRunning')->willReturnCallback(static function () use (&$runningChecks): bool {
+            return 1 === ++$runningChecks;
+        });
+        $process->expects($this->exactly(2))->method('getIncrementalOutput')->willReturnCallback(static function () use (&$runningChecks): string {
+            return $runningChecks < 2 ? 'first' : 'tail';
+        });
         $process->method('isSuccessful')->willReturn(true);
         $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
         foreach (['process' => $process, 'backend' => ['name' => 'wl-paste', 'argv' => []], 'tempPath' => $path, 'fileHandle' => fopen($path, 'wb')] as $name => $value) {
@@ -222,8 +227,9 @@ while true; do sleep 1; done');
         $this->assertFalse($reader->isReading());
     }
 
+    #[Test]
     #[DataProvider('noImageExits')]
-    public function testNoImageExitClassification(string $backend, ?int $exit, string $stderr, int $written, bool $expected): void
+    public function noImageExitClassification(string $backend, ?int $exit, string $stderr, int $written, bool $expected): void
     {
         $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
         $this->assertSame($expected, (new \ReflectionMethod($reader, 'isNoImageExit'))->invoke($reader, $backend, $exit, $stderr, $written));

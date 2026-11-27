@@ -192,6 +192,7 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
         try {
             $process->checkTimeout();
         } catch (ProcessTimedOutException) {
+            // Defer the timeout log and user-facing failure to finalizeCapture().
             $this->timedOut = true;
             $this->stopCaptureProcess($process);
         }
