@@ -222,6 +222,29 @@ final class LogReaderTest extends TestCase
         $this->assertSame('Only error', $entries[0]->message);
     }
 
+    public function testTailReturnsNewestMatchesWhenFileHasMoreThanRequested(): void
+    {
+        $lines = [];
+        for ($i = 0; $i < 100; ++$i) {
+            $lines[] = json_encode([
+                'datetime' => '2026-05-18T10:00:00+00:00',
+                'channel' => 'app',
+                'level_name' => 0 === $i % 2 ? 'ERROR' : 'INFO',
+                'message' => "Message {$i}",
+            ], \JSON_THROW_ON_ERROR);
+        }
+
+        file_put_contents($this->logDir.'/agent.log', implode("\n", $lines)."\n");
+
+        // A filter limit must not stop the read at the oldest matches.
+        $entries = $this->reader->tail(3, new LogFilter(level: 'ERROR', limit: 3));
+
+        $this->assertSame(
+            ['Message 98', 'Message 96', 'Message 94'],
+            array_map(static fn ($entry): string => $entry->message, $entries),
+        );
+    }
+
     private function rmDir(string $dir): void
     {
         if (!is_dir($dir)) {

@@ -37,7 +37,6 @@ final readonly class LogReader
         $files = glob($pattern, \GLOB_NOSORT);
         $files = false !== $files ? $files : [];
 
-        // Deduplicate: prefer basename sort (alphabetical) then mtime sort
         $withMtime = [];
         foreach ($files as $file) {
             $mtime = filemtime($file);
@@ -97,11 +96,12 @@ final readonly class LogReader
     }
 
     /**
-     * Return the last N matching entries from the newest log file.
+     * Return the last N matching entries from the newest log file, newest-first.
      *
-     * Reads the entire newest file (JSONL files are typically small by design
-     * with daily rotation), collecting matching entries, then returns the
-     * last N newest-first.
+     * Streams the whole newest file and keeps a rolling window of the last N
+     * matches, so memory stays bounded by N regardless of file size. The
+     * filter's limit is ignored here: it would stop reading at the oldest
+     * matches at the top of the file.
      *
      * @param int            $lines  Maximum number of entries to return
      * @param LogFilter|null $filter Optional filter criteria
@@ -111,30 +111,22 @@ final readonly class LogReader
     public function tail(int $lines = 50, ?LogFilter $filter = null): array
     {
         $files = $this->getLogFiles();
-        if ([] === $files) {
+        if ([] === $files || $lines < 1) {
             return [];
         }
 
-        // Read the newest file and collect all matching entries
-        $newestFile = $files[0];
-        $entryLimit = null !== $filter?->limit ? max($lines, $filter->limit) : $lines * 2;
+        $unlimitedFilter = null !== $filter
+            ? new LogFilter(level: $filter->level, search: $filter->search, from: $filter->from, to: $filter->to)
+            : null;
 
-        $allMatching = [];
-        $totalRead = 0;
-
-        foreach ($this->readFiles([$newestFile], $filter) as $entry) {
-            $allMatching[] = $entry;
-            ++$totalRead;
-
-            // Stop reading after collecting enough entries (2× buffer)
-            if ($totalRead >= $entryLimit * 2) {
-                break;
+        $window = new \SplQueue();
+        foreach ($this->readFiles([$files[0]], $unlimitedFilter) as $entry) {
+            $window->enqueue($entry);
+            if ($window->count() > $lines) {
+                $window->dequeue();
             }
         }
 
-        // Return the last N entries, newest-first
-        $lastN = \array_slice($allMatching, -$lines);
-
-        return array_reverse($lastN);
+        return array_reverse(iterator_to_array($window, false));
     }
 }

@@ -4,18 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI\Log;
 
-use HelgeSverre\Toon\Toon;
-use Ineersa\CodingAgent\Logging\LogEntry;
+use Ineersa\CodingAgent\Logging\LogEntryRenderer;
 use Ineersa\CodingAgent\Logging\LogFilter;
 use Ineersa\CodingAgent\Logging\LogReader;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Output\StreamOutput;
-use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
  * Search log entries across all log files.
@@ -32,12 +28,16 @@ final class LogSearchCommand
 
     public function __construct(
         private readonly LogReader $reader,
+        private readonly LogEntryRenderer $renderer,
     ) {
     }
 
     public function __invoke(
+        OutputInterface $output,
+
         #[Argument(description: 'Search term (case-insensitive substring)')]
         string $query,
+
         #[Option(description: 'Filter by log level (e.g. ERROR, WARNING)')]
         ?string $level = null,
 
@@ -49,78 +49,17 @@ final class LogSearchCommand
 
         #[Option(description: 'Output format: table (default), jsonl, or toon')]
         string $format = 'table',
-
-        ?OutputInterface $output = null,
     ): int {
-        $reader = $this->reader;
-        $fromDate = null !== $from ? new \DateTimeImmutable($from) : null;
-        $toDate = null !== $to ? new \DateTimeImmutable($to) : null;
-        $filter = new LogFilter(level: $level, search: $query, from: $fromDate, to: $toDate);
+        $filter = new LogFilter(
+            level: $level,
+            search: $query,
+            from: null !== $from ? new \DateTimeImmutable($from) : null,
+            to: null !== $to ? new \DateTimeImmutable($to) : null,
+            limit: self::MAX_RESULTS,
+        );
 
-        $entries = [];
-        $count = 0;
-        foreach ($reader->readFiles($reader->getLogFiles(), $filter) as $logEntry) {
-            $entries[] = $logEntry;
-            ++$count;
-            if ($count >= self::MAX_RESULTS) {
-                break;
-            }
-        }
-
-        if ([] === $entries) {
-            $io = new SymfonyStyle(new ArgvInput(), $output);
-            $io->text('No matching log entries.');
-
-            return Command::SUCCESS;
-        }
-
-        if ('toon' === $format) {
-            $rawOutput = new StreamOutput(\STDOUT);
-            foreach ($entries as $entry) {
-                $rawOutput->write(Toon::encode(self::entryToJson($entry))."\n");
-            }
-
-            return Command::SUCCESS;
-        }
-
-        if ('jsonl' === $format) {
-            $rawOutput = new StreamOutput(\STDOUT);
-            foreach ($entries as $entry) {
-                $rawOutput->write(json_encode(self::entryToJson($entry), \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
-            }
-
-            return Command::SUCCESS;
-        }
-
-        $io = new SymfonyStyle(new ArgvInput(), $output);
-        $rows = [];
-        foreach ($entries as $rowEntry) {
-            $rows[] = [
-                $rowEntry->datetime->format('Y-m-d H:i:s'),
-                $rowEntry->level,
-                mb_substr($rowEntry->message, 0, 120),
-            ];
-        }
-
-        $io->table(['Time', 'Level', 'Message'], $rows);
+        $this->renderer->render($this->reader->readFiles($this->reader->getLogFiles(), $filter), $format, $output);
 
         return Command::SUCCESS;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private static function entryToJson(LogEntry $entry): array
-    {
-        return [
-            'datetime' => $entry->datetime->format('Y-m-d H:i:s'),
-            'channel' => $entry->channel,
-            'level' => $entry->level,
-            'message' => $entry->message,
-            'context' => $entry->context,
-            'extra' => $entry->extra,
-            'sourceFile' => $entry->sourceFile,
-            'lineNumber' => $entry->lineNumber,
-        ];
     }
 }
