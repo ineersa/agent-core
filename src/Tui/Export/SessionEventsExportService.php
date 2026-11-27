@@ -50,7 +50,7 @@ final class SessionEventsExportService
         }
 
         if (str_ends_with($outputPath, '.jsonl')) {
-            return $this->exportJsonl($headerSessionId, $eventsPath, $outputPath);
+            return $this->exportJsonl($headerSessionId, $eventsContent, $outputPath);
         }
 
         return $this->exportHtml($headerSessionId, $eventsContent, $outputPath, $sessionName, $sessionCwd, $createdAt);
@@ -61,10 +61,15 @@ final class SessionEventsExportService
         return htmlspecialchars($text, \ENT_QUOTES | \ENT_SUBSTITUTE, 'UTF-8');
     }
 
-    private function exportJsonl(string $sessionId, string $sourcePath, string $outputPath): SessionExportResultDTO
+    /**
+     * Writes the already-read events bytes instead of copying the source file:
+     * a copy would truncate the session's own events file when the output path
+     * resolves to it, and would fail when the live file grows mid-copy.
+     */
+    private function exportJsonl(string $sessionId, string $eventsContent, string $outputPath): SessionExportResultDTO
     {
         try {
-            $this->filesystem->copy($sourcePath, $outputPath, true);
+            $this->filesystem->dumpFile($outputPath, $eventsContent);
         } catch (IOException $exception) {
             return $this->writeFailed($sessionId, $outputPath, $exception);
         }

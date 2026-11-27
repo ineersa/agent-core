@@ -60,6 +60,22 @@ final class SessionEventsExportServiceTest extends TestCase
     }
 
     #[Test]
+    public function jsonlExportOntoTheEventsFileKeepsItsContent(): void
+    {
+        $eventsPath = $this->dir.'/events.jsonl';
+        file_put_contents($eventsPath, "{\"seq\":1}\n");
+        $linkPath = $this->dir.'/link.jsonl';
+        symlink($eventsPath, $linkPath);
+
+        foreach ([$eventsPath, $linkPath] as $outputPath) {
+            $result = SessionEventsExportServiceFactory::create()->exportEventsFile($eventsPath, $outputPath, 'sess-1');
+
+            $this->assertSame(SessionExportOutcomeEnum::Exported, $result->outcome);
+            $this->assertSame("{\"seq\":1}\n", file_get_contents($eventsPath));
+        }
+    }
+
+    #[Test]
     public function writeFailureIsFailedAndLogged(): void
     {
         $eventsPath = $this->dir.'/events.jsonl';
