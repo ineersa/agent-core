@@ -46,7 +46,7 @@ async function report() {
     const titleStarted = performance.now();
     const title = notify ? null : startTitleLookup(hook);
     return withState(dirname(endpoint), context, hook.hook_event_name === 'SubagentStart', deadline, async (previous, save, pendingStart) => {
-        let state, kind, fields;
+        let state, kind, fields, registrySampled = false;
         if (notify) {
             if (!previous || previous.ended || !Number.isSafeInteger(previous.sequence + 1)) return false;
             state = previous;
@@ -56,7 +56,7 @@ async function report() {
         } else {
             const result = observe(previous, hook, context.secret);
             if (!result) return false;
-            ({ state, kind } = result);
+            ({ state, kind, registrySampled } = result);
             if (result.refreshTitle) state.title = await titleFor(title, titleStarted, deadline - (context.managed ? 500 : 250)) ?? state.title;
             fields = kind === 'session.snapshot' ? snapshot(state) : {};
         }
@@ -65,7 +65,9 @@ async function report() {
         if (!await save(state)) return false;
         const credential = await context.authorize(deadline);
         if (!credential) return false;
-        if (fields.turn?.status === 'completed' && fields.activeSubagents === 0 && await pendingStart()) fields.activeSubagents = null;
+        // A start that failed to record itself leaves a sticky marker until a later registry covers it.
+        const sampledBefore = registrySampled ? performance.timeOrigin : undefined;
+        if (fields.turn?.status === 'completed' && fields.activeSubagents === 0 && await pendingStart(sampledBefore)) fields.activeSubagents = null;
         return send(endpoint, credential, state, kind, fields, deadline);
     });
 }

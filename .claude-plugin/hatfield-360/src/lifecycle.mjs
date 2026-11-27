@@ -73,6 +73,8 @@ export function observe(previous, hook, secret) {
     let state = previous;
     let kind = 'session.snapshot';
     let refreshTitle = false;
+    // Claude listed every in-flight task with this Stop, so it covers children whose starts went unrecorded.
+    let registrySampled = false;
     if (event === 'SessionStart' && hook.agent_id == null) {
         state = select(previous, hook, sequence);
         if (!state) return null;
@@ -101,6 +103,7 @@ export function observe(previous, hook, secret) {
     else if (event === 'Stop' && hook.stop_hook_active === false) {
         // Stop can be blocked by a different hook; it is not an interrupt signal.
         const sample = registry(hook.background_tasks);
+        registrySampled = sample !== null;
         state.scripts = sample?.scripts ?? null;
         state.agentsUncertain = sample?.subagents ?? true;
         state.turn.status = 'completed';
@@ -119,7 +122,7 @@ export function observe(previous, hook, secret) {
     }
     prune(state, now);
     state.sequence = sequence;
-    return { state, kind, refreshTitle };
+    return { state, kind, refreshTitle, registrySampled };
 }
 
 export function snapshot(state) {

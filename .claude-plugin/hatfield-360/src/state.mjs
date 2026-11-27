@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { constants, existsSync, lstatSync, openSync, closeSync, readSync, fstatSync, writeFileSync, renameSync, unlinkSync, readdirSync } from 'node:fs';
+import { constants, existsSync, futimesSync, lstatSync, openSync, closeSync, readSync, fstatSync, writeFileSync, renameSync, unlinkSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { object } from './attention.mjs';
@@ -65,13 +65,26 @@ export function privateDirectory(directory) {
     return stat.isDirectory() && stat.uid === process.geteuid() && (stat.mode & 0o7777) === 0o700;
 }
 
+/** Removes the uncertainty marker if it was left before `time` (ms since the epoch). */
+function clearMarkerBefore(marker, time) {
+    let stat;
+    try { stat = lstatSync(marker); }
+    catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    if (stat.isFile() && stat.mtimeMs < time) unlinkSync(marker);
+}
+
 export async function withState(directory, launch, start, deadline, callback) {
     const { default: { lock: acquire } } = await import('proper-lockfile');
     const waitDeadline = Math.min(deadline, performance.now() + 5000);
     const path = join(directory, `node-${launch.name}.json`);
     const pending = `${path}.pending`;
     const marker = `${path}.uncertain`;
-    const mark = () => closeSync(openSync(marker, constants.O_CREAT | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600));
+    // Each mark renews its time, so a newer unrecorded start is never cleared as an old one.
+    const mark = () => {
+        const fd = openSync(marker, constants.O_CREAT | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+        try { const now = new Date(); futimesSync(fd, now, now); }
+        finally { closeSync(fd); }
+    };
     // A waiting child start must inhibit a concurrent completed/zero snapshot.
     // If acquiring its pending lock fails, leave sticky positive uncertainty.
     const trackStart = start && existsSync(path);
@@ -114,10 +127,13 @@ export async function withState(directory, launch, start, deadline, callback) {
                 } else save(path, state);
                 return true;
             };
-            const pendingStart = async () => {
+            // `sampledBefore`: Claude's registry, taken before this hook ran, covers starts marked earlier.
+            const pendingStart = async (sampledBefore) => {
                 const exclusive = await lock(acquire, pending);
                 await exclusive?.();
-                return !exclusive || existsSync(marker);
+                if (!exclusive) return true;
+                if (sampledBefore !== undefined) clearMarkerBefore(marker, sampledBefore);
+                return existsSync(marker);
             };
             return await callback(previous, persist, pendingStart);
         } finally { await release(); }

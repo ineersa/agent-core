@@ -808,6 +808,43 @@ final class Hatfield360ClaudeHookTest extends TestCase
         }
     }
 
+    public function testAStopRegistryClearsUncertaintyLeftByAnEarlierUnrecordedStart(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('h360', 0o700);
+        $server = listen('unix://'.$directory.'/s');
+        $launch = '44444444-4444-4444-8444-444444444444';
+        $environment = ['H360_STATUS_ENDPOINT' => $directory.'/s', 'H360_STATUS_LAUNCH_ID' => $launch, 'H360_STATUS_TOKEN' => str_repeat('a', 64)];
+        $send = fn (array $hook): array => $this->exchange($server, $this->launch($environment, $hook + ['session_id' => 'claude-1']));
+        $marker = $directory.'/node-claude-status-'.$launch.'.json.uncertain';
+        $stop = ['hook_event_name' => 'Stop', 'stop_hook_active' => false];
+        $prompt = static fn (int $i): array => ['prompt_id' => \sprintf('44444444-4444-4444-8444-%012d', $i)];
+        try {
+            $send(['hook_event_name' => 'SessionStart', 'source' => 'startup']);
+            // A start that could not record itself, as when its state lock timed out.
+            touch($marker, time() - 60);
+
+            $send($prompt(1) + ['hook_event_name' => 'UserPromptSubmit']);
+            $this->assertNull($send($prompt(1) + $stop)['activeSubagents'], 'Without a registry the marker stands.');
+            $this->assertFileExists($marker);
+
+            // A start marked after Claude sampled the registry for this Stop is not covered by it.
+            $send($prompt(2) + ['hook_event_name' => 'UserPromptSubmit']);
+            touch($marker, time() + 60);
+            $this->assertNull($send($prompt(2) + $stop + ['background_tasks' => []])['activeSubagents']);
+            $this->assertFileExists($marker);
+
+            $send($prompt(3) + ['hook_event_name' => 'UserPromptSubmit']);
+            touch($marker, time() - 60);
+            $settled = $send($prompt(3) + $stop + ['background_tasks' => []]);
+            $this->assertSame('completed', $settled['turn']['status']);
+            $this->assertSame(0, $settled['activeSubagents']);
+            $this->assertFileDoesNotExist($marker);
+        } finally {
+            $server->close();
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     private function retryProbe(): string
     {
         return '--require='.self::$pluginDirectory.'/retry-barrier.cjs';
