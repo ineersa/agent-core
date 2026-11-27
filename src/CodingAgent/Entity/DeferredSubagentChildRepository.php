@@ -78,7 +78,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
     public function findByBatchLifecycleId(string $batchLifecycleId): ?DeferredSubagentChildProjectionDTO
     {
         $row = $this->getEntityManager()->getConnection()->fetchAssociative(
-            'SELECT * FROM deferred_subagent_child WHERE batch_lifecycle_id = ?', [$batchLifecycleId],
+            'SELECT * FROM deferred_subagent_child WHERE batch_lifecycle_id = ? ORDER BY id LIMIT 1', [$batchLifecycleId],
         );
 
         return false === $row ? null : $this->snapshot($row);
@@ -90,6 +90,12 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         $now = Clock::get()->now()->format('Y-m-d H:i:s');
 
         $intent = $childIntent->toReserveArray();
+        $existing = $this->findEntityByBatchLifecycleId($batchLifecycleId);
+        if (null !== $existing) {
+            $this->assertChildMatchesIntent($existing, $intent);
+
+            return;
+        }
         try {
             $conn->insert('deferred_subagent_child', [
                 'batch_lifecycle_id' => $batchLifecycleId,
@@ -302,7 +308,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             ++$i;
         }
 
-        $row = $qb->getQuery()
+        $row = $qb->orderBy('c.id', 'ASC')->setMaxResults(1)->getQuery()
             ->setHint(Query::HINT_REFRESH, true)
             ->getOneOrNullResult();
 

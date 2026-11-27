@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchTerminalCompletionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\DeferredSubagentBatchInterruptionCompletionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressDeliveryService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 
 /**
@@ -27,34 +28,14 @@ final readonly class DeferredSubagentBatchLifecycleDeliveryService
     public function deliver(string $batchLifecycleId): void
     {
         $batch = $this->batchRepository->findByLifecycleId($batchLifecycleId);
-        if (null === $batch) {
-            return;
-        }
-
-        if (null !== $batch->terminalCompletionEnqueuedAt) {
-            return;
-        }
-
-        // Resume may already have moved the sole child row to another invocation.
-        if ($this->completionDispatcher->retryFrozenCompletion($batch)) {
-            return;
-        }
-
-        if (null === $batch->child) {
-            return;
-        }
-
-        // Route persisted interruption to the interruption path before natural completion
-        if (null !== $batch->interruptionKind) {
-            $this->interruptionCompletion->completeFromInterruption($batch);
-
+        if (null === $batch || $this->routeBeforeNaturalCompletion($batch)) {
             return;
         }
 
         if ($batch->aggregateProgressRevision > $batch->deliveredProgressRevision) {
             $this->progressDelivery->deliverIfNeeded($batch);
             $batch = $this->batchRepository->findByLifecycleId($batchLifecycleId);
-            if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt) {
+            if (null === $batch || $this->routeBeforeNaturalCompletion($batch)) {
                 return;
             }
             if ($batch->aggregateProgressRevision > $batch->deliveredProgressRevision) {
@@ -65,5 +46,22 @@ final readonly class DeferredSubagentBatchLifecycleDeliveryService
         }
 
         $this->naturalCompletion->completeIfTerminal($batch);
+    }
+
+    private function routeBeforeNaturalCompletion(DeferredSubagentBatchProjectionDTO $batch): bool
+    {
+        // Resume may already have moved the child to another invocation.
+        // Retry the frozen result before checking for a child.
+        if (null !== $batch->terminalCompletionEnqueuedAt || $this->completionDispatcher->retryFrozenCompletion($batch) || null === $batch->child) {
+            return true;
+        }
+
+        if (null !== $batch->interruptionKind) {
+            $this->interruptionCompletion->completeFromInterruption($batch);
+
+            return true;
+        }
+
+        return false;
     }
 }

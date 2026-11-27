@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
 
 /**
- * Ordered durable child reservation intent for deferred batch launch (Piece 4A).
+ * Durable reservation intent for the deferred child.
  *
  * Launch model/reasoning are concrete values from prepare-time resolvers
  * (subagent/fork resolveLaunchIdentity); not an external trust boundary.

@@ -38,9 +38,7 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
         DeferredSubagentInterruptionKindEnum $kind,
     ): void {
         if (null === $batch->child) {
-            // Launch rejects empty tasks; reserveBatch inserts the batch and every
-            // planned child in one transaction. Valid reservations cannot be empty.
-            throw new \LogicException('Forced progress requires reserved child rows.');
+            throw new \LogicException('Forced progress requires a reserved child.');
         }
 
         $payload = $this->snapshotFactory->buildSingleForcedPayload($batch, $kind);

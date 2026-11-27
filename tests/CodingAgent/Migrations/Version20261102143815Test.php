@@ -35,7 +35,7 @@ final class Version20261102143815Test extends IsolatedKernelTestCase
         $container->get(DeferredToolCompletionRepository::class)->registerPending($correlation);
         // Recreate the pre-single-child index shape for this historical round trip.
         $db->executeStatement('ALTER TABLE deferred_subagent_child ADD COLUMN batch_index INTEGER NOT NULL DEFAULT 1');
-        $db->executeStatement('DROP INDEX uniq_deferred_subagent_child_batch');
+        $db->executeStatement('DROP INDEX idx_deferred_subagent_child_batch');
         $db->executeStatement('CREATE UNIQUE INDEX uniq_deferred_subagent_child_batch_index ON deferred_subagent_child (batch_lifecycle_id, batch_index)');
         $tables = ['deferred_subagent_child', 'tool_deferred_completion'];
         $before = [];

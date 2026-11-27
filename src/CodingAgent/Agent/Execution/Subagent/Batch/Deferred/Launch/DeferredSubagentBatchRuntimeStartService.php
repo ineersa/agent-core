@@ -14,7 +14,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchSe
 use Psr\Log\LoggerInterface;
 
 /**
- * Ordered runtime child starts and canonical launch-abort for deferred batch launch (Piece 4A).
+ * Starts the prepared child and records canonical launch aborts.
  */
 final class DeferredSubagentBatchRuntimeStartService
 {

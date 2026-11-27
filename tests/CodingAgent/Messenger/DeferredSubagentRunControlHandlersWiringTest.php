@@ -31,7 +31,7 @@ final class DeferredSubagentRunControlHandlersWiringTest extends IsolatedKernelT
 {
     public function testNativeTransportDecodesInFlightObservationWithBatchIndex(): void
     {
-        $message = new ObserveDeferredSubagentBatchChildTurnMessage('old-batch', 'child', RunStatus::Running, 2, [], 17);
+        $message = new ObserveDeferredSubagentBatchChildTurnMessage('old-batch', 'child', RunStatus::Running, 2, []);
         $serializer = new PhpSerializer();
         $encoded = $serializer->encode(new Envelope($message));
         // Restore the removed property in the native PHP object record, as on the old wire.
@@ -39,7 +39,10 @@ final class DeferredSubagentRunControlHandlersWiringTest extends IsolatedKernelT
         $class = ObserveDeferredSubagentBatchChildTurnMessage::class;
         $prefix = \sprintf('O:%d:"%s":', \strlen($class), $class);
         $this->assertStringContainsString(addslashes($prefix.'6:{'), $body);
-        $encoded['body'] = str_replace(addslashes($prefix.'6:{'), addslashes($prefix.'7:{s:10:"batchIndex";i:1;'), $body);
+        $encoded['body'] = str_replace(addslashes($prefix.'6:{'), addslashes($prefix.'6:{s:10:"batchIndex";i:1;'), $body);
+
+        $encoded['body'] = str_replace(addslashes('s:19:"predecessorSequence";N;'), '', $encoded['body']);
+        $this->assertStringNotContainsString('predecessorSequence', $encoded['body']);
 
         $decoded = $serializer->decode($encoded)->getMessage();
         $this->assertEquals($message, $decoded);

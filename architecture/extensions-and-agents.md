@@ -162,7 +162,10 @@ Recovery uses durable child event cursors and reads the unseen event-log suffix.
 Sequence allocation can leave holes, so `sequence.cursor` is not proof of a committed
 event tail. Each deferred tool call launches at most one child; an accepted launch is not a
 completed child turn. Resume rebinds the child row to a new lifecycle, leaving the
-previous batch without a child.
+previous batch without a child. Upgrades preserve historical sibling rows, but the
+single-child lifecycle projects only the lowest child row ID for a batch. It does
+not reconstruct the former sibling order or aggregate their outcomes. The forward migration drops the historical index values;
+Doctrine explicitly refuses rollback because those values cannot be recovered.
 
 ## Child tool policy and live views
 

@@ -161,7 +161,7 @@ final class DeferredSubagentBatchLaunchService
             return new DeferredToolCompletionOutcome($lifecycleId);
         }
 
-        // Parent cancel/timeout can land while children are still Reserved.
+        // Parent cancel/timeout can land while the child is still Reserved.
         // Do not prepare/start after interruption intent is durable; return the
         // deferred outcome so registration can complete interruption delivery.
         if ($this->hasInterruptionIntent($lifecycleId)) {

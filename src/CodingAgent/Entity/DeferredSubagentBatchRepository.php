@@ -186,7 +186,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                     terminal_completed_at = COALESCE(terminal_completed_at, :terminal_at),
                     terminal_status = COALESCE(terminal_status, :terminal_status),
                     updated_at = :now, projection_version = projection_version + 1
-                 WHERE batch_lifecycle_id = :batch AND projection_version = :child_version',
+                 WHERE id = (SELECT MIN(id) FROM deferred_subagent_child WHERE batch_lifecycle_id = :batch) AND projection_version = :child_version',
                 [
                     'projection' => $this->serializer->serialize(
                         $projection,
@@ -395,7 +395,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             );
             $conn->executeStatement(
                 'UPDATE deferred_subagent_child SET launch_status = :failed, updated_at = :now, projection_version = projection_version + 1
-                 WHERE batch_lifecycle_id = :lifecycle AND launch_status = :reserved',
+                 WHERE id = (SELECT MIN(id) FROM deferred_subagent_child WHERE batch_lifecycle_id = :lifecycle) AND launch_status = :reserved',
                 [
                     'failed' => DeferredSubagentChildLaunchStatusEnum::Failed->value,
                     'now' => $now,
@@ -429,7 +429,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         try {
             $conn->executeStatement(
                 'UPDATE deferred_subagent_child SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1
-                     WHERE batch_lifecycle_id = :lifecycle AND launch_status = :reserved',
+                     WHERE id = (SELECT MIN(id) FROM deferred_subagent_child WHERE batch_lifecycle_id = :lifecycle) AND launch_status = :reserved',
                 [
                     'launched' => DeferredSubagentChildLaunchStatusEnum::Launched->value,
                     'started' => $started,
@@ -447,7 +447,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                  WHERE parent_run_id = :parent AND parent_tool_call_id = :tool AND launch_status = :reserved
                    AND 1 = (
                      SELECT COUNT(*) FROM deferred_subagent_child
-                     WHERE batch_lifecycle_id = :lifecycle AND launch_status = :child_launched
+                     WHERE id = (SELECT MIN(id) FROM deferred_subagent_child WHERE batch_lifecycle_id = :lifecycle) AND launch_status = :child_launched
                    )',
                 [
                     'launched' => DeferredSubagentBatchLaunchStatusEnum::Launched->value,

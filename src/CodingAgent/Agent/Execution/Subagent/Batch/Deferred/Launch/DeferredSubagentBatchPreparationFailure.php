@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
 
 /**
- * Preparation failed for one batch index before any later runtime start in this attempt.
+ * Preparation of the deferred child failed before runtime start.
  */
 final class DeferredSubagentBatchPreparationFailure extends \RuntimeException
 {

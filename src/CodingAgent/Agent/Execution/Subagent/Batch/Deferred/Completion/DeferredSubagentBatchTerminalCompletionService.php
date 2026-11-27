@@ -25,15 +25,6 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
 
     public function completeIfTerminal(DeferredSubagentBatchProjectionDTO $batch): void
     {
-        $this->completeSingleIfTerminal($batch);
-    }
-
-    private function completeSingleIfTerminal(DeferredSubagentBatchProjectionDTO $batch): void
-    {
-        if (null !== $batch->interruptionKind) {
-            return;
-        }
-
         $child = $batch->child ?? throw new \RuntimeException('Single batch natural completion requires a child row.');
         $projection = $child->childLifecycleProjection;
         if (null === $projection || !$projection->childStatus->isTerminal()) {

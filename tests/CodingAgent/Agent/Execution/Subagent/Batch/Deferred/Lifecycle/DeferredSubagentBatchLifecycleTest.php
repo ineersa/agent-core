@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Lifecycle;
 
+use Doctrine\DBAL\Connection;
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
@@ -1224,6 +1225,51 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertFileDoesNotExist($inputPath);
         $delivery->deliver($lifecycle);
         $this->assertCount(1, $completionBus->messages);
+    }
+
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testDeliveryRoutesChildlessSnapshots(bool $freezeDuringProgress): void
+    {
+        $container = self::getContainer();
+        $repo = $container->get(DeferredSubagentBatchRepository::class);
+        $parent = $container->get(HatfieldSessionStore::class)->createSession('childless delivery');
+        $factory = new DeferredSubagentBatchIdentityFactory();
+        $id = $factory->batchLifecycleId($parent, 'call');
+        $child = $factory->childIdentity($parent, 'call');
+        $intent = new DeferredSubagentBatchChildIntentDTO($child['childRunId'], $child['artifactId'], 'scout', 'inspect', 'model', 'medium');
+        $batch = $repo->reserveBatch($id, $parent, 1, 'call', 0, new \DateTimeImmutable('+1 hour'), $intent);
+        $this->assertSame($child['childRunId'], $repo->reserveBatch($id, $parent, 1, 'call', 0, new \DateTimeImmutable('+1 hour'), $intent)->child?->childRunId);
+        $this->assertSame(1, (int) $container->get(Connection::class)->fetchOne('SELECT COUNT(*) FROM deferred_subagent_child WHERE batch_lifecycle_id = ?', [$id]));
+        $repo->applyBatchChildLifecycleProjection($id, new DeferredChildRunLifecycleProjectionDTO(RunStatus::Completed, 1, 1, 'model', 'medium'), 1, $batch->child->projectionVersion, $batch->projectionVersion, true);
+        $rebind = static fn () => $repo->reserveBatch($id.'-resume', $parent, 2, 'resume', 0, new \DateTimeImmutable('+1 hour'), $intent);
+        $appender = $this->createMock(SubagentProgressEventAppender::class);
+        $completionBus = new TestMessageBus();
+        if ($freezeDuringProgress) {
+            $this->registerCorrelation(new DeferredToolCompletionCorrelation($id, $parent, 1, 'step', 1, 'key', 'call', 'subagent', [], 0));
+            $this->ensureArtifactReserved($parent, $child['childRunId'], $child['artifactId'], 'scout', 'inspect');
+            $identity = new ChildRunIdentityDTO($parent, $child['childRunId'], $child['artifactId'], 'scout', 'inspect', AgentArtifactKindEnum::Subagent);
+            $outcome = new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Completed, summary: 'Frozen');
+            $source = new DeferredSubagentCompletionSourceDTO($container->get(SubagentChildRunArtifactFinalizer::class)->preparePublication($outcome, $id), 'Frozen', false, null);
+            $appender->expects($this->once())->method('append')->willReturnCallback(static function () use ($repo, $id, $source, $rebind): bool {
+                $repo->freezeCompletionSource($id, $source, $repo->findByLifecycleId($id)->projectionVersion);
+                $rebind();
+
+                return true;
+            });
+        } else {
+            $rebind();
+            $appender->expects($this->never())->method('append');
+        }
+
+        $this->buildLifecycleDelivery($completionBus, $appender)->deliver($id);
+
+        $this->assertNull($repo->findByLifecycleId($id)->child);
+        $this->assertCount($freezeDuringProgress ? 1 : 0, $completionBus->messages);
+        if ($freezeDuringProgress) {
+            $this->assertInstanceOf(CompleteDeferredToolCall::class, $completionBus->messages[0]);
+            $this->assertNotNull($repo->findByLifecycleId($id)->terminalCompletionEnqueuedAt);
+        }
     }
 
     public static function delayedProgressCases(): iterable

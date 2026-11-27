@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Migrations;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Schema\Schema;
+use Doctrine\Migrations\Exception\IrreversibleMigration;
 use DoctrineMigrations\Version20260601152619;
 use DoctrineMigrations\Version20260607000000;
 use DoctrineMigrations\Version20260617141001;
@@ -15,6 +16,7 @@ use DoctrineMigrations\Version20261019185942;
 use DoctrineMigrations\Version20261021034317;
 use DoctrineMigrations\Version20261022235428;
 use DoctrineMigrations\Version20261030155748;
+use DoctrineMigrations\Version20261127023600;
 use Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -178,7 +180,7 @@ final class ApplicationMigrationExecutorTest extends IsolatedKernelTestCase
         $pendingIndex = $schemaManager->listTableIndexes('tool_deferred_completion')['idx_deferred_pending'];
         $this->assertSame(['run_id', 'status', 'turn_no', 'step_id'], $pendingIndex->getColumns());
         $this->assertArrayNotHasKey('idx_tool_batch_run', $schemaManager->listTableIndexes('tool_batch'));
-        $this->assertArrayNotHasKey('idx_deferred_subagent_child_batch', $schemaManager->listTableIndexes('deferred_subagent_child'));
+        $this->assertArrayHasKey('idx_deferred_subagent_child_batch', $schemaManager->listTableIndexes('deferred_subagent_child'));
         $this->assertSame(1, (int) $connection->fetchOne('PRAGMA synchronous'));
         $this->assertNotFalse($connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
@@ -407,7 +409,7 @@ SQL);
         $executor();
     }
 
-    public function testSingleChildMigrationPreservesExistingChild(): void
+    public function testSingleChildMigrationPreservesHistoricalSiblings(): void
     {
         $path = $this->isolatedDir.'/single-child-upgrade.sqlite';
         $this->assertSame($this->isolatedDir, realpath(\dirname($path)));
@@ -456,18 +458,31 @@ SQL);
             'created_at' => '2026-11-20 00:00:00',
             'updated_at' => '2026-11-20 00:00:17',
         ];
-        $connection->insert('deferred_subagent_child', $row + ['batch_index' => 1]);
+        $sibling = array_replace($row, ['id' => 32, 'child_run_id' => 'sibling', 'artifact_id' => 'sibling-artifact', 'child_event_cursor' => 23]);
+        $connection->insert('deferred_subagent_child', $row + ['batch_index' => 2]);
+        $connection->insert('deferred_subagent_child', $sibling + ['batch_index' => 1]);
         $this->recordAppliedMigrationsThrough($connection, 'Version20261121044306');
 
         (new ApplicationMigrationExecutor($connection, new NullLogger()))();
 
-        $actual = $connection->fetchAssociative('SELECT * FROM deferred_subagent_child');
-        $this->assertIsArray($actual);
-        $this->assertSame($row, array_replace([], ...array_map(static fn (string $key): array => [$key => $actual[$key]], array_keys($row))));
-        $this->assertArrayNotHasKey('batch_index', $actual);
-        $index = $connection->createSchemaManager()->listTableIndexes('deferred_subagent_child')['uniq_deferred_subagent_child_batch'];
-        $this->assertTrue($index->isUnique());
+        $actual = $connection->fetchAllAssociative('SELECT * FROM deferred_subagent_child ORDER BY id');
+        $this->assertCount(2, $actual);
+        foreach ([$row, $sibling] as $i => $expected) {
+            $this->assertEquals($expected, array_intersect_key($actual[$i], $expected));
+            $this->assertArrayNotHasKey('batch_index', $actual[$i]);
+        }
+        $index = $connection->createSchemaManager()->listTableIndexes('deferred_subagent_child')['idx_deferred_subagent_child_batch'];
+        $this->assertFalse($index->isUnique());
         $this->assertSame(['batch_lifecycle_id'], $index->getColumns());
+
+        $migration = new Version20261127023600($connection, new NullLogger());
+        $this->expectException(IrreversibleMigration::class);
+        try {
+            $migration->down(new Schema());
+        } finally {
+            $this->assertSame([], $migration->getSql());
+            $this->assertSame($actual, $connection->fetchAllAssociative('SELECT * FROM deferred_subagent_child ORDER BY id'));
+        }
     }
 
     public function testIsAppliedAcceptsFqcnVersionRowsRecordedByConsoleMigrate(): void
@@ -746,7 +761,7 @@ SQL);
         // This focused legacy-session fixture omits deferred-work tables;
         // their migrations are covered against their own schema separately.
         $connection->insert('doctrine_migration_versions', ['version' => 'Version20261102143815', 'executed_at' => $now, 'execution_time' => 0]);
-        $connection->insert('doctrine_migration_versions', ['version' => 'Version20261127020326', 'executed_at' => $now, 'execution_time' => 0]);
+        $connection->insert('doctrine_migration_versions', ['version' => 'Version20261127023600', 'executed_at' => $now, 'execution_time' => 0]);
         (new ApplicationMigrationExecutor($connection, new NullLogger()))();
 
         $columns = $connection->createSchemaManager()->listTableColumns('hatfield_session');
