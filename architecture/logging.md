@@ -95,9 +95,13 @@ sequenceDiagram
     Worker->>Context: Leave scopes during cleanup
 ```
 
-`RunLogContext` maintains a nested stack per Fiber through a `WeakMap`, with a
-separate stack for non-Fiber code. Reusing a worker process does not justify leaving
-a previous run's context active.
+`RunLogContext` keeps its nested stack in a Revolt `FiberLocal`, so each Fiber has
+its own stack. Code outside any Fiber uses `FiberLocal`'s main-Fiber storage, which
+lasts for the whole process. Revolt clears callback-Fiber storage after each event-loop
+callback or microtask, so a scope still open when its callback returns is dropped
+rather than leaking into the next callback. Enter and leave each scope in the same
+callback. Reusing a worker process does not justify leaving a previous run's context
+active.
 
 | Field | Where it comes from |
 |---|---|
@@ -139,9 +143,11 @@ sequenceDiagram
 
 Span IDs are log-local identifiers (`span-1`, `span-2`) used to correlate start and
 finish records, including `parent_span_id` nesting. They are not external trace IDs.
-Like `RunLogContext`, `RunTracer` keeps one span stack per Fiber in a `WeakMap`
-plus one for non-Fiber code, so a suspended sibling never becomes another span's
-parent.
+Like `RunLogContext`, `RunTracer` keeps its span stack in a Revolt `FiberLocal`, one
+per tracer instance, so a suspended sibling never becomes another span's parent.
+Main-Fiber spans last for the whole process. Revolt clears callback-Fiber storage after
+each callback or microtask; `inSpan()` restores its captured stack before returning,
+so no span outlives its callback.
 
 | Span names | Level | Opened by |
 |---|---|---|

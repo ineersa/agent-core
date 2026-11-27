@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Theme;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Theme\ThemeRegistry;
@@ -95,10 +97,10 @@ final class ThemeRegistryTest extends TestCase
             $muted = $palette->get(ThemeColorEnum::Muted);
             $toolTitle = $palette->get(ThemeColorEnum::ToolTitle);
 
-            $this->assertNotSame('', $argumentKey, \sprintf('%s tool_argument_key must resolve', $themeName));
+            $this->assertNotNull($argumentKey, \sprintf('%s tool_argument_key must resolve', $themeName));
             $this->assertNotSame($muted, $argumentKey, \sprintf('%s tool_argument_key must differ from muted', $themeName));
             $this->assertNotSame($toolTitle, $argumentKey, \sprintf('%s tool_argument_key must differ from tool_title', $themeName));
-            $this->assertSame('', $argumentValue, \sprintf('%s tool_argument_value stays default text', $themeName));
+            $this->assertNull($argumentValue, \sprintf('%s tool_argument_value stays default text', $themeName));
         }
     }
 
@@ -154,6 +156,96 @@ final class ThemeRegistryTest extends TestCase
         $this->assertSame('clash', $collisions[0]['name']);
         $this->assertSame($winnerFile, $collisions[0]['winnerPath']);
         $this->assertSame($loserFile, $collisions[0]['loserPath']);
+    }
+
+    public function testInvalidColorSpecsAreLoggedAndDroppedAtLoad(): void
+    {
+        file_put_contents($this->tempDir.'/broken.yaml', <<<'YAML'
+            name: broken
+            vars:
+                count: 7
+            colors:
+                accent: "#00ffff"
+                error: "not-a-colour"
+                muted: "missing_var"
+                warning: ~
+                success: count
+                text: ""
+            YAML);
+        $logger = new TestLogger();
+        $resources = new AppResourceLocator($this->tempDir);
+        $appConfig = new AppConfig(tui: new TuiConfig('broken', [$this->tempDir]), logging: new LoggingConfig());
+
+        $palette = (new ThemeRegistry($appConfig, $resources, $logger))->getOrThrow('broken');
+
+        $this->assertSame('#00ffff', $palette->get(ThemeColorEnum::Accent));
+        foreach ([ThemeColorEnum::Error, ThemeColorEnum::Muted, ThemeColorEnum::Warning, ThemeColorEnum::Success, ThemeColorEnum::Text] as $token) {
+            $this->assertNull($palette->get($token), $token->value);
+        }
+        $this->assertSame('plain', (new DefaultTheme($palette))->color(ThemeColorEnum::Error, 'plain'));
+
+        $logged = array_map(
+            static fn (array $record): string => $record['context']['section'].'.'.$record['context']['key'],
+            array_filter($logger->records, static fn (array $record): bool => 'tui.theme.invalid_color' === ($record['context']['event_type'] ?? null)),
+        );
+        sort($logged);
+        $this->assertSame(['colors.error', 'colors.muted', 'colors.success', 'colors.warning', 'vars.count'], $logged);
+        foreach ($logger->records as $record) {
+            $this->assertSame('warning', $record['level']);
+            $this->assertSame('tui_theme', $record['context']['component']);
+            $this->assertSame($this->tempDir.'/broken.yaml', $record['context']['file']);
+        }
+    }
+
+    public function testMalformedThemeSectionsAreLoggedWithoutThrowing(): void
+    {
+        file_put_contents($this->tempDir.'/malformed.yaml', <<<'YAML'
+            name: malformed
+            vars: "abc"
+            colors:
+                - "not-a-colour"
+            YAML);
+        $logger = new TestLogger();
+        $resources = new AppResourceLocator($this->tempDir);
+        $appConfig = new AppConfig(tui: new TuiConfig('malformed', [$this->tempDir]), logging: new LoggingConfig());
+
+        $palette = (new ThemeRegistry($appConfig, $resources, $logger))->getOrThrow('malformed');
+
+        $this->assertNull($palette->get(ThemeColorEnum::Accent));
+        $logged = array_map(
+            static fn (array $record): string => $record['context']['section'].'.'.$record['context']['key'],
+            array_filter($logger->records, static fn (array $record): bool => 'tui.theme.invalid_color' === ($record['context']['event_type'] ?? null)),
+        );
+        sort($logged);
+        $this->assertSame(['colors.0', 'vars.'], $logged);
+    }
+
+    public function testCircularColorAliasesAreLoggedAndDroppedAtLoad(): void
+    {
+        file_put_contents($this->tempDir.'/circular.yaml', <<<'YAML'
+            name: circular
+            colors:
+                muted: dim
+                dim: muted
+                warning: warning
+                accent: "#00ffff"
+            YAML);
+        $logger = new TestLogger();
+        $resources = new AppResourceLocator($this->tempDir);
+        $appConfig = new AppConfig(tui: new TuiConfig('circular', [$this->tempDir]), logging: new LoggingConfig());
+
+        $palette = (new ThemeRegistry($appConfig, $resources, $logger))->getOrThrow('circular');
+
+        $this->assertSame('#00ffff', $palette->get(ThemeColorEnum::Accent));
+        foreach ([ThemeColorEnum::Muted, ThemeColorEnum::Dim, ThemeColorEnum::Warning] as $token) {
+            $this->assertNull($palette->get($token), $token->value);
+        }
+        $logged = array_map(
+            static fn (array $record): string => $record['context']['section'].'.'.$record['context']['key'],
+            array_filter($logger->records, static fn (array $record): bool => 'tui.theme.invalid_color' === ($record['context']['event_type'] ?? null)),
+        );
+        sort($logged);
+        $this->assertSame(['colors.dim', 'colors.muted', 'colors.warning'], $logged);
     }
 
     private function createRegistry(): ThemeRegistry

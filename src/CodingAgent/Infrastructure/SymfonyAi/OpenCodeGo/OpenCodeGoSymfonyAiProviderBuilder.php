@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi\OpenCodeGo;
 
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
+use Ineersa\CodingAgent\Config\Ai\SecretResolver;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\OpenCodeSessionHttpClient;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterface;
@@ -37,13 +38,10 @@ final readonly class OpenCodeGoSymfonyAiProviderBuilder implements SymfonyAiProv
 
     public function build(AiProviderConfig $provider, HttpClientInterface $httpClient): ProviderInterface
     {
-        $apiKey = $provider->apiKey;
+        $apiKey = SecretResolver::resolve($provider->apiKey);
         $missingKeyEnv = null;
-        if (null !== $apiKey && str_starts_with($apiKey, 'env:')) {
-            $envName = substr($apiKey, 4);
-            $resolved = getenv($envName);
-            $apiKey = false === $resolved || '' === $resolved ? null : $resolved;
-            $missingKeyEnv = null === $apiKey ? $envName : null;
+        if (null === $apiKey && null !== $provider->apiKey && str_starts_with($provider->apiKey, 'env:')) {
+            $missingKeyEnv = substr($provider->apiKey, 4);
         }
 
         $httpClient = new OpenCodeSessionHttpClient($httpClient, $missingKeyEnv);

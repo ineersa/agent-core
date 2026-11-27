@@ -108,7 +108,7 @@ final class ThemeStyleSheetFactory
         bool $underline = false,
     ): void {
         $spec = $palette->get($token);
-        if ('' === $spec) {
+        if (null === $spec) {
             return;
         }
 

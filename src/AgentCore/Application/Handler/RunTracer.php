@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
+use Revolt\EventLoop\FiberLocal;
 
 /**
  * Span-based tracer for agent-core operations.
@@ -18,21 +19,23 @@ use Psr\Log\LogLevel;
  * probes stay off the INFO path. Call sites that feed Datadog metrics must
  * pass {@see LogLevel::INFO} explicitly for the canonical `tool.call` and
  * `llm.call` finishes.
+ *
+ * Parent tracking uses a per-instance Revolt {@see FiberLocal} span stack, so
+ * concurrent Fibers keep independent parents. Revolt clears it on reusable
+ * callback Fibers after every callback; {@see inSpan()} restores its captured
+ * stack before returning, so no span outlives its callback.
  */
 final class RunTracer
 {
-    /** @var list<string> */
-    private array $spanStack = [];
-
-    /** @var \WeakMap<\Fiber<mixed, mixed, mixed, mixed>, list<string>> */
-    private readonly \WeakMap $fiberStacks;
+    /** @var FiberLocal<list<string>> */
+    private readonly FiberLocal $spanStack;
 
     private int $sequence = 0;
 
     public function __construct(
         private readonly LoggerInterface $logger,
     ) {
-        $this->fiberStacks = new \WeakMap();
+        $this->spanStack = new FiberLocal(self::emptyStack(...));
     }
 
     /**
@@ -48,16 +51,11 @@ final class RunTracer
     public function inSpan(string $name, array $attributes, callable $operation, bool $root = false, string $level = LogLevel::DEBUG): mixed
     {
         $spanId = \sprintf('span-%d', ++$this->sequence);
-        $fiber = \Fiber::getCurrent();
-        $stack = null === $fiber ? $this->spanStack : ($this->fiberStacks[$fiber] ?? []);
+        $stack = $this->spanStack->get();
         $parentSpanId = $root || [] === $stack ? null : $stack[array_key_last($stack)];
 
         // A suspended invocation must not become a sibling's tracing parent.
-        if (null === $fiber) {
-            $this->spanStack = [...$stack, $spanId];
-        } else {
-            $this->fiberStacks->offsetSet($fiber, [...$stack, $spanId]);
-        }
+        $this->spanStack->set([...$stack, $spanId]);
         $startedAt = hrtime(true);
 
         $this->logger->log($level, 'agent_loop.trace.start', [
@@ -75,12 +73,12 @@ final class RunTracer
 
             return $result;
         } finally {
-            if (null === $fiber) {
-                $this->spanStack = $stack;
-            } elseif ([] === $stack) {
-                unset($this->fiberStacks[$fiber]);
+            // Restore the captured snapshot rather than popping, so an
+            // unbalanced nested span cannot shift this caller's parent.
+            if ([] === $stack) {
+                $this->spanStack->unset();
             } else {
-                $this->fiberStacks->offsetSet($fiber, $stack);
+                $this->spanStack->set($stack);
             }
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
@@ -94,5 +92,11 @@ final class RunTracer
                 ...$attributes,
             ]);
         }
+    }
+
+    /** @return list<string> */
+    private static function emptyStack(): array
+    {
+        return [];
     }
 }

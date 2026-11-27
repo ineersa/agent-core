@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
+use Revolt\EventLoop\FiberLocal;
 
 /**
  * Per-fiber scope for the cancel token and run ID of an in-flight LLM invocation.
@@ -13,87 +14,64 @@ use Ineersa\AgentCore\Infrastructure\RunLogContext;
  * Distinct from {@see RunLogContext}: this is
  * not logging correlation and must never be merged into log records.
  *
- * Outside any Fiber, the default stack is process-global. Keep at most one
+ * The stack lives in a Revolt {@see FiberLocal}. Revolt clears it on its
+ * reusable callback Fibers after every callback, so enter() and leave()
+ * must pair within one callback. Outside any Fiber, FiberLocal's main-fiber
+ * stack is process-global and never cleared automatically. Keep at most one
  * outside-fiber LLM invocation active per process; concurrent workers must
  * run inside distinct Fibers so their stacks stay isolated.
  */
 final class LlmInvocationCancelScope
 {
-    /**
-     * @var \WeakMap<\Fiber<mixed, mixed, mixed, mixed>, list<LlmInvocationScopeEntry>>|null
-     */
-    private static ?\WeakMap $fiberStacks = null;
-
-    /** @var list<LlmInvocationScopeEntry> */
-    private static array $defaultStack = [];
+    /** @var FiberLocal<list<LlmInvocationScopeEntry>>|null */
+    private static ?FiberLocal $stack = null;
 
     public static function enter(CancellationTokenInterface $token, ?string $runId = null): void
     {
-        $stack = self::readStack();
+        $stack = self::stack()->get();
         $stack[] = new LlmInvocationScopeEntry($token, $runId);
-        self::writeStack($stack);
+        self::stack()->set($stack);
     }
 
     public static function leave(): void
     {
-        $stack = self::readStack();
-        if ([] !== $stack) {
-            array_pop($stack);
-            self::writeStack($stack);
+        $stack = self::stack()->get();
+        array_pop($stack);
+        if ([] === $stack) {
+            self::stack()->unset();
+
+            return;
         }
+
+        self::stack()->set($stack);
     }
 
     public static function current(): ?CancellationTokenInterface
     {
-        $stack = self::readStack();
-        if ([] === $stack) {
-            return null;
-        }
-
-        return $stack[array_key_last($stack)]->token;
+        return self::currentEntry()?->token;
     }
 
     public static function currentRunId(): ?string
     {
-        $stack = self::readStack();
-
-        return [] === $stack ? null : $stack[array_key_last($stack)]->runId;
+        return self::currentEntry()?->runId;
     }
 
-    /**
-     * @return list<LlmInvocationScopeEntry>
-     */
-    private static function readStack(): array
+    private static function currentEntry(): ?LlmInvocationScopeEntry
     {
-        $fiber = \Fiber::getCurrent();
-        if (null === $fiber) {
-            return self::$defaultStack;
-        }
+        $stack = self::stack()->get();
 
-        self::$fiberStacks ??= new \WeakMap();
-
-        return self::$fiberStacks[$fiber] ?? [];
+        return [] === $stack ? null : $stack[array_key_last($stack)];
     }
 
-    /**
-     * @param list<LlmInvocationScopeEntry> $stack
-     */
-    private static function writeStack(array $stack): void
+    /** @return FiberLocal<list<LlmInvocationScopeEntry>> */
+    private static function stack(): FiberLocal
     {
-        $fiber = \Fiber::getCurrent();
-        if (null === $fiber) {
-            self::$defaultStack = $stack;
+        return self::$stack ??= new FiberLocal(self::emptyStack(...));
+    }
 
-            return;
-        }
-
-        self::$fiberStacks ??= new \WeakMap();
-        if ([] === $stack) {
-            self::$fiberStacks->offsetUnset($fiber);
-
-            return;
-        }
-
-        self::$fiberStacks->offsetSet($fiber, $stack);
+    /** @return list<LlmInvocationScopeEntry> */
+    private static function emptyStack(): array
+    {
+        return [];
     }
 }

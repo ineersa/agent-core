@@ -65,7 +65,7 @@ final readonly class InteractiveMode
 {
     /**
      * @param iterable<TuiListenerRegistrar>         $listenerRegistrars
-     * @param iterable<SlashCommandCatalogRegistrar> $catalogRegistrars
+     * @param iterable<SlashCommandCatalogRegistrar> $catalogRegistrars  code-review, prompt-template, then skill registrars
      */
     public function __construct(
         private HatfieldSessionStore $sessionStore,
@@ -153,14 +153,15 @@ final readonly class InteractiveMode
         // fresh mutable display state below.
         $displayConfig = $this->appConfig->tui->transcript;
 
-        // ── Seed the process-scoped slash command catalog once ──
-        // Command metadata/aliases/help data is registered exactly once per
-        // process, in tag-priority order (real commands before the -100
-        // prompt-template registrar so templates skip name collisions).  Each
-        // session iteration then binds only its own handlers via the fresh
-        // per-session SlashCommandRegistry.
-        foreach ($this->catalogRegistrars as $catalogRegistrar) {
-            $catalogRegistrar->registerCatalog($this->commandCatalog);
+        // ── Add dynamic commands to the catalog once ──
+        // Built-in commands were seeded when the catalog was constructed and
+        // extensions registered theirs on ConsoleEvents::COMMAND, so the
+        // code-review, prompt-template and skill registrars run last (after
+        // CLI skill options are applied) and skip any name already taken.
+        // Each session iteration then binds only its own handlers via the
+        // fresh per-session SlashCommandRegistry.
+        foreach ($this->catalogRegistrars as $registrar) {
+            $registrar->registerCatalog($this->commandCatalog);
         }
 
         while (true) {

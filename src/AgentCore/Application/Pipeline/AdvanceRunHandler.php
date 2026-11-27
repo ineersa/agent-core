@@ -107,7 +107,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'version' => $state->version + 1,
                 'lastSeq' => $state->lastSeq + \count($events),
                 'isStreaming' => false,
-                'streamingMessage' => null,
                 'pendingToolCalls' => [],
                 'pendingShellToolCalls' => [],
                 'activeStepId' => null,
@@ -355,7 +354,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             'turnNo' => $nextTurnNo,
             'lastSeq' => $state->lastSeq + \count($events),
             'isStreaming' => false,
-            'streamingMessage' => null,
             'activeStepId' => $nextStepId,
             'currentOperation' => new CurrentOperationDTO(
                 $nextTurnNo,

@@ -142,6 +142,18 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
     }
 
     #[Test]
+    public function skipsTemplateWhenNameCollidesWithSessionBoundBuiltIn(): void
+    {
+        $this->writeTemplate('resume', "---\ndescription: Template resume\n---\nBody\n");
+        $this->writeTemplate('template-only', "---\ndescription: Template only\n---\nBody\n");
+
+        $this->createRegistrar()->registerCatalog($this->commandCatalog);
+
+        $this->assertSame('/resume [session id]', $this->commandCatalog->getMetadata('resume')?->usage);
+        $this->assertTrue($this->commandCatalog->has('template-only'));
+    }
+
+    #[Test]
     public function hyphenatedNameRegisters(): void
     {
         $this->writeTemplate('team-review', "---\ndescription: Team code review\n---\nBody\n");

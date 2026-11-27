@@ -68,25 +68,6 @@ final class DefaultTheme implements TuiTheme
      */
     private function buildStyleFor(ThemeColorEnum $color): Style
     {
-        $key = $color->value;
-
-        if (isset($this->styleCache[$key])) {
-            return $this->styleCache[$key];
-        }
-
-        $spec = $this->palette->get($color);
-
-        if ('' === $spec) {
-            return $this->styleCache[$key] = new Style();
-        }
-
-        try {
-            $this->styleCache[$key] = new Style(color: $spec);
-        } catch (\Throwable) {
-            // If the color spec is invalid, fall back to plain style
-            return $this->styleCache[$key] = new Style();
-        }
-
-        return $this->styleCache[$key];
+        return $this->styleCache[$color->value] ??= new Style(color: $this->palette->get($color));
     }
 }

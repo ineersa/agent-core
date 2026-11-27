@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\Edit;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\CodingAgent\Tool\Edit\Exception\StalePatchHunkException;
 use Symfony\Component\Clock\ClockInterface;
 
 use function Amp\delay;
@@ -29,8 +30,6 @@ final class PatchApplier
      * @return array{
      *     patchedContent: string,
      *     originalContent: string,
-     *     patchContent: string,
-     *     replacements: list<EditReplacementDTO>,
      *     additions: int,
      *     deletions: int,
      *     changedLineNumbers: list<int>
@@ -91,8 +90,6 @@ final class PatchApplier
                 return [
                     'patchedContent' => $originalContent,
                     'originalContent' => $originalContent,
-                    'patchContent' => $rawPatch,
-                    'replacements' => $replacements,
                     'additions' => 0,
                     'deletions' => 0,
                     'changedLineNumbers' => [],
@@ -104,8 +101,6 @@ final class PatchApplier
             return [
                 'patchedContent' => $patchedContent,
                 'originalContent' => $originalContent,
-                'patchContent' => $rawPatch,
-                'replacements' => $replacements,
                 'additions' => $stats['additions'],
                 'deletions' => $stats['deletions'],
                 'changedLineNumbers' => $changedLineNumbers,
@@ -186,9 +181,8 @@ final class PatchApplier
         $message = $e->getMessage();
         $hint = $e->hint() ?? '';
 
-        if (str_contains($message, 'E_PATCH_STALE')) {
-            $failedLine = $this->guessFailedLineFromHint($hint) ?? 1;
-            $context = $this->failureFormatter->buildCurrentFileContext($originalContent, [$failedLine]);
+        if ($e instanceof StalePatchHunkException) {
+            $context = $this->failureFormatter->buildCurrentFileContext($originalContent, [$e->failedLine]);
             if ('' !== $context) {
                 $message .= "\n\nCurrent file context:\n".$context;
             }
@@ -199,15 +193,6 @@ final class PatchApplier
             retryable: $e->retryable(),
             hint: $hint,
         );
-    }
-
-    private function guessFailedLineFromHint(string $hint): ?int
-    {
-        if (preg_match('/around line (\d+)/', $hint, $m)) {
-            return (int) $m[1];
-        }
-
-        return null;
     }
 
     /** @param resource $stream */

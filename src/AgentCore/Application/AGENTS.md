@@ -189,6 +189,8 @@ Deferred-only mailbox drains do not advance even a Running owner; CodingAgent de
 
 `RunMessageProcessor` checks pending `ApplyCommand` IDs before history discard or handler preparation. The pending mailbox stores no completed identities or source-acceptance markers. Application or rejection deletes the whole command row. Submitting a completed ID again is allowed.
 
+Human-response redrive is a late no-op when the batch is missing or has no matching stored answer. A matching answer for a completed call is recognized and acknowledged without redispatch. Ambiguous matches and conflicting answers reject the command.
+
 Attach completes cancellation and context refresh before follow-up handling. Maintenance commands use no separate accepted-source identity history. Selection and repair still commit through the owner and shared finalizer.
 
 Repair prepares a typed decision before mutation and submits it once through `RunCommit`. Refused decisions execute no captured child actions. Source identities are not stored in the pending-only mailbox.

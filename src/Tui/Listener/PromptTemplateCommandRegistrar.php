@@ -14,9 +14,12 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 /**
  * Registers virtual slash commands for every prompt template in the catalog.
  *
- * Runs at priority -100 so real/built-in registrars (SessionCommandRegistrar,
- * CopyCommandRegistrar, etc.) win on name collisions. When a template name
- * matches an already-registered command, the template is silently skipped.
+ * Runs from InteractiveMode, after built-in commands (seeded when the
+ * catalog is constructed), extension commands (registered on
+ * ConsoleEvents::COMMAND) and the code-review command, so those win on
+ * name collisions. When a template
+ * name matches an already-registered command or alias, the template is
+ * silently skipped.
  *
  * Template commands are registered into the process-scoped
  * {@see SlashCommandCatalog} exactly once per process; their handler is
@@ -41,7 +44,7 @@ final class PromptTemplateCommandRegistrar implements SlashCommandCatalogRegistr
         };
 
         foreach ($this->promptTemplates->allPromptTemplateCommands() as $template) {
-            // Real/built-in commands win — skip if already registered.
+            // Built-in and extension commands win — skip if already registered.
             if ($catalog->has($template->name)) {
                 continue;
             }

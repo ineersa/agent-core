@@ -58,7 +58,7 @@ use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\Messenger\EffectDispatchFailureSubscriber;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -215,7 +215,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             $events = $this->readEvents($run);
             $last = $events[array_key_last($events)];
             $this->assertSame('continue', $last['payload']['kind']);
-            $runtime = $container->get(RuntimeEventTranslator::class)->translate(new RunEvent($run, $last['seq'], 1, $last['type'], $last['payload']));
+            $runtime = $container->get(RuntimeEventMapper::class)->toRuntimeEvent(new RunEvent($run, $last['seq'], 1, $last['type'], $last['payload']));
             $this->assertNotSame('user.message_submitted', $runtime?->type);
         }
     }
@@ -660,7 +660,6 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             turnNo: 1,
             lastSeq: 2,
             isStreaming: true,
-            streamingMessage: ['message_id' => 'm1'],
             activeStepId: 'llm-1',
             model: 'test-model'));
 

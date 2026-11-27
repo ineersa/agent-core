@@ -20,6 +20,13 @@ CommandContextInterface $context): void`; `$args` is the trimmed text after the 
 The context exposes only `notify(string $message, string $level = 'info')` with levels
 `info`, `success`, `warning` and `error`.
 
+Registration throws `InvalidArgumentException` when the name or any alias equals a name or alias
+that is already registered, including every built-in command name and alias such as `resume`,
+`r`, `q`, `quit`, `h` and `?`; the extension then fails to load. `code-review`, prompt-template
+and `skill:` commands are added after extensions load and skip any name an extension already
+registered at load time. A command registered later in the session (for example from a hook)
+throws if its name equals one of those commands.
+
 ## Prompt contributors
 
 `registerPromptContributor()` takes a `PromptContributorInterface`. Its `contribute(): string`

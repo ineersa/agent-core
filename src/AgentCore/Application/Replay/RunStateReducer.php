@@ -70,7 +70,6 @@ final readonly class RunStateReducer
         // Copy mutable collections back into a new RunState with final values.
         return $state->with([
             'isStreaming' => false,
-            'streamingMessage' => null,
             'pendingToolCalls' => $pendingToolCalls,
             'messages' => $messages,
         ]);
@@ -201,7 +200,6 @@ final readonly class RunStateReducer
             turnNo: 0,
             lastSeq: $event->seq,
             isStreaming: false,
-            streamingMessage: null,
             pendingToolCalls: [],
             errorMessage: null,
             messages: $state->messages, // placeholder; actual messages in $messages by-ref
@@ -252,7 +250,7 @@ final readonly class RunStateReducer
                 return $state;
             }
 
-            $toolCallId = 'sh_'.hash('sha256', $key);
+            $toolCallId = RunState::standaloneShellToolCallId($key);
             $rawOperation = $payload['current_operation'] ?? null;
             if (!\is_array($rawOperation)) {
                 throw new \UnexpectedValueException('Shell command event is missing a normalized current_operation.');
@@ -468,7 +466,6 @@ final readonly class RunStateReducer
         return $state->with([
             'status' => RunStatus::Failed,
             'isStreaming' => false,
-            'streamingMessage' => null,
             'pendingToolCalls' => [],
             'currentToolCalls' => [],
             'currentOperation' => null,
@@ -619,7 +616,6 @@ final readonly class RunStateReducer
         return $state->with([
             'status' => $status,
             'isStreaming' => false,
-            'streamingMessage' => null,
             'pendingToolCalls' => [],
             'pendingHumanInputRequests' => [],
             'activeStepId' => null,

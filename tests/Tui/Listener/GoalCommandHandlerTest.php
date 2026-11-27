@@ -105,7 +105,6 @@ final class GoalCommandHandlerTest extends IsolatedKernelTestCase
         $harness = new VirtualTuiHarness(sessionId: $state->sessionId);
         $catalog = new SlashCommandCatalog();
         $registrar = self::getContainer()->get(GoalCommandRegistrar::class);
-        $registrar->registerCatalog($catalog);
         $services = $this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state, client: $client, catalog: $catalog);
         $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($state)->withClient($client)->withSessionStore(self::getContainer()->get(HatfieldSessionStore::class))->withSessionServices($services)->build();
         $registrar->register($context);

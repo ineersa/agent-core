@@ -44,7 +44,6 @@ final class TuiCompactCommandVirtualTest extends TestCase
             ->build();
 
         $registrar = new CompactCommandRegistrar();
-        $registrar->registerCatalog($catalog);
         $registrar->register($context);
 
         $router = new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry);

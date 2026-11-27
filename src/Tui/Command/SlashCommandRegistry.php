@@ -50,6 +50,14 @@ final class SlashCommandRegistry
     }
 
     /**
+     * Resolve a name or alias to its canonical command name.
+     */
+    public function resolveName(string $name): ?string
+    {
+        return $this->catalog->resolveName($name);
+    }
+
+    /**
      * Execute a slash command and return its result.
      *
      * Resolution order:

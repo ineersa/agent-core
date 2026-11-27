@@ -27,7 +27,6 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator;
@@ -61,7 +60,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->service = new SessionRunStateReplayService($store, new SessionReplayCoordinator(
             $sources,
             new RunStateReducer($serializer, $codec, messageNormalizer: new AgentMessageNormalizer(), assistantMessageFactory: new ReplayAssistantMessageFactory()),
-            new RuntimeEventMapper(new RuntimeEventTranslator($dispatcher, $codec, $serializer)),
+            new RuntimeEventMapper($dispatcher, $codec, $serializer),
             $this->createStub(TranscriptProjectorInterface::class),
             new NullLogger(),
             new InMemoryCommandStore(),

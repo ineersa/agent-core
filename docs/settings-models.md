@@ -7,6 +7,10 @@ description: AI providers, model selection, reasoning levels, HTTP and retry set
 
 Model configuration lives under the top-level `ai:` section in Hatfield settings.
 Secrets (API keys) belong in `~/.hatfield/settings.yaml` using `env:VAR` syntax, not plain text in project files when avoidable.
+An `env:NAME` reference reads the environment variable verbatim; an unset or empty
+variable means no key. Bare `env:` is a configuration error. Generic providers can
+run without a key; Mistral requires one and rejects missing keys before a request.
+Setup stores the reference, not the resolved secret.
 
 Known providers (`mistral`, `zai`, `deepseek`, `opencode-go`, `openai-codex`, `grok-cli`) ship as the bundled
 `config/ai-catalog.yaml` (definitions present, `enabled: false`) and are copied to

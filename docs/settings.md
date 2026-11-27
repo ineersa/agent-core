@@ -98,6 +98,8 @@ Relative paths in settings resolve against the **active project CWD** (not the i
 | `tui.transcript.previews.tool_result_lines` | Tool result preview lines | `8` |
 | `tui.transcript.previews.diff_lines` | Diff preview lines | `20` |
 
+Theme colour tokens that are missing or empty render with the default terminal foreground. A colour or var that Symfony TUI cannot parse (a non-string value, malformed hex, or unknown name such as an undefined var) is dropped when the theme loads and logs a `tui.theme.invalid_color` warning naming the file and key; that token then renders unstyled.
+
 ### Sessions and logging
 
 | Key | Meaning | Default |

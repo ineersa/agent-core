@@ -16,7 +16,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Stream\AssistantTextStreamSubscriber;
 use Ineersa\CodingAgent\Runtime\Stream\AssistantThinkingStreamSubscriber;
@@ -103,8 +103,8 @@ final class TranscriptBlockRendererTest extends TestCase
         $this->assertSame(1, substr_count($live, 'The answer is 42.'));
         $this->assertStringNotContainsString('**', $live, 'Both channels use the real Markdown widget.');
 
-        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
-        $completion = $translator->translate(new RunEvent('run', 5, 1, 'llm_step_completed', ['step_id' => 'step', 'assistant_message' => ['content' => $content, 'details' => ['thinking' => 'Hidden reasoning']]]));
+        $mapper = new RuntimeEventMapper(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
+        $completion = $mapper->toRuntimeEvent(new RunEvent('run', 5, 1, 'llm_step_completed', ['step_id' => 'step', 'assistant_message' => ['content' => $content, 'details' => ['thinking' => 'Hidden reasoning']]]));
         $this->assertNotNull($completion);
         $projector->accept($completion);
         $harness->screen()->applyTranscriptChangeSet($projector->drainChanges());

@@ -4,29 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\Tui\Command\CommandMetadata;
-use Ineersa\Tui\Command\SlashCommandCatalog;
+use Ineersa\Tui\Command\BuiltInSlashCommands;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
  * Registers the /history slash command.
  *
- * Command metadata is registered once per process via
- * {@see registerCatalog()}; each session binds a fresh handler wired to
- * the session's history picker controller.
+ * Command metadata is static data in {@see BuiltInSlashCommands}; each
+ * session binds a fresh handler wired to the session's history picker controller.
  */
-final class HistoryCommandRegistrar implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
+final class HistoryCommandRegistrar implements TuiListenerRegistrar
 {
-    public function registerCatalog(SlashCommandCatalog $catalog): void
-    {
-        $catalog->registerMetadata(new CommandMetadata(
-            name: 'history',
-            description: 'Show user prompts and final answers; Enter to select position, Esc to close',
-            usage: '/history',
-            acceptsArguments: false,
-        ));
-    }
-
     public function register(TuiRuntimeContext $context): void
     {
         $picker = $context->sessionServices->historyPicker;

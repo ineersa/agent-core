@@ -61,7 +61,7 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
         // represent them without invalidating that LLM result. Keep only the
         // currently executing deterministic tool ids; this is removed by the
         // canonical tool_execution_end reducer, never retained as a receipt.
-        $toolCallId = 'sh_'.hash('sha256', $message->idempotencyKey());
+        $toolCallId = RunState::standaloneShellToolCallId($message->idempotencyKey());
         if (isset($state->pendingShellToolCalls[$toolCallId])) {
             return new HandlerResult();
         }

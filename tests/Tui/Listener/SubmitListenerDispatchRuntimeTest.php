@@ -35,6 +35,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchRuntime;
+use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
@@ -150,6 +151,51 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->state->sessionReady = true;
         $this->dispatchSubmit('Ready now', screen: $harness->screen());
         $this->assertCount(1, $commands);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function restoreAllowedCommandSpellings(): iterable
+    {
+        foreach (['/exit', '/quit', '/q', '/resume', '/r', '/r some-session', '/new', '/reload'] as $text) {
+            yield $text => [$text];
+        }
+    }
+
+    #[Test]
+    #[DataProvider('restoreAllowedCommandSpellings')]
+    public function restoreAllowedCommandsRunThroughEveryAliasDuringBootstrap(string $text): void
+    {
+        $this->state->handle = new RunHandle('run-1', 'bootstrapping', 'request');
+        $this->state->sessionReady = false;
+        $this->client->expects($this->never())->method('send');
+        $this->client->expects($this->never())->method('start');
+
+        $handled = [];
+        $recorder = new class($handled) implements SlashCommandHandler {
+            /** @param list<string> $handled */
+            public function __construct(private array &$handled)
+            {
+            }
+
+            public function handle(SlashCommand $command): NoOp
+            {
+                $this->handled[] = $command->originalText;
+
+                return new NoOp();
+            }
+        };
+        $registry = new SlashCommandRegistry($this->catalog);
+        foreach (['exit', 'resume', 'new', 'reload'] as $name) {
+            $registry->bind($name, $recorder);
+        }
+
+        $harness = new VirtualTuiHarness(sessionId: 'test-session');
+        $this->dispatchSubmit($text, router: new SubmissionRouter(new CommandParser(), $registry), screen: $harness->screen());
+
+        $this->assertSame([$text], $handled);
+        $this->assertSame('', $harness->screen()->promptEditor()->getText());
     }
 
     #[Test]

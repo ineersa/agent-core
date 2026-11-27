@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
@@ -44,11 +43,11 @@ final class StreamingCommittedRuntimeEventStoreSequencingTest extends TestCase
             }
         };
 
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(
+        $mapper = new RuntimeEventMapper(
             new EventDispatcher(),
             new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
             AttributeSerializerValidatorTestFactory::serializer(),
-        ));
+        );
         $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true, new EventDispatcher());
 
         $returned = $store->appendTransition([$input], ['run_id' => 'run-a'])[0];

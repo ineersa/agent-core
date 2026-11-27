@@ -160,10 +160,10 @@ final class LoadedResourcesWidgetTest extends TestCase
     private function theme(): DefaultTheme
     {
         $palette = new ThemePalette('test', [
-            ThemeColorEnum::MarkdownHeading->value => '33',
-            ThemeColorEnum::Muted->value => '90',
-            ThemeColorEnum::Dim->value => '2',
-            ThemeColorEnum::Warning->value => '33;1',
+            ThemeColorEnum::MarkdownHeading->value => 'yellow',
+            ThemeColorEnum::Muted->value => 'bright_black',
+            ThemeColorEnum::Dim->value => 'gray',
+            ThemeColorEnum::Warning->value => 'bright_yellow',
         ]);
 
         return new DefaultTheme($palette);

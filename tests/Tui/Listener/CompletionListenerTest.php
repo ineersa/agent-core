@@ -121,7 +121,7 @@ final class CompletionListenerTest extends TestCase
     #[DataProvider('provideDownSequences')]
     public function tabAcceptsCorrectSuggestionAfterNavigation(string $sequence): void
     {
-        $this->editor->typeText('/');
+        $this->editor->typeText('/h');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -131,18 +131,17 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput($sequence); // Down again
         $this->tui->handleInput("\t");     // Accept
 
-        // Built-in commands sorted alphabetically: /clear, /exit, /help
-        // Index 0: /clear, index 1: /exit, index 2: /help
-        // Down twice = index 2 = /help
-        $this->assertSame('/help ', $this->editor->getText());
+        // Built-in /h commands sorted alphabetically: /help, /history, /hotkeys
+        // Down twice = index 2 = /hotkeys
+        $this->assertSame('/hotkeys ', $this->editor->getText());
     }
 
     #[Test]
     public function tabAcceptsAfterUpNavigation(): void
     {
-        $this->editor->typeText('/');
+        $this->editor->typeText('/h');
 
-        // Open menu (index 0: /clear)
+        // Open menu (index 0: /help)
         $this->tui->handleInput("\t");
 
         // Press Up to wrap to last item (/hotkeys)
@@ -222,7 +221,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function upAndDownNavigateSuggestionsWhenMenuOpen(): void
     {
-        $this->editor->typeText('/');
+        $this->editor->typeText('/h');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -232,15 +231,15 @@ final class CompletionListenerTest extends TestCase
 
         // Accept
         $this->tui->handleInput("\t");
-        // Built-ins alphabetical: /clear (0), /exit (1), /help (2)
-        // Down once = index 1 = /exit
-        $this->assertSame('/exit ', $this->editor->getText());
+        // Built-in /h commands alphabetical: /help (0), /history (1), /hotkeys (2)
+        // Down once = index 1 = /history
+        $this->assertSame('/history ', $this->editor->getText());
     }
 
     #[Test]
     public function alternateUpSequenceWorks(): void
     {
-        $this->editor->typeText('/');
+        $this->editor->typeText('/h');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -257,7 +256,7 @@ final class CompletionListenerTest extends TestCase
     #[Test]
     public function alternateDownSequenceWorks(): void
     {
-        $this->editor->typeText('/');
+        $this->editor->typeText('/h');
 
         // Open menu
         $this->tui->handleInput("\t");
@@ -265,17 +264,17 @@ final class CompletionListenerTest extends TestCase
         // Down with alternate sequence \x1bOB
         $this->tui->handleInput("\x1bOB");
 
-        // Accept — index 1 = /exit
+        // Accept — index 1 = /history
         $this->tui->handleInput("\t");
 
-        $this->assertSame('/exit ', $this->editor->getText());
+        $this->assertSame('/history ', $this->editor->getText());
     }
 
     #[Test]
     public function downNavigationScrollsNativeWindowBeyondMaxVisible(): void
     {
-        // Built-ins: /clear /exit /help /hotkeys (4). Add enough extras so total > 10
-        // (SelectListWidget maxVisible=10) and selection must scroll the window.
+        // Add extras on top of the built-ins so total > 10 (SelectListWidget
+        // maxVisible=10) and selection must scroll the window.
         for ($i = 0; $i < 12; ++$i) {
             $name = \sprintf('cmd%02d', $i);
             $this->catalog->register(
@@ -380,14 +379,15 @@ final class CompletionListenerTest extends TestCase
     {
         $this->tui->setFocus($this->screen->editorWidget());
 
-        // Type '/h' — prediction '/h' should refine overlay to /help only.
+        // Type '/h' — prediction '/h' should refine overlay to /help, /history
+        // and /hotkeys.
         $this->tui->handleInput('/');
         $this->tui->handleInput('h');
 
         // Editor has '/h' inserted naturally.
         $this->assertSame('/h', $this->editor->getText());
 
-        // Tab should accept the first (and only) suggestion /help.
+        // Tab should accept the first suggestion /help.
         $this->tui->handleInput("\t");
         $this->assertSame('/help ', $this->editor->getText());
     }
@@ -397,13 +397,13 @@ final class CompletionListenerTest extends TestCase
     {
         $this->tui->setFocus($this->screen->editorWidget());
 
-        // Type '/e' — should refine to /exit.
+        // Type '/e' — should refine to /exit and /export.
         $this->tui->handleInput('/');
         $this->tui->handleInput('e');
 
         $this->assertSame('/e', $this->editor->getText());
 
-        // Tab accepts the matching suggestion.
+        // Tab accepts the first matching suggestion.
         $this->tui->handleInput("\t");
         $this->assertSame('/exit ', $this->editor->getText());
     }
@@ -431,7 +431,15 @@ final class CompletionListenerTest extends TestCase
 
         $catalog = new SlashCommandCatalog();
         foreach (['task-done', 'task-explain', 'task-review-iterate', 'task-start', 'task-to-pr', 'tasks', 'tasks-code-review', 'tasks-done', 'tasks-in-progress', 'tasks-todo'] as $name) {
-            $catalog->registerMetadata(new CommandMetadata(name: $name, aliases: [], description: 'Command '.$name));
+            $catalog->register(
+                new CommandMetadata(name: $name, aliases: [], description: 'Command '.$name),
+                new readonly class implements SlashCommandHandler {
+                    public function handle(SlashCommand $command): CommandResult
+                    {
+                        return new NoOp();
+                    }
+                },
+            );
         }
 
         $state = new TuiSessionState('autocomplete-viewport');
@@ -570,16 +578,17 @@ final class CompletionListenerTest extends TestCase
     {
         $this->tui->setFocus($this->screen->editorWidget());
 
-        // Type '/' — live completion opens (no Tab needed).
+        // Type '/h' — live completion opens (no Tab needed).
         $this->tui->handleInput('/');
+        $this->tui->handleInput('h');
 
-        // Navigate Down — moves to index 1 (/exit, alphabetically
-        // after /clear at index 0).
+        // Navigate Down — moves to index 1 (/history, alphabetically
+        // after /help at index 0).
         $this->tui->handleInput("\x1b[B");
 
         // Tab accepts the navigated (not first) suggestion.
         $this->tui->handleInput("\t");
-        $this->assertSame('/exit ', $this->editor->getText());
+        $this->assertSame('/history ', $this->editor->getText());
     }
 
     #[Test]
@@ -678,20 +687,20 @@ final class CompletionListenerTest extends TestCase
             },
         );
 
-        $this->editor->typeText('/');
+        $this->editor->typeText('/h');
 
         // Tab: open menu
         $this->tui->handleInput("\t");
 
-        // Navigate Down twice (built-ins: /clear, /exit, /help)
+        // Navigate Down twice (built-ins: /help, /history, /hotkeys)
         $this->tui->handleInput("\x1b[B");
         $this->tui->handleInput("\x1b[B");
 
-        // Enter: accept /help + submit
+        // Enter: accept /hotkeys + submit
         $this->tui->handleInput("\r");
 
-        $this->assertSame('/help ', $this->editor->getText());
-        $this->assertSame('/help ', $submittedText);
+        $this->assertSame('/hotkeys ', $this->editor->getText());
+        $this->assertSame('/hotkeys ', $submittedText);
     }
 
     #[Test]
@@ -723,22 +732,22 @@ final class CompletionListenerTest extends TestCase
     {
         $this->tui->setFocus($this->screen->editorWidget());
 
-        $this->editor->typeText('/');
+        $this->editor->typeText('/h');
 
-        // Navigate to /help (index 2 of built-ins: clear, exit, help)
+        // Navigate to /hotkeys (index 2 of built-ins: help, history, hotkeys)
         $this->tui->handleInput("\t");   // open
-        $this->tui->handleInput("\x1b[B"); // down → /exit
-        $this->tui->handleInput("\x1b[B"); // down → /help
+        $this->tui->handleInput("\x1b[B"); // down → /history
+        $this->tui->handleInput("\x1b[B"); // down → /hotkeys
         $this->tui->handleInput("\t");   // accept
 
-        $this->assertSame('/help ', $this->editor->getText());
+        $this->assertSame('/hotkeys ', $this->editor->getText());
 
         // Type additional arguments — must appear AFTER the command.
         $this->tui->handleInput('f');
         $this->tui->handleInput('o');
         $this->tui->handleInput('o');
 
-        $this->assertSame('/help foo', $this->editor->getText());
+        $this->assertSame('/hotkeys foo', $this->editor->getText());
     }
 
     #[Test]
@@ -748,7 +757,7 @@ final class CompletionListenerTest extends TestCase
 
         $this->editor->typeText('/ex');
 
-        // Tab: open (only /exit matches /ex)
+        // Tab: open (/exit first, then /export)
         $this->tui->handleInput("\t");
 
         // Enter: accept /exit + submit propagates
@@ -1273,7 +1282,7 @@ final class CompletionListenerTest extends TestCase
             $harness->screen()->promptEditor()->typeText('/');
             $harness->sendInput("\t");
             $harness->sendInput("\t");
-            $this->assertStringStartsWith('/clear', $harness->screen()->promptEditor()->getText());
+            $this->assertStringStartsWith('/agents-live', $harness->screen()->promptEditor()->getText());
         } finally {
             $harness->stopInputLoop();
         }

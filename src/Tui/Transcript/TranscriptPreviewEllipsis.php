@@ -24,11 +24,6 @@ final class TranscriptPreviewEllipsis
 
     public static function style(TuiTheme $theme, string $ellipsis, ThemeColorEnum $color = ThemeColorEnum::Muted): string
     {
-        $colorSpec = $theme->getPalette()->get($color);
-        $style = '' !== $colorSpec
-            ? new Style(color: $colorSpec, italic: true)
-            : new Style(italic: true);
-
-        return $style->apply($ellipsis);
+        return (new Style(color: $theme->getPalette()->get($color), italic: true))->apply($ellipsis);
     }
 }

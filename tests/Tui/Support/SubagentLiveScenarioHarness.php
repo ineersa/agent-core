@@ -127,21 +127,23 @@ final class SubagentLiveScenarioHarness
             new TuiTranscriptConfig(),
             new TranscriptDisplayState());
 
-        $catalog = new SlashCommandCatalog();
-        foreach (['agents-main', 'agents-live', 'tasks'] as $name) {
-            $catalog->register(
-                new CommandMetadata(name: $name, description: 'test', usage: '/'.$name),
-                new class($name) implements SlashCommandHandler {
-                    public function __construct(private string $name)
-                    {
-                    }
+        $handler = static fn (string $name): SlashCommandHandler => new class($name) implements SlashCommandHandler {
+            public function __construct(private string $name)
+            {
+            }
 
-                    public function handle(SlashCommand $command): TranscriptMessage
-                    {
-                        return new TranscriptMessage('handled '.$this->name, 'system');
-                    }
-                },
-            );
+            public function handle(SlashCommand $command): TranscriptMessage
+            {
+                return new TranscriptMessage('handled '.$this->name, 'system');
+            }
+        };
+        // Built-in /agents-* are already in the catalog; /tasks stands in for
+        // an extension or prompt-template command.
+        $catalog = new SlashCommandCatalog();
+        $catalog->register(new CommandMetadata(name: 'tasks', description: 'test', usage: '/tasks'), $handler('tasks'));
+        $commandRegistry = new SlashCommandRegistry($catalog);
+        foreach (['agents-main', 'agents-live'] as $name) {
+            $commandRegistry->bind($name, $handler($name));
         }
 
         $questionController = new QuestionController($questionCoordinator, $screen);
@@ -152,7 +154,7 @@ final class SubagentLiveScenarioHarness
             client: $client,
             questionCoordinator: $questionCoordinator,
             questionController: $questionController,
-            submissionRouter: new SubmissionRouter(new CommandParser(), new SlashCommandRegistry($catalog)),
+            submissionRouter: new SubmissionRouter(new CommandParser(), $commandRegistry),
         );
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),

@@ -173,22 +173,22 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function includesRuntimeRegisteredCommands(): void
     {
-        // Simulate ModelControlListener registering /model at runtime
+        // Simulate an extension registering /widget at runtime
         $this->catalog->register(
             new CommandMetadata(
-                name: 'model',
-                aliases: ['m'],
-                description: 'Interactive model selection',
-                usage: '/model',
+                name: 'widget',
+                aliases: ['wg'],
+                description: 'Extension widget command',
+                usage: '/widget',
             ),
             $this->createStub(SlashCommandHandler::class),
         );
 
-        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/m'));
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/w'));
 
         $this->assertNotEmpty($suggestions);
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
-        $this->assertContains('/model', $displays);
+        $this->assertContains('/widget', $displays);
     }
 
     #[Test]
@@ -215,18 +215,18 @@ final class SlashCommandCompletionProviderTest extends TestCase
     {
         $this->catalog->register(
             new CommandMetadata(
-                name: 'model',
-                aliases: ['m'],
-                description: 'Interactive model selection',
-                usage: '/model',
+                name: 'widget',
+                aliases: ['wg'],
+                description: 'Extension widget command',
+                usage: '/widget',
             ),
             $this->createStub(SlashCommandHandler::class),
         );
 
-        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/m'));
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/wg'));
 
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
-        $this->assertContains('/model', $displays);
+        $this->assertContains('/widget', $displays);
     }
 
     // ── Suggestion metadata ──────────────────────────────────────────
@@ -278,9 +278,10 @@ final class SlashCommandCompletionProviderTest extends TestCase
         $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/'));
 
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
-        // Registry sorts alphabetically by canonical name: clear → exit → help → hotkeys
-        $expected = ['/clear', '/exit', '/help', '/hotkeys'];
+        // Registry sorts alphabetically by canonical name, built-ins included
+        $expected = array_map(static fn (CommandMetadata $m): string => '/'.$m->name, $this->catalog->allMetadata());
         $this->assertSame($expected, $displays);
+        $this->assertSame(['/agents-live', '/agents-main', '/bg', '/clear'], \array_slice($displays, 0, 4));
     }
 
     // ── Helpers ────────────────────────────────────────────────────

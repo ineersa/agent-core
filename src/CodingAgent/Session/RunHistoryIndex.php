@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Application\Replay\ReplayLifecycleStatus;
 use Ineersa\AgentCore\Domain\Event\AgentCommandKindEnum;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Session\DTO\PendingToolInvocationDTO;
 use Ineersa\CodingAgent\Session\History\HistoryAssistantTextExtractor;
@@ -861,7 +862,7 @@ final readonly class RunHistoryIndex
             $valid = \is_array($operation) && ($operation['idempotency_key'] ?? null) === $payload['idempotency_key'] && \is_bool($payload['standalone'] ?? null);
             // Cache malformed active identity as such; an unrelated historical
             // command must not break all lookups after it has been retired.
-            $this->storeInvocationLocation($db, 'sh_'.hash('sha256', $payload['idempotency_key']), $record['seq'], $valid ? ($operation['turn_no'] ?? $record['turn_no']) : $record['turn_no'], $valid ? ($operation['step_id'] ?? null) : null, $valid ? ($operation['attempt'] ?? 0) : 0, true, true === ($payload['standalone'] ?? null));
+            $this->storeInvocationLocation($db, RunState::standaloneShellToolCallId($payload['idempotency_key']), $record['seq'], $valid ? ($operation['turn_no'] ?? $record['turn_no']) : $record['turn_no'], $valid ? ($operation['step_id'] ?? null) : null, $valid ? ($operation['attempt'] ?? 0) : 0, true, true === ($payload['standalone'] ?? null));
         } elseif (RunEventTypeEnum::LlmStepCompleted->value === $type) {
             $step = $db->fetchOne('SELECT step_id FROM admission_step_location');
             foreach ($payload['assistant_message']['tool_calls'] ?? [] as $call) {

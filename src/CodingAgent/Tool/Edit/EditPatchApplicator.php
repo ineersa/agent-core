@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\Edit;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\CodingAgent\Tool\Edit\Exception\StalePatchHunkException;
 
 /**
  * Computes line replacements from parsed hunks using seek_sequence matching.
@@ -138,7 +139,7 @@ final class EditPatchApplicator
     /**
      * @param list<string> $lines
      */
-    private function stale(int $chunkIndex, string $needle, array $lines, int $lineIndex): ToolCallException
+    private function stale(int $chunkIndex, string $needle, array $lines, int $lineIndex): StalePatchHunkException
     {
         $contextLine = min(max(1, $lineIndex + 1), max(1, \count($lines)));
 
@@ -148,9 +149,9 @@ final class EditPatchApplicator
             $grammar .= ' Each plain or seek-hinted `@@` starts a new sequential, non-overlapping hunk applied after earlier hunks; overlapping changes must be combined into one hunk.';
         }
 
-        return new ToolCallException(
+        return new StalePatchHunkException(
             \sprintf('[E_PATCH_STALE] Hunk #%d context not found in file.', $chunkIndex + 1),
-            retryable: true,
+            failedLine: $contextLine,
             hint: \sprintf('Could not locate: "%s".%s Seek hints are literal source-text anchors, not line numbers. Use read with offset/limit around line %d, then regenerate the patch with exact current context lines (or omit the seek hint).', $this->preview($needle), $grammar, $contextLine),
         );
     }

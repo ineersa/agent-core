@@ -8,16 +8,15 @@ use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 
 /**
- * Contract for command registrars that seed the process-scoped
- * {@see SlashCommandCatalog} once per process.
+ * Contract for registrars that add dynamic commands (code review, prompt
+ * templates, skills) to the process-scoped {@see SlashCommandCatalog}.
  *
- * Command metadata/aliases/help data is registered exactly once here;
- * the per-session {@see SlashCommandRegistry} then
- * binds only the current session's handlers in
- * {@see TuiListenerRegistrar::register()}.
- *
- * Called by InteractiveMode before the session switch loop, in
- * tag-priority order (same ordering as the listener registrars).
+ * Built-in commands are static data registered when the catalog is
+ * constructed, and their handlers are bound per session in the
+ * {@see SlashCommandRegistry}. These registrars instead read runtime state
+ * (discovered skills and templates), so InteractiveMode runs them once,
+ * before the session switch loop and after extensions have loaded and CLI
+ * options are applied. They skip any name that is already taken.
  */
 interface SlashCommandCatalogRegistrar
 {

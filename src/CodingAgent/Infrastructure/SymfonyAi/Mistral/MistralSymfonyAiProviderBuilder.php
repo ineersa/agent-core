@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi\Mistral;
 
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
+use Ineersa\CodingAgent\Config\Ai\Exception\AiConfigurationException;
+use Ineersa\CodingAgent\Config\Ai\SecretResolver;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterface;
 use Symfony\AI\Platform\Bridge\Mistral\Factory;
@@ -26,10 +28,9 @@ final readonly class MistralSymfonyAiProviderBuilder implements SymfonyAiProvide
 
     public function build(AiProviderConfig $provider, HttpClientInterface $httpClient): ProviderInterface
     {
-        $apiKey = $provider->apiKey ?? '';
-        if (str_starts_with($apiKey, 'env:')) {
-            $resolved = getenv(substr($apiKey, 4));
-            $apiKey = false === $resolved ? '' : $resolved;
+        $apiKey = SecretResolver::resolve($provider->apiKey);
+        if (null === $apiKey || '' === $apiKey) {
+            throw new AiConfigurationException(\sprintf('Mistral provider "%s" requires an API key. Check ai.providers.%s.api_key and its environment variable.', $provider->id, $provider->id));
         }
 
         // The native contract replays thinking as content chunks, not the

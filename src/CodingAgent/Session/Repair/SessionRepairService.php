@@ -542,7 +542,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $persisted = $hypotheticalReplay->with([
             'version' => $storedState->version,
             'isStreaming' => false,
-            'streamingMessage' => null,
         ]);
 
         return new SessionRepairPlan(
@@ -1064,7 +1063,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
             $key = $event->payload['idempotency_key'] ?? null;
             if (!\is_string($key)
-                || 'sh_'.hash('sha256', $key) !== $toolCallId
+                || RunState::standaloneShellToolCallId($key) !== $toolCallId
                 || true !== ($event->payload['standalone'] ?? null)) {
                 continue;
             }
@@ -1100,7 +1099,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             if (!\is_string($key)
                 || !\is_string($text)
                 || !\is_bool($standalone)
-                || 'sh_'.hash('sha256', $key) !== $toolCallId
+                || RunState::standaloneShellToolCallId($key) !== $toolCallId
                 || !str_starts_with($text, '!')) {
                 continue;
             }

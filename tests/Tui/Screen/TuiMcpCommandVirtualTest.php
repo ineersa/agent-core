@@ -107,7 +107,6 @@ final class TuiMcpCommandVirtualTest extends TestCase
         $state = new TuiSessionState('mcp-virtual', true);
         $harness = new VirtualTuiHarness(sessionId: 'mcp-virtual');
         $registrar = new McpCommandRegistrar($provider, new TestLogger());
-        $registrar->registerCatalog($catalog);
         $context = $this->buildTuiContext()
             ->withTui($harness->tui())
             ->withState($state)

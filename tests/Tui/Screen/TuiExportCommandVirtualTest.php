@@ -77,7 +77,6 @@ final class TuiExportCommandVirtualTest extends TestCase
             ->withSessionServices($this->createSessionServices(catalog: $catalog))
             ->build();
 
-        (new ExportCommandRegistrar(SessionEventsExportServiceFactory::create()))->registerCatalog($catalog);
         (new ExportCommandRegistrar(SessionEventsExportServiceFactory::create()))->register($context);
 
         $router = new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry);

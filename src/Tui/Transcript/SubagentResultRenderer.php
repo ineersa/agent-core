@@ -145,12 +145,7 @@ final readonly class SubagentResultRenderer
 
         $mdWidget = $this->markdown->create("### Handoff\n\n".implode("\n", $preview['lines']));
         $handoffPadding = Padding::from([0, 0, 0, 2]);
-        $colorSpec = $theme->getPalette()->get(ThemeColorEnum::ToolOutput);
-        $mdWidget->setStyle(
-            '' !== $colorSpec
-                ? new Style(color: $colorSpec, padding: $handoffPadding)
-                : new Style(padding: $handoffPadding),
-        );
+        $mdWidget->setStyle(new Style(color: $theme->getPalette()->get(ThemeColorEnum::ToolOutput), padding: $handoffPadding));
 
         if (null === $preview['ellipsis']) {
             return $mdWidget;

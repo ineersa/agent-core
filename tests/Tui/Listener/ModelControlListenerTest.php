@@ -118,7 +118,6 @@ final class ModelControlListenerTest extends TestCase
             ->build();
 
         $listener = new ModelControlListener($modelService, $appConfig, new NullLogger());
-        $listener->registerCatalog($catalog);
         $listener->register($context);
 
         $harness->startInputLoop();
@@ -155,7 +154,6 @@ final class ModelControlListenerTest extends TestCase
             ->build();
 
         $listener = new ModelControlListener($modelService, $appConfig, new NullLogger());
-        $listener->registerCatalog($catalog);
         $listener->register($context);
 
         $harness->startInputLoop();
@@ -196,7 +194,6 @@ final class ModelControlListenerTest extends TestCase
             ->build();
 
         $listener = new ModelControlListener($modelService, $appConfig, new NullLogger());
-        $listener->registerCatalog($catalog);
         $listener->register($context);
 
         $harness->startInputLoop();
@@ -238,7 +235,6 @@ final class ModelControlListenerTest extends TestCase
             ->build();
 
         $listener = new ModelControlListener($modelService, $appConfig, new NullLogger());
-        $listener->registerCatalog($catalog);
         $listener->register($context);
         $harness->startInputLoop();
         try {

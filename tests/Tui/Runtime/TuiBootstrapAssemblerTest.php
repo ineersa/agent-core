@@ -41,7 +41,6 @@ use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use Ineersa\Tui\Application\InteractiveMode;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Application\TuiSessionSwitchService;
-use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandCatalog;
@@ -921,8 +920,8 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $switch = new TuiSessionSwitchService($harness->tui(), $client, $state, $this->logger);
         $catalog = new SlashCommandCatalog();
         $questions = new QuestionCoordinator();
-        $catalog->register(new CommandMetadata('reload'), new ReloadCommandHandler($switch, $state, $harness->screen(), $questions));
         $services = $this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state, client: $client, switch: $switch, catalog: $catalog, questionCoordinator: $questions);
+        $services->commandRegistry->bind('reload', new ReloadCommandHandler($switch, $state, $harness->screen(), $questions));
         $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($state)->withClient($client)->withSessionServices($services)->build();
         static::getContainer()->get(SubmitListener::class)->register($context);
         $harness->screen()->promptEditor()->replaceText('/reload');
