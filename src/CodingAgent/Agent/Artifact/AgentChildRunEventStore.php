@@ -335,7 +335,7 @@ final class AgentChildRunEventStore implements PreparedTransitionEventStoreInter
                 throw new \RuntimeException(\sprintf('Corrupt event JSONL for child run "%s": denormalization returned null for compatible or missing schema', $this->agentRunId));
             }
 
-            $this->logger->debug('Skipping incompatible schema version in child event JSONL', [
+            $this->logger->warning('Skipping incompatible schema version in child event JSONL', [
                 'run_id' => $this->agentRunId,
                 'schema_version' => $payload['schema_version'] ?? null,
                 'component' => 'agent.artifact',

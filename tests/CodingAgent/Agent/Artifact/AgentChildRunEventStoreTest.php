@@ -162,7 +162,8 @@ final class AgentChildRunEventStoreTest extends TestCase
         $parentRunId = 'parent-latest';
         $agentRunId = 'child-latest';
         $artifactId = 'scout-latest';
-        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $logger = new TestLogger();
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId, $logger);
         $last = PreparedEventStoreSeeder::append($store, new RunEvent(runId: $agentRunId, seq: 1, turnNo: 0, type: 'run_started'));
         $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
         file_put_contents($path, json_encode([
@@ -175,6 +176,12 @@ final class AgentChildRunEventStoreTest extends TestCase
         ], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
 
         $this->assertSame($last->seq, $store->latestSequenceFor($agentRunId));
+
+        $skipped = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'child_event_store.incompatible_schema' === ($record['context']['event_type'] ?? null),
+        ));
+        $this->assertSame(['warning'], array_column($skipped, 'level'));
     }
 
     public function testLatestSequenceRejectsTrailingPartialRecord(): void
