@@ -291,7 +291,6 @@ final class ExecutionWorkerTest extends TestCase
 
         $testLogger = new TestLogger();
 
-        // Non-null logger passed so the worker logs (bypasses NullLogger default).
         $worker = new ExecuteLlmStepWorker(new TestMessageBus(), $platform, tracer: new RunTracer(new NullLogger()), logger: $testLogger);
 
         $worker(new ExecuteLlmStep(

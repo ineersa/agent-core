@@ -1101,7 +1101,6 @@ services:
       $toolbox: '@Symfony\AI\Agent\Toolbox\ToolboxInterface'
       $contextAccessor: '@Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor'
       $toolSetResolver: '@Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface'
-      $clock: '@Symfony\Component\Clock\MonotonicClock'
       $toolResultProcessors: !tagged_iterator agent_core.tool_result_processor
   Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface:
     alias: Ineersa\CodingAgent\Session\SessionToolLaunchInputStore

@@ -47,7 +47,7 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
         // 'tool_descriptions' is always removed when there are no tools.
         // 'tools' is only removed when the ORIGINAL value was explicitly
         // empty (before toolbox fallback).  This preserves resolver-provided
-        // flat string names when the toolbox is unavailable — those names
+        // flat string names when the toolbox returns no tools — those names
         // are intentionally non-empty and should not be destroyed by the
         // empty-tools guard.
         //
