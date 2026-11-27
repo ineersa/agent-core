@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Domain\Run;
 
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
-use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\DTO\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use PHPUnit\Framework\Attributes\DataProvider;

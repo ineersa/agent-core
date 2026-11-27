@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation;
 
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;

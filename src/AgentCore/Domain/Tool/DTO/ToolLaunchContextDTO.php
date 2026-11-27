@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Domain\Tool;
+namespace Ineersa\AgentCore\Domain\Tool\DTO;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Symfony\Component\Validator\Constraints as Assert;

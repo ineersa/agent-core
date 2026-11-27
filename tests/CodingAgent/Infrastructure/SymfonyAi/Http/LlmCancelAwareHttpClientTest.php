@@ -6,8 +6,8 @@ namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\Http;
 
 use Amp\TimeoutCancellation;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Exception\LlmStreamCancelledException;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmCancelAwareHttpClient;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;

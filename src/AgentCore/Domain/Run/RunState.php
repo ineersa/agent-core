@@ -6,6 +6,8 @@ namespace Ineersa\AgentCore\Domain\Run;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
+use Ineersa\AgentCore\Domain\Run\DTO\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\DTO\CurrentToolCallDTO;
 
 final readonly class RunState
 {

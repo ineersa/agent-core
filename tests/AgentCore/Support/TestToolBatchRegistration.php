@@ -6,8 +6,8 @@ namespace Ineersa\AgentCore\Tests\Support;
 
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\DTO\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
-use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Symfony\Component\Uid\Uuid;

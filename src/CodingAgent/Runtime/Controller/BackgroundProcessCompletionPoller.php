@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
-use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
+use Ineersa\AgentCore\Contract\Tool\Exception\MalformedToolResultException;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;

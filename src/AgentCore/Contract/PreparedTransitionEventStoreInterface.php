@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract;
 
-use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
+use Ineersa\AgentCore\Domain\Coordination\DTO\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 interface PreparedTransitionEventStoreInterface extends EventStoreInterface

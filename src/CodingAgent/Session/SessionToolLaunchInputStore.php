@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;

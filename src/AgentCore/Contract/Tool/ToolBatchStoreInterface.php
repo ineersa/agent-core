@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract\Tool;
 
+use Ineersa\AgentCore\Domain\Coordination\DTO\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
-use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
-use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 
 /** Active batch calls, collected results, and captured scheduling decisions. */
 interface ToolBatchStoreInterface

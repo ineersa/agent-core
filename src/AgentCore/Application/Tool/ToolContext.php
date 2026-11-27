@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Tool;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
-use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 
 /**
  * Concrete execution context populated by ToolExecutor for each invocation.

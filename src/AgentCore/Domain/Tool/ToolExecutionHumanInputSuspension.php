@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Tool;
 
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchStateDTO;
 
 /**
  * Typed toolbox outcome: tool execution is suspended pending human input.

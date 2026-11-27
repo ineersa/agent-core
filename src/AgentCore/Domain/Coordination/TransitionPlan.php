@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Coordination;
 
+use Ineersa\AgentCore\Domain\Coordination\DTO\VerifiedTransitionDTO;
+
 /** Captured owner coordination and ordinary messages sent after lock release. */
 final readonly class TransitionPlan
 {

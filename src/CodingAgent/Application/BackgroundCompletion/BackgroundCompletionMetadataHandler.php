@@ -8,7 +8,7 @@ use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\DTO\FinalizeCommandMetadataDTO;
-use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
+use Ineersa\AgentCore\Domain\Coordination\DTO\VerifiedTransitionDTO;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\ConsumeBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\RecordBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Contract;
+namespace Ineersa\AgentCore\Contract\DTO;
 
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 

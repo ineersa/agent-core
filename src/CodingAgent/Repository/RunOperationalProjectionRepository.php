@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Repository;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
-use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
+use Ineersa\AgentCore\Contract\DTO\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;

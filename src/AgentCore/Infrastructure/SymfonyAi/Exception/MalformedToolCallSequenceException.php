@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
+namespace Ineersa\AgentCore\Infrastructure\SymfonyAi\Exception;
 
 /**
  * Thrown when AgentMessage history fails the tool-call/tool-result

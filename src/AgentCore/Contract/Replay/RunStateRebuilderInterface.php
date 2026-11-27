@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract\Replay;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
+use Ineersa\AgentCore\Application\DTO\RunStateReplayResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 
 interface RunStateRebuilderInterface

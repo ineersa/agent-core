@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 
 use Amp\Process\Process;
-use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
+use Ineersa\AgentCore\Contract\Tool\Exception\MalformedToolResultException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Runtime\Process\DetachedProcessLauncher;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;

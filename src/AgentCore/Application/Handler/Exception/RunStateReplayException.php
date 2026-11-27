@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Application\Handler;
+namespace Ineersa\AgentCore\Application\Handler\Exception;
 
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\CodingAgent\Session\History\HistorySelectionService;

@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 use Ineersa\AgentCore\Application\Handler\EffectDispatchFailedEvent;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
-use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
+use Ineersa\AgentCore\Domain\Coordination\DTO\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Tests\Support\TestLogger;

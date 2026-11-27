@@ -8,8 +8,8 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\DTO\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Coordination\TransitionPlan;
-use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 
 /** One completion path for normal commits and unfinished canonical transitions. */
 final readonly class TransitionFinalizer

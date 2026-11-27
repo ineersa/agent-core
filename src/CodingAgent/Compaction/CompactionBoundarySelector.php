@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Compaction;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Exception\MalformedToolCallSequenceException;
 
 /**
  * Cut-point selection and tool-call sequence safety validation for
