@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Domain\Coordination;
+namespace Ineersa\AgentCore\Domain\Coordination\DTO;
 
 /** Storage-verified exact append, including zero-byte owner decisions. */
 final readonly class VerifiedTransitionDTO

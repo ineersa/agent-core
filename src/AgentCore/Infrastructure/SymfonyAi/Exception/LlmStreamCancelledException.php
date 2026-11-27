@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
+namespace Ineersa\AgentCore\Infrastructure\SymfonyAi\Exception;
+
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 
 /**
  * Marks run cancellation from HTTP progress callbacks and transport

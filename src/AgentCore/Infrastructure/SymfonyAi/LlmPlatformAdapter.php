@@ -23,6 +23,7 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Exception\LlmStreamCancelledException;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Psr\Log\LoggerInterface;
@@ -57,6 +58,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private DynamicToolDescriptionProcessor $toolDescriptionProcessor,
         private SymfonyPlatformInterface $platform,
         private iterable $transformContextHooks,
+        private ?ConvertToLlmHookInterface $convertToLlmHook,
         private ?LlmStreamObserverInterface $streamObserver,
         private ?CostCalculatorInterface $costCalculator,
         private LoggerInterface $logger,
@@ -68,7 +70,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private readonly ?LlmRequestRetryObserverInterface $retryObserver = null,
         private readonly LlmRequestRetryPolicy $requestRetryPolicy = new LlmRequestRetryPolicy(),
         private readonly ClockInterface $clock = new NativeClock(),
-        private ?ConvertToLlmHookInterface $convertToLlmHook = null,
     ) {
     }
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Contract\Tool;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO;
 
 interface ToolLaunchInputStoreInterface

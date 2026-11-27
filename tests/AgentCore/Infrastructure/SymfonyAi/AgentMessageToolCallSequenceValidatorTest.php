@@ -6,7 +6,7 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Exception\MalformedToolCallSequenceException;
 use PHPUnit\Framework\TestCase;
 
 final class AgentMessageToolCallSequenceValidatorTest extends TestCase

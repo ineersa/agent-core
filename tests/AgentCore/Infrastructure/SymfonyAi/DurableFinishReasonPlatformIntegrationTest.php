@@ -92,7 +92,7 @@ final class DurableFinishReasonPlatformIntegrationTest extends TestCase
             ),
             platform: $platform,
             transformContextHooks: [],
-
+            convertToLlmHook: null,
             streamObserver: null,
             costCalculator: null,
             modelResolver: null,

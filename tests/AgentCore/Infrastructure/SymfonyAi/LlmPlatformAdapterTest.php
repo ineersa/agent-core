@@ -11,10 +11,10 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Exception\LlmStreamCancelledException;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
@@ -417,7 +417,7 @@ final class LlmPlatformAdapterTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $this->createStub(SymfonyPlatformInterface::class),
             transformContextHooks: [],
-
+            convertToLlmHook: null,
             streamObserver: $observer,
             costCalculator: null,
             logger: $logger,
@@ -533,7 +533,7 @@ final class LlmPlatformAdapterTest extends TestCase
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
-
+            convertToLlmHook: null,
             streamObserver: null,
             costCalculator: null,
             logger: $logger ?? new NullLogger(),

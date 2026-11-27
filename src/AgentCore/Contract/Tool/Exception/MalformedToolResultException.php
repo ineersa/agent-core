@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Contract\Tool;
+namespace Ineersa\AgentCore\Contract\Tool\Exception;
 
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 
 final class MalformedToolResultException extends ToolCallException

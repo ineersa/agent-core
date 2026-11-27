@@ -29,7 +29,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
@@ -471,7 +471,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         return new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(), messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(), platform: new Platform([$provider]),
-            transformContextHooks: [], streamObserver: null, costCalculator: null,
+            transformContextHooks: [], convertToLlmHook: null, streamObserver: null, costCalculator: null,
             logger: new NullLogger(), denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(), modelResolver: $resolver,
             providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper([new ReasoningOptionsFeatureShaper()])),
         );

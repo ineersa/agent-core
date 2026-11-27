@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Tests\Domain\Run;
+namespace Ineersa\AgentCore\Tests\Domain\Run\DTO;
 
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
-use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
+use Ineersa\AgentCore\Domain\Run\DTO\CurrentOperationDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 

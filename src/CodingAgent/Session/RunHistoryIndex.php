@@ -8,7 +8,7 @@ use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception as DbalException;
-use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
+use Ineersa\AgentCore\Application\Handler\Exception\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayLifecycleStatus;
 use Ineersa\AgentCore\Domain\Event\AgentCommandKindEnum;
 use Ineersa\AgentCore\Domain\Event\RunEvent;

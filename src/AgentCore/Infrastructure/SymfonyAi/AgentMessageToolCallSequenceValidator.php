@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Exception\MalformedToolCallSequenceException;
 
 /**
  * Validates the tool-call/tool-result sequence invariant over a list of

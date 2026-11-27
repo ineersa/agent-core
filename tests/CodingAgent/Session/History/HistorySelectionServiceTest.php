@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session\History;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
+use Ineersa\AgentCore\Application\DTO\RunStateReplayResult;
+use Ineersa\AgentCore\Application\Handler\Exception\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Domain\Run;
+namespace Ineersa\AgentCore\Domain\Run\DTO;
 
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 

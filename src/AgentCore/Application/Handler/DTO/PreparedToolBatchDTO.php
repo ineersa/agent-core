@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Application\Handler;
+namespace Ineersa\AgentCore\Application\Handler\DTO;
 
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;

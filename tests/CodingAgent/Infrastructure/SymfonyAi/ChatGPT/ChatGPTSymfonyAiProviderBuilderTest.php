@@ -348,7 +348,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         return new LlmPlatformAdapter(new NullRunOperationalStatusReader(), new AgentMessageConverter(), new DynamicToolDescriptionProcessor(), new Platform((new SymfonyAiProviderFactory(
             new AppConfig(new TuiConfig('default'), new LoggingConfig(), catalog: new HatfieldModelCatalog(new AiConfig(providers: ['openai-codex' => $config ?? $this->config()]))),
             $this->createStub(EventDispatcherInterface::class), [$builder], httpClient: $client,
-        ))->createProviders()), [], null, null, new NullLogger(), AttributeSerializerValidatorTestFactory::denormalizer(), requestRetryPolicy: new LlmRequestRetryPolicy(maxRetries: $maxRetries, baseDelayMs: 0));
+        ))->createProviders()), [], null, null, null, new NullLogger(), AttributeSerializerValidatorTestFactory::denormalizer(), requestRetryPolicy: new LlmRequestRetryPolicy(maxRetries: $maxRetries, baseDelayMs: 0));
     }
 
     /** @param list<array<string, mixed>> $events */

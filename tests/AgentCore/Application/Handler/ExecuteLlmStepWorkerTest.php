@@ -18,9 +18,9 @@ use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Exception\LlmStreamCancelledException;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -114,7 +114,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: new Platform([new Provider('controlled', [$client], [$converter], new FallbackModelCatalog())]),
-            transformContextHooks: [], streamObserver: $observer,
+            transformContextHooks: [], convertToLlmHook: null, streamObserver: $observer,
             costCalculator: null, logger: $logger,
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             modelResolver: $resolver,

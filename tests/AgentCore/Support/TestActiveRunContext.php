@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Support;
 
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
-use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
+use Ineersa\AgentCore\Contract\Exception\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Run\RunState;
 
 /** @internal Fixture loading is explicit; this double has no durable reservation store. */

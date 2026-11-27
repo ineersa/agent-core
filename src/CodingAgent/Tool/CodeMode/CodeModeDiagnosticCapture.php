@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\CodeMode;
 
-use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
+use Ineersa\AgentCore\Contract\Tool\Exception\MalformedToolResultException;
 use Ineersa\CodingAgent\Tool\OutputCap;
 
 /** Read invocation-owned diagnostic files without materializing oversized streams. */

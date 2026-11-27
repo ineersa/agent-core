@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Application\Handler;
+namespace Ineersa\AgentCore\Application\Handler\Exception;
 
 /**
  * Persisted run event history contains duplicate sequence numbers.
