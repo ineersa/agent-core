@@ -20,6 +20,9 @@ CommandContextInterface $context): void`; `$args` is the trimmed text after the 
 The context exposes only `notify(string $message, string $level = 'info')` with levels
 `info`, `success`, `warning` and `error`.
 
+Registration throws `InvalidArgumentException` when the name or any alias equals a name or alias
+that is already registered, including the built-in aliases such as `q`, `quit`, `h` and `?`.
+
 ## Prompt contributors
 
 `registerPromptContributor()` takes a `PromptContributorInterface`. Its `contribute(): string`
