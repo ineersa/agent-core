@@ -260,64 +260,11 @@ final class RuntimeEventPoller
                     }
 
                     // ── History position change: rebuild transcript wholesale ──
-                    // The applier resets live projector state; projected blocks come from
-                    // SessionTranscriptProvider (isolated projector), not TUI local replay.
                     if (RuntimeEventTypeEnum::RunHistoryPositionChanged->value === $runtimeEvent->type) {
-                        // position_turn_no is retained tip; 0 means before first turn (valid).
-                        $hasPositionKey = \array_key_exists('position_turn_no', $runtimeEvent->payload);
-                        $positionTurnNo = (int) ($runtimeEvent->payload['position_turn_no'] ?? -1);
-                        $editorPromptText = \is_string($runtimeEvent->payload['editor_prompt_text'] ?? null)
-                            ? $runtimeEvent->payload['editor_prompt_text']
-                            : '';
                         // Always treat history position change as wholesale replace so the mounted path
                         // receives an explicit full snapshot (including empty after failure).
                         $hasRunHistoryPositionChanged = true;
-
-                        if ($hasPositionKey && $positionTurnNo >= 0 && null !== $state->handle) {
-                            try {
-                                if ($positionTurnNo > 0) {
-                                    $snapshot = $this->sessionTranscriptProvider->transcriptAtPosition(
-                                        $state->handle->runId,
-                                        $positionTurnNo,
-                                    );
-                                    // Full replacement restores authoritative retained history.
-                                    // Hydrate the live projector from the same snapshot so later
-                                    // compaction.completed can find prior retention markers.
-                                    $state->applyTranscriptChangeSet(
-                                        TranscriptChangeSet::full($snapshot->transcriptBlocks),
-                                    );
-                                    $this->eventApplier->hydrateProjectedTranscript($snapshot->transcriptBlocks);
-                                } else {
-                                    // Before first turn: empty conversation transcript.
-                                    $state->applyTranscriptChangeSet(TranscriptChangeSet::full([]));
-                                    $this->eventApplier->hydrateProjectedTranscript([]);
-                                }
-                            } catch (\Throwable $e) {
-                                $this->logger->warning('runtime_event_poller.history_position_changed_rebuild_failed', [
-                                    'run_id' => $state->handle->runId,
-                                    'position_turn_no' => $positionTurnNo,
-                                    'exception' => $e->getMessage(),
-                                ]);
-                                // Intentional degradation: clear transcript rather than show stale
-                                // discarded-tail content when projection fails.
-                                $state->applyTranscriptChangeSet(TranscriptChangeSet::full([]));
-                                $this->eventApplier->hydrateProjectedTranscript([]);
-                            }
-
-                            if (\array_key_exists('editor_prompt_text', $runtimeEvent->payload)) {
-                                // Explicit live selection replaces the editor.
-                                $state->editorChangedSinceAttach = false;
-                                $state->pendingEditorPromptText = $editorPromptText;
-                            }
-                        } else {
-                            // Malformed RunHistoryPositionChanged: missing position_turn_no, or no handle.
-                            $this->logger->warning('runtime_event_poller.history_position_changed_malformed', [
-                                'run_id' => null !== $state->handle ? $state->handle->runId : 'unknown',
-                                'position_turn_no' => $positionTurnNo,
-                            ]);
-                            $state->applyTranscriptChangeSet(TranscriptChangeSet::full([]));
-                            $this->eventApplier->hydrateProjectedTranscript([]);
-                        }
+                        $this->rebuildAtHistoryPosition($state, $runtimeEvent);
 
                         // Skip queued follow-up dispatch, callback handlers, and processing
                         // placeholder removal — all already handled by the applier's early
@@ -328,30 +275,7 @@ final class RuntimeEventPoller
                         continue;
                     }
 
-                    // Release deferred input after completion, cancellation,
-                    // compaction settlement, or rejection of the pending compact request.
-                    //
-                    // GUARD: if activity is Cancelling, the user also pressed
-                    // Escape during compaction.  Do NOT dispatch the queued
-                    // follow-up on the compaction result — the RunCancelled
-                    // event handles dispatch after the cancellation
-                    // terminalizes.  Dispatching here would race the cancel
-                    // terminal and may start a new run before Cancelled is
-                    // visible in the UI.
-                    // Keep intent in the queue until each send succeeds. The
-                    // applier may clear isCompacting before projection throws,
-                    // so retries must not depend on that boolean transition.
-                    // Failure events move old input to editor restoration; a
-                    // historical Failed activity must not block fresh input
-                    // from a later request, including rejection before start.
-                    if ((RuntimeEventTypeEnum::RunCancelled->value === $runtimeEvent->type
-                        || RuntimeEventTypeEnum::RunCompleted->value === $runtimeEvent->type
-                        || RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
-                        || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type
-                        || (RuntimeEventTypeEnum::CommandRejected->value === $runtimeEvent->type
-                            && 'compact' === ($runtimeEvent->payload['commandType'] ?? null)))
-                        && !$state->isCompacting
-                        && !\in_array($state->activity, [RunActivityStateEnum::Cancelling, RunActivityStateEnum::Compacting], true)) {
+                    if (self::releasesDeferredInput($state, $runtimeEvent)) {
                         $this->deferredInputReady = true;
                     }
 
@@ -451,9 +375,12 @@ final class RuntimeEventPoller
             ++$state->runtimePollErrorCount;
             $state->lastRuntimePollError = $e->getMessage();
 
-            $this->logger->warning('RuntimeEventPoller polling error', [
+            $this->logger->warning('runtime_event_poller.polling_error', [
                 'exception' => $e,
                 'run_id' => $state->handle->runId,
+                'session_id' => $state->sessionId,
+                'component' => 'tui',
+                'event_type' => 'runtime_event_poller.polling_error',
                 'consecutive_errors' => $state->runtimePollErrorCount,
             ]);
 
@@ -513,6 +440,102 @@ final class RuntimeEventPoller
         $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation();
 
         return $observation;
+    }
+
+    /**
+     * Replace the transcript wholesale at the event's retained history position.
+     *
+     * The applier resets live projector state; projected blocks come from
+     * SessionTranscriptProvider (isolated projector), not TUI local replay.
+     */
+    private function rebuildAtHistoryPosition(TuiSessionState $state, RuntimeEvent $runtimeEvent): void
+    {
+        // position_turn_no is retained tip; 0 means before first turn (valid).
+        $hasPositionKey = \array_key_exists('position_turn_no', $runtimeEvent->payload);
+        $positionTurnNo = (int) ($runtimeEvent->payload['position_turn_no'] ?? -1);
+
+        if ($hasPositionKey && $positionTurnNo >= 0 && null !== $state->handle) {
+            try {
+                if ($positionTurnNo > 0) {
+                    $snapshot = $this->sessionTranscriptProvider->transcriptAtPosition(
+                        $state->handle->runId,
+                        $positionTurnNo,
+                    );
+                    // Full replacement restores authoritative retained history.
+                    // Hydrate the live projector from the same snapshot so later
+                    // compaction.completed can find prior retention markers.
+                    $state->applyTranscriptChangeSet(
+                        TranscriptChangeSet::full($snapshot->transcriptBlocks),
+                    );
+                    $this->eventApplier->hydrateProjectedTranscript($snapshot->transcriptBlocks);
+                } else {
+                    // Before first turn: empty conversation transcript.
+                    $state->applyTranscriptChangeSet(TranscriptChangeSet::full([]));
+                    $this->eventApplier->hydrateProjectedTranscript([]);
+                }
+            } catch (\Throwable $e) {
+                $this->logger->warning('runtime_event_poller.history_position_changed_rebuild_failed', [
+                    'run_id' => $state->handle->runId,
+                    'session_id' => $state->sessionId,
+                    'component' => 'tui',
+                    'event_type' => 'runtime_event_poller.history_position_changed_rebuild_failed',
+                    'position_turn_no' => $positionTurnNo,
+                    'exception' => $e->getMessage(),
+                    'exception_class' => $e::class,
+                ]);
+                // Intentional degradation: clear transcript rather than show stale
+                // discarded-tail content when projection fails.
+                $state->applyTranscriptChangeSet(TranscriptChangeSet::full([]));
+                $this->eventApplier->hydrateProjectedTranscript([]);
+            }
+
+            if (\array_key_exists('editor_prompt_text', $runtimeEvent->payload)) {
+                // Explicit live selection replaces the editor.
+                $state->editorChangedSinceAttach = false;
+                $state->pendingEditorPromptText = \is_string($runtimeEvent->payload['editor_prompt_text'])
+                    ? $runtimeEvent->payload['editor_prompt_text']
+                    : '';
+            }
+        } else {
+            // Malformed RunHistoryPositionChanged: missing position_turn_no, or no handle.
+            $this->logger->warning('runtime_event_poller.history_position_changed_malformed', [
+                'run_id' => null !== $state->handle ? $state->handle->runId : 'unknown',
+                'session_id' => $state->sessionId,
+                'component' => 'tui',
+                'event_type' => 'runtime_event_poller.history_position_changed_malformed',
+                'position_turn_no' => $positionTurnNo,
+            ]);
+            $state->applyTranscriptChangeSet(TranscriptChangeSet::full([]));
+            $this->eventApplier->hydrateProjectedTranscript([]);
+        }
+    }
+
+    /**
+     * Release deferred input after completion, cancellation, compaction
+     * settlement, or rejection of the pending compact request.
+     *
+     * GUARD: if activity is Cancelling, the user also pressed Escape during
+     * compaction. Do NOT dispatch the queued follow-up on the compaction
+     * result — the RunCancelled event handles dispatch after the cancellation
+     * terminalizes. Dispatching here would race the cancel terminal and may
+     * start a new run before Cancelled is visible in the UI.
+     *
+     * Keep intent in the queue until each send succeeds. The applier may clear
+     * isCompacting before projection throws, so retries must not depend on that
+     * boolean transition. Failure events move old input to editor restoration;
+     * a historical Failed activity must not block fresh input from a later
+     * request, including rejection before start.
+     */
+    private static function releasesDeferredInput(TuiSessionState $state, RuntimeEvent $runtimeEvent): bool
+    {
+        return (RuntimeEventTypeEnum::RunCancelled->value === $runtimeEvent->type
+            || RuntimeEventTypeEnum::RunCompleted->value === $runtimeEvent->type
+            || RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
+            || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type
+            || (RuntimeEventTypeEnum::CommandRejected->value === $runtimeEvent->type
+                && 'compact' === ($runtimeEvent->payload['commandType'] ?? null)))
+            && !$state->isCompacting
+            && !\in_array($state->activity, [RunActivityStateEnum::Cancelling, RunActivityStateEnum::Compacting], true);
     }
 
     private function applyProjectedChanges(TuiSessionState $state): ?TranscriptChangeSet

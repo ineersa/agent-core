@@ -55,7 +55,6 @@ final class TickPollListener implements TuiListenerRegistrar
         // One-shot idle memory sample after a terminal/compaction boundary.
         // Symfony TUI renders before onTick, so boundary samples in this tick
         // are pre-next-frame. The idle sample waits for the following tick.
-        $pendingIdleMemoryCheckpoint = false;
         $idleMemoryCheckpointEmitted = false;
         // Fresh/idle/terminal mounts never cross a live boundary before the
         // first stable tick; schedule one idle sample then.
@@ -348,12 +347,7 @@ final class TickPollListener implements TuiListenerRegistrar
             if (!$state->sessionReady) {
                 $screen->setWorkingMessage($state->bootstrapError ?? 'Restoring session...');
             } elseif ($liveActive) {
-                $parentMsg = match (true) {
-                    RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
-                    RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,
-                    null === $state->handle && $state->activity->isActive() => null,
-                    default => $state->llmRetryWorkingMessage ?? 'Working...',
-                };
+                $parentMsg = self::parentWorkingMessage($state);
                 $childMsg = match ($state->subagentLiveView->childActivity) {
                     RunActivityStateEnum::WaitingHuman => 'Child waiting for your input...',
                     RunActivityStateEnum::Cancelling => 'Child cancelling...',
@@ -392,18 +386,9 @@ final class TickPollListener implements TuiListenerRegistrar
                 return self::shouldKeepActiveRuntimeTicks($state, false) ? true : null;
             }
 
-            $msg = match (true) {
-                RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
-                RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,
-                // Resumed sessions replay activity but have no live handle until
-                // start_run/follow_up attaches the controller — do not show Working.
-                null === $state->handle && $state->activity->isActive() => null,
-                default => $state->llmRetryWorkingMessage ?? 'Working...',
-            };
-
             SubagentLiveAttention::syncMainAttention($state, $screen);
 
-            $screen->setWorkingMessage($msg);
+            $screen->setWorkingMessage(self::parentWorkingMessage($state));
 
             return self::shouldKeepActiveRuntimeTicks($state, false) ? true : null;
         });
@@ -419,14 +404,19 @@ final class TickPollListener implements TuiListenerRegistrar
      */
     private static function shouldKeepActiveRuntimeTicks(TuiSessionState $state, bool $liveActive): bool
     {
-        if ($liveActive) {
-            if ($state->subagentLiveView->childActivity->isActive()) {
-                return true;
-            }
+        return ($liveActive && $state->subagentLiveView->childActivity->isActive())
+            || ($state->activity->isActive() && null !== $state->handle);
+    }
 
-            return $state->activity->isActive() && null !== $state->handle;
-        }
-
-        return $state->activity->isActive() && null !== $state->handle;
+    private static function parentWorkingMessage(TuiSessionState $state): ?string
+    {
+        return match (true) {
+            RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
+            RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,
+            // Resumed sessions replay activity but have no live handle until
+            // start_run/follow_up attaches the controller — do not show Working.
+            null === $state->handle && $state->activity->isActive() => null,
+            default => $state->llmRetryWorkingMessage ?? 'Working...',
+        };
     }
 }

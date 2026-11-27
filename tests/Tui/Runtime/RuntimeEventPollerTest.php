@@ -29,6 +29,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Constraint\Callback;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -323,7 +324,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->logger->expects($this->once())
             ->method('warning')
-            ->with('RuntimeEventPoller polling error', $this->anything());
+            ->with('runtime_event_poller.polling_error', self::correlatedContext('runtime_event_poller.polling_error'));
 
         $result = $this->poller->poll($this->state, $this->client);
 
@@ -395,7 +396,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->logger->expects($this->once())
             ->method('warning')
-            ->with('RuntimeEventPoller polling error', $this->anything());
+            ->with('runtime_event_poller.polling_error', self::correlatedContext('runtime_event_poller.polling_error'));
 
         $result = $this->poller->poll($this->state, $this->client);
 
@@ -951,7 +952,7 @@ final class RuntimeEventPollerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())
             ->method('warning')
-            ->with('runtime_event_poller.history_position_changed_rebuild_failed', $this->anything());
+            ->with('runtime_event_poller.history_position_changed_rebuild_failed', self::correlatedContext('runtime_event_poller.history_position_changed_rebuild_failed', ['exception' => 'Events file not found', 'exception_class' => \RuntimeException::class]));
         $poller = new RuntimeEventPoller(
             new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer()),
             $logger,
@@ -1011,7 +1012,7 @@ final class RuntimeEventPollerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())
             ->method('warning')
-            ->with('runtime_event_poller.history_position_changed_malformed', $this->anything());
+            ->with('runtime_event_poller.history_position_changed_malformed', self::correlatedContext('runtime_event_poller.history_position_changed_malformed'));
 
         $poller = new RuntimeEventPoller(
             new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer()),
@@ -1351,5 +1352,23 @@ final class RuntimeEventPollerTest extends TestCase
             new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
             $this->sessionTranscriptProvider,
         ), $projector];
+    }
+
+    /**
+     * @param array<string, mixed> $expected
+     */
+    private static function correlatedContext(string $eventType, array $expected = []): Callback
+    {
+        return self::callback(static function (array $context) use ($eventType, $expected): bool {
+            self::assertSame('tui', $context['component'] ?? null);
+            self::assertSame($eventType, $context['event_type'] ?? null);
+            self::assertSame('test-run', $context['run_id'] ?? null);
+            self::assertSame('test-session', $context['session_id'] ?? null);
+            foreach ($expected as $key => $value) {
+                self::assertSame($value, $context[$key] ?? null, $key);
+            }
+
+            return true;
+        });
     }
 }
