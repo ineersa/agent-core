@@ -121,8 +121,8 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         // one query, independently of the already-settled parent tool call.
         // Failed preparation may leave no runtime or only a previous attempt's
         // projection. A successful launch retains its actual lifecycle status.
-        // A run ID survives agent_resume. Its terminal operational state may
-        // belong to the prior batch; only this batch's projection can settle it.
+        // A run ID survives agent_resume. Trust an operational terminal status
+        // only if it advances past this lifecycle's observed cancellation cursor.
         return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<SQL
             SELECT batch.backgrounded_at,
                 child.child_run_id, child.artifact_id, child.agent_name, child.task,
@@ -134,7 +134,10 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                     OR (batch.launch_status = :failed_batch_launch AND child.launch_status = :reserved_child_launch)
                     THEN :failed_status
                     ELSE COALESCE(child.terminal_status,
-                        CASE WHEN state.status NOT IN (:terminal_statuses) THEN state.status END,
+                        CASE WHEN state.status NOT IN (:terminal_statuses)
+                            OR (json_extract(child.child_lifecycle_projection, '$.child_status') = :cancelling_status
+                                AND state.last_event_sequence > child.child_event_cursor)
+                            THEN state.status END,
                         json_extract(child.child_lifecycle_projection, '$.child_status'), 'queued') END AS status
             FROM $from
             LEFT JOIN run_operational_state state ON state.run_id = child.child_run_id
@@ -147,6 +150,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             'failed_batch_launch' => DeferredSubagentBatchLaunchStatusEnum::Failed->value,
             'reserved_child_launch' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
             'failed_status' => RunStatus::Failed->value,
+            'cancelling_status' => RunStatus::Cancelling->value,
             'terminal_statuses' => array_values(array_map(static fn (RunStatus $status): string => $status->value, array_filter(RunStatus::cases(), static fn (RunStatus $status): bool => $status->isTerminal()))),
         ] + $parameters, $types);
     }

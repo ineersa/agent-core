@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\Delive
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\RecoverDeferredSubagentBatchLifecycleMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Psr\Log\LoggerInterface;
@@ -37,11 +38,16 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
             return;
         }
 
-        if (null !== $batch->terminalCompletionEnqueuedAt) {
+        // Parent cancellation can settle the tool call before the child stops.
+        $parentSettled = null !== $batch->terminalCompletionEnqueuedAt;
+        if ($parentSettled && DeferredSubagentInterruptionKindEnum::ParentCancelled !== $batch->interruptionKind) {
             return;
         }
 
         $child = $this->childRepository->findEntityByBatchLifecycleAndIndex($message->batchLifecycleId, $message->batchIndex);
+        if ($parentSettled && (null === $child || null !== $child->terminalStatus)) {
+            return;
+        }
         if (null === $child || $child->childRunId !== $message->childRunId) {
             $this->logger->warning('deferred_subagent_batch.child_turn_child_mismatch', [
                 'batch_lifecycle_id' => $message->batchLifecycleId,
@@ -57,11 +63,13 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
         $cursor = $child->childEventCursor;
         $newEvents = $this->filterNewEvents($message->committedEvents, $cursor);
         if ([] === $newEvents) {
+            if ($parentSettled) {
+                return;
+            }
             $this->enqueueDeliveryIfNeeded(
                 $batch->lifecycleId,
                 $batch->aggregateProgressRevision,
                 $batch->deliveredProgressRevision,
-                $batch->terminalCompletionEnqueuedAt,
                 $this->childRepository->decodeChildLifecycleProjection($child->childLifecycleProjection),
             );
 
@@ -105,7 +113,7 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
             committedTurnNo: $message->turnNo,
         );
 
-        $bumpRevision = $updated->lastCommittedSeq > $cursor;
+        $bumpRevision = !$parentSettled && $updated->lastCommittedSeq > $cursor;
 
         try {
             $this->batchRepository->applyBatchChildLifecycleProjection(
@@ -147,7 +155,9 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
             throw $exception;
         }
 
-        $this->commandBus->dispatch(new DeliverDeferredSubagentBatchLifecycleMessage($message->batchLifecycleId));
+        if (!$parentSettled) {
+            $this->commandBus->dispatch(new DeliverDeferredSubagentBatchLifecycleMessage($message->batchLifecycleId));
+        }
     }
 
     private function enqueueRecovery(string $batchLifecycleId): void
@@ -163,13 +173,10 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
         string $batchLifecycleId,
         int $aggregateRevision,
         int $deliveredRevision,
-        ?\DateTimeImmutable $terminalMarker,
         ?DeferredChildRunLifecycleProjectionDTO $childProjection,
     ): void {
         $needsProgress = $aggregateRevision > $deliveredRevision;
-        $needsTerminal = null === $terminalMarker
-            && null !== $childProjection
-            && $childProjection->childStatus->isTerminal();
+        $needsTerminal = $childProjection?->childStatus->isTerminal() ?? false;
 
         if (!$needsProgress && !$needsTerminal) {
             return;
