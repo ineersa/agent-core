@@ -92,6 +92,44 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $this->assertInstanceOf(CompletionsModel::class, $model);
     }
 
+    #[DataProvider('missingEnvironmentValues')]
+    public function testGenericMissingEnvironmentKeyDoesNotSendBearerToken(?string $environment): void
+    {
+        $previous = getenv('HATFIELD_TEST_GENERIC_MISSING_KEY');
+        putenv(null === $environment ? 'HATFIELD_TEST_GENERIC_MISSING_KEY' : 'HATFIELD_TEST_GENERIC_MISSING_KEY='.$environment);
+        try {
+            $requests = 0;
+            $http = new MockHttpClient(function (string $method, string $url, array $options) use (&$requests): MockResponse {
+                ++$requests;
+                foreach ($options['headers'] as $header) {
+                    $this->assertStringNotContainsString('authorization:', strtolower($header));
+                }
+
+                return new MockResponse('{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}]}');
+            });
+            $ai = new AiConfig(providers: ['test' => new AiProviderConfig(
+                id: 'test', baseUrl: 'https://example.test', apiKey: 'env:HATFIELD_TEST_GENERIC_MISSING_KEY',
+                models: ['model' => new AiModelDefinition(id: 'model')],
+            )]);
+            $factory = new SymfonyAiProviderFactory(
+                new AppConfig(tui: new TuiConfig(theme: 'cyberpunk'), logging: new LoggingConfig(), catalog: new HatfieldModelCatalog($ai)),
+                $this->createStub(EventDispatcherInterface::class),
+                httpClient: $http,
+            );
+            $result = $factory->createProviders()['test']->invoke('model', new MessageBag(Message::ofUser('Hello')))->getResult();
+            $this->assertSame('OK', $result->getContent());
+            $this->assertSame(1, $requests);
+        } finally {
+            putenv(false === $previous ? 'HATFIELD_TEST_GENERIC_MISSING_KEY' : 'HATFIELD_TEST_GENERIC_MISSING_KEY='.$previous);
+        }
+    }
+
+    public static function missingEnvironmentValues(): iterable
+    {
+        yield 'unset' => [null];
+        yield 'empty' => [''];
+    }
+
     public function testDisabledCodexProviderIsSkipped(): void
     {
         $providerConfig = new AiProviderConfig(

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
+use Ineersa\CodingAgent\Config\Ai\SecretResolver;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmCancelAwareHttpClient;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpClientOptions;
@@ -174,7 +175,7 @@ class SymfonyAiProviderFactory
             $modelClients[] = new GenericCompletionsModelClient(
                 $httpClient,
                 $provider->baseUrl,
-                $this->resolveApiKey($provider->apiKey),
+                SecretResolver::resolve($provider->apiKey),
                 $completionsPath,
             );
             $resultConverters[] = new DurableResultConverter(
@@ -188,7 +189,7 @@ class SymfonyAiProviderFactory
             $modelClients[] = new GenericEmbeddingsModelClient(
                 $httpClient,
                 $provider->baseUrl,
-                $this->resolveApiKey($provider->apiKey),
+                SecretResolver::resolve($provider->apiKey),
                 $embeddingsPath,
             );
             $resultConverters[] = new GenericEmbeddingsResultConverter();
@@ -261,29 +262,5 @@ class SymfonyAiProviderFactory
 
             $writeLine($record);
         };
-    }
-
-    /**
-     * Resolve an API key value to its real string.
-     *
-     * Supports two formats:
-     *  - Plain key: returned as-is.
-     *  - env:VAR: resolved via getenv('VAR').
-     *  - null: passed through.
-     */
-    private function resolveApiKey(?string $apiKey): ?string
-    {
-        if (null === $apiKey) {
-            return null;
-        }
-
-        if (str_starts_with($apiKey, 'env:')) {
-            $var = substr($apiKey, 4);
-            $value = getenv($var);
-
-            return false !== $value ? $value : null;
-        }
-
-        return $apiKey;
     }
 }

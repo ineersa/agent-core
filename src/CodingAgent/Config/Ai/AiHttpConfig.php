@@ -103,12 +103,8 @@ final readonly class AiHttpConfig
             // env:VARNAME — resolve from environment variable
             if (str_starts_with($value, 'env:')) {
                 $varName = substr($value, 4);
-                if ('' === $varName) {
-                    throw new \InvalidArgumentException(\sprintf('The env: syntax in ai.http.%s must specify a variable name, got bare "env:".', $key));
-                }
-
-                $envValue = getenv($varName);
-                if (false === $envValue || '' === $envValue) {
+                $envValue = SecretResolver::resolve($value);
+                if (null === $envValue) {
                     return null; // unset or empty → null
                 }
 

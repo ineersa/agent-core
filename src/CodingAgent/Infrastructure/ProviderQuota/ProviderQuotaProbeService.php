@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\ProviderQuota;
 
+use Ineersa\CodingAgent\Config\Ai\SecretResolver;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaReportDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaSectionDTO;
@@ -46,9 +47,7 @@ final class ProviderQuotaProbeService
             $token = null;
             if (null !== $apiKey && '' !== trim($apiKey)) {
                 if (str_starts_with($apiKey, 'env:')) {
-                    $var = substr($apiKey, 4);
-                    $value = '' === $var ? false : getenv($var);
-                    $token = false !== $value && '' !== $value ? $value : null;
+                    $token = SecretResolver::resolve($apiKey);
                 } else {
                     $token = trim($apiKey);
                 }
