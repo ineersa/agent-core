@@ -49,11 +49,4 @@ final class RepairHandlerTest extends TestCase
         $this->assertSame([], $bus->messages);
         $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $events[0]->type);
     }
-
-    public function testIgnoresOtherCommands(): void
-    {
-        $bus = new TestMessageBus();
-        (new RepairHandler($bus))(new ControllerCommandEvent(new RuntimeCommand('request', 'compact', 'run'), static function (): void {}));
-        $this->assertSame([], $bus->messages);
-    }
 }

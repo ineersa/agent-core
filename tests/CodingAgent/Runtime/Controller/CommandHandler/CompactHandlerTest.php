@@ -89,24 +89,6 @@ final class CompactHandlerTest extends TestCase
         $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
         $this->assertStringContainsString('compact requires runId', $emittedEvents[0]->payload['error'] ?? '');
     }
-
-    public function testIgnoresNonCompactCommands(): void
-    {
-        $handler = new CompactHandler($this->spyClient);
-
-        $command = new RuntimeCommand(
-            id: 'cmd_4',
-            type: 'user_message',
-            runId: 'run-789',
-            payload: ['text' => 'hello'],
-        );
-
-        $event = new ControllerCommandEvent($command, static function (): void {});
-        $handler($event);
-
-        $this->assertNull($this->spyClient->lastCompactRunId);
-        $this->addToAssertionCount(1);
-    }
 }
 
 /**

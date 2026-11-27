@@ -19,7 +19,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * returns to the event loop. Runtime events from the consumer process are
  * forwarded to TUI via messenger consumer stdout (committed + streaming JSONL).
  */
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.'start_run')]
 final readonly class StartRunHandler
 {
     public function __construct(
@@ -30,10 +30,6 @@ final readonly class StartRunHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if ('start_run' !== $event->command->type) {
-            return;
-        }
-
         $command = $event->command;
         $prompt = (string) ($command->payload['prompt'] ?? '');
         $model = isset($command->payload['model']) ? (string) $command->payload['model'] : null;

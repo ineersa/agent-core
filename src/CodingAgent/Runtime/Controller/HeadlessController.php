@@ -30,8 +30,9 @@ use function Amp\ByteStream\splitLines;
  * Non-blocking headless controller using Revolt event loop.
  *
  * Orchestrates the controller event loop: reads JSONL commands from stdin,
- * ACKs immediately, dispatches through Symfony EventDispatcher to focused
- * #[AsEventListener] command handlers, and delegates event emit and LLM
+ * rejects types without a handler, ACKs the rest immediately, dispatches
+ * through Symfony EventDispatcher to focused per-type #[AsEventListener]
+ * command handlers, and delegates event emit and LLM
  * consumer stdout polling to RuntimeEventEmitter via ConsumerStdoutPoller.
  *
  * Event sources:
@@ -49,6 +50,7 @@ use function Amp\ByteStream\splitLines;
  *
  * Command protocol:
  *   TUI → stdin JSONL → controller parses → emits command.ack → dispatches event
+ *   (a type without a handler gets command.rejected instead, with no ACK)
  *   Controller → stdout JSONL → TUI reads events including command.ack
  *
  * @see ControllerCommandEvent
@@ -296,16 +298,32 @@ final class HeadlessController
             return;
         }
 
+        // A type without a handler would otherwise be ACKed and silently dropped.
+        $eventName = ControllerCommandEvent::NAME_PREFIX.$command->type;
+        if (!$this->dispatcher->hasListeners($eventName)) {
+            $this->logger->warning('Controller rejected unsupported command type', [
+                'component' => 'HeadlessController',
+                'event_type' => 'controller.command_unsupported',
+                'command_type' => $command->type,
+                'command_id' => $command->id,
+                'run_id' => $command->runId ?? '',
+                'session_id' => $this->sessionId,
+            ]);
+            $this->emitCommandRejected($command, 'Unsupported command type.');
+
+            return;
+        }
+
         // ACK immediately before any processing.
         $this->ackCommand($command);
 
-        // Dispatch via Symfony EventDispatcher to #[AsEventListener] handlers.
-        // Command bus dispatch is non-blocking — messages are routed to
-        // async Doctrine transports.
+        // Dispatch via Symfony EventDispatcher under the per-type event name to
+        // the #[AsEventListener] handler(s) for this command type. Handlers do
+        // not wait for owner work; messages go to async Messenger transports.
         try {
             $emit = $this->emitter->emit(...);
             $event = new ControllerCommandEvent($command, $emit, $this->sessionId);
-            $this->dispatcher->dispatch($event);
+            $this->dispatcher->dispatch($event, $eventName);
         } catch (\Throwable $e) {
             // Delegate capture=0 rethrow to boundary.
             // If we reach here, capture mode is enabled.

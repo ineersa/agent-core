@@ -16,7 +16,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
 /**
  * Handles select_history_turn JSONL commands from the parent TUI process.
  */
-#[AsEventListener(event: ControllerCommandEvent::class)]
+#[AsEventListener(event: ControllerCommandEvent::NAME_PREFIX.UserCommandTypeEnum::SelectHistoryTurn->value)]
 final readonly class SelectHistoryTurnHandler
 {
     public function __construct(
@@ -27,10 +27,6 @@ final readonly class SelectHistoryTurnHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if (UserCommandTypeEnum::SelectHistoryTurn->value !== $event->command->type) {
-            return;
-        }
-
         $command = $event->command;
         $runId = $command->runId ?? '';
 

@@ -14,7 +14,9 @@ separate cancellation APIs. `RuntimeCommand` wire discriminators remain strings.
 
 ## Admission and delivery
 
-The controller ACKs commands before dispatch. An accepted command can still fail
+The controller rejects a command type with no registered handler with
+`command.rejected` and does not ACK it. It ACKs other commands before dispatch.
+An accepted command can still fail
 at dispatch or execution. `run_control` owns canonical state changes, and
 `RuntimeEventMapper` / `RuntimeEventTranslator` map committed `RunEvent` values
 into protocol DTOs. They do not consume `RunState`. LLM stream events are transient
