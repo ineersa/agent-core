@@ -345,6 +345,47 @@ final class SessionRunEventStoreTest extends TestCase
             $skipped,
             'allFor must re-read and re-decode from disk on every call',
         );
+        $this->assertSame(['warning', 'warning'], array_column($skipped, 'level'));
+    }
+
+    public function testNonAssociativeLineIsSkippedWithoutLoggingLineContent(): void
+    {
+        $logger = new TestLogger();
+        $store = $this->createStore($logger);
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        PreparedEventStoreSeeder::append($store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
+
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        file_put_contents($eventsPath, '"secret-session-content"'."\n", \FILE_APPEND);
+
+        $this->assertSame([1], array_map(static fn (RunEvent $event): int => $event->seq, $store->allFor($runId)));
+
+        $skipped = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'session.event_store.non_associative_line' === ($record['context']['event_type'] ?? null),
+        ));
+        $this->assertCount(1, $skipped);
+        $this->assertSame('warning', $skipped[0]['level']);
+        $this->assertSame($runId, $skipped[0]['context']['run_id']);
+        $this->assertSame('session.event_store', $skipped[0]['context']['component']);
+        $this->assertStringNotContainsString('secret-session-content', json_encode($skipped[0], \JSON_THROW_ON_ERROR));
+    }
+
+    public function testCorruptLineExceptionDoesNotContainLineContent(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
+
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        file_put_contents($eventsPath, '{"run_id":"'.$runId.'","seq":null,"secret":"secret-session-content"}'."\n", \FILE_APPEND);
+
+        try {
+            $this->store->allFor($runId);
+            self::fail('Corrupt line must throw.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Corrupt event JSONL for run', $e->getMessage());
+            $this->assertStringNotContainsString('secret-session-content', $e->getMessage());
+        }
     }
 
     public function testExternalAppendIsVisibleOnNextAllForEvenWithSameMtime(): void

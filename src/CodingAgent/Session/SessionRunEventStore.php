@@ -243,7 +243,8 @@ final class SessionRunEventStore implements PreparedTransitionEventStoreInterfac
         if (!\is_array($payload)) {
             $this->logger->warning('SessionRunEventStore skipped non-associative JSONL line', [
                 'run_id' => $runId,
-                'line' => mb_substr($trimmedLine, 0, 200),
+                'component' => 'session.event_store',
+                'event_type' => 'session.event_store.non_associative_line',
             ]);
 
             return null;
@@ -252,10 +253,10 @@ final class SessionRunEventStore implements PreparedTransitionEventStoreInterfac
         $event = $this->eventLog->denormalizeRunEvent($payload);
         if (null === $event) {
             if (!$this->eventLog->isIncompatibleSchemaVersion($payload)) {
-                throw new \RuntimeException(\sprintf('Corrupt event JSONL for run "%s": denormalization returned null for compatible or missing schema — line: %s', $runId, mb_substr($trimmedLine, 0, 200)));
+                throw new \RuntimeException(\sprintf('Corrupt event JSONL for run "%s": denormalization returned null for compatible or missing schema', $runId));
             }
 
-            $this->logger->error('Skipping incompatible schema version in event JSONL', [
+            $this->logger->warning('Skipping incompatible schema version in event JSONL', [
                 'run_id' => $runId,
                 'schema_version' => $payload['schema_version'] ?? null,
                 'component' => 'session.event_store',
