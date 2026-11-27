@@ -45,7 +45,14 @@ final readonly class SkillsContextBuilder
         }
 
         // Resolve and render preloaded skills
+        $seen = [];
         foreach ($this->config->preloadSkills as $preloadName) {
+            $key = strtolower($preloadName);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
             $skill = $this->discovery->findByName($preloadName);
             if (null === $skill) {
                 if (null !== $this->logger) {

@@ -42,6 +42,21 @@ final class DefinitionSetupServiceTest extends PerMethodIsolatedKernelTestCase
         $this->assertNull($service->entries(true, $scope)[$user]['shadowedBy']);
     }
 
+    public function testSkillShadowingComparesNamesCaseInsensitively(): void
+    {
+        $fs = new Filesystem();
+        $project = $this->fixture($this->isolatedCwd(), '.agents/skills/upper/SKILL.md');
+        $user = $this->fixture($this->isolatedHome(), '.agents/skills/lower/SKILL.md');
+        $fs->dumpFile($project, "---\nname: Foo\ndescription: Upper\n---\n\nBody\n");
+        $fs->dumpFile($user, "---\nname: foo\ndescription: Lower\n---\n\nBody\n");
+
+        $entries = self::getContainer()->get(DefinitionSetupService::class)->entries(true, SettingsLayerEnum::Project);
+
+        $this->assertNull($entries[$project]['shadowedBy']);
+        $this->assertSame($user, $entries[$project]['reveals']);
+        $this->assertSame($project, $entries[$user]['shadowedBy']);
+    }
+
     public function testAgentOnlyChangesDefinitionAndRefusesWrongScope(): void
     {
         $path = $this->fixture($this->isolatedHome(), '.hatfield/agents/sample.md');

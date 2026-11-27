@@ -212,6 +212,18 @@ ARCH_BODY_UNIQUE');
         $this->assertStringContainsString('FOO_BODY', $output);
     }
 
+    public function testBuildDeduplicatesPreloadsCaseInsensitively(): void
+    {
+        mkdir($this->tmpDir.'/.hatfield/skills/foo', 0777, true);
+        file_put_contents($this->tmpDir.'/.hatfield/skills/foo/SKILL.md', "---\nname: foo\ndescription: Foo skill\n---\n\nFOO_BODY");
+
+        $config = new SkillsConfig(preloadSkills: ['foo', 'Foo']);
+        $output = $this->createBuilder(cwd: $this->tmpDir, config: $config)->build();
+
+        $this->assertSame(1, substr_count($output, '<skill name="foo"'));
+        $this->assertSame(1, substr_count($output, 'FOO_BODY'));
+    }
+
     public function testUnreadablePreloadBodyIsLoggedAndNotRenderedEmpty(): void
     {
         mkdir($this->tmpDir.'/.hatfield/skills/gone', 0777, true);

@@ -106,12 +106,14 @@ commands are rejected before dispatch.
 |---|---|---|
 | `name` | No | Skill name; defaults to the parent directory name |
 | `description` | Recommended | Catalog description; empty description excludes the skill from the model-visible catalog |
-| `disable-model-invocation` | No | When `true`, omit from the model catalog; keep `/skill:` and agent `skills` loading |
+| `disable-model-invocation` | No | When true, omit from the model catalog; keep `/skill:` and agent `skills` loading |
 
 `name` and `description` must be strings, and `name` must not be blank.
-`disable-model-invocation` must be a YAML boolean (`true` / `false`); a quoted
-`"false"` is rejected, not coerced. A SKILL.md with an invalid value is skipped
-with a warning log; other skills still load. Malformed YAML frontmatter falls
+`disable-model-invocation` accepts a boolean, the integers `1` / `0`, or the
+strings `true` / `false`, `yes` / `no`, `on` / `off`, `1` / `0` (any case). A
+missing key or blank value means false. A SKILL.md with any other value, or an
+invalid `name` / `description`, is skipped with a warning log; other skills
+still load. Malformed YAML frontmatter falls
 back to parser defaults (directory name, empty description, model invocation
 enabled).
 

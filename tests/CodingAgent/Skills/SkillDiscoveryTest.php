@@ -250,11 +250,55 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertTrue($skills[0]->modelInvocationEnabled);
     }
 
-    public function testQuotedFalseDisableModelInvocationIsRejectedNotTreatedAsTrue(): void
+    /**
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function acceptedDisableModelInvocationProvider(): iterable
     {
-        $skillDir = $this->tmpDir.'/.hatfield/skills/string-false';
+        yield 'quoted false' => ['"false"', true];
+        yield 'quoted true' => ['"true"', false];
+        yield 'yes' => ['yes', false];
+        yield 'no' => ['no', true];
+        yield 'on uppercase' => ['ON', false];
+        yield 'off' => ['off', true];
+        yield 'quoted one' => ['"1"', false];
+        yield 'quoted zero' => ['"0"', true];
+        yield 'integer one' => ['1', false];
+        yield 'integer zero' => ['0', true];
+        yield 'blank value' => ['', true];
+    }
+
+    #[DataProvider('acceptedDisableModelInvocationProvider')]
+    public function testDisableModelInvocationAcceptsBooleanSpellings(string $value, bool $expectedEnabled): void
+    {
+        $skillDir = $this->tmpDir.'/.hatfield/skills/flag';
         mkdir($skillDir, 0777, true);
-        file_put_contents($skillDir.'/SKILL.md', "---\nname: string-false\ndescription: String false\ndisable-model-invocation: \"false\"\n---\n\nBody");
+        file_put_contents($skillDir.'/SKILL.md', "---\nname: flag\ndescription: Flag\ndisable-model-invocation: {$value}\n---\n\nBody");
+
+        $logger = new TestLogger();
+        $skills = $this->createDiscovery(cwd: $this->tmpDir, logger: $logger)->discover();
+
+        $this->assertCount(1, $skills);
+        $this->assertSame($expectedEnabled, $skills[0]->modelInvocationEnabled);
+        $this->assertSame([], $logger->records);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function invalidDisableModelInvocationProvider(): iterable
+    {
+        yield 'unknown word' => ['maybe'];
+        yield 'integer two' => ['2'];
+        yield 'list' => ['[true]'];
+    }
+
+    #[DataProvider('invalidDisableModelInvocationProvider')]
+    public function testInvalidDisableModelInvocationSkipsSkillAndLogs(string $value): void
+    {
+        $skillDir = $this->tmpDir.'/.hatfield/skills/flag';
+        mkdir($skillDir, 0777, true);
+        file_put_contents($skillDir.'/SKILL.md', "---\nname: flag\ndescription: Flag\ndisable-model-invocation: {$value}\n---\n\nBody");
 
         $logger = new TestLogger();
         $discovery = $this->createDiscovery(cwd: $this->tmpDir, logger: $logger);

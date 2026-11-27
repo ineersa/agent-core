@@ -58,10 +58,12 @@ final readonly class DefinitionSetupService
             if ('local' === $owner || $builtIn) {
                 $owner = $this->owner($path, $skill);
             }
-            $winner = $seen[$name] ?? null;
+            // Skill names collide case-insensitively in SkillDiscovery; agent names compare exactly.
+            $key = $skill ? strtolower($name) : $name;
+            $winner = $seen[$key] ?? null;
             $entries[$path] = ['name' => $name, 'owner' => $owner, 'editable' => $scope->value === $owner, 'builtIn' => $builtIn, 'shadowedBy' => $winner, 'reveals' => null];
             if (null === $winner) {
-                $seen[$name] = $path;
+                $seen[$key] = $path;
             } else {
                 $entries[$winner]['reveals'] ??= $path;
             }

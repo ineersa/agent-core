@@ -422,6 +422,18 @@ final class SkillDiscovery
 
         $frontmatter = $this->parseFrontmatter($content);
 
+        // Lenient flag: accept common boolean spellings before strict denormalization.
+        // Unrecognized values pass through unchanged so the denormalizer rejects them.
+        if (\array_key_exists('disable-model-invocation', $frontmatter)) {
+            $flag = $frontmatter['disable-model-invocation'];
+            $frontmatter['disable-model-invocation'] = match (true) {
+                null === $flag => false,
+                0 === $flag, 1 === $flag => 1 === $flag,
+                \is_string($flag) => filter_var($flag, \FILTER_VALIDATE_BOOLEAN, \FILTER_NULL_ON_FAILURE) ?? $flag,
+                default => $flag,
+            };
+        }
+
         try {
             $dto = $this->denormalizer->denormalize($frontmatter, SkillFrontmatterDTO::class);
         } catch (NotNormalizableValueException $e) {
