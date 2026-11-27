@@ -44,6 +44,7 @@ use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -65,7 +66,8 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         TestDirectoryIsolation::createHatfieldTree((string) getcwd(), withSessions: true);
     }
 
-    public function testGapRecoveryReconcilesChildWithFreshVersionsAndDuplicateNoOp(): void
+    #[DataProvider('gapRecoveryCases')]
+    public function testGapRecoveryReconcilesChildWithFreshVersionsAndDuplicateNoOp(bool $parentSettled): void
     {
         /** @var DeferredSubagentBatchRepository $batchRepo */
         $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
@@ -106,7 +108,14 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             bumpAggregateRevision: false,
         );
 
-        $this->writeChildEventLine($parent, $c1['artifactId'], $c1['childRunId'], 2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']);
+        if ($parentSettled) {
+            $batchRepo->persistInterruptionIntent($lifecycle, DeferredSubagentInterruptionKindEnum::ParentCancelled, new \DateTimeImmutable(), $batchRepo->findByLifecycleId($lifecycle)->projectionVersion);
+            $batchRepo->markTerminalCompletionEnqueued($lifecycle, new \DateTimeImmutable(), $batchRepo->findByLifecycleId($lifecycle)->projectionVersion);
+        }
+        $this->writeChildEventLine($parent, $c1['artifactId'], $c1['childRunId'], 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2]);
+        $endSeq = 3;
+        $reason = $parentSettled ? 'cancelled' : 'completed';
+        $this->writeChildEventLine($parent, $c1['artifactId'], $c1['childRunId'], $endSeq, RunEventTypeEnum::AgentEnd->value, ['reason' => $reason]);
 
         $bus = new TestMessageBus();
         $observe = new ObserveDeferredSubagentBatchChildTurnHandler(
@@ -120,9 +129,10 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             $lifecycle,
             1,
             $c1['childRunId'],
-            RunStatus::Running,
+            RunStatus::from($reason),
             2,
-            [new AfterTurnCommitEventSummary(5, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2])],
+            [new AfterTurnCommitEventSummary($endSeq, RunEventTypeEnum::AgentEnd->value, ['reason' => $reason])],
+            predecessorSequence: 2,
         ));
 
         $child1AfterGap = $childRepo->findEntityByBatchLifecycleAndIndex($lifecycle, 1);
@@ -148,18 +158,32 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $this->assertCount(2, $childReads, 'One identity list and one fresh cursor read; headers must not fetch children.');
 
         $child1Recovered = $childRepo->findEntityByBatchLifecycleAndIndex($lifecycle, 1);
-        $this->assertSame(2, $child1Recovered?->childEventCursor);
-        $this->assertSame('completed', $child1Recovered?->childLifecycleProjection['child_status'] ?? null);
+        $this->assertSame($endSeq, $child1Recovered?->childEventCursor);
+        $this->assertSame($reason, $child1Recovered?->childLifecycleProjection['child_status'] ?? null);
+        $this->assertSame($reason, $child1Recovered?->terminalStatus);
+        $this->assertNotNull($child1Recovered?->terminalCompletedAt);
 
         $batchAfterRecovery = $batchRepo->findByLifecycleId($lifecycle);
-        $this->assertSame(1, $batchAfterRecovery->aggregateProgressRevision);
-        $this->assertInstanceOf(DeliverDeferredSubagentBatchLifecycleMessage::class, $recoveryBus->messages[0]);
+        $expectedRevision = $parentSettled ? 0 : 1;
+        $this->assertSame($expectedRevision, $batchAfterRecovery->aggregateProgressRevision);
+        $this->assertEquals($batchBeforeRecovery->terminalCompletionEnqueuedAt, $batchAfterRecovery->terminalCompletionEnqueuedAt);
+        if ($parentSettled) {
+            $this->assertNotNull($batchBeforeRecovery->terminalCompletionEnqueuedAt);
+            $this->assertSame([], $recoveryBus->messages);
+        } else {
+            $this->assertInstanceOf(DeliverDeferredSubagentBatchLifecycleMessage::class, $recoveryBus->messages[0]);
+        }
 
         $recovery->recover($lifecycle);
         $child1Dup = $childRepo->findEntityByBatchLifecycleAndIndex($lifecycle, 1);
-        $this->assertSame(2, $child1Dup?->childEventCursor);
+        $this->assertSame($endSeq, $child1Dup?->childEventCursor);
         $batchDup = $batchRepo->findByLifecycleId($lifecycle);
-        $this->assertSame(1, $batchDup->aggregateProgressRevision);
+        $this->assertSame($expectedRevision, $batchDup->aggregateProgressRevision);
+    }
+
+    public static function gapRecoveryCases(): array
+    {
+        return ['open parent' => [false], 'parent cancellation already settled' => [true]];
     }
 
     public function testRecoveryRereadsInterruptionHeaderBeforeReadingChildCursor(): void

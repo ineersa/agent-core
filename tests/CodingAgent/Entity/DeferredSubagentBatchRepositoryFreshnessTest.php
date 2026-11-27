@@ -111,6 +111,40 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
     }
 
     #[Test]
+    public function operationalInventoryPrefersNewerTerminalStateOverCancellingProjection(): void
+    {
+        $parent = 'parent-cancelling-inventory';
+        $batch = $this->reserveOneChild($parent, 'cancel');
+        $child = $this->factory->childIdentity($parent, 'cancel', 1);
+        $this->repository->applyLaunchSuccessState($parent, 'cancel', $batch, new \DateTimeImmutable());
+        $this->connection->update('deferred_subagent_child', [
+            'child_lifecycle_projection' => '{"child_status":"cancelling"}',
+            'child_event_cursor' => 10,
+        ], ['batch_lifecycle_id' => $batch]);
+        $projection = self::getContainer()->get(RunOperationalProjectionRepository::class);
+        $projection->replace(new RunState($child['childRunId'], RunStatus::Cancelled, lastSeq: 11, parentRunId: $parent));
+
+        $this->assertSame(['cancelled'], array_column($this->repository->findOwnedChildStatuses($parent), 'status'));
+    }
+
+    #[Test]
+    public function operationalInventorySettlesOriginalLaunchWhenBothCancelObservationsLag(): void
+    {
+        $parent = 'parent-unobserved-cancellation';
+        $batch = $this->reserveOneChild($parent, 'original');
+        $child = $this->factory->childIdentity($parent, 'original', 1);
+        $this->repository->applyLaunchSuccessState($parent, 'original', $batch, new \DateTimeImmutable());
+        $this->connection->update('deferred_subagent_child', [
+            'child_lifecycle_projection' => '{"child_status":"running"}',
+            'child_event_cursor' => 10,
+        ], ['batch_lifecycle_id' => $batch]);
+        $projection = self::getContainer()->get(RunOperationalProjectionRepository::class);
+        $projection->replace(new RunState($child['childRunId'], RunStatus::Cancelled, lastSeq: 12, parentRunId: $parent));
+
+        $this->assertSame(['cancelled'], array_column($this->repository->findOwnedChildStatuses($parent), 'status'));
+    }
+
+    #[Test]
     public function operationalInventoryKeepsResumedChildActiveUntilItsOwnBatchSettles(): void
     {
         $parent = 'parent-resume-inventory';
@@ -135,8 +169,14 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
         $this->assertSame($child['childRunId'], $children[0]->runId);
         $this->assertSame($child['artifactId'], $children[0]->artifactId);
         $this->assertSame('running', $children[0]->status);
+        $this->connection->update('deferred_subagent_child', [
+            'child_lifecycle_projection' => '{"child_status":"cancelling"}',
+            'child_event_cursor' => 10,
+        ], ['batch_lifecycle_id' => $resumed]);
+        $this->assertSame('cancelling', $snapshot->snapshot($parent)->children[0]->status);
         $projection->replace(new RunState($child['childRunId'], RunStatus::Running, lastSeq: 11, parentRunId: $parent));
         $this->assertSame('running', $snapshot->snapshot($parent)->children[0]->status);
+        $this->connection->update('deferred_subagent_child', ['child_lifecycle_projection' => '{"child_status":"running"}'], ['batch_lifecycle_id' => $resumed]);
         $projection->replace(new RunState($child['childRunId'], RunStatus::Completed, lastSeq: 12, parentRunId: $parent));
         $this->assertNotSame('completed', $snapshot->snapshot($parent)->children[0]->status);
         $this->assertSame(1, $markCompleted($resumed));

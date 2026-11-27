@@ -96,6 +96,8 @@ use Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler;
 use Ineersa\CodingAgent\Application\Pipeline\SubagentProgressCoordinationHandler;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionContext;
+use Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventPublisher;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
@@ -504,22 +506,26 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, $startedAt, [1]);
         $this->ensureArtifactReserved($parent, $c1['childRunId'], $c1['artifactId'], 's-int', 'Interrupt me');
 
+        $observationBus = new TestMessageBus();
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(DeferredSubagentChildRepository::class),
             new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
-            new TestMessageBus(),
+            $observationBus,
         );
 
         if ('no_projection' !== $variant) {
             if ('natural_terminal' !== $variant) {
-                $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Running, 1, [
-                    new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
-                        'assistant_message' => ['content' => [['type' => 'text', 'text' => 'working']]],
-                        'usage' => ['input_tokens' => 7, 'output_tokens' => 3],
-                    ]),
-                ]));
+                $payload = [
+                    'assistant_message' => ['content' => [['type' => 'text', 'text' => 'working']]],
+                    'usage' => ['input_tokens' => 7, 'output_tokens' => 3],
+                ];
+                $event = PreparedEventStoreSeeder::append(self::getContainer()->get(EventStoreInterface::class), RunEvent::forAppend($c1['childRunId'], 1, RunEventTypeEnum::LlmStepCompleted->value, $payload));
+                $alreadyObserved = new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Running, 1, [
+                    new AfterTurnCommitEventSummary($event->seq, $event->type, $event->payload),
+                ]);
+                $handler($alreadyObserved);
             }
         }
 
@@ -735,6 +741,39 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $batchLate = $repo->findByLifecycleId($lifecycle);
         $this->assertSame($cursorBeforeLate, $batchLate->children[0]->childEventCursor);
         $this->assertSame($revisionBeforeLate, $batchLate->aggregateProgressRevision);
+
+        if ('parent_cancelled' === $kind && 'running_projection' === $variant) {
+            $container = self::getContainer();
+            $container->get(ExtensionSessionEventPublisher::class)->select($parent, false);
+            $snapshot = $container->get(ExtensionSessionContext::class);
+            $this->assertSame(1, $snapshot->getBackgroundSnapshot()->activeSubagents);
+            $this->assertNotNull($batchDone->terminalCompletionEnqueuedAt);
+            $this->assertNull($batchDone->children[0]->terminalCompletedAt);
+            $observationBus->messages = [];
+            $handler($alreadyObserved);
+            $afterDuplicate = $repo->findByLifecycleId($lifecycle);
+            $this->assertSame([], $observationBus->messages);
+            $this->assertSame($cursorBeforeLate, $afterDuplicate->children[0]->childEventCursor);
+            $this->assertSame($revisionBeforeLate, $afterDuplicate->aggregateProgressRevision);
+            $this->assertEquals($batchDone->terminalCompletionEnqueuedAt, $afterDuplicate->terminalCompletionEnqueuedAt);
+            $store = $container->get(EventStoreInterface::class);
+            $end = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($c1['childRunId'], 1, 'agent_end', ['reason' => 'cancelled']));
+            $message = new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Cancelled, 1, [
+                new AfterTurnCommitEventSummary($end->seq, $end->type, $end->payload),
+            ], predecessorSequence: $cursorBeforeLate);
+            $handler($message);
+            $settled = $repo->findByLifecycleId($lifecycle);
+            $child = $settled->children[0];
+            $this->assertSame('cancelled', $child->terminalStatus);
+            $this->assertNotNull($child->terminalCompletedAt);
+            $this->assertSame(RunStatus::Cancelled, $child->childLifecycleProjection->childStatus);
+            $this->assertSame($end->seq, $child->childEventCursor);
+            $this->assertSame(0, $snapshot->getBackgroundSnapshot()->activeSubagents);
+            $this->assertEquals($batchDone->terminalCompletionEnqueuedAt, $settled->terminalCompletionEnqueuedAt);
+            $this->assertSame($revisionBeforeLate, $settled->aggregateProgressRevision);
+            $handler($message);
+            $this->assertSame([], $observationBus->messages);
+        }
 
         $commandBus->messages = [];
         $interruptionService->interrupt($lifecycle, $oppositeKind);
