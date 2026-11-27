@@ -8,8 +8,8 @@ use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Psr\Log\LoggerInterface;
 
 /**
- * Orchestrates skill discovery, registry construction, and context rendering
- * for injection into the initial user-context message.
+ * Orchestrates skill discovery, model-invocable filtering, skill body reads,
+ * and context rendering for injection into the initial user-context message.
  */
 final readonly class SkillsContextBuilder
 {
@@ -31,20 +31,29 @@ final readonly class SkillsContextBuilder
      */
     public function build(): string
     {
-        $discovered = $this->discovery->discover();
-        $registry = new SkillRegistry($discovered, extractor: $this->extractor);
+        $modelInvocable = array_values(array_filter(
+            $this->discovery->discover(),
+            static fn (SkillDefinition $s): bool => $s->modelInvocationEnabled && '' !== $s->description,
+        ));
 
         $parts = [];
 
         // Render available skills instructions
-        $available = $this->renderer->renderAvailableSkills($registry->modelInvocable());
+        $available = $this->renderer->renderAvailableSkills($modelInvocable);
         if ('' !== $available) {
             $parts[] = $available;
         }
 
         // Resolve and render preloaded skills
+        $seen = [];
         foreach ($this->config->preloadSkills as $preloadName) {
-            $skill = $registry->get($preloadName);
+            $key = strtolower($preloadName);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
+            $skill = $this->discovery->findByName($preloadName);
             if (null === $skill) {
                 if (null !== $this->logger) {
                     $this->logger->warning('Preloaded skill not found: "{name}"', [
@@ -54,7 +63,10 @@ final readonly class SkillsContextBuilder
                 continue;
             }
 
-            $body = $registry->readBody($skill);
+            $body = $this->readBody($skill);
+            if (null === $body) {
+                continue;
+            }
             $parts[] = $this->renderer->renderPreloadedSkill($skill, $body);
         }
 
@@ -87,18 +99,16 @@ final readonly class SkillsContextBuilder
             return '';
         }
 
-        $discovered = $this->discovery->discover();
-        $registry = new SkillRegistry($discovered, extractor: $this->extractor);
-
         $parts = [];
         $seen = [];
         foreach ($names as $preloadName) {
-            if (isset($seen[$preloadName])) {
+            $key = strtolower($preloadName);
+            if (isset($seen[$key])) {
                 continue;
             }
-            $seen[$preloadName] = true;
+            $seen[$key] = true;
 
-            $skill = $registry->get($preloadName);
+            $skill = $this->discovery->findByName($preloadName);
             if (null === $skill) {
                 if (null !== $this->logger) {
                     $this->logger->warning('Agent skill not found for preload: "{name}"', [
@@ -108,10 +118,39 @@ final readonly class SkillsContextBuilder
                 continue;
             }
 
-            $body = $registry->readBody($skill);
+            $body = $this->readBody($skill);
+            if (null === $body) {
+                continue;
+            }
             $parts[] = $this->renderer->renderPreloadedSkill($skill, $body);
         }
 
         return implode("\n\n", $parts);
+    }
+
+    /**
+     * Read the skill body (SKILL.md with frontmatter stripped).
+     *
+     * Returns null and logs when the file cannot be read, so callers skip the
+     * <skill> block instead of rendering it empty.
+     */
+    private function readBody(SkillDefinition $skill): ?string
+    {
+        $content = is_file($skill->skillFile) ? file_get_contents($skill->skillFile) : false;
+
+        if (false === $content) {
+            if (null !== $this->logger) {
+                $this->logger->warning('Skipping preloaded skill with unreadable SKILL.md', [
+                    'component' => 'skills.context',
+                    'event_type' => 'skill_body_unreadable',
+                    'skill_name' => $skill->name,
+                    'path' => $skill->skillFile,
+                ]);
+            }
+
+            return null;
+        }
+
+        return $this->extractor->extract($content)['body'];
     }
 }

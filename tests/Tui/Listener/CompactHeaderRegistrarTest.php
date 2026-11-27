@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
@@ -26,6 +27,7 @@ use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateSubstitutor;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\CompactHeader\CompactHeaderSnapshotProvider;
@@ -179,6 +181,7 @@ final class CompactHeaderRegistrarTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
             logger: new NullLogger(),
         );
     }

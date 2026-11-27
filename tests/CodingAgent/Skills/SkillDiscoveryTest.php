@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Skills;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -12,8 +14,11 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
 
 /**
@@ -245,17 +250,46 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertTrue($skills[0]->modelInvocationEnabled);
     }
 
-    public function testDisableModelInvocationCoercesTruthyValues(): void
+    public function testInvalidFrontmatterSkipsOnlyThatSkillAndLogs(): void
     {
-        $skillDir = $this->tmpDir.'/.hatfield/skills/string-true';
-        mkdir($skillDir, 0777, true);
-        file_put_contents($skillDir.'/SKILL.md', "---\nname: string-true\ndescription: String true\ndisable-model-invocation: \"true\"\n---\n\nBody");
+        mkdir($this->tmpDir.'/.hatfield/skills/bad', 0777, true);
+        file_put_contents($this->tmpDir.'/.hatfield/skills/bad/SKILL.md', "---\nname: 123\ndescription: Bad\n---\n\nBad body");
+        mkdir($this->tmpDir.'/.hatfield/skills/good', 0777, true);
+        file_put_contents($this->tmpDir.'/.hatfield/skills/good/SKILL.md', "---\nname: good\ndescription: Good skill\n---\n\nGood body");
 
-        $discovery = $this->createDiscovery(cwd: $this->tmpDir);
+        $logger = new TestLogger();
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir, logger: $logger);
+        $skills = $discovery->discover();
+
+        $this->assertSame(['good'], array_map(static fn ($skill): string => $skill->name, $skills));
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('warning', $logger->records[0]['level']);
+        $this->assertSame('skills.discovery', $logger->records[0]['context']['component']);
+        $this->assertSame('skill_frontmatter_invalid', $logger->records[0]['context']['event_type']);
+        $this->assertSame($this->tmpDir.'/.hatfield/skills/bad/SKILL.md', $logger->records[0]['context']['path']);
+        $this->assertSame('name', $logger->records[0]['context']['field']);
+    }
+
+    public function testCaseOnlyDuplicateNamesAreOneCollision(): void
+    {
+        $additionalDir = $this->tmpDir.'/prio';
+        mkdir($additionalDir.'/upper', 0777, true);
+        file_put_contents($additionalDir.'/upper/SKILL.md', "---\nname: Foo\ndescription: Upper\n---\n\nUpper body");
+        mkdir($this->tmpDir.'/.hatfield/skills/lower', 0777, true);
+        file_put_contents($this->tmpDir.'/.hatfield/skills/lower/SKILL.md', "---\nname: foo\ndescription: Lower\n---\n\nLower body");
+
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir, config: new SkillsConfig(skillsPaths: [$additionalDir]));
         $skills = $discovery->discover();
 
         $this->assertCount(1, $skills);
-        $this->assertFalse($skills[0]->modelInvocationEnabled);
+        $this->assertSame('Foo', $skills[0]->name);
+        $collisions = $discovery->getCollisions();
+        $this->assertCount(1, $collisions);
+        $this->assertSame($additionalDir.'/upper', $collisions[0]['winner']);
+        $this->assertSame($this->tmpDir.'/.hatfield/skills/lower', $collisions[0]['ignored']);
+        $this->assertSame($skills[0], $discovery->findByName('foo'));
+        $this->assertSame($skills[0], $discovery->findByName('FOO'));
+        $this->assertNull($discovery->findByName('bar'));
     }
 
     public function testDisableModelInvocationFalseKeepsEnabled(): void
@@ -391,6 +425,7 @@ final class SkillDiscoveryTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
         );
 
         $this->expectException(\RuntimeException::class);
@@ -596,6 +631,7 @@ final class SkillDiscoveryTest extends TestCase
         ?SkillsConfig $config = null,
         ?string $homeDir = null,
         ?string $appRoot = null,
+        LoggerInterface $logger = new NullLogger(),
     ): SkillDiscovery {
         $projectDir = $this->tmpDir;
         $resolvedHomeDir = $homeDir ?? $this->tmpDir.'/home';
@@ -617,6 +653,8 @@ final class SkillDiscoveryTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($resolvedAppRoot),
             filesystem: new Filesystem(),
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
+            logger: $logger,
         );
     }
 }

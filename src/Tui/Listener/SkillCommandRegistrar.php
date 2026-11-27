@@ -51,7 +51,7 @@ final class SkillCommandRegistrar implements SlashCommandCatalogRegistrar, Slash
 
     public function handle(SlashCommand $command): DispatchRuntime
     {
-        $skill = $this->discovery->findByCommandName(substr($command->name, \strlen('skill:')))
+        $skill = $this->discovery->findByName(substr($command->name, \strlen('skill:')))
             ?? throw new \LogicException('Registered skill command is missing from discovery.');
 
         return new DispatchRuntime($this->contextBuilder->buildFor([$skill->name]));

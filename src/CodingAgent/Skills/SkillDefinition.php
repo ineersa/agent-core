@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Skills;
 /**
  * Value object representing a discovered skill.
  *
- * Created by SkillDiscovery and held by SkillRegistry.
+ * Created and indexed by SkillDiscovery.
  * Immutable after construction.
  */
 final readonly class SkillDefinition

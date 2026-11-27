@@ -42,6 +42,43 @@ final class DefinitionSetupServiceTest extends PerMethodIsolatedKernelTestCase
         $this->assertNull($service->entries(true, $scope)[$user]['shadowedBy']);
     }
 
+    public function testSkillShadowingComparesNamesCaseInsensitively(): void
+    {
+        $fs = new Filesystem();
+        $project = $this->fixture($this->isolatedCwd(), '.agents/skills/upper/SKILL.md');
+        $user = $this->fixture($this->isolatedHome(), '.agents/skills/lower/SKILL.md');
+        $fs->dumpFile($project, "---\nname: Foo\ndescription: Upper\n---\n\nBody\n");
+        $fs->dumpFile($user, "---\nname: foo\ndescription: Lower\n---\n\nBody\n");
+
+        $entries = self::getContainer()->get(DefinitionSetupService::class)->entries(true, SettingsLayerEnum::Project);
+
+        $this->assertNull($entries[$project]['shadowedBy']);
+        $this->assertSame($user, $entries[$project]['reveals']);
+        $this->assertSame($project, $entries[$user]['shadowedBy']);
+    }
+
+    public function testSkillSaveAcceptsWhatDiscoveryAcceptsAndRefusesGarbageFlag(): void
+    {
+        $path = $this->fixture($this->isolatedCwd(), '.agents/skills/flag/SKILL.md');
+        $raw = "---\nname: flag\ndescription: Original\ndisable-model-invocation: yes\n---\n\nBody\n";
+        (new Filesystem())->dumpFile($path, $raw);
+        $service = self::getContainer()->get(DefinitionSetupService::class);
+        $scope = SettingsLayerEnum::Project;
+
+        $saved = $service->save(true, $scope, $path, $raw, 'description', 'Changed');
+        $this->assertSame("---\nname: flag\ndescription: Changed\ndisable-model-invocation: 'yes'\n---\n\nBody\n", $saved);
+
+        // A SKILL.md that already holds a garbage flag is skipped by discovery and
+        // so is not editable; refusal is proven by saving a garbage flag value.
+        try {
+            $service->save(true, $scope, $path, $saved, 'disable-model-invocation', 'maybe');
+            $this->fail('A garbage flag must be refused.');
+        } catch (DefinitionSetupRefusalException $error) {
+            $this->assertSame('"disable-model-invocation" must be true or false.', $error->getMessage());
+        }
+        $this->assertSame($saved, $service->read($path));
+    }
+
     public function testAgentOnlyChangesDefinitionAndRefusesWrongScope(): void
     {
         $path = $this->fixture($this->isolatedHome(), '.hatfield/agents/sample.md');

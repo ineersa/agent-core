@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -14,6 +15,7 @@ use Ineersa\CodingAgent\Skills\SkillContextRenderer;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchRuntime;
@@ -95,6 +97,7 @@ final class CodeReviewCommandRegistrarTest extends TestCase
             extractor: $extractor,
             resources: new AppResourceLocator(\dirname(__DIR__, 3)),
             filesystem: new Filesystem(),
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
         );
 
         return new CodeReviewCommandRegistrar($discovery, new SkillsContextBuilder(

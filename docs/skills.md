@@ -81,7 +81,14 @@ not see the skill in `<available_skills>` and will not autonomously select it.
 
 Semantics are identical for bundled, project, user, and extension-registered
 skills. Existing precedence and name-collision rules are unchanged (first
-discovered wins).
+discovered wins; names compare case-insensitively, so `Foo` and `foo` collide).
+The comparison folds ASCII letters only.
+
+Explicit loads by name (`/skill:<name>`, CLI `--skills`, agent `skills`) use the
+same case-insensitive comparison, so `skills: [Castor]` loads the `castor`
+skill. Naming one skill twice loads it once. If a skill's `SKILL.md` can no
+longer be read when it is loaded, the skill is skipped with a warning log and
+no skill block is added.
 
 ## Skill commands
 
@@ -106,11 +113,16 @@ commands are rejected before dispatch.
 |---|---|---|
 | `name` | No | Skill name; defaults to the parent directory name |
 | `description` | Recommended | Catalog description; empty description excludes the skill from the model-visible catalog |
-| `disable-model-invocation` | No | When truthy, omit from the model catalog; keep `/skill:` and agent `skills` loading |
+| `disable-model-invocation` | No | When true, omit from the model catalog; keep `/skill:` and agent `skills` loading |
 
-The parsed value is coerced to boolean. Missing and false values keep the skill
-discoverable. Malformed YAML frontmatter falls back to parser defaults
-(directory name, empty description, model invocation enabled).
+`name` and `description` must be strings, and `name` must not be blank.
+`disable-model-invocation` accepts a boolean, the integers `1` / `0`, or the
+strings `true` / `false`, `yes` / `no`, `on` / `off`, `1` / `0` (any case). A
+missing key or blank value means false. A SKILL.md with any other value, or an
+invalid `name` / `description`, is skipped with a warning log; other skills
+still load. Malformed YAML frontmatter falls
+back to parser defaults (directory name, empty description, model invocation
+enabled).
 
 ## Discovery order (high → low)
 

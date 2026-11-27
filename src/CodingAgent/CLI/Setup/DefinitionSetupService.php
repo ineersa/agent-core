@@ -16,10 +16,11 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\SetupSettingsService;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Skills\DTO\SkillFrontmatterDTO;
+use Ineersa\CodingAgent\Skills\Exception\SkillFrontmatterValidationException;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Serializer\Attribute\SerializedName;
-use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\NotBlank;
 use Symfony\Component\Validator\Constraints\Regex;
@@ -38,9 +39,9 @@ final readonly class DefinitionSetupService
         private AppConfig $app,
         private AppResourceLocator $resources,
         private Filesystem $filesystem,
-        private DenormalizerInterface $denormalizer,
         private ValidatorInterface $validator,
         private SetupSettingsService $settings,
+        private SkillFrontmatterValidator $skillValidator,
     ) {
     }
 
@@ -58,10 +59,12 @@ final readonly class DefinitionSetupService
             if ('local' === $owner || $builtIn) {
                 $owner = $this->owner($path, $skill);
             }
-            $winner = $seen[$name] ?? null;
+            // Skill names collide case-insensitively in SkillDiscovery; agent names compare exactly.
+            $key = $skill ? strtolower($name) : $name;
+            $winner = $seen[$key] ?? null;
             $entries[$path] = ['name' => $name, 'owner' => $owner, 'editable' => $scope->value === $owner, 'builtIn' => $builtIn, 'shadowedBy' => $winner, 'reveals' => null];
             if (null === $winner) {
-                $seen[$name] = $path;
+                $seen[$key] = $path;
             } else {
                 $entries[$winner]['reveals'] ??= $path;
             }
@@ -179,10 +182,10 @@ final readonly class DefinitionSetupService
         $validatedFields = $this->fields($candidate);
         if ($skill) {
             $input = array_intersect_key($validatedFields, $this->supportedFields(true));
-            $dto = $this->denormalizer->denormalize($input, SkillFrontmatterDTO::class);
-            $violations = $this->validator->validate($dto);
-            if (0 !== \count($violations)) {
-                throw new DefinitionSetupRefusalException((string) $violations[0]->getMessage());
+            try {
+                $this->skillValidator->validate($input);
+            } catch (SkillFrontmatterValidationException $e) {
+                throw new DefinitionSetupRefusalException($e->getMessage(), previous: $e);
             }
         } else {
             $this->agentParser->parseContent($candidate, $path);

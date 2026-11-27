@@ -25,6 +25,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
@@ -256,6 +257,7 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
         );
     }
 

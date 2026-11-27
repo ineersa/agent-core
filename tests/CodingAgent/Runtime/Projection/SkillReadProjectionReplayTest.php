@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -18,6 +19,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -69,6 +71,7 @@ final class SkillReadProjectionReplayTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
         );
 
         $dispatcher = new EventDispatcher();

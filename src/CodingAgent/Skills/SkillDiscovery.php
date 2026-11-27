@@ -8,6 +8,8 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Skills\Exception\SkillFrontmatterValidationException;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
@@ -34,8 +36,12 @@ use Symfony\Component\Yaml\Yaml;
  * contains SKILL.md, that directory is treated as a skill root and its
  * subdirectories are NOT scanned for additional skills.
  *
- * On name collision, the first-discovered skill wins. Collision diagnostics
- * are recorded and logged.
+ * Skill names compare case-insensitively. On name collision (including
+ * case-only duplicates), the first-discovered skill wins. Collision
+ * diagnostics are recorded and logged.
+ *
+ * A SKILL.md whose frontmatter fails type or constraint validation is skipped
+ * with a warning; other skills still load.
  *
  * Discovery is lazy — the first discover() call reads from SkillsConfig,
  * which is populated by AgentCommand after CLI option parsing. Extension
@@ -57,8 +63,8 @@ final class SkillDiscovery
     /** @var list<array{winner: string, ignored: string, name: string}> */
     private array $collisions = [];
 
-    /** @var array<string, SkillDefinition> */
-    private array $skillsByCommandName = [];
+    /** @var array<string, SkillDefinition> lowercase name → winning definition */
+    private array $skillsByName = [];
 
     /** @var list<string> Absolute skill directories registered by enabled extensions */
     private array $registeredSkillDirectories = [];
@@ -73,6 +79,7 @@ final class SkillDiscovery
         private readonly MarkdownFrontmatterExtractor $extractor,
         private readonly AppResourceLocator $resources,
         private readonly Filesystem $filesystem,
+        private readonly SkillFrontmatterValidator $frontmatterValidator,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -155,8 +162,8 @@ final class SkillDiscovery
         $this->sources = [];
         $skills = [];
         $this->collisions = [];
-        $this->skillsByCommandName = [];
-        /** @var array<string, string> $seenNames name → first-seen skill dir */
+        $this->skillsByName = [];
+        /** @var array<string, string> $seenNames lowercase name → first-seen skill dir */
         $seenNames = [];
         $seenRoots = [];
 
@@ -183,16 +190,17 @@ final class SkillDiscovery
                 }
                 $this->sources[$definition->skillFile] = ['name' => $name, 'origin' => $source];
 
-                if (isset($seenNames[$name])) {
+                $key = strtolower($name);
+                if (isset($seenNames[$key])) {
                     $this->collisions[] = [
-                        'winner' => $seenNames[$name],
+                        'winner' => $seenNames[$key],
                         'ignored' => $skillDir,
                         'name' => $name,
                     ];
                     if (null !== $this->logger) {
                         $this->logger->warning('Skill name collision: "{name}" already registered from "{winner}", ignoring "{ignored}"', [
                             'name' => $name,
-                            'winner' => $seenNames[$name],
+                            'winner' => $seenNames[$key],
                             'ignored' => $skillDir,
                         ]);
                     }
@@ -200,8 +208,8 @@ final class SkillDiscovery
                 }
 
                 $skills[] = $definition;
-                $seenNames[$name] = $skillDir;
-                $this->skillsByCommandName[strtolower($name)] ??= $definition;
+                $seenNames[$key] = $skillDir;
+                $this->skillsByName[$key] = $definition;
             }
         }
 
@@ -210,11 +218,14 @@ final class SkillDiscovery
         return $skills;
     }
 
-    public function findByCommandName(string $name): ?SkillDefinition
+    /**
+     * Look up the winning discovered skill by name, case-insensitively.
+     */
+    public function findByName(string $name): ?SkillDefinition
     {
         $this->discover();
 
-        return $this->skillsByCommandName[strtolower($name)] ?? null;
+        return $this->skillsByName[strtolower($name)] ?? null;
     }
 
     /**
@@ -385,7 +396,8 @@ final class SkillDiscovery
      * Build a SkillDefinition from a skill root directory.
      *
      * Reads and parses SKILL.md frontmatter to extract name, description,
-     * and model invocation settings.
+     * and model invocation settings. Returns null (skip) when the frontmatter
+     * values fail type or constraint validation.
      */
     private function buildDefinition(string $skillDir): ?SkillDefinition
     {
@@ -407,16 +419,28 @@ final class SkillDiscovery
 
         $frontmatter = $this->parseFrontmatter($content);
 
-        $name = $frontmatter['name'] ?? basename($skillDir);
-        $description = $frontmatter['description'] ?? '';
-        $disableModelInvocation = (bool) ($frontmatter['disable-model-invocation'] ?? false);
+        try {
+            $dto = $this->frontmatterValidator->validate($frontmatter);
+        } catch (SkillFrontmatterValidationException $e) {
+            if (null !== $this->logger) {
+                $this->logger->warning('Skipping skill with invalid SKILL.md frontmatter', [
+                    'component' => 'skills.discovery',
+                    'event_type' => 'skill_frontmatter_invalid',
+                    'path' => $skillFile,
+                    'field' => $e->field,
+                    'exception_class' => $e::class,
+                ]);
+            }
+
+            return null;
+        }
 
         return new SkillDefinition(
-            name: $name,
-            description: $description,
+            name: $dto->name ?? basename($skillDir),
+            description: $dto->description ?? '',
             skillFile: $skillFile,
             skillDirectory: $skillDir,
-            modelInvocationEnabled: !$disableModelInvocation,
+            modelInvocationEnabled: !$dto->disableModelInvocation,
         );
     }
 
