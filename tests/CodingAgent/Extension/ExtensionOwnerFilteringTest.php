@@ -23,6 +23,7 @@ use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
@@ -194,8 +195,7 @@ final class ExtensionOwnerFilteringTest extends TestCase
                 extractor: new MarkdownFrontmatterExtractor(),
                 resources: new AppResourceLocator('' !== $appConfig->cwd ? $appConfig->cwd : '/tmp'),
                 filesystem: new Filesystem(),
-                denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-                validator: AttributeSerializerValidatorTestFactory::create()[1],
+                frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
             ),
             toolInvoker: $this->unusedToolInvoker(),
             children: $this->createStub(ChildRunExtensionAllowlistReaderInterface::class),

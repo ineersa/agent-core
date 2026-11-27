@@ -28,6 +28,7 @@ use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
 use Ineersa\CodingAgent\Runtime\LoadedResources\LoadedResourcesSummaryBuilder;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -83,8 +84,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
-            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            validator: AttributeSerializerValidatorTestFactory::create()[1],
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
             logger: new NullLogger(),
         );
 
@@ -398,8 +398,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
-            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            validator: AttributeSerializerValidatorTestFactory::create()[1],
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
             logger: new NullLogger(),
         );
     }

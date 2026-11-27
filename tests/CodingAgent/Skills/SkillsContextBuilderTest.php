@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Skills\SkillContextRenderer;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -272,8 +273,7 @@ ARCH_BODY_UNIQUE');
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
-            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            validator: AttributeSerializerValidatorTestFactory::create()[1],
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
         );
 
         return new SkillsContextBuilder(

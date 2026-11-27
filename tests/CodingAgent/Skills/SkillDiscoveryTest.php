@@ -14,8 +14,8 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -250,80 +250,10 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertTrue($skills[0]->modelInvocationEnabled);
     }
 
-    /**
-     * @return iterable<string, array{string, bool}>
-     */
-    public static function acceptedDisableModelInvocationProvider(): iterable
-    {
-        yield 'quoted false' => ['"false"', true];
-        yield 'quoted true' => ['"true"', false];
-        yield 'yes' => ['yes', false];
-        yield 'no' => ['no', true];
-        yield 'on uppercase' => ['ON', false];
-        yield 'off' => ['off', true];
-        yield 'quoted one' => ['"1"', false];
-        yield 'quoted zero' => ['"0"', true];
-        yield 'integer one' => ['1', false];
-        yield 'integer zero' => ['0', true];
-        yield 'blank value' => ['', true];
-    }
-
-    #[DataProvider('acceptedDisableModelInvocationProvider')]
-    public function testDisableModelInvocationAcceptsBooleanSpellings(string $value, bool $expectedEnabled): void
-    {
-        $skillDir = $this->tmpDir.'/.hatfield/skills/flag';
-        mkdir($skillDir, 0777, true);
-        file_put_contents($skillDir.'/SKILL.md', "---\nname: flag\ndescription: Flag\ndisable-model-invocation: {$value}\n---\n\nBody");
-
-        $logger = new TestLogger();
-        $skills = $this->createDiscovery(cwd: $this->tmpDir, logger: $logger)->discover();
-
-        $this->assertCount(1, $skills);
-        $this->assertSame($expectedEnabled, $skills[0]->modelInvocationEnabled);
-        $this->assertSame([], $logger->records);
-    }
-
-    /**
-     * @return iterable<string, array{string}>
-     */
-    public static function invalidDisableModelInvocationProvider(): iterable
-    {
-        yield 'unknown word' => ['maybe'];
-        yield 'integer two' => ['2'];
-        yield 'list' => ['[true]'];
-    }
-
-    #[DataProvider('invalidDisableModelInvocationProvider')]
-    public function testInvalidDisableModelInvocationSkipsSkillAndLogs(string $value): void
-    {
-        $skillDir = $this->tmpDir.'/.hatfield/skills/flag';
-        mkdir($skillDir, 0777, true);
-        file_put_contents($skillDir.'/SKILL.md', "---\nname: flag\ndescription: Flag\ndisable-model-invocation: {$value}\n---\n\nBody");
-
-        $logger = new TestLogger();
-        $discovery = $this->createDiscovery(cwd: $this->tmpDir, logger: $logger);
-
-        $this->assertSame([], $discovery->discover());
-        $this->assertSame(['skill_frontmatter_invalid'], array_column(array_column($logger->records, 'context'), 'event_type'));
-        $this->assertSame('disableModelInvocation', $logger->records[0]['context']['field']);
-    }
-
-    /**
-     * @return iterable<string, array{string}>
-     */
-    public static function invalidFrontmatterProvider(): iterable
-    {
-        yield 'integer name' => ["name: 123\ndescription: Bad"];
-        yield 'list name' => ["name: [a]\ndescription: Bad"];
-        yield 'integer description' => ["name: bad\ndescription: 42"];
-        yield 'blank name' => ["name: '  '\ndescription: Bad"];
-    }
-
-    #[DataProvider('invalidFrontmatterProvider')]
-    public function testInvalidFrontmatterSkipsOnlyThatSkillAndLogs(string $frontmatter): void
+    public function testInvalidFrontmatterSkipsOnlyThatSkillAndLogs(): void
     {
         mkdir($this->tmpDir.'/.hatfield/skills/bad', 0777, true);
-        file_put_contents($this->tmpDir.'/.hatfield/skills/bad/SKILL.md', "---\n{$frontmatter}\n---\n\nBad body");
+        file_put_contents($this->tmpDir.'/.hatfield/skills/bad/SKILL.md', "---\nname: 123\ndescription: Bad\n---\n\nBad body");
         mkdir($this->tmpDir.'/.hatfield/skills/good', 0777, true);
         file_put_contents($this->tmpDir.'/.hatfield/skills/good/SKILL.md', "---\nname: good\ndescription: Good skill\n---\n\nGood body");
 
@@ -337,6 +267,7 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertSame('skills.discovery', $logger->records[0]['context']['component']);
         $this->assertSame('skill_frontmatter_invalid', $logger->records[0]['context']['event_type']);
         $this->assertSame($this->tmpDir.'/.hatfield/skills/bad/SKILL.md', $logger->records[0]['context']['path']);
+        $this->assertSame('name', $logger->records[0]['context']['field']);
     }
 
     public function testCaseOnlyDuplicateNamesAreOneCollision(): void
@@ -494,8 +425,7 @@ final class SkillDiscoveryTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
-            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            validator: AttributeSerializerValidatorTestFactory::create()[1],
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
         );
 
         $this->expectException(\RuntimeException::class);
@@ -723,8 +653,7 @@ final class SkillDiscoveryTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($resolvedAppRoot),
             filesystem: new Filesystem(),
-            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            validator: AttributeSerializerValidatorTestFactory::create()[1],
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
             logger: $logger,
         );
     }

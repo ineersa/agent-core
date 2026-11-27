@@ -30,6 +30,7 @@ use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateSubstitutor;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\CompactHeader\CompactHeaderSnapshotProvider;
@@ -79,8 +80,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
-            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            validator: AttributeSerializerValidatorTestFactory::create()[1],
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
             logger: new NullLogger(),
         );
 
@@ -130,8 +130,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
-            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            validator: AttributeSerializerValidatorTestFactory::create()[1],
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
             logger: new NullLogger(),
         );
 
@@ -167,8 +166,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
-            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            validator: AttributeSerializerValidatorTestFactory::create()[1],
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
             logger: new NullLogger(),
         );
 
@@ -197,8 +195,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
-            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            validator: AttributeSerializerValidatorTestFactory::create()[1],
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
             logger: new NullLogger(),
         );
 
@@ -246,8 +243,7 @@ JSON;
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
-            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            validator: AttributeSerializerValidatorTestFactory::create()[1],
+            frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
             logger: new NullLogger(),
         );
 

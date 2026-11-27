@@ -8,13 +8,11 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
-use Ineersa\CodingAgent\Skills\DTO\SkillFrontmatterDTO;
+use Ineersa\CodingAgent\Skills\Exception\SkillFrontmatterValidationException;
+use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
-use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -81,8 +79,7 @@ final class SkillDiscovery
         private readonly MarkdownFrontmatterExtractor $extractor,
         private readonly AppResourceLocator $resources,
         private readonly Filesystem $filesystem,
-        private readonly DenormalizerInterface $denormalizer,
-        private readonly ValidatorInterface $validator,
+        private readonly SkillFrontmatterValidator $frontmatterValidator,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -422,43 +419,16 @@ final class SkillDiscovery
 
         $frontmatter = $this->parseFrontmatter($content);
 
-        // Lenient flag: accept common boolean spellings before strict denormalization.
-        // Unrecognized values pass through unchanged so the denormalizer rejects them.
-        if (\array_key_exists('disable-model-invocation', $frontmatter)) {
-            $flag = $frontmatter['disable-model-invocation'];
-            $frontmatter['disable-model-invocation'] = match (true) {
-                null === $flag => false,
-                0 === $flag, 1 === $flag => 1 === $flag,
-                \is_string($flag) => filter_var($flag, \FILTER_VALIDATE_BOOLEAN, \FILTER_NULL_ON_FAILURE) ?? $flag,
-                default => $flag,
-            };
-        }
-
         try {
-            $dto = $this->denormalizer->denormalize($frontmatter, SkillFrontmatterDTO::class);
-        } catch (NotNormalizableValueException $e) {
+            $dto = $this->frontmatterValidator->validate($frontmatter);
+        } catch (SkillFrontmatterValidationException $e) {
             if (null !== $this->logger) {
                 $this->logger->warning('Skipping skill with invalid SKILL.md frontmatter', [
                     'component' => 'skills.discovery',
                     'event_type' => 'skill_frontmatter_invalid',
                     'path' => $skillFile,
-                    'field' => $e->getPath(),
-                    'expected_types' => $e->getExpectedTypes(),
+                    'field' => $e->field,
                     'exception_class' => $e::class,
-                ]);
-            }
-
-            return null;
-        }
-
-        $violations = $this->validator->validate($dto);
-        if (0 !== \count($violations)) {
-            if (null !== $this->logger) {
-                $this->logger->warning('Skipping skill with invalid SKILL.md frontmatter', [
-                    'component' => 'skills.discovery',
-                    'event_type' => 'skill_frontmatter_invalid',
-                    'path' => $skillFile,
-                    'field' => $violations[0]->getPropertyPath(),
                 ]);
             }
 
