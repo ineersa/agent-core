@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\SettingsValueResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
+use Symfony\Component\PropertyAccess\Exception\UnexpectedTypeException;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 
 class AppConfigLoaderTest extends TestCase
@@ -545,10 +546,13 @@ YAML
 
     public function testPathMapRejectsScalarIntermediateNode(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid value for tools.output_cap');
-
-        $this->loader->resolveLayers($this->tmpDir, [], [], ['tools' => ['output_cap' => 'not a mapping']]);
+        try {
+            $this->loader->resolveLayers($this->tmpDir, [], [], ['tools' => ['output_cap' => 'not a mapping']]);
+            $this->fail('Expected malformed config to be rejected.');
+        } catch (\InvalidArgumentException $exception) {
+            $this->assertStringContainsString('Invalid value for tools.output_cap', $exception->getMessage());
+            $this->assertInstanceOf(UnexpectedTypeException::class, $exception->getPrevious());
+        }
     }
 
     public function testResolveDoesNotCreateUserSettingsFile(): void

@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
@@ -351,6 +352,42 @@ final class ApplyCommandHandlerTest extends TestCase
         yield 'no stored answer' => [0, null];
         yield 'conflicting answer' => [1, 'stored answer conflicts'];
         yield 'ambiguous answers' => [2, 'ambiguous answered call'];
+    }
+
+    public function testHumanResponseRedrivePropagatesStoreFailure(): void
+    {
+        $failure = new \InvalidArgumentException('Invalid tool batch path.');
+        $store = $this->createMock(ToolBatchStoreInterface::class);
+        $store->expects($this->once())->method('load')->with('run-redrive', 1, 'step-redrive')->willThrowException($failure);
+        $this->expectExceptionObject($failure);
+
+        $this->handleStoredHumanResponseRedrive(new ToolBatchCollector($store));
+    }
+
+    public function testCompletedHumanResponseRedriveAcknowledgesWithoutRedispatch(): void
+    {
+        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
+        $answer = new ToolCallHumanInputAnswerDTO('q-redrive', 'yes', [
+            'run_id' => 'run-redrive', 'turn_no' => 1, 'step_id' => 'step-redrive', 'tool_call_id' => 'call-0',
+        ], ['question_id' => 'q-redrive']);
+        TestToolBatchRegistration::register($collector, $store, 'run-redrive', 1, 'step-redrive', [
+            new ExecuteToolCall('run-redrive', 1, 'step-redrive', 1, 'exec-0', 'call-0', 'read', [], 0, humanInputAnswer: $answer),
+        ]);
+        TestToolBatchCoordination::collect($collector, $store, new ToolCallResult(
+            'run-redrive', 1, 'step-redrive', 1, 'exec-0', 'call-0', 0, ['ok' => true], false, null,
+        ));
+
+        $prepared = $collector->prepareHumanInputRedrive('run-redrive', 1, 'step-redrive', 'q-redrive', 'yes');
+        $this->assertNotNull($prepared);
+        $this->assertSame([], $prepared->effects);
+        $this->assertNull($prepared->action);
+
+        $result = $this->handleStoredHumanResponseRedrive($collector);
+        $this->assertNull($result->nextState);
+        $this->assertSame([], $result->events);
+        $this->assertSame([], $result->effects);
+        $this->assertSame([], $result->postCommitEffects);
+        $this->assertEquals([new MarkCommandAppliedDTO('run-redrive', 'response-key')], $result->postCommitActions);
     }
 
     public function testSteerWhileRunningQueuesButDoesNotDispatchAdvanceRun(): void
@@ -1998,6 +2035,24 @@ final class ApplyCommandHandlerTest extends TestCase
             kind: CoreCommandKind::Cancel,
             payload: ['reason' => 'Outstanding human questions cancelled on session attach.'],
         ), $state);
+    }
+
+    private function handleStoredHumanResponseRedrive(ToolBatchCollector $collector): HandlerResult
+    {
+        $handler = new ApplyCommandHandler(
+            commandStore: new InMemoryCommandStore(),
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            toolBatchCollector: $collector,
+            logger: new NullLogger(),
+            serializer: AttributeSerializerValidatorTestFactory::serializer(),
+            maxPendingCommands: 10,
+        );
+        $state = new RunState(runId: 'run-redrive', status: RunStatus::Running, version: 3, turnNo: 1, lastSeq: 10, activeStepId: 'step-redrive');
+
+        return $handler->handle(new ApplyCommand('run-redrive', 1, 'response', 1, 'response-key', CoreCommandKind::HumanResponse, [
+            'question_id' => 'q-redrive', 'answer' => 'yes',
+        ]), $state);
     }
 
     private function finalizeMailbox(HandlerResult $result, CommandStoreInterface $store): void
