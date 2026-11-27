@@ -111,7 +111,10 @@ final class EditFileToolTest extends TestCase
 PATCH;
 
         $result = ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
-        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame(
+            'Applied patch to '.$targetPath." (1 addition, 1 deletion)\n\nUpdated file context:\n→    1: line1\n→    2: LINE2\n→    3: line3\n",
+            $result,
+        );
         $this->assertSame("line1\nLINE2\nline3\n", file_get_contents($targetPath));
     }
 
@@ -147,7 +150,7 @@ PATCH;
 PATCH;
 
         $result = ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
-        $this->assertStringContainsString('No changes', $result);
+        $this->assertSame('No changes (patch produced identical content)', $result);
         $this->assertSame($original, file_get_contents($targetPath));
     }
 
@@ -167,10 +170,41 @@ PATCH;
             ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: $patch));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('E_PATCH_STALE', $e->getMessage());
-            $this->assertStringContainsString('Current file context', $e->getMessage());
+            $this->assertSame(
+                "This edit attempt failed. No changes from this attempt were applied; the target file is untouched.\n\n[E_PATCH_STALE] Hunk #1 context not found in file.\n\nCurrent file context:\n→    1: alpha\n     2: beta\n     3: gamma\n",
+                $e->getMessage(),
+            );
+            $this->assertSame('Could not locate: "missing\\nold". Seek hints are literal source-text anchors, not line numbers. Use read with offset/limit around line 1, then regenerate the patch with exact current context lines (or omit the seek hint).', $e->hint());
+            $this->assertTrue($e->retryable());
             $this->assertSame("alpha\nbeta\ngamma\n", file_get_contents($targetPath));
         }
+    }
+
+    #[DataProvider('laterStaleHunks')]
+    public function testLaterStaleHunkPreservesExactFailureResponse(string $secondHunk, string $needle): void
+    {
+        $targetPath = $this->tmpDir.'/later-stale.txt';
+        $original = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\n";
+        file_put_contents($targetPath, $original);
+
+        try {
+            ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: "@@\n eight\n-nine\n+NINE\n".$secondHunk));
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertSame(
+                "This edit attempt failed. No changes from this attempt were applied; the target file is untouched.\n\n[E_PATCH_STALE] Hunk #2 context not found in file.\n\nCurrent file context:\n     6: six\n     7: seven\n     8: eight\n     9: nine\n→   10: ten\n    11: eleven\n    12: twelve\n",
+                $e->getMessage(),
+            );
+            $this->assertSame('Could not locate: "'.$needle.'". Each plain or seek-hinted `@@` starts a new sequential, non-overlapping hunk applied after earlier hunks; overlapping changes must be combined into one hunk. Seek hints are literal source-text anchors, not line numbers. Use read with offset/limit around line 10, then regenerate the patch with exact current context lines (or omit the seek hint).', $e->hint());
+            $this->assertTrue($e->retryable());
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
+    public static function laterStaleHunks(): iterable
+    {
+        yield 'missing old block' => ["@@\n-missing\n+new", 'missing'];
+        yield 'missing seek hint' => ["@@ absent\n-ten\n+TEN", 'absent'];
     }
 
     public function testStaleUnicodeContextProducesSerializableErrorWithoutChangingFile(): void
