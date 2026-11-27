@@ -355,9 +355,9 @@ class AppConfigTest extends TestCase
         yield 'prompts non-string entry' => [['prompts' => ['ok.md', 123]], 'Invalid value for prompts[1]'];
         yield 'prompts associative map' => [['prompts' => ['a.md' => 'x']], 'Invalid value for prompts: expected list of strings, got associative array'];
         yield 'prompts explicit null' => [['prompts' => null], 'Invalid value for prompts: expected list of strings, got null'];
-        yield 'agents wrong type' => [['agents' => 5], 'Invalid value for agents: expected mapping, got int'];
+        yield 'agents wrong type' => [['agents' => 5], 'Invalid value for agents.paths: expected mappings along the config path.'];
         yield 'agents sequential list' => [['agents' => ['a', 'b']], 'Invalid value for agents: expected mapping, got list'];
-        yield 'agents explicit null' => [['agents' => null], 'Invalid value for agents: expected mapping, got null'];
+        yield 'agents explicit null' => [['agents' => null], 'Invalid value for agents.paths: expected mappings along the config path.'];
         yield 'agents unknown key' => [['agents' => ['bogus' => 1]], 'Invalid key for agents: "bogus" is not supported'];
         yield 'agents.paths non-string entry' => [['agents' => ['paths' => ['ok', 5]]], 'Invalid value for agents.paths[1]'];
         yield 'agents.paths associative map' => [['agents' => ['paths' => ['a' => 'x.md']]], 'Invalid value for agents.paths: expected list of strings, got associative array'];
