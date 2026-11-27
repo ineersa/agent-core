@@ -277,12 +277,6 @@ parameters:
 			path: src/CodingAgent/Infrastructure/SymfonyAi/SymfonyAiProviderFactory.php
 
 		-
-			message: '#^Catch block must rethrow, log through Psr\\Log\\LoggerInterface, pass the caught exception to a call, or return a typed result built from it\.$#'
-			identifier: hatfield.silentCatch
-			count: 2
-			path: src/CodingAgent/Logging/LogParser.php
-
-		-
 			message: '#^Constructor parameter \$logger of Ineersa\\CodingAgent\\Mcp\\Catalog\\SessionFileMcpToolCatalogStore is a nullable collaborator with a null default; inject a required service or a null object instead\.$#'
 			identifier: hatfield.nullableCollaborator
 			count: 1

@@ -55,7 +55,6 @@ declare(strict_types=1);
  *   run.php      — agent runtime launchers
  *   cleanup.php  — artifact cleanup
  *   env.php      — diagnostics and Datadog tasks
- *   logs.php     — log management tasks
  * =========================================================================
  */
 

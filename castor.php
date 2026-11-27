@@ -21,7 +21,6 @@ use function Castor\import;
 //   run.php       – agent runtime launchers (has tasks)
 //   cleanup.php   – artifact cleanup (has tasks)
 //   env.php       – diagnostics + Datadog tasks (has tasks)
-//   logs.php      – log management tasks (has tasks)
 
 import(__DIR__.'/.castor/helpers.php');
 import(__DIR__.'/.castor/qa_tmux.php');
@@ -39,5 +38,4 @@ import(__DIR__.'/.castor/tools.php');
 import(__DIR__.'/.castor/run.php');
 import(__DIR__.'/.castor/cleanup.php');
 import(__DIR__.'/.castor/env.php');
-import(__DIR__.'/.castor/logs.php');
 import(__DIR__.'/.castor/llm-cassette.php');

@@ -342,11 +342,6 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
-  Ineersa\CodingAgent\Logging\LogReader:
-    arguments:
-      $parser: '@Ineersa\CodingAgent\Logging\LogParser'
-      $logDir: '@=service("Ineersa\\CodingAgent\\Config\\LoggingConfig").logDir'
-
   Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO:
     arguments:
       $parentCancelSingleReason: 'Parent run cancelled subagent tool.'
