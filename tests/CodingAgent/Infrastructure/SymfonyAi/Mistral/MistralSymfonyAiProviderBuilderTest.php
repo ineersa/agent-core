@@ -6,7 +6,9 @@ namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\Mistral;
 
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
+use Ineersa\CodingAgent\Config\Ai\Exception\AiConfigurationException;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Mistral\MistralSymfonyAiProviderBuilder;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\Message;
@@ -116,7 +118,31 @@ final class MistralSymfonyAiProviderBuilderTest extends TestCase
         $this->assertSame(5, $usage->getCompletionTokens());
     }
 
-    private function config(string $key = 'literal-key'): AiProviderConfig
+    #[DataProvider('missingKeys')]
+    public function testRejectsMissingKeyBeforeSendingRequest(?string $key, ?string $environment): void
+    {
+        $previous = getenv('HATFIELD_TEST_MISTRAL_MISSING_KEY');
+        putenv(null === $environment ? 'HATFIELD_TEST_MISTRAL_MISSING_KEY' : 'HATFIELD_TEST_MISTRAL_MISSING_KEY='.$environment);
+        $http = new MockHttpClient();
+        try {
+            $this->expectException(AiConfigurationException::class);
+            $this->expectExceptionMessage('Mistral provider "mistral" requires an API key');
+            (new MistralSymfonyAiProviderBuilder(new EventDispatcher()))->build($this->config($key), $http);
+        } finally {
+            $this->assertSame(0, $http->getRequestsCount());
+            putenv(false === $previous ? 'HATFIELD_TEST_MISTRAL_MISSING_KEY' : 'HATFIELD_TEST_MISTRAL_MISSING_KEY='.$previous);
+        }
+    }
+
+    public static function missingKeys(): iterable
+    {
+        yield 'null' => [null, null];
+        yield 'empty literal' => ['', null];
+        yield 'unset env' => ['env:HATFIELD_TEST_MISTRAL_MISSING_KEY', null];
+        yield 'empty env' => ['env:HATFIELD_TEST_MISTRAL_MISSING_KEY', ''];
+    }
+
+    private function config(?string $key = 'literal-key'): AiProviderConfig
     {
         return new AiProviderConfig(
             id: 'mistral', type: 'mistral', enabled: true, baseUrl: 'https://mistral.example', apiKey: $key,
