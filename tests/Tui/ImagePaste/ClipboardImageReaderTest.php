@@ -10,8 +10,10 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\ImagePaste\ClipboardImageReader;
 use Ineersa\Tui\ImagePaste\ClipboardImageReadOutcomeEnum;
 use Ineersa\Tui\ImagePaste\ClipboardImageReadResultDTO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\Process;
 
 final class ClipboardImageReaderTest extends TestCase
 {
@@ -198,6 +200,47 @@ while true; do sleep 1; done');
 
         $reader->cancel();
         $this->assertFalse($reader->isReading());
+    }
+
+    #[Test]
+    public function drainsRemainingOutputWhenProcessExitsBetweenRunningChecks(): void
+    {
+        $path = $this->tempDir.'/final-output.png';
+        $process = $this->createMock(Process::class);
+        $process->method('isRunning')->willReturn(true, false);
+        $process->expects($this->exactly(2))->method('getIncrementalOutput')->willReturn('first', 'tail');
+        $process->method('isSuccessful')->willReturn(true);
+        $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
+        foreach (['process' => $process, 'backend' => ['name' => 'wl-paste', 'argv' => []], 'tempPath' => $path, 'fileHandle' => fopen($path, 'wb')] as $name => $value) {
+            (new \ReflectionProperty($reader, $name))->setValue($reader, $value);
+        }
+
+        $result = $reader->poll();
+
+        $this->assertSame(ClipboardImageReadOutcomeEnum::Image, $result->terminal?->outcome);
+        $this->assertSame('firsttail', file_get_contents($path));
+        $this->assertFalse($reader->isReading());
+    }
+
+    #[DataProvider('noImageExits')]
+    public function testNoImageExitClassification(string $backend, ?int $exit, string $stderr, int $written, bool $expected): void
+    {
+        $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
+        $this->assertSame($expected, (new \ReflectionMethod($reader, 'isNoImageExit'))->invoke($reader, $backend, $exit, $stderr, $written));
+    }
+
+    public static function noImageExits(): iterable
+    {
+        foreach (['wl-paste' => ['NO DATA'], 'xclip' => ['no image/png', 'no image types', 'no selection', 'not available'], 'pngpaste' => ['no image', "clipboard doesn't contain", 'clipboard does not contain']] as $backend => $markers) {
+            yield $backend.' empty' => [$backend, 1, '', 0, true];
+            foreach ($markers as $marker) {
+                yield $backend.' '.$marker => [$backend, 1, $marker, 0, true];
+            }
+            yield $backend.' wrong exit' => [$backend, 2, $markers[0], 0, false];
+            yield $backend.' output' => [$backend, 1, $markers[0], 1, false];
+            yield $backend.' real error' => [$backend, 1, 'permission denied', 0, false];
+        }
+        yield 'missing exit' => ['xclip', null, '', 0, false];
     }
 
     private function pollUntilTerminal(ClipboardImageReader $reader, int $maxSteps = 500): ClipboardImageReadResultDTO
