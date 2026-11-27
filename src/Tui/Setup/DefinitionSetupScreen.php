@@ -135,7 +135,7 @@ final class DefinitionSetupScreen
             $submenu = match (true) {
                 'extensions' === $key => fn (string $_, callable $done): SelectListWidget => $this->extensionPicker($current, $done),
                 'bool' === $type || \in_array($key, ['model', 'thinking', 'systemPromptMode'], true) => fn (): SelectListWidget => $this->picker($key, $text, $this->service->choices($key, $type, $fields)),
-                default => static fn (string $value): SettingsTextInputWidget => new SettingsTextInputWidget($value, cancelUnchanged: true),
+                default => static fn (string $value, callable $done): SettingsTextInputWidget => new SettingsTextInputWidget($done, $value, cancelUnchanged: true),
             };
             $help = $this->service->fieldHelp($this->skill, $key);
             $items[] = new SettingItem($key, $label, $text, $help, submenu: $submenu);
