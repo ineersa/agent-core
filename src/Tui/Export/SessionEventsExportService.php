@@ -50,7 +50,7 @@ final class SessionEventsExportService
         }
 
         if (str_ends_with($outputPath, '.jsonl')) {
-            return $this->exportJsonl($headerSessionId, $eventsContent, $outputPath);
+            return $this->exportJsonl($headerSessionId, $eventsPath, $outputPath);
         }
 
         return $this->exportHtml($headerSessionId, $eventsContent, $outputPath, $sessionName, $sessionCwd, $createdAt);
@@ -62,16 +62,24 @@ final class SessionEventsExportService
     }
 
     /**
-     * Writes the already-read events bytes instead of copying the source file:
-     * a copy would truncate the session's own events file when the output path
-     * resolves to it, and would fail when the live file grows mid-copy.
+     * Byte-copies the live events file with native copy(), which refuses a
+     * destination that is the source itself (directly or through a symlink).
+     * Rewriting the session's own events.jsonl would drop events appended
+     * meanwhile and change the inode that JsonlAppendJournal checks.
      */
-    private function exportJsonl(string $sessionId, string $eventsContent, string $outputPath): SessionExportResultDTO
+    private function exportJsonl(string $sessionId, string $eventsPath, string $outputPath): SessionExportResultDTO
     {
         try {
-            $this->filesystem->dumpFile($outputPath, $eventsContent);
+            $this->filesystem->mkdir(\dirname($outputPath));
         } catch (IOException $exception) {
             return $this->writeFailed($sessionId, $outputPath, $exception);
+        }
+
+        error_clear_last();
+        if (!@copy($eventsPath, $outputPath)) {
+            $reason = error_get_last()['message'] ?? 'copy() refused the destination; it may be the session events file itself.';
+
+            return $this->writeFailed($sessionId, $outputPath, new IOException($reason, path: $outputPath));
         }
 
         return new SessionExportResultDTO(SessionExportOutcomeEnum::Exported, $outputPath);
@@ -142,6 +150,11 @@ final class SessionEventsExportService
             'error_class' => $exception::class,
             'error_message' => $exception->getMessage(),
         ]);
+
+        $cause = $exception->getMessage();
+        if ('' !== $cause && $cause !== $message) {
+            $message .= ': '.$cause;
+        }
 
         return new SessionExportResultDTO(SessionExportOutcomeEnum::Failed, $outputPath, $message);
     }

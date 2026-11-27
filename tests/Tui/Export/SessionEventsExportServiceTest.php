@@ -60,18 +60,22 @@ final class SessionEventsExportServiceTest extends TestCase
     }
 
     #[Test]
-    public function jsonlExportOntoTheEventsFileKeepsItsContent(): void
+    public function jsonlExportOntoTheEventsFileFailsAndLeavesItUntouched(): void
     {
         $eventsPath = $this->dir.'/events.jsonl';
         file_put_contents($eventsPath, "{\"seq\":1}\n");
+        $inode = fileinode($eventsPath);
         $linkPath = $this->dir.'/link.jsonl';
         symlink($eventsPath, $linkPath);
 
         foreach ([$eventsPath, $linkPath] as $outputPath) {
             $result = SessionEventsExportServiceFactory::create()->exportEventsFile($eventsPath, $outputPath, 'sess-1');
 
-            $this->assertSame(SessionExportOutcomeEnum::Exported, $result->outcome);
+            $this->assertSame(SessionExportOutcomeEnum::Failed, $result->outcome);
+            $this->assertStringContainsString('may be the session events file itself', $result->message);
             $this->assertSame("{\"seq\":1}\n", file_get_contents($eventsPath));
+            clearstatcache();
+            $this->assertSame($inode, fileinode($eventsPath));
         }
     }
 
@@ -87,7 +91,7 @@ final class SessionEventsExportServiceTest extends TestCase
         $result = SessionEventsExportServiceFactory::create(logger: $logger)->exportEventsFile($eventsPath, $outputPath, 'sess-1');
 
         $this->assertSame(SessionExportOutcomeEnum::Failed, $result->outcome);
-        $this->assertSame('Failed to write export to: '.$outputPath, $result->message);
+        $this->assertStringStartsWith('Failed to write export to: '.$outputPath.': ', $result->message);
         $this->assertCount(1, $logger->records);
         $this->assertSame('warning', $logger->records[0]['level']);
         $this->assertSame('session_export.write_failed', $logger->records[0]['context']['event_type']);

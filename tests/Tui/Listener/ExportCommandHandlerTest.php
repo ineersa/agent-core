@@ -456,7 +456,7 @@ final class ExportCommandHandlerTest extends TestCase
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertSame('error', $result->role);
-        $this->assertSame('Failed to write export to: '.$path, $result->text);
+        $this->assertStringStartsWith('Failed to write export to: '.$path.': ', $result->text);
     }
 
     #[Test]
