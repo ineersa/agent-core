@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
@@ -64,7 +63,6 @@ final class RunStateModelIdentityTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
         );
@@ -204,7 +202,7 @@ final class RunStateModelIdentityTest extends TestCase
         $guard = $this->createStub(PreLlmCompactionGuardInterface::class);
         $guard->method('shouldCompactBeforeLlmStep')->willReturn(true);
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
-            commandMailboxPolicy: new CommandMailboxPolicy(new InMemoryCommandStore(), new CommandRouter([])),
+            commandMailboxPolicy: new CommandMailboxPolicy(new InMemoryCommandStore()),
             eventFactory: new EventFactory(),
             preLlmCompactionGuard: $guard,
         );
@@ -250,7 +248,6 @@ final class RunStateModelIdentityTest extends TestCase
         $handler = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
         );

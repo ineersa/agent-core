@@ -61,9 +61,6 @@ services:
     Ineersa\Tui\Listener\SlashCommandCatalogRegistrar:
       tags: ['app.slash_command_catalog']
 
-    Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface:
-      tags: ['agent_core.before_provider_request_hook']
-
     Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface:
       tags: ['agent_core.tool_result_processor']
 
@@ -76,9 +73,6 @@ services:
     Ineersa\AgentCore\Contract\CommandConsumptionPolicyInterface:
       tags: ['agent_core.command_consumption_policy']
 
-    Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface:
-      tags: ['agent_core.command_handler']
-
     Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface:
       tags: ['agent_core.hook_subscriber']
 
@@ -87,9 +81,6 @@ services:
 
     Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface:
       tags: ['agent_core.transform_context_hook']
-
-    Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface:
-      tags: ['agent_core.convert_to_llm_hook']
 
     Ineersa\CodingAgent\Compaction\BeforeCompactionHookInterface:
       tags: ['coding_agent.before_compaction_hook']
@@ -1168,10 +1159,6 @@ services:
       $localMetadata: '@Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator'
       $plans: '@Ineersa\AgentCore\Application\Pipeline\TransitionPlanFactory'
 
-  Ineersa\AgentCore\Application\Handler\CommandRouter:
-    arguments:
-      $handlers: !tagged_iterator agent_core.command_handler
-
   Ineersa\AgentCore\Application\Handler\HookDispatcher:
     arguments:
       $subscribers: !tagged_iterator agent_core.hook_subscriber
@@ -1180,17 +1167,12 @@ services:
     arguments:
       $hooks: !tagged_iterator coding_agent.before_compaction_hook
 
-  Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer:
-    arguments:
-      $hooks: !tagged_iterator agent_core.before_provider_request_hook
-
   Symfony\Component\Clock\MonotonicClock: ~
 
   Ineersa\CodingAgent\Tool\Edit\PatchApplier:
     arguments:
       $clock: '@Symfony\Component\Clock\MonotonicClock'
 
-  # LlmPlatformAdapter hooks — ImageGatingConvertHook registers as a convert_to_llm hook.
   # Only LLM retry backoff uses cooperative sleep; OAuth and other clock users
   # keep their existing framework clock binding.
   Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\AmpRetryClock:
@@ -1200,7 +1182,7 @@ services:
   Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter:
     arguments:
       $transformContextHooks: !tagged_iterator agent_core.transform_context_hook
-      $convertToLlmHooks: !tagged_iterator agent_core.convert_to_llm_hook
+      $convertToLlmHook: '@Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook'
       $costCalculator: '@Ineersa\CodingAgent\Config\Ai\AiCostCalculator'
       $modelResolver: '@Ineersa\AgentCore\Contract\Model\ModelResolverInterface'
       $retryObserver: '@Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface'

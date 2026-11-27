@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
@@ -17,7 +16,6 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -127,10 +125,9 @@ final class ToolCallResultHandlerTest extends TestCase
             kind: CoreCommandKind::FollowUp,
             idempotencyKey: 'queued-during-shell',
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'follow up']]]],
-            options: new CommandCancellationOptions(safe: false),
         ));
         $advance = new AdvanceRunHandler(new InMemoryDeferredToolCompletionRepository(),
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, new CommandRouter([])),
+            commandMailboxPolicy: new CommandMailboxPolicy($commandStore),
             eventFactory: new EventFactory(),
         );
         $woken = $advance->handle(AdvanceRunMessageBuilder::create('run-shell')

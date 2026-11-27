@@ -471,9 +471,9 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         return new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(), messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(), platform: new Platform([$provider]),
-            transformContextHooks: [], convertToLlmHooks: [], streamObserver: null, costCalculator: null,
+            transformContextHooks: [], streamObserver: null, costCalculator: null,
             logger: new NullLogger(), denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(), modelResolver: $resolver,
-            providerRequestPreparer: new ProviderRequestPreparer([], new ProviderCompatibilityRequestShaper([new ReasoningOptionsFeatureShaper()])),
+            providerRequestPreparer: new ProviderRequestPreparer(new ProviderCompatibilityRequestShaper([new ReasoningOptionsFeatureShaper()])),
         );
     }
 

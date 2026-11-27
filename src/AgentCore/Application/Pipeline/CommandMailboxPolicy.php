@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Contract\CommandConsumptionPolicyInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionTriggerEnum;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
@@ -22,7 +20,6 @@ final readonly class CommandMailboxPolicy
     /** @param iterable<CommandConsumptionPolicyInterface> $consumptionPolicies */
     public function __construct(
         private CommandStoreInterface $commandStore,
-        private CommandRouter $commandRouter,
         #[AutowireIterator('agent_core.command_consumption_policy')]
         private iterable $consumptionPolicies = [],
     ) {
@@ -40,15 +37,6 @@ final readonly class CommandMailboxPolicy
         $result = $this->applyPendingCommands($state, CommandApplicationBoundary::StopBoundary);
 
         return $result;
-    }
-
-    /**
-     * @param array<string, mixed> $options
-     */
-    public function isCancelSafeExtensionCommand(string $kind, array $options): bool
-    {
-        return !CoreCommandKind::isCore($kind)
-            && true === ($options['cancel_safe'] ?? false);
     }
 
     /**
@@ -91,7 +79,7 @@ final readonly class CommandMailboxPolicy
                 }
             }
             if (null !== $retirementReason) {
-                $event = $this->rejectCommand($state, $pendingCommand, $retirementReason);
+                $event = $this->rejectCommand($pendingCommand, $retirementReason);
                 $event['payload']['consumption_metadata'] = $metadata;
                 $eventSpecs[] = $event;
 
@@ -106,14 +94,14 @@ final readonly class CommandMailboxPolicy
             if (\in_array($pendingCommand->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
                 $messagePayload = $pendingCommand->payload['message'] ?? null;
                 if (!\is_array($messagePayload)) {
-                    $eventSpecs[] = $this->rejectCommand($state, $pendingCommand, 'Invalid command payload: missing message envelope.');
+                    $eventSpecs[] = $this->rejectCommand($pendingCommand, 'Invalid command payload: missing message envelope.');
 
                     continue;
                 }
 
                 $hydratedMessage = AgentMessage::fromPayload($messagePayload);
                 if (null === $hydratedMessage) {
-                    $eventSpecs[] = $this->rejectCommand($state, $pendingCommand, 'Invalid command payload: malformed message envelope.');
+                    $eventSpecs[] = $this->rejectCommand($pendingCommand, 'Invalid command payload: malformed message envelope.');
 
                     continue;
                 }
@@ -133,9 +121,6 @@ final readonly class CommandMailboxPolicy
                         'message' => $messageArray,
                         'text' => $text,
                         ...([] === $metadata ? [] : ['consumption_metadata' => $metadata]),
-                        'options' => [
-                            'cancel_safe' => $pendingCommand->options->safe,
-                        ],
                     ],
                 ];
 
@@ -157,7 +142,6 @@ final readonly class CommandMailboxPolicy
                     'payload' => [
                         'kind' => $pendingCommand->kind,
                         'idempotency_key' => $pendingCommand->idempotencyKey,
-                        'options' => [],
                     ],
                 ];
 
@@ -180,10 +164,7 @@ final readonly class CommandMailboxPolicy
             }
 
             if (!CoreCommandKind::isCore($pendingCommand->kind)) {
-                $eventSpecs = [
-                    ...$eventSpecs,
-                    ...$this->applyExtensionCommand($state, $pendingCommand),
-                ];
+                $eventSpecs[] = $this->rejectCommand($pendingCommand, \sprintf('Unknown command kind "%s".', $pendingCommand->kind));
             }
         }
 
@@ -202,7 +183,7 @@ final readonly class CommandMailboxPolicy
      *
      * @return array{type: string, payload: array<string, mixed>}
      */
-    private function rejectCommand(RunState $state, PendingCommand $command, string $reason): array
+    private function rejectCommand(PendingCommand $command, string $reason): array
     {
         return [
             'type' => RunEventTypeEnum::AgentCommandRejected->value,
@@ -212,54 +193,6 @@ final readonly class CommandMailboxPolicy
                 'reason' => $reason,
             ],
         ];
-    }
-
-    /**
-     * @return list<array{type: string, payload: array<string, mixed>}>
-     */
-    private function applyExtensionCommand(RunState $state, PendingCommand $command): array
-    {
-        $handler = $this->commandRouter->handlerFor($command->kind);
-        if (null === $handler) {
-            return [$this->rejectCommand($state, $command, 'No extension command handler registered.')];
-        }
-
-        $cancellation = $command->options;
-
-        try {
-            $mappedObjects = $handler->map(
-                $state->runId,
-                $command->kind,
-                $command->payload,
-                $cancellation,
-            );
-        } catch (\Throwable $throwable) {
-            return [$this->rejectCommand($state, $command, $throwable->getMessage())];
-        }
-
-        $eventSpecs = [[
-            'type' => RunEventTypeEnum::AgentCommandApplied->value,
-            'payload' => [
-                'kind' => $command->kind,
-                'idempotency_key' => $command->idempotencyKey,
-                'options' => [
-                    'cancel_safe' => $cancellation->safe,
-                ],
-            ],
-        ]];
-
-        foreach ($mappedObjects as $mappedObject) {
-            if (!$mappedObject instanceof RunEvent) {
-                continue;
-            }
-
-            $eventSpecs[] = [
-                'type' => $mappedObject->type,
-                'payload' => $mappedObject->payload,
-            ];
-        }
-
-        return $eventSpecs;
     }
 
     /**

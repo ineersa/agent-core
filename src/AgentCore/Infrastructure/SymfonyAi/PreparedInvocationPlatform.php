@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
-use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Symfony\AI\Platform\Message\MessageBag;
@@ -23,7 +22,6 @@ final readonly class PreparedInvocationPlatform implements PlatformInterface
         private ProviderRequestPreparer $preparer,
         private ResolvedModel $resolvedModel,
         private ModelInvocationInput $invocationInput,
-        private CancellationTokenInterface $cancelToken,
     ) {
     }
 
@@ -38,7 +36,6 @@ final readonly class PreparedInvocationPlatform implements PlatformInterface
             $input,
             array_replace($options, $this->resolvedModel->providerOptions),
             $this->invocationInput,
-            $this->cancelToken,
         );
 
         return $this->inner->invoke($prepared['model'], $prepared['input'], $prepared['options']);

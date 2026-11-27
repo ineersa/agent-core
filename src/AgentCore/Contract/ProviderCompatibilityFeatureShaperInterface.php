@@ -9,9 +9,7 @@ use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
 
 /**
- * A single provider-compatibility feature shaper, called during the
- * compat normalization step BEFORE normal
- * {@see Hook\BeforeProviderRequestHookInterface} hooks.
+ * A single provider-compatibility feature shaper, called during request preparation.
  *
  * Feature shapers are tagged with {@code agent_core.provider_compatibility_feature_shaper}
  * and iterated by {@see ProviderCompatibilityRequestShaper}.

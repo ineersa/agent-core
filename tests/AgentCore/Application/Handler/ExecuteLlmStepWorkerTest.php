@@ -114,7 +114,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: new Platform([new Provider('controlled', [$client], [$converter], new FallbackModelCatalog())]),
-            transformContextHooks: [], convertToLlmHooks: [], streamObserver: $observer,
+            transformContextHooks: [], streamObserver: $observer,
             costCalculator: null, logger: $logger,
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             modelResolver: $resolver,

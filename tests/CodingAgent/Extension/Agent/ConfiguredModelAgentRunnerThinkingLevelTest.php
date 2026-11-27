@@ -258,7 +258,6 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
             $this->createStub(ToolCallArgumentResolverInterface::class),
             $this->createSessionAwareResolver($appConfig),
             new ProviderRequestPreparer(
-                hooks: [],
                 compatShaper: new ProviderCompatibilityRequestShaper([
                     new ReasoningOptionsFeatureShaper(),
                 ]),

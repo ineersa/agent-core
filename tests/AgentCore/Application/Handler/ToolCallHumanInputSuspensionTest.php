@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
@@ -13,7 +12,6 @@ use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
-use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
@@ -248,14 +246,11 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertNotNull($effects[0]->humanInputAnswer);
 
         $store = new InMemoryCommandStore();
-        $router = new CommandRouter([]);
         $collector2 = new ToolBatchCollector($batchStore2 = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector2, $batchStore2, 'run-h2', 2, 'step-h2', [$this->call('run-h2', 'step-h2', 'call-h2', 0, 2)]);
         TestToolBatchCoordination::suspend($collector2, $batchStore2, 'run-h2', 2, 'step-h2', 'call-h2', 'q-h2');
         $handler2 = new ApplyCommandHandler(
             commandStore: $store,
-            commandRouter: $router,
-            commandMailboxPolicy: new CommandMailboxPolicy($store, $router),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -339,14 +334,11 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
     public function testCrossCorrelatedToolCallAnswerIsRejected(): void
     {
         $store = new InMemoryCommandStore();
-        $router = new CommandRouter([]);
         $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $batchStore, 'run-x', 1, 'step-x', [$this->call('run-x', 'step-x', 'call-x', 0)]);
         TestToolBatchCoordination::suspend($collector, $batchStore, 'run-x', 1, 'step-x', 'call-x', 'q-x');
         $handler = new ApplyCommandHandler(
             commandStore: $store,
-            commandRouter: $router,
-            commandMailboxPolicy: new CommandMailboxPolicy($store, $router),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
