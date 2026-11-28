@@ -2,6 +2,38 @@
 
 [Architecture](README.md) · [Session runtime details](session-runtime.md)
 
+## Application database startup
+
+Startup uses `ApplicationMigrationExecutor` to apply an explicit, ordered list
+of application migrations before session catalog recovery. It avoids runtime
+filesystem discovery and the Doctrine console command in packaged builds.
+Session queue databases are owned separately by the broker.
+
+A packaged probe confirmed that Doctrine's `DependencyFactory::fromConnection()`
+with `Configuration::addMigrationClass()` can use the application's existing
+DBAL connection and load all 35 migrations directly from both a Box PHAR and
+its fused Linux x86-64 binary. Both produced the same application schema on a
+fresh database and on an executor-built database with one migration pending,
+after normalizing known bare versions to fully qualified class names. Existing
+qualified entries took precedence over duplicate bare entries; unrelated
+versions were left intact.
+
+The custom executor remains in use: a migration runner swap also has to cover
+the metadata transition and concurrent startup. Two independently computed
+Doctrine plans attempted the same DDL; the second failed even though execution
+was ordered. Serializing planning and execution with a per-database lock let
+the contender plan after the first commit and skip the already-applied
+migration. A replacement must also protect metadata initialization and
+normalization with that lock. In SQLite, Doctrine's per-migration transactions
+preserved earlier DDL and version records after a later migration failed, as
+the custom executor does. `all_or_nothing` instead rolled back both migrations;
+the separately initialized metadata table remained. A replacement should
+retain per-migration commits unless that behavior change is intentional.
+The CLI configuration in `config/packages/doctrine_migrations.yaml` sets
+`all_or_nothing: true`; a runtime replacement must explicitly request
+per-migration transactions rather than inherit that setting, unless it
+intentionally adopts all-or-nothing rollback.
+
 ## Commit order and authority
 
 `events.jsonl` is canonical. `RunState` is the run-control owner's reconstructed
