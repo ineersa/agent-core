@@ -253,10 +253,10 @@ accept an optional page. Native closure with active Workflow is displayed as
 awaiting finalization. `/tasks-init` is deliberate project initialization.
 The bundled skill covers planning-only, implementation-only, review, feedback
 iteration and completion endpoints; separate project task prompts are unnecessary.
-Main performs task administration and transitions; implementation forks are optional
-bounded help, one writer per checkout. Hooks own the full validation gate; honor
-project review and explicit merge authorization rather than repeating that gate
-as a separate ceremony or inferring permission to merge.
+Main owns tasks and transitions. Work directly, resume a child, or offload large
+work to `general-purpose`; one writer per checkout. Hooks own the full validation
+gate; honor project review and explicit merge authorization rather than repeating
+that gate as a separate ceremony or inferring permission to merge.
 
 ## Transition order
 

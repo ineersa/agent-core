@@ -33,8 +33,12 @@ final class TaskWorkflowExtensionRegistrationTest extends TestCase
             $move = $api->tools[4]->parametersJsonSchema;
             $this->assertNotContains('ARCHIVE', $move['properties']['to']['enum']);
             $this->assertContains('tasks-init', array_column($api->commands, 'name'));
-            $this->assertStringContainsString('acme/project', $api->prompts[0]->contribute());
-            $this->assertStringNotContainsString('external task board', $api->prompts[0]->contribute());
+            $prompt = $api->prompts[0]->contribute();
+            $this->assertStringContainsString('acme/project', $prompt);
+            $this->assertStringNotContainsString('external task board', $prompt);
+            $this->assertStringContainsString('general-purpose', $prompt);
+            $this->assertStringContainsString('resume a relevant child', $prompt);
+            $this->assertStringNotContainsString('implementation fork', $prompt);
             $skill = $fixture->workspace->root.'/.hatfield/skills/'.TaskWorkflowSkillInstaller::SKILL_NAME.'/SKILL.md';
             $this->assertSame(file_get_contents(\dirname(__DIR__).'/skills/task-workflow/SKILL.md'), file_get_contents($skill));
             $this->assertStringNotContainsString($fixture->workspace->root, file_get_contents($skill));

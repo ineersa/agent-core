@@ -6,9 +6,11 @@ namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ForksConfigDTO;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
+use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -20,44 +22,47 @@ use Symfony\AI\Platform\Result\ToolCall;
  * project forks.model / forks.thinking_level are not lost to an empty
  * auto-registered all-defaults instance.
  */
-final class ForksConfigServiceTest extends IsolatedKernelTestCase
+final class ForksConfigServiceTest extends PerMethodIsolatedKernelTestCase
 {
-    public function testContainerForksConfigReflectsProjectSettingsAndAppConfigIdentity(): void
+    #[TestWith([true])]
+    #[TestWith([false])]
+    public function testForkIsUnavailableRegardlessOfProjectSettings(bool $enabled): void
     {
-        /** @var ForksConfigDTO $forksConfig */
-        $forksConfig = self::getContainer()->get(ForksConfigDTO::class);
-        /** @var AppConfig $appConfig */
-        $appConfig = self::getContainer()->get(AppConfig::class);
+        $container = self::getContainer();
+        $forksConfig = $container->get(ForksConfigDTO::class);
+        $appConfig = $container->get(AppConfig::class);
 
+        $this->assertSame($enabled, $forksConfig->enabled);
         $this->assertSame('deepseek/deepseek-v4-flash', $forksConfig->model);
         $this->assertSame('xhigh', $forksConfig->thinkingLevel);
         $this->assertSame($appConfig->forks, $forksConfig);
-    }
 
-    public function testDisabledForkCannotBeListedOrCalledEvenWhenAllowlisted(): void
-    {
-        $container = self::getContainer();
         $registry = $container->get(ToolRegistryInterface::class);
-        $container->get(ToolFilterRuntimeConfig::class)->applyFromCli('fork,subagent', '', $registry);
-        $this->assertSame(['subagent'], $registry->activeToolNames());
+        $container->get(ToolFilterRuntimeConfig::class)->applyFromCli('fork,subagent,agent_resume', '', $registry);
+        $this->assertSame(['agent_resume', 'subagent'], $registry->activeToolNames());
+        $this->assertArrayNotHasKey('fork', $registry->permanentGuidelinesByTool());
 
         $this->expectException(ToolNotFoundException::class);
         $container->get(ToolboxInterface::class)->execute(new ToolCall('test-fork', 'fork', ['task' => 'unavailable']));
     }
 
-    protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
+    protected function createIsolatedWorkingDirectory(): string
     {
-        file_put_contents(
-            $classCwd.'/.hatfield/settings.yaml',
-            <<<'YAML'
-# hatfield settings (forks container wiring isolation)
+        $cwd = parent::createIsolatedWorkingDirectory();
+        TestDirectoryIsolation::createHatfieldTree($cwd);
+        $path = $cwd.'/.hatfield/settings.yaml';
+        $this->assertSame($path, realpath($path));
+        $enabled = $this->providedData()[0] ? 'true' : 'false';
+        file_put_contents($path, <<<YAML
 ai:
     default_model: null
 forks:
-    enabled: false
+    enabled: {$enabled}
     model: deepseek/deepseek-v4-flash
     thinking_level: xhigh
 YAML
         );
+
+        return $cwd;
     }
 }

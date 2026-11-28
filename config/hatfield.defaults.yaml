@@ -384,7 +384,7 @@ agents:
 #
 
 forks:
-    # Let the assistant branch the conversation into a child run.
+    # Retained setting; fork launches are currently unavailable regardless of its value.
     enabled: true
     # Model used for forks, or null to inherit the parent model.
     model: null

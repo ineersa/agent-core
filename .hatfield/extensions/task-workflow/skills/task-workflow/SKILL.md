@@ -1,7 +1,7 @@
 ---
 name: task-workflow
 description: Set up task workflow for this project, or plan, implement, validate, and deliver work tracked in GitHub issues.
-version: 2.4.1
+version: 2.4.2
 ---
 
 # Task workflow
@@ -53,11 +53,13 @@ All templates use the PR lifecycle, including experiments with negative results.
 ## Implement
 
 Use `move_task` to start work in the task worktree.
-Implement directly or delegate a bounded larger piece to an implementation
-fork (a subagent in Claude Code) when useful. Give the fork its assignment and checkout; obtain changes,
-blockers, and relevant validation results. Keep one writer per checkout.
-Forks follow project development/testing rules; they do not manage task updates,
-transitions, other agents, commits, reviews or PRs. Main owns that administration.
+Implement directly, resume a relevant child, or optionally use a fresh
+`general-purpose` subagent for a large implementation or substantial bounded work.
+Give it the exact assignment, checkout, finalized requirements, changes to
+preserve, and focused validation to run. Keep one writer per checkout. Children
+follow project development/testing rules and report changes, blockers, and
+validation. Main alone manages task updates, transitions, other agents, commits,
+reviews, and PRs. Workflow hooks own the full validation gate.
 
 Inspect the resulting changes and run useful focused checks.
 Update the plan when scope or a consequential decision changes.
