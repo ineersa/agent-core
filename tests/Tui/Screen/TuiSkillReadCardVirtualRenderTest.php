@@ -38,6 +38,8 @@ use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 /**
  * Virtual proof: exact discovered skill reads render as compact skill cards.
@@ -258,6 +260,7 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
             frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
+            lockFactory: new LockFactory(new InMemoryStore()),
         );
     }
 

@@ -14,7 +14,6 @@ use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -57,6 +56,8 @@ final class SkillDiscovery
         '%s/.agents/skills',
     ];
 
+    private const string UPDATE_DIRECTORY = '.builtin-skill-updates';
+
     private const MAX_RECURSION_DEPTH = 20;
 
     /** @var list<SkillDefinition>|null */
@@ -82,6 +83,7 @@ final class SkillDiscovery
         private readonly AppResourceLocator $resources,
         private readonly Filesystem $filesystem,
         private readonly SkillFrontmatterValidator $frontmatterValidator,
+        private readonly LockFactory $lockFactory,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -305,11 +307,12 @@ final class SkillDiscovery
             return $mutation();
         }
 
-        return $this->withInstallLock($root, function () use ($root, $name, $mutation, $deleting): mixed {
+        return $this->withInstallLock($root, function () use ($root, $name, $directory, $mutation, $deleting): mixed {
+            $receipt = $this->readInstallReceipt($root);
+            $this->recoverInstall($root, $name, $directory, $root.'/'.self::UPDATE_DIRECTORY.'/'.$name, $receipt);
             $result = $mutation();
             if ($deleting) {
                 // The copy can predate the receipt; remember a successful setup deletion.
-                $receipt = $this->readInstallReceipt($root);
                 $receipt[$name] = null;
                 $this->writeInstallReceipt($root, $receipt);
             }
@@ -339,6 +342,11 @@ final class SkillDiscovery
                     continue;
                 }
                 $target = $destinationRoot.'/'.$entry;
+                // Stage on the same filesystem as the target. Discovery skips this state directory.
+                $transaction = $destinationRoot.'/'.self::UPDATE_DIRECTORY.'/'.$entry;
+                if (!$this->recoverInstall($destinationRoot, $entry, $target, $transaction, $receipt)) {
+                    continue;
+                }
                 if (is_link($target) || (file_exists($target) && !is_dir($target))) {
                     continue;
                 }
@@ -351,6 +359,9 @@ final class SkillDiscovery
                     continue;
                 }
                 $installed = is_dir($target) ? $this->treeFingerprint($target) : null;
+                if (is_dir($target) && null === $installed) {
+                    continue;
+                }
                 if (is_dir($target) && !$tracked) {
                     // Without an old baseline only an exact match is known pristine.
                     $receipt[$entry] = $installed === $packaged ? $packaged : null;
@@ -358,16 +369,66 @@ final class SkillDiscovery
                     if ($tracked && $installed !== $receipt[$entry]) {
                         continue;
                     }
-                    // Replacement also handles read-only files copied by PHAR extraction.
-                    $this->filesystem->remove($target);
-                    $this->filesystem->mirror($source, $target);
+                    // Until the journal exists, only the stage can have changed. Once it
+                    // exists, keep the previous tree until the receipt is committed.
+                    $stage = $transaction.'/stage';
+                    $this->filesystem->remove($stage);
+                    $this->filesystem->mirror($source, $stage);
+                    if ($this->treeFingerprint($stage) !== $packaged) {
+                        continue;
+                    }
+                    $this->filesystem->dumpFile($transaction.'/pending', $packaged);
+                    if (is_dir($target)) {
+                        $this->filesystem->rename($target, $transaction.'/previous');
+                    }
+                    $this->filesystem->rename($stage, $target);
                     $receipt[$entry] = $packaged;
+                    $this->writeInstallReceipt($destinationRoot, $receipt);
+                    $this->clearInstallTransaction($transaction);
+
+                    continue;
                 } else {
                     continue;
                 }
                 $this->writeInstallReceipt($destinationRoot, $receipt);
             }
         });
+    }
+
+    /** @param array<string, string|null> $receipt */
+    private function recoverInstall(string $root, string $name, string $target, string $transaction, array &$receipt): bool
+    {
+        $pending = $transaction.'/pending';
+        if (!is_file($pending)) {
+            return true;
+        }
+        $next = $this->filesystem->readFile($pending);
+        $previous = $transaction.'/previous';
+        if (!\array_key_exists($name, $receipt) || (null !== $receipt[$name] && $receipt[$name] !== $next)) {
+            if (!is_link($target) && is_dir($target) && $this->treeFingerprint($target) === $next) {
+                // Promotion finished; only the atomic receipt write was interrupted.
+                $receipt[$name] = $next;
+                $this->writeInstallReceipt($root, $receipt);
+            } elseif (!file_exists($target) && !is_link($target) && is_dir($previous)) {
+                // The old tree was moved, but promotion did not finish. Restore it
+                // before re-evaluating the currently packaged version.
+                $this->filesystem->rename($previous, $target);
+            } elseif (is_dir($previous)) {
+                // Something else occupies the target; never overwrite it or discard the backup.
+                return false;
+            }
+        }
+        $this->clearInstallTransaction($transaction);
+
+        return true;
+    }
+
+    private function clearInstallTransaction(string $transaction): void
+    {
+        // Remove the journal last: cleanup itself can be interrupted.
+        $this->filesystem->remove([$transaction.'/stage', $transaction.'/previous']);
+        $this->filesystem->remove($transaction.'/pending');
+        $this->filesystem->remove($transaction);
     }
 
     /**
@@ -379,7 +440,7 @@ final class SkillDiscovery
      */
     private function withInstallLock(string $root, callable $operation): mixed
     {
-        $lock = (new LockFactory(new FlockStore()))->createLock('hatfield:builtin-skills:'.$root);
+        $lock = $this->lockFactory->createLock('hatfield:builtin-skills:'.$root);
         $lock->acquire(true);
         try {
             return $operation();
@@ -404,9 +465,9 @@ final class SkillDiscovery
 
     private function treeFingerprint(string $directory): ?string
     {
-        $entries = scandir($directory);
+        $entries = @scandir($directory);
         if (false === $entries) {
-            return null;
+            return $this->fingerprintFailure($directory, error_get_last()['message'] ?? 'Unable to list directory');
         }
         $nodes = [];
         foreach ($entries as $name) {
@@ -415,13 +476,19 @@ final class SkillDiscovery
             }
             $path = $directory.'/'.$name;
             if (is_link($path)) {
-                return null;
+                return $this->fingerprintFailure($path, 'Symbolic links are not managed');
             }
             if (is_dir($path)) {
                 $hash = $this->treeFingerprint($path);
                 $kind = 'directory';
             } else {
-                $hash = is_file($path) ? hash('sha256', $this->filesystem->readFile($path)) : null;
+                if (!is_file($path)) {
+                    return $this->fingerprintFailure($path, 'Not a regular file');
+                }
+                $hash = @hash_file('sha256', $path);
+                if (false === $hash) {
+                    return $this->fingerprintFailure($path, error_get_last()['message'] ?? 'Unable to hash file');
+                }
                 $kind = 'file';
             }
             if (null === $hash) {
@@ -431,6 +498,13 @@ final class SkillDiscovery
         }
 
         return hash('sha256', serialize($nodes));
+    }
+
+    private function fingerprintFailure(string $path, string $error): null
+    {
+        $this->logger?->warning('skill.install.fingerprint_failed', ['component' => 'skill_discovery', 'event_type' => 'skill.install.fingerprint_failed', 'path' => $path, 'error' => $error]);
+
+        return null;
     }
 
     /**
@@ -477,7 +551,7 @@ final class SkillDiscovery
 
             $childPath = $realDir.'/'.$entry;
 
-            if (!is_dir($childPath)) {
+            if (self::UPDATE_DIRECTORY === $entry || !is_dir($childPath)) {
                 continue;
             }
 
@@ -503,11 +577,11 @@ final class SkillDiscovery
             return null;
         }
 
-        $content = file_get_contents($skillFile);
+        $content = @file_get_contents($skillFile);
 
         if (false === $content) {
             if (null !== $this->logger) {
-                $this->logger->warning('Failed to read SKILL.md at {path}', ['path' => $skillFile]);
+                $this->logger->warning('Failed to read SKILL.md at {path}: {error}', ['path' => $skillFile, 'error' => error_get_last()['message'] ?? 'Unable to read skill']);
             }
 
             return null;

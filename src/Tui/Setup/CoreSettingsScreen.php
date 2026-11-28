@@ -23,6 +23,7 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\SettingItem;
 use Symfony\Component\Tui\Widget\TextWidget;
 use Symfony\Component\Tui\Widget\Util\StringUtils;
+use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
 final class CoreSettingsScreen
@@ -143,6 +144,10 @@ final class CoreSettingsScreen
                     default => 'Effective source: '.($effective->layer->value ?? 'merged layers').'.',
                 });
             } catch (\Throwable $error) {
+                if (self::masked($key) && $error instanceof ParseException) {
+                    // Keep the parser reason and line, but never echo hidden input.
+                    $error->setSnippet('');
+                }
                 $this->logger->notice('settings.setup.refused', ['component' => 'setup', 'event_type' => 'settings.setup.refused', 'exception_class' => $error::class]);
                 $status->setText('Not saved: '.StringUtils::stripControlBytes($error->getMessage()));
             }

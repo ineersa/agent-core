@@ -9,6 +9,12 @@ of application migrations before session catalog recovery. It avoids runtime
 filesystem discovery and the Doctrine console command in packaged builds.
 Session queue databases are owned separately by the broker.
 
+Runtime schema evolution is forward-only. Removing tool batch/deferred concurrency
+columns preserves existing rows and indexes through a generated rebuild. Its generated
+down SQL is not a supported populated-database rollback: the former non-null batch cap
+has no recoverable value or default. Roll back deployment with a matching database
+backup instead of invoking migration down on live data.
+
 A packaged probe confirmed that Doctrine's `DependencyFactory::fromConnection()`
 with `Configuration::addMigrationClass()` can use the application's existing
 DBAL connection and load all 35 migrations directly from both a Box PHAR and

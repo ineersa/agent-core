@@ -108,6 +108,12 @@ final class DefinitionSetupScreenTest extends PerMethodIsolatedKernelTestCase
             $tui->processRender();
             $this->assertStringContainsString('Inherit parent / default', AnsiUtils::stripAnsiCodes($terminal->getOutput()));
             $this->assertArrayNotHasKey('model', $service->fields($fs->readFile($agent)));
+            $this->assertSame([], array_intersect(['subagent', 'fork', 'agent_resume', 'agent_steer'], $service->availableTools()));
+            $terminal->simulateInput("\x1b[B\x1b[B\r \r");
+            $this->assertSame('mcp:missing_*', $service->fields($fs->readFile($agent))['tools']);
+            $this->assertInstanceOf(SelectListWidget::class, $tui->getFocus()->all()[0]);
+            $terminal->simulateInput("\x1b");
+            $terminal->simulateInput("\x1b[A\x1b[A");
             foreach ([2 => ['tools', 'mcp:missing_*', 'mcp:*'], 5 => ['skills', 'missing', 'example']] as $index => [$field, $unavailable, $known]) {
                 $form = $tui->getFocus();
                 $this->assertInstanceOf(SettingsListWidget::class, $form);

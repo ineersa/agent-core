@@ -27,6 +27,7 @@ use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
+use Symfony\Component\Tui\Widget\EditorWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\SettingItem;
 use Symfony\Component\Tui\Widget\SettingsListWidget;
@@ -36,6 +37,34 @@ use Symfony\Component\Yaml\Yaml;
 final class UnifiedSetupScreenTest extends PerMethodIsolatedKernelTestCase
 {
     protected const bool ISOLATE_HOME = true;
+
+    public function testProviderDraftUsesSelectedSettingsScope(): void
+    {
+        $container = self::getContainer();
+        $cwd = $this->isolatedCwd();
+        $writer = $container->get(SettingsOverrideWriter::class);
+        $settings = $container->get(SetupSettingsService::class);
+        $catalog = $container->get(AiCatalog::class);
+        foreach ([SettingsLayerEnum::User, SettingsLayerEnum::Project] as $scope) {
+            $project = SettingsLayerEnum::Project === $scope;
+            $root = $project ? $cwd : $this->isolatedHome();
+            $path = $writer->layerPath($scope, $cwd);
+            $this->assertSame($root.'/.hatfield', realpath(\dirname($path)));
+            $this->assertFalse(is_link($path));
+            $writer->setMany($scope, $cwd, [
+                'ai.providers.fixture.base_url' => 'https://example.test',
+                'ai.providers.fixture.models' => [$project ? 'project-model' : 'user-model' => ['name' => 'Original']],
+            ]);
+        }
+
+        $user = ProvidersSetupFlow::for($catalog, $writer, $settings->loadConfig(SettingsLayerEnum::User));
+        $project = ProvidersSetupFlow::for($catalog, $writer, $settings->loadConfig(SettingsLayerEnum::Project), true);
+        $this->assertSame(['user-model'], array_keys($user->customDefinition('fixture')['models']));
+        $this->assertSame(['project-model'], array_keys($project->customDefinition('fixture')['models']));
+        $user->updateProviderFields('fixture', ['models' => ['user-model' => ['name' => 'Edited']]]);
+        $this->assertSame(['user-model' => ['name' => 'Edited']], $settings->load()->userRaw['ai']['providers']['fixture']['models']);
+        $this->assertSame(['project-model' => ['name' => 'Original']], $settings->load()->projectRaw['ai']['providers']['fixture']['models']);
+    }
 
     public function testNavigationAndProjectOverrideSaveAndReset(): void
     {
@@ -107,6 +136,18 @@ final class UnifiedSetupScreenTest extends PerMethodIsolatedKernelTestCase
                     $terminal->simulateInput(' updated');
                     $terminal->simulateInput("\r");
                     $this->assertStringContainsString('Original updated', (string) file_get_contents($agent));
+                    $terminal->simulateInput("\x1b");
+                    $this->select($tui, 'body');
+                    $terminal->simulateInput('draft');
+                    $editor = $tui->getFocus();
+                    $this->assertInstanceOf(EditorWidget::class, $editor);
+                    $draft = $editor->getText();
+                    foreach (["\t", "\x1b[Z", "\x1bOQ"] as $key) {
+                        $terminal->simulateInput($key);
+                        $this->assertSame($editor, $tui->getFocus());
+                        $this->assertSame($draft, $editor->getText());
+                        $this->assertStringContainsString('Esc cancels', $this->render($tui, $terminal));
+                    }
                     $terminal->simulateInput("\x1b");
                     $this->select($tui, 'delete');
                     $this->assertStringContainsString('Confirm deletion', $this->render($tui, $terminal));
@@ -353,6 +394,37 @@ final class UnifiedSetupScreenTest extends PerMethodIsolatedKernelTestCase
             $terminal->simulateInput(' ');
             $terminal->simulateInput("\r");
             $this->assertSame([], Yaml::parseFile($path)['forks']['extensions']['enabled']);
+        } finally {
+            $tui->stop();
+        }
+    }
+
+    public function testHiddenYamlParseFailureDoesNotEchoInputSnippet(): void
+    {
+        $container = self::getContainer();
+        $writer = $container->get(SettingsOverrideWriter::class);
+        $path = $writer->layerPath(SettingsLayerEnum::Project, $this->isolatedCwd());
+        $this->assertSame($this->isolatedCwd().'/.hatfield', realpath(\dirname($path)));
+        $this->assertFalse(is_link($path));
+        $before = file_get_contents($path);
+        $terminal = new VirtualTerminal(columns: 180, rows: 35);
+        $tui = new Tui(terminal: $terminal);
+        $pane = new ContainerWidget();
+        $tui->add($pane);
+        $flow = ProvidersSetupFlow::for($container->get(AiCatalog::class), $writer, $container->get(AppConfig::class));
+        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
+        $container->get(CoreSettingsScreen::class)->mount($tui, $pane, SettingsLayerEnum::Project, $flow, $tui->stop(...), static fn (string $text) => new TextWidget($text), $theme, static fn () => null);
+        $tui->start();
+        try {
+            $this->select($tui, 'compaction');
+            $this->field($tui, 'compaction.provider_overrides');
+            $terminal->simulateInput('{secret: PRIVATE-SENTINEL');
+            $terminal->simulateInput("\r");
+            $rendered = $this->render($tui, $terminal);
+            $this->assertStringContainsString('Not saved:', $rendered);
+            $this->assertStringContainsString('line 1', $rendered);
+            $this->assertStringNotContainsString('PRIVATE-SENTINEL', $rendered);
+            $this->assertSame($before, file_get_contents($path));
         } finally {
             $tui->stop();
         }

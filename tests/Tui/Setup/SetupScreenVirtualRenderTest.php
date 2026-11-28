@@ -191,7 +191,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function disableConfirmRendersClearSettingsCopy(): void
+    public function disableConfirmExplainsSettingsAndCredentialsAreRetained(): void
     {
         $flow = new FakeProvidersSetupFlow(enabled: ['zai' => true]);
         [$screen, $terminal] = $this->mount($flow);
@@ -201,7 +201,7 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->selectValue($screen, 'disable');
 
         $text = $this->plain($terminal);
-        $this->assertStringContainsString('Disable Z.ai (GLM)? This clears its settings entry.', $text);
+        $this->assertStringContainsString('Disable Z.ai (GLM)? Configuration and credentials are retained.', $text);
         $this->assertSame('confirm', $this->phase($screen));
     }
 
@@ -393,6 +393,11 @@ final class SetupScreenVirtualRenderTest extends TestCase
             $tui->processRender();
             $this->assertStringContainsString('Just added', $this->plain($terminal));
             $this->changeSetting($screen, 'modelName', 'Updated B');
+            $flow->nextWriteError = new \RuntimeException('Injected persistence failure');
+            $this->changeSetting($screen, 'save', '↵');
+            $this->assertStringContainsString('Injected persistence failure', $this->plain($terminal));
+            $this->assertStringContainsString('Updated B', $this->plain($terminal));
+            $this->assertSame([], $flow->fieldUpdates);
             $this->changeSetting($screen, 'save', '↵');
             $this->assertSame('Updated B', $flow->fieldUpdates[0][2]['b']['name']);
             $this->assertSame(array_replace($model, ['name' => 'New name']), $flow->fieldUpdates[0][2]['same.id']);
@@ -772,6 +777,8 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
 
     /** @var list<array{string, string, mixed}> */
     public array $fieldUpdates = [];
+
+    public ?\RuntimeException $nextWriteError = null;
     /** @var array<string, bool> */
     private array $enabled;
 
@@ -892,6 +899,10 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
 
     public function updateProviderFields(string $id, array $fields): void
     {
+        if (null !== $error = $this->nextWriteError) {
+            $this->nextWriteError = null;
+            throw $error;
+        }
         foreach ($fields as $field => $value) {
             $this->updateProviderField($id, $field, $value);
         }

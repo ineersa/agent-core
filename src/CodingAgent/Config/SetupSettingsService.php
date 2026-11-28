@@ -25,9 +25,14 @@ final readonly class SetupSettingsService
         return $this->loader->load($this->resources->getDefaultsPath(), $this->app->cwd);
     }
 
-    public function loadConfig(): AppConfig
+    public function loadConfig(SettingsLayerEnum $scope = SettingsLayerEnum::Project): AppConfig
     {
-        return AppConfig::fromSettingsData($this->load()->effective, $this->denormalizer, $this->app->cwd);
+        $snapshot = $this->load();
+        if (SettingsLayerEnum::User === $scope) {
+            $snapshot = $this->loader->resolveLayers($this->app->cwd, $snapshot->defaultsRaw, $snapshot->userRaw, []);
+        }
+
+        return AppConfig::fromSettingsData($snapshot->effective, $this->denormalizer, $this->app->cwd);
     }
 
     /** @return array<string, array<string, array{sample: mixed, help: string}>> */

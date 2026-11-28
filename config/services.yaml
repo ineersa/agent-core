@@ -676,6 +676,10 @@ services:
     arguments:
       - '@hatfield.extension_update.lock_store'
 
+  Ineersa\CodingAgent\Skills\SkillDiscovery:
+    arguments:
+      $lockFactory: '@hatfield.extension_update.lock_factory'
+
   Ineersa\CodingAgent\Extension\ExtensionUpdateService:
     arguments:
       $lockFactory: '@hatfield.extension_update.lock_factory'

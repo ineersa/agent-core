@@ -13,8 +13,8 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * process state/logs, stop grace period for process termination, and log tail
  * character cap.
  *
- * Hydrated from the tools.background_process section of Hatfield merged
- * config via Symfony Serializer. The storage directory is derived by {@see AppConfig} from the canonical cwd.
+ * Only the log-tail budget is hydrated from tools.background_process settings.
+ * Stop grace is internal policy; AppConfig derives storage from canonical cwd.
  */
 final readonly class BackgroundProcessConfig
 {

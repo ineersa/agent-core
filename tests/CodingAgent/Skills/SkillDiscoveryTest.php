@@ -20,6 +20,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 /**
  * Tests for SkillDiscovery.
@@ -426,6 +428,7 @@ final class SkillDiscoveryTest extends TestCase
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
             frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
+            lockFactory: new LockFactory(new InMemoryStore()),
         );
 
         $this->expectException(\RuntimeException::class);
@@ -636,6 +639,59 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertDirectoryDoesNotExist($target);
     }
 
+    public function testInterruptedRenameAndReceiptRecovery(): void
+    {
+        $source = $this->tmpDir.'/app/src/CodingAgent/Resources/skills/alpha';
+        $home = $this->tmpDir.'/home';
+        $target = $home.'/.hatfield/skills/alpha';
+        $fs = new Filesystem();
+        $discover = fn (?Filesystem $filesystem = null) => $this->createDiscovery(homeDir: $home, appRoot: $this->tmpDir.'/app', filesystem: $filesystem)->discover();
+        $fs->dumpFile($source.'/SKILL.md', "---\nname: alpha\ndescription: Original\n---\nOriginal");
+        $this->assertSame('Original', $discover()[0]->description);
+        foreach (['Moved old tree', 'Installed new tree'] as $description) {
+            $fs->dumpFile($source.'/SKILL.md', "---\nname: alpha\ndescription: $description\n---\nNew");
+            $failing = $this->createPartialMock(Filesystem::class, ['rename']);
+            $interrupted = false;
+            $failing->expects($this->exactly('Moved old tree' === $description ? 2 : 3))->method('rename')->willReturnCallback(static function (string $origin, string $destination, bool $overwrite = false) use ($fs, $target, $description, &$interrupted): void {
+                $fs->rename($origin, $destination, $overwrite);
+                if ('Moved old tree' === $description ? $target === $origin : $target === $destination) {
+                    $interrupted = true;
+                    throw new \RuntimeException('Injected interruption after rename');
+                }
+            });
+            try {
+                $discover($failing);
+            } catch (\RuntimeException $e) {
+                $this->assertSame('Injected interruption after rename', $e->getMessage());
+            }
+            $this->assertTrue($interrupted);
+            $this->assertSame($description, $discover()[0]->description);
+        }
+        $fs->dumpFile($source.'/SKILL.md', "---\nname: alpha\ndescription: Next upgrade\n---\nNew");
+        $this->assertSame('Next upgrade', $discover()[0]->description, 'The recovered receipt permits the next upgrade.');
+    }
+
+    public function testUnverifiableInstalledTreeDoesNotBlockOtherSkills(): void
+    {
+        $home = $this->tmpDir.'/home';
+        $appRoot = $this->tmpDir.'/app';
+        $source = $appRoot.'/src/CodingAgent/Resources/skills';
+        $target = $home.'/.hatfield/skills/alpha';
+        $fs = new Filesystem();
+        $logger = new TestLogger();
+        $discover = fn () => $this->createDiscovery(homeDir: $home, appRoot: $appRoot, logger: $logger)->discover();
+        $alpha = "---\nname: alpha\ndescription: Original\n---\nOriginal";
+        $fs->dumpFile($source.'/alpha/SKILL.md', $alpha);
+        $this->assertCount(1, $discover());
+        $fs->symlink($this->tmpDir.'/missing', $target.'/unverifiable');
+        $fs->dumpFile($source.'/alpha/SKILL.md', str_replace('Original', 'Upgrade', $alpha));
+        $fs->dumpFile($source.'/beta/SKILL.md', str_replace('alpha', 'beta', $alpha));
+        $this->assertCount(2, $discover());
+        $this->assertSame($alpha, $fs->readFile($target.'/SKILL.md'));
+        $this->assertTrue(is_link($target.'/unverifiable'));
+        $this->assertSame('Symbolic links are not managed', $logger->records[0]['context']['error']);
+    }
+
     public function testBundledSubagentsSkillStaysUnderCharacterBudget(): void
     {
         $skillRoot = \dirname(__DIR__, 3).'/src/CodingAgent/Resources/skills/subagents';
@@ -665,6 +721,7 @@ final class SkillDiscoveryTest extends TestCase
         ?string $homeDir = null,
         ?string $appRoot = null,
         LoggerInterface $logger = new NullLogger(),
+        ?Filesystem $filesystem = null,
     ): SkillDiscovery {
         $projectDir = $this->tmpDir;
         $resolvedHomeDir = $homeDir ?? $this->tmpDir.'/home';
@@ -685,8 +742,9 @@ final class SkillDiscoveryTest extends TestCase
             ),
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($resolvedAppRoot),
-            filesystem: new Filesystem(),
+            filesystem: $filesystem ?? new Filesystem(),
             frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
+            lockFactory: new LockFactory(new InMemoryStore()),
             logger: $logger,
         );
     }

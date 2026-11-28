@@ -56,6 +56,11 @@ final class DefinitionSetupScreen
         $this->menu();
     }
 
+    public function hasOpenBodyEditor(): bool
+    {
+        return ($this->panel->all()[0] ?? null) instanceof EditorWidget;
+    }
+
     private function menu(): void
     {
         $this->heading->setText($this->theme->color(ThemeColorEnum::Accent, $this->skill ? 'Manage skills' : 'Manage agents'));
@@ -151,7 +156,7 @@ final class DefinitionSetupScreen
             $submenu = match (true) {
                 'extensions' === $key => fn (string $_, callable $done): SelectListWidget => $this->listPicker($current, $this->service->availableExtensions(), $done, 'No optional extensions available'),
                 'skills' === $key => fn (string $_, callable $done): SelectListWidget => $this->listPicker($current, $this->service->availableSkills(), $done, 'No skills available'),
-                'tools' === $key => fn (string $_, callable $done): SelectListWidget => $this->listPicker(\is_string($current) ? array_map(trim(...), explode(',', $current)) : $current, $this->service->availableTools(), $done, 'No tools available'),
+                'tools' === $key => fn (string $_, callable $done): SelectListWidget => $this->listPicker(\is_string($current) ? array_map(trim(...), explode(',', $current)) : $current, $this->service->availableTools(), $done, 'No tools available', requireNonempty: true),
                 'bool' === $type || \in_array($key, ['model', 'thinking', 'systemPromptMode'], true) => fn (): SelectListWidget => $this->picker($key, $text, $this->service->choices($key, $type, $fields)),
                 default => static fn (string $_, callable $done): SettingsTextInputWidget => new SettingsTextInputWidget($done, $text, cancelUnchanged: true),
             };
@@ -224,7 +229,7 @@ final class DefinitionSetupScreen
     }
 
     /** @param list<string> $available */
-    private function listPicker(mixed $current, array $available, callable $done, string $emptyLabel): SelectListWidget
+    private function listPicker(mixed $current, array $available, callable $done, string $emptyLabel, bool $requireNonempty = false): SelectListWidget
     {
         $selected = \is_array($current) ? $current : [];
         $items = [];
@@ -235,8 +240,13 @@ final class DefinitionSetupScreen
             return new SelectListWidget([['value' => '', 'label' => $emptyLabel]]);
         }
         $list = new SelectListWidget($items, maxVisible: 10, multiselect: true);
-        $list->on(MultiSelectEvent::class, static function (MultiSelectEvent $event) use ($done, $selected, $current): void {
+        $list->on(MultiSelectEvent::class, function (MultiSelectEvent $event) use ($done, $selected, $current, $requireNonempty): void {
             $values = $event->getValues();
+            if ($requireNonempty && [] === $values && [] !== $selected) {
+                $this->notice->setText($this->theme->warning('Select at least one tool or press Esc to keep the current restriction. To inherit, clear the raw tool selectors explicitly.'));
+
+                return;
+            }
             $done($values === $selected ? null : ([] === $values && [] !== $current ? '' : trim(Yaml::dump($values, 0))));
         });
 

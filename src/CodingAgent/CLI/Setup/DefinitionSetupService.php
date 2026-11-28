@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterDTO;
 use Ineersa\CodingAgent\Agent\Definition\SystemPromptModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
 use Ineersa\CodingAgent\CLI\Setup\Exception\DefinitionSetupRefusalException;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
@@ -44,6 +45,7 @@ final readonly class DefinitionSetupService
         private SetupSettingsService $settings,
         private SkillFrontmatterValidator $skillValidator,
         private ToolRegistryInterface $tools,
+        private AgentToolPolicyResolver $toolPolicy,
     ) {
     }
 
@@ -142,7 +144,7 @@ final readonly class DefinitionSetupService
     {
         $names = ['mcp:*', 'mcp:-'];
         foreach ($this->tools->activeToolDefinitions() as $tool) {
-            if (!$tool->mainOnly && null === $tool->extensionOwnerClass && !\in_array($tool->name, $this->app->agents->subagentExcludedTools, true)) {
+            if (null === $tool->extensionOwnerClass && $this->toolPolicy->isChildEligible($tool->name)) {
                 $names[] = $tool->name;
             }
         }

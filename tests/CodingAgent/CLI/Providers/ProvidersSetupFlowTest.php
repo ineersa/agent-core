@@ -186,7 +186,10 @@ YAML);
     #[Test]
     public function togglesPreserveExistingProviderOverrides(): void
     {
-        $flow = $this->createFlow();
+        $flow = $this->createFlow(ai: new AiConfig(providers: [
+            'zai' => new AiProviderConfig(id: 'zai', models: ['custom' => new AiModelDefinition(id: 'custom')]),
+            'openai-codex' => new AiProviderConfig(id: 'openai-codex', models: ['custom' => new AiModelDefinition(id: 'custom')]),
+        ]));
         $path = $flow->settingsPath();
         $this->assertSame(realpath($this->homeDir.'/.hatfield'), realpath(\dirname($path)));
         $this->assertStringStartsWith(realpath($this->tmpDir).'/', realpath(\dirname($path)).'/');
@@ -196,6 +199,7 @@ YAML);
 
         $flow->enableApiKey('zai', 'env:TEST_KEY');
         $flow->enableOauth('openai-codex');
+        $this->assertSame(['zai/custom', 'openai-codex/custom'], $flow->configuredModelRefs());
         $this->assertSame($overrides + ['enabled' => true, 'api_key' => 'env:TEST_KEY'], $this->parseUserSettings()['ai']['providers']['zai']);
         $this->assertSame($overrides + ['enabled' => true], $this->parseUserSettings()['ai']['providers']['openai-codex']);
         $flow->disable('zai');

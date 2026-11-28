@@ -56,7 +56,7 @@ interface ProvidersSetupFlowInterface
     /** @param array<string, mixed> $fields */
     public function updateProviderFields(string $id, array $fields): void;
 
-    /** Re-enable a saved custom provider via full-definition rewrite (sparse {enabled:true} would wipe its config). */
+    /** Re-enable a saved custom provider without changing its other settings. */
     public function enableCustom(string $id): void;
 
     public function disable(string $id): void;

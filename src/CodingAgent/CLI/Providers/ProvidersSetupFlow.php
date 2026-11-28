@@ -89,7 +89,7 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
                 'authCommand' => \is_string($provider['auth_command'] ?? null) && '' !== $provider['auth_command']
                     ? $provider['auth_command']
                     : null,
-                'models' => $this->modelIdsFromProvider($provider),
+                'models' => $this->modelIdsFromProvider($id, $provider),
             ];
         }
 
@@ -186,7 +186,7 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             : null;
 
         $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id.'.enabled', true);
-        $this->markEnabled($id, $this->modelIdsFromProvider($provider), $authCommand);
+        $this->markEnabled($id, $this->modelIdsFromProvider($id, $provider), $authCommand);
     }
 
     public function updateProviderField(string $id, string $field, mixed $value): void
@@ -234,7 +234,7 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             'ai.providers.'.$id.'.enabled' => true,
             'ai.providers.'.$id.'.api_key' => $apiKey,
         ]);
-        $this->markEnabled($id, $this->modelIdsFromProvider($provider), null);
+        $this->markEnabled($id, $this->modelIdsFromProvider($id, $provider), null);
     }
 
     public function enableCustom(string $id): void
@@ -571,9 +571,10 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
      *
      * @return list<string>
      */
-    private function modelIdsFromProvider(array $provider): array
+    private function modelIdsFromProvider(string $id, array $provider): array
     {
-        $models = $provider['models'] ?? null;
+        $effective = $this->appConfig->ai?->providers[$id] ?? null;
+        $models = null !== $effective ? $effective->models : ($provider['models'] ?? null);
         if (!\is_array($models)) {
             return [];
         }

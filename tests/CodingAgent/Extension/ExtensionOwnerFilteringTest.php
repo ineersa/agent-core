@@ -50,6 +50,8 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -196,6 +198,7 @@ final class ExtensionOwnerFilteringTest extends TestCase
                 resources: new AppResourceLocator('' !== $appConfig->cwd ? $appConfig->cwd : '/tmp'),
                 filesystem: new Filesystem(),
                 frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
+                lockFactory: new LockFactory(new InMemoryStore()),
             ),
             toolInvoker: $this->unusedToolInvoker(),
             children: $this->createStub(ChildRunExtensionAllowlistReaderInterface::class),

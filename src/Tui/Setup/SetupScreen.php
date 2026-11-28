@@ -298,7 +298,7 @@ final class SetupScreen
             $this->pendingConfirm = 'disable';
             $label = $this->labelFor($this->activeProviderId);
             $this->phase = self::PHASE_CONFIRM;
-            $this->hintWidget->setText(\sprintf('Disable %s? This clears its settings entry.', $label));
+            $this->hintWidget->setText(\sprintf('Disable %s? Configuration and credentials are retained.', $label));
             $this->showList($this->confirmItems());
 
             return;
@@ -695,7 +695,7 @@ final class SetupScreen
 
             return;
         }
-        $before = $this->formState;
+        $before = [$this->formState, $this->selectedModel, $this->modelBaseline];
         try {
             match ($id) {
                 'id' => $this->setCustomId($value),
@@ -715,10 +715,10 @@ final class SetupScreen
                 default => null,
             };
         } catch (\InvalidArgumentException $e) {
-            $this->formState = $before;
+            [$this->formState, $this->selectedModel, $this->modelBaseline] = $before;
             $this->error = $e->getMessage();
         } catch (\Throwable $error) {
-            $this->formState = $before;
+            [$this->formState, $this->selectedModel, $this->modelBaseline] = $before;
             $this->logger->notice('provider.setup.refused', ['component' => 'setup', 'event_type' => 'provider.setup.refused', 'exception' => $error]);
             $this->error = $error->getMessage();
         }
