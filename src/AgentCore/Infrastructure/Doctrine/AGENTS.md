@@ -11,6 +11,12 @@ Configuration and migrations live at the project root:
 - Generate migrations from entity metadata with `bin/console doctrine:migrations:diff`.
 - Register new migrations in `CodingAgent/Migrations/ApplicationMigrationExecutor` for runtime and PHAR startup.
 
+The startup executor avoids runtime migration directory discovery in packaged
+builds. Explicit Doctrine class registration has been proven in PHAR and fused
+Linux x86-64 builds, but switching runners also requires a compatible version
+metadata transition and a lock around planning and application. See
+[Application database startup](../../../../architecture/state-and-recovery.md#application-database-startup).
+
 The command store is a pending mailbox, not a source-delivery receipt ledger. Do not create terminal-only identity rows. Canonical transition coordination uses the existing pending journal and shared finalizer.
 
 Test DB isolation and DAMA rollback: `tests/AGENTS.md` + testing skill (`references/helpers.md`).
