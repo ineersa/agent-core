@@ -29,6 +29,10 @@ preserved earlier DDL and version records after a later migration failed, as
 the custom executor does. `all_or_nothing` instead rolled back both migrations;
 the separately initialized metadata table remained. A replacement should
 retain per-migration commits unless that behavior change is intentional.
+The CLI configuration in `config/packages/doctrine_migrations.yaml` sets
+`all_or_nothing: true`; a runtime replacement must explicitly request
+per-migration transactions rather than inherit that setting, unless it
+intentionally adopts all-or-nothing rollback.
 
 ## Commit order and authority
 
