@@ -41,7 +41,7 @@ extensions:
         safe_guard:
             allow_write_outside_cwd: [/home/ineersa/projects/agent-core-worktrees, /tmp, /home/ineersa/projects/symfony, /home/ineersa/projects/ai]
 forks:
-    enabled: true
+    enabled: false
     model: openai-codex/gpt-6.2-sol
     thinking_level: low
     extensions:

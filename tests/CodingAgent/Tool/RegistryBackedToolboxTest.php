@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
 use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
+use Ineersa\CodingAgent\Config\ForksConfigDTO;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
@@ -23,6 +24,7 @@ use Ineersa\CodingAgent\Tool\DTO\AgentResumeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\DTO\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
+use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
@@ -828,6 +830,36 @@ final class RegistryBackedToolboxTest extends TestCase
     }
 
     /* ───────── Visibility filtering (excluded/allowlist) ───────── */
+
+    public function testDisabledForkIsHiddenAndNotCallableWithoutDisablingSubagents(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->countingHandler('should not run');
+        foreach (['fork', 'subagent', 'agent_resume', 'code_mode'] as $name) {
+            $registry->registerTool(
+                name: $name,
+                description: $name,
+                parametersJsonSchema: [],
+                handler: $handler,
+                promptLine: $name,
+                promptGuidelines: ['Guidance for '.$name],
+            );
+        }
+
+        $filters = new ToolFilterRuntimeConfig(forksConfig: new ForksConfigDTO(enabled: false));
+        $filters->applyFromCli('fork,subagent,agent_resume', '', $registry);
+
+        $this->assertSame(['subagent', 'agent_resume'], $registry->activeToolNames());
+        $this->assertSame(['subagent', 'agent_resume'], $registry->permanentToolLines());
+        $this->assertSame(['subagent', 'agent_resume'], array_keys($registry->permanentGuidelinesByTool()));
+
+        try {
+            $this->createToolbox($registry)->execute(new ToolCall('call-fork', 'fork', []));
+            $this->fail('Expected ToolNotFoundException.');
+        } catch (ToolNotFoundException) {
+            $this->assertSame(0, $handler->calls);
+        }
+    }
 
     public function testExecuteThrowsToolNotFoundExceptionForExcludedTool(): void
     {

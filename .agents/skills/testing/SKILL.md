@@ -35,6 +35,6 @@ description: "Load before test work or runtime, TUI, Messenger, and database val
 
 ## Required gate
 
-TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, model routing, and LLM-visible flow changes require full `castor check` proof. Implementation forks run focused checks and report gaps; main owns the full gate, tracked transitions, and post-merge integration validation.
+TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, model routing, and LLM-visible flow changes require full `castor check` proof. Implementation children run focused checks and report gaps; main owns the full gate, tracked transitions, and post-merge integration validation.
 If required tmux infrastructure is unavailable, report the exact blocker rather than claiming validation passed.
 `castor check` does not kill leaked workers. Treat survivors as lifecycle bugs; follow [diagnostics](references/diagnostics.md).
