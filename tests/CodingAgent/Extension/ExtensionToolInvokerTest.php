@@ -97,7 +97,7 @@ final class ExtensionToolInvokerTest extends IsolatedKernelTestCase
                 throw new \RuntimeException('processor failed after cancellation');
             }
         };
-        $executor = new ToolExecutor('sequential', 1, new ToolExecutionResultStore(), $container->get(ToolboxInterface::class), $contexts, $toolSets, clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger()), toolResultProcessors: [$processor]);
+        $executor = new ToolExecutor(new ToolExecutionResultStore(), $container->get(ToolboxInterface::class), $contexts, $toolSets, clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger()), toolResultProcessors: [$processor]);
         $cancelled = $makeInvoker($executor)->invoke(new ToolInvocationRequestDTO($run, 'cancelled', 'native_probe', ['cancel' => true]));
         $this->assertTrue($handler->observedCancellation);
         $this->assertSame(RunStatus::Completed, $projection->findOperationalStatus($run)?->status);

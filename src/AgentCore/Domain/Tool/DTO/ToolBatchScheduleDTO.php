@@ -22,7 +22,6 @@ final class ToolBatchScheduleDTO
         public array $inFlight,
         public array $completedIds,
         public bool $finalized,
-        public int $maxParallelism,
         public array $awaitingHumanInput = [],
     ) {
     }

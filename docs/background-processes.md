@@ -67,8 +67,9 @@ through `agent_retrieve`.
   parent after its owner settles; it does not automatically resume the child.
 - Use Hatfield stop controls, not arbitrary signals to host processes.
 
-Bash settings: `tools.background_process.path` (`.hatfield/tmp/bg`),
-`stop_grace_seconds` (`5`) and `log_tail_chars` (`5000`). See [settings](settings.md).
+Background logs use `.hatfield/tmp/bg` under the project CWD, with an internal
+five-second graceful-stop period. `tools.background_process.log_tail_chars`
+remains configurable (default `5000`). See [settings](settings.md).
 
 ## Recurring work: `schedule`
 

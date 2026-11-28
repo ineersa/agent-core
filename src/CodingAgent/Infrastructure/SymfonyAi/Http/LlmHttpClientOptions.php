@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http;
 
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
-use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
 
 /**
  * Timeout options for outbound LLM HTTP clients.
@@ -23,8 +22,8 @@ final class LlmHttpClientOptions
         ?int $timeout = null,
         ?int $maxDuration = null,
     ) {
-        $this->timeout = self::validatePositive($timeout, 'timeout') ?? AiHttpConfig::DEFAULT_TIMEOUT;
-        $this->maxDuration = self::validateNonNegative($maxDuration, 'maxDuration') ?? AiHttpConfig::DEFAULT_MAX_DURATION;
+        $this->timeout = self::validatePositive($timeout, 'timeout') ?? 30;
+        $this->maxDuration = self::validateNonNegative($maxDuration, 'maxDuration') ?? 0;
     }
 
     /** @return array{timeout: int, max_duration: int} */

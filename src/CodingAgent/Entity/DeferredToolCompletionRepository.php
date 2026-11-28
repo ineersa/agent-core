@@ -352,7 +352,6 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                 'tool_idempotency_key' => $correlation->toolIdempotencyKey,
                 'mode' => $correlation->mode,
                 'timeout_seconds' => $correlation->timeoutSeconds,
-                'max_parallelism' => $correlation->maxParallelism,
                 'tools_ref' => $correlation->toolsRef,
                 'status' => DeferredToolCompletionStatusEnum::Pending->value,
                 'created_at' => $now,

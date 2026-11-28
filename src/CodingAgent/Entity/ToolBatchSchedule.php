@@ -30,9 +30,6 @@ class ToolBatchSchedule
     #[ORM\Column(name: 'step_id', type: 'string', length: 255)]
     public string $stepId = '';
 
-    #[ORM\Column(name: 'max_parallelism', type: 'integer')]
-    public int $maxParallelism = 1;
-
     #[ORM\Column(type: 'boolean')]
     public bool $finalized = false;
 

@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\Ai\AiCompatibility;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
-use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
@@ -209,7 +208,6 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
         $ai = new AiConfig(
             defaultModel: $providerId.'/'.$modelId,
             defaultReasoning: $defaultReasoning,
-            http: new AiHttpConfig(timeout: 30, maxDuration: 120),
             providers: [
                 $providerId => new AiProviderConfig(
                     id: $providerId,

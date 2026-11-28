@@ -44,10 +44,11 @@ Child extensions: effective allowlist = `agents.extensions.always_on` ∪ option
 | `forks.enabled` | Retained setting (default `true`). Fork launches are currently unavailable regardless of this setting. Named subagents are unaffected. |
 | `forks.model` | Fallback model when the `fork` tool omits `model`; if unset, parent model |
 | `forks.thinking_level` | Fallback thinking when the tool omits `thinking`; if unset, parent reasoning |
-| `forks.extensions.always_on` | Extension classes always loaded for fork children |
-| `forks.extensions.enabled` | Additional optional extension classes for forks only |
+| `forks.extensions.enabled` | Extension classes loaded for fork children (defaults to SafeGuard) |
 
-Fork effective extensions = `forks.extensions.always_on` ∪ `forks.extensions.enabled`. This is **separate** from agent-definition frontmatter extensions and from parent `extensions.enabled`. Behavioral detail: [agents.md](agents.md).
+Forks use one extension selection, `forks.extensions.enabled`. This is **separate**
+from agent-definition frontmatter extensions and from parent `extensions.enabled`.
+Use the setup multiselect rather than typing class names. Behavioral detail: [agents.md](agents.md).
 
 ## Prompts (`prompts:`)
 

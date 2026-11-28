@@ -1,8 +1,6 @@
 ---
 name: general-purpose
 description: Handle self-contained tasks that need investigation, implementation, or validation without inheriting the parent conversation.
-model: openai-codex/gpt-6.2-sol
-thinking: low
 systemPromptMode: replace
 ---
 

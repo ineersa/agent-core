@@ -10,8 +10,8 @@ namespace Ineersa\CodingAgent\Config;
  * Immutable value object. Contains timeout,
  * poll interval, and log tail character cap for bash tool execution.
  *
- * Hydrated from the tools.bash section of Hatfield merged config
- * via Symfony Serializer.
+ * Symfony Serializer hydrates deadlines and log-tail budget from tools.bash.
+ * The supervision poll interval is internal policy, not a user setting.
  */
 final readonly class BashToolConfig
 {

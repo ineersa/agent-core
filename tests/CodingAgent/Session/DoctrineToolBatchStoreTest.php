@@ -315,7 +315,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $run = $container->get(HatfieldSessionStore::class)->createSession('sql scheduling');
         $first = new ExecuteToolCall($run, 1, 'tools', 1, 'key-a', 'call-a', 'echo', ['command' => 'a'], 0);
         $second = new ExecuteToolCall($run, 1, 'tools', 1, 'key-b', 'call-b', 'echo', ['command' => 'b'], 1);
-        $register = new RegisterToolBatchDTO($run, 1, 'tools', [$first, $second], ['call-a' => 0, 'call-b' => 1], ['call-b'], ['call-a' => true], 1);
+        $register = new RegisterToolBatchDTO($run, 1, 'tools', [$first, $second], ['call-a' => 0, 'call-b' => 1], ['call-b'], ['call-a' => true]);
         $mailbox = new EnqueueCommandDTO(new PendingCommand($run, 'follow_up', 'mailbox-admit', ['text' => 'keep']));
         $events = $container->get(PreparedTransitionEventStoreInterface::class);
         $batches = $container->get(ToolBatchStoreInterface::class);
@@ -368,7 +368,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $run = $container->get(HatfieldSessionStore::class)->createSession('captured insert');
         $store = $container->get(ToolBatchStoreInterface::class);
         $call = new ExecuteToolCall($run, 1, 'tools', 1, 'key', 'call', 'echo', [], 0);
-        $action = new RegisterToolBatchDTO($run, 1, 'tools', [$call], ['call' => 0], [], ['call' => true], 1);
+        $action = new RegisterToolBatchDTO($run, 1, 'tools', [$call], ['call' => 0], [], ['call' => true]);
         $transition = new VerifiedTransitionDTO('register', ['run_id' => $run, 'actions' => [$action]]);
         $apply = $store->prepareChanges([$action], $transition);
         $sql = $container->get('test.sql_logger');
@@ -460,7 +460,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
             $calls[] = new ExecuteToolCall($run, $turn, $step, 1, $id, $id, 'echo', ['text' => $id], $i);
             $order[$id] = $i;
         }
-        $this->apply($store, $run, 'register-'.$turn.'-'.$step, [new RegisterToolBatchDTO($run, $turn, $step, $calls, $order, [], array_fill_keys($ids, true), \count($ids))]);
+        $this->apply($store, $run, 'register-'.$turn.'-'.$step, [new RegisterToolBatchDTO($run, $turn, $step, $calls, $order, [], array_fill_keys($ids, true))]);
     }
 
     /** @param list<RegisterToolBatchDTO|FinalizeToolBatchDTO> $actions */

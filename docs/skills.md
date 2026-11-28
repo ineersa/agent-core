@@ -7,14 +7,19 @@ description: Skill discovery, model catalog, /skill commands, and on-demand-only
 
 The **Skills** tab in `hatfield setup` lists definitions with their source path
 and shadowing information. Use **F2** to switch to the owning scope before
-editing frontmatter or deleting a definition. Custom-path and managed definitions
-are read-only. Setup preserves the Markdown body and asks for confirmation before
-deletion, showing the exact target and any definition that would become active.
+editing frontmatter, editing the prompt body, or deleting a definition. Definitions
+outside the selected owning scope remain read-only. Setup preserves the Markdown
+body when editing metadata and asks for confirmation before deletion, showing the
+exact target and any definition that would become active.
 Deleting a skill removes its entire directory including assets. Setup does not
 materialize built-in skills on a fresh home; they appear here after normal skill
-discovery. You can edit them in their owning scope, but Hatfield rewrites
-built-in skill directories whenever it discovers skills (normally at agent startup),
-discarding those edits. You cannot delete them in setup.
+discovery. Installed built-ins can be edited and deleted in user scope without
+changing packaged resources. Hatfield tracks installed bundled trees in
+`~/.hatfield/skills/.builtin-installs.yaml`: known-pristine copies can receive
+bundled updates, but modified trees are preserved and deleted tracked copies are
+not recreated on startup. Legacy copies are adopted conservatively; only exact
+matches to the current bundle are known pristine. Unrecognized legacy content
+is preserved rather than overwritten.
 
 Skills are Markdown packages (`SKILL.md` + optional references) that teach the
 agent specialized workflows. Hatfield discovers them from bundled, project, and

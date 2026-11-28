@@ -167,8 +167,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         $registry = new ToolRegistry();
         $registry->registerTool(name: 'bash', description: 'bash', handler: $this->makeBashTool(), promptLine: 'bash');
         $executor = new ToolExecutor(
-            defaultMode: 'sequential',
-            maxParallelism: 1,
             resultStore: new ToolExecutionResultStore(),
             toolbox: new RegistryBackedToolbox($registry, new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()), NativeToolSchemaProbe::schemaFactory()),
             contextAccessor: $this->contextAccessor,
@@ -465,8 +463,6 @@ final class BashToolTest extends IsolatedKernelTestCase
                 return false;
             });
             $executor = new ToolExecutor(
-                defaultMode: 'parallel',
-                maxParallelism: 2,
                 resultStore: new ToolExecutionResultStore(),
                 toolbox: new RegistryBackedToolbox($registry, new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()), NativeToolSchemaProbe::schemaFactory()),
                 contextAccessor: $this->contextAccessor,
@@ -476,7 +472,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             );
             $call = ToolCallBuilder::create('tc_bash')->withToolName('bash')->withArguments($arguments)
                 ->withRunId($this->sessionId)->withContext(['cancel_token' => $token, 'turn_no' => 1, 'step_id' => 'accept-first'])->build();
-            $first = new ExecuteToolCall($this->sessionId, 1, 'accept-first', 1, 'first', 'tc_bash', 'bash', $arguments, 0, mode: 'parallel', maxParallelism: 2);
+            $first = new ExecuteToolCall($this->sessionId, 1, 'accept-first', 1, 'first', 'tc_bash', 'bash', $arguments, 0, mode: 'parallel');
             $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
             TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $this->sessionId, 1, 'accept-first', [$first]);
 
@@ -935,8 +931,6 @@ final class BashToolTest extends IsolatedKernelTestCase
             $registry = new ToolRegistry();
             $registry->registerTool(name: 'bash', description: 'bash', handler: $this->makeBashTool(), promptLine: 'bash');
             $executor = new ToolExecutor(
-                defaultMode: 'parallel',
-                maxParallelism: 2,
                 resultStore: new ToolExecutionResultStore(),
                 toolbox: new RegistryBackedToolbox($registry, new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()), NativeToolSchemaProbe::schemaFactory()),
                 contextAccessor: $this->contextAccessor,
@@ -948,7 +942,7 @@ final class BashToolTest extends IsolatedKernelTestCase
                 ->withRunId($session)->withContext(['cancel_token' => $token, 'turn_no' => 1, 'step_id' => 'detach-step'])->build();
             $batch = self::getContainer()->get(ToolBatchCollector::class);
             $store = self::getContainer()->get(ToolBatchStoreInterface::class);
-            $first = new ExecuteToolCall($session, 1, 'detach-step', 1, 'first', 'tc_bash', 'bash', $arguments, 0, mode: 'parallel', maxParallelism: 2);
+            $first = new ExecuteToolCall($session, 1, 'detach-step', 1, 'first', 'tc_bash', 'bash', $arguments, 0, mode: 'parallel');
             $sibling = new ExecuteToolCall($session, 1, 'detach-step', 1, 'sibling', 'sibling', 'read', [], 1, mode: 'sequential');
             $initial = TestToolBatchRegistration::register($batch, $store, $session, 1, 'detach-step', [$first, $sibling]);
             $this->assertSame(['tc_bash'], array_column($initial, 'toolCallId'));

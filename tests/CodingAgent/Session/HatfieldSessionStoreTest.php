@@ -371,7 +371,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
             $call = new ExecuteToolCall($run, 1, 'tools', 1, 'key', 'call', 'echo', ['text' => $run], 0);
             $scoped[$run] = $payloads->forRun($run);
             $calls[$run] = $call;
-            $register = new RegisterToolBatchDTO($run, 1, 'tools', [$call], ['call' => 0], [], ['call' => true], 1);
+            $register = new RegisterToolBatchDTO($run, 1, 'tools', [$call], ['call' => 0], [], ['call' => true]);
             $apply = $batches->prepareChanges([$register], new VerifiedTransitionDTO('register', ['run_id' => $run, 'actions' => [$register]]));
             $connection->transactional($apply);
             $reference = $payloads->publish($call);

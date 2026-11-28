@@ -1463,7 +1463,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $codec = new ToolExecutionEndPayloadCodec($serializer);
         $reducer = new RunStateReducer($serializer, $codec, new AgentMessageNormalizer(), new ReplayAssistantMessageFactory());
         $commandStore = new InMemoryCommandStore();
-        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
             eventFactory: new EventFactory(),
@@ -1692,7 +1692,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelMultiDeferredToolCallHumanWaitsSynthesizesAll(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $batchStore, 'run-multi-d', 1, 'step-m', [
             new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
             new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-b', 'call-b', 'bash', ['command' => 'b'], 1),
@@ -1769,7 +1769,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
         $commandStore = new InMemoryCommandStore();
-        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $batchStore, 'run-partial-d', 1, 'step-p', [
             new ExecuteToolCall('run-partial-d', 1, 'step-p', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
             new ExecuteToolCall('run-partial-d', 1, 'step-p', 1, 'idemp-b', 'call-b', 'ask_human', ['prompt' => 'B?'], 1),
@@ -1973,10 +1973,10 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
         $commandStore = new InMemoryCommandStore();
-        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $batchStore, 'run-missing-store', 1, 'step-m', [
-            new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0, mode: 'parallel', maxParallelism: 2),
-            new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-b', 'call-b', 'ask_human', ['prompt' => 'B?'], 1, mode: 'parallel', maxParallelism: 2),
+            new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0, mode: 'parallel'),
+            new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-b', 'call-b', 'ask_human', ['prompt' => 'B?'], 1, mode: 'parallel'),
         ]);
         TestToolBatchCoordination::suspend($collector, $batchStore, 'run-missing-store', 1, 'step-m', 'call-b', 'q-b');
 

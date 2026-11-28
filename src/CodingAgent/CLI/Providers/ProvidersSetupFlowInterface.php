@@ -40,7 +40,6 @@ interface ProvidersSetupFlowInterface
      *     completionsPath: string,
      *     apiKey: ?string,
      *     models: array<string, array<string, mixed>>,
-     *     supportsDeveloperRole: bool,
      *     thinkingFormat: string
      * }|null
      */
@@ -54,7 +53,10 @@ interface ProvidersSetupFlowInterface
 
     public function updateProviderField(string $id, string $field, mixed $value): void;
 
-    /** Re-enable a saved custom provider via full-definition rewrite (sparse {enabled:true} would wipe its config). */
+    /** @param array<string, mixed> $fields */
+    public function updateProviderFields(string $id, array $fields): void;
+
+    /** Re-enable a saved custom provider without changing its other settings. */
     public function enableCustom(string $id): void;
 
     public function disable(string $id): void;
@@ -80,7 +82,6 @@ interface ProvidersSetupFlowInterface
         string $completionsPath,
         ?string $apiKey,
         array $models,
-        bool $supportsDeveloperRole,
         string $thinkingFormat,
     ): void;
 

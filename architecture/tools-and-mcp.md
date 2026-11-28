@@ -24,7 +24,7 @@ Tool-call hooks run inside the worker, in `RegistryBackedToolbox`, not in
 ```mermaid
 flowchart TD
     Model["Assistant tool calls"] --> Batch["run_control: commit assistant message and tool batch"]
-    Batch -->|"Dispatch ExecuteToolCall up to max_parallelism"| Route{"Routing middleware"}
+    Batch -->|"Dispatch eligible calls with ordering barriers"| Route{"Routing middleware"}
     Route -->|"subagent, agent_resume"| AgentQ[("agent")]
     Route -->|"MCP-backed"| McpQ[("mcp")]
     Route -->|"Other tools, including fork"| ToolQ[("tool")]
@@ -48,9 +48,9 @@ flowchart TD
     Collect --> Continue["Commit tool messages, AdvanceRun"]
 ```
 
-Tool-batch admission and worker capacity are separate. `tools.execution.max_parallelism`
-bounds a batch; the shared tool worker runs with unlimited Fiber concurrency and
-does not impose a second admission cap. `SubagentExecuteToolCallRoutingMiddleware`
+Neither parallel tool batches nor the shared tool worker have a numeric admission
+cap. Registered Sequential and Interrupt calls remain exclusive ordering barriers.
+`SubagentExecuteToolCallRoutingMiddleware`
 stamps `subagent` / `agent_resume` for the `agent` transport; fork stays on `tool`.
 There is no separate agent consumer: the one shared tool consumer reads `tool`,
 `agent` and `code_mode_requests`. `McpExecuteToolCallRoutingMiddleware` stamps

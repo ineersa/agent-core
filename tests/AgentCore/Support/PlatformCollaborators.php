@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
@@ -52,25 +51,6 @@ final class PlatformCollaborators
             public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
             {
                 return new ActiveToolSet($this->names, $this->names);
-            }
-        };
-    }
-
-    public static function toolSettings(int $maxParallelism): ToolExecutionSettingsInterface
-    {
-        return new class($maxParallelism) implements ToolExecutionSettingsInterface {
-            public function __construct(private int $maxParallelism)
-            {
-            }
-
-            public function defaultMode(): string
-            {
-                return 'sequential';
-            }
-
-            public function maxParallelism(): int
-            {
-                return $this->maxParallelism;
             }
         };
     }

@@ -20,8 +20,6 @@ use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Serializer\SerializerInterface;
-use Symfony\Component\Validator\Validation;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -382,6 +380,31 @@ class AppConfigTest extends TestCase
         $this->buildConfig();
     }
 
+    public function testInternalToolPolicyCannotBeOverriddenInSettings(): void
+    {
+        $this->defaultsWith(['tools' => [
+            'bash' => ['poll_interval_micros' => 10, 'default_timeout_seconds' => 7],
+            'image' => ['max_dimension' => 9, 'encoded_max_bytes' => 11, 'jpeg_quality' => 12, 'jpeg_min_quality' => 13, 'max_bytes' => 14],
+            'output_cap' => ['path' => '/ignored', 'retention' => 15, 'doc_cap' => 16],
+            'background_process' => ['path' => '/ignored', 'stop_grace_seconds' => 17, 'log_tail_chars' => 18],
+        ]]);
+        $config = $this->buildConfig();
+
+        $this->assertSame(100_000, $config->tools->bash->pollIntervalMicros);
+        $this->assertSame(7, $config->tools->bash->defaultTimeoutSeconds);
+        $this->assertSame(2000, $config->tools->image->maxDimension);
+        $this->assertSame(4_718_592, $config->tools->image->encodedMaxBytes);
+        $this->assertSame(80, $config->tools->image->jpegQuality);
+        $this->assertSame(40, $config->tools->image->jpegMinQuality);
+        $this->assertSame(14, $config->tools->image->maxBytes);
+        $this->assertSame($this->tmpDir.'/.hatfield/tmp/output-cap', $config->tools->outputCap->storageDir);
+        $this->assertSame(86400, $config->tools->outputCap->retentionSeconds);
+        $this->assertSame(16, $config->tools->outputCap->docCap);
+        $this->assertSame($this->tmpDir.'/.hatfield/tmp/bg', $config->tools->backgroundProcess->storageDir);
+        $this->assertSame(5, $config->tools->backgroundProcess->stopGraceSeconds);
+        $this->assertSame(18, $config->tools->backgroundProcess->logTailChars);
+    }
+
     // ──────────────────────────────────────────────
     //  Helpers
     // ──────────────────────────────────────────────
@@ -446,7 +469,6 @@ class AppConfigTest extends TestCase
             $this->resources,
             $this->createSerializer(),
             $this->tmpDir,
-            $this->createValidator(),
         );
     }
 
@@ -470,12 +492,5 @@ class AppConfigTest extends TestCase
             normalizers: $denormalizers,
             encoders: [],
         );
-    }
-
-    private function createValidator(): ValidatorInterface
-    {
-        return Validation::createValidatorBuilder()
-            ->enableAttributeMapping()
-            ->getValidator();
     }
 }

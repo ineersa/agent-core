@@ -20,7 +20,6 @@ use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
-use Symfony\Component\Validator\Validation;
 use Symfony\Component\Yaml\Yaml;
 
 #[CoversClass(CompactionConfig::class)]
@@ -175,10 +174,7 @@ final class CompactionConfigTest extends TestCase
                 encoders: [],
             );
 
-            $validator = Validation::createValidatorBuilder()
-                ->enableAttributeMapping()
-                ->getValidator();
-            $appConfig = AppConfig::fromContainer($resolver, $resources, $serializer, $projectDir, $validator);
+            $appConfig = AppConfig::fromContainer($resolver, $resources, $serializer, $projectDir);
             $compaction = $appConfig->compaction;
 
             // Global settings survived denormalization.

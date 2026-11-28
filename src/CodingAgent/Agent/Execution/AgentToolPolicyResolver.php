@@ -50,26 +50,19 @@ final readonly class AgentToolPolicyResolver
             }
         }
 
-        // Children cannot launch descendants, steer children, or own schedules.
-        // Neither inherit-all nor explicit lists can reintroduce these tools.
-        $tools = array_values(array_filter(
-            $tools,
-            fn (string $name): bool => !\in_array($name, [ChildLaunchToolName::SUBAGENT, ChildLaunchToolName::FORK, AgentResumeToolHandler::NAME, AgentSteerTool::NAME], true) && !($this->toolRegistry->toolDefinition($name)->mainOnly ?? false),
-        ));
-
-        // Parent-only tools (hatfield_docs, …) are stripped for every child,
-        // whether the definition omitted tools (inherit-all) or requested them explicitly.
-        $excluded = $this->agentsConfig->subagentExcludedTools;
-        if ([] !== $excluded) {
-            $tools = array_values(array_filter(
-                $tools,
-                static fn (string $name): bool => !\in_array($name, $excluded, true),
-            ));
-        }
+        $tools = array_values(array_filter($tools, $this->isChildEligible(...)));
 
         return [
             'tools' => $tools,
             'mcp' => $mcpResolved['mcp_policy'],
         ];
+    }
+
+    public function isChildEligible(string $name): bool
+    {
+        // Explicit lists must not reintroduce descendant controls or parent-only tools.
+        return !\in_array($name, [ChildLaunchToolName::SUBAGENT, ChildLaunchToolName::FORK, AgentResumeToolHandler::NAME, AgentSteerTool::NAME], true)
+            && !($this->toolRegistry->toolDefinition($name)->mainOnly ?? false)
+            && !\in_array($name, $this->agentsConfig->subagentExcludedTools, true);
     }
 }

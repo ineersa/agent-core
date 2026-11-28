@@ -25,6 +25,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 /**
  * Focused replay-projection regression: assistant.message_completed reconstructs skill_name.
@@ -72,6 +74,7 @@ final class SkillReadProjectionReplayTest extends TestCase
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
             frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
+            lockFactory: new LockFactory(new InMemoryStore()),
         );
 
         $dispatcher = new EventDispatcher();

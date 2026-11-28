@@ -53,7 +53,7 @@ final readonly class SetupCommand
         $theme = new DefaultTheme($this->themes->getOrThrow($this->config->tui->theme));
         $tui = new Tui();
         (new UnifiedSetupScreen($theme))->mount($tui, $layer, function (SettingsLayerEnum $scope) use ($theme): array {
-            $app = $this->settingsService->loadConfig();
+            $app = $this->settingsService->loadConfig($scope);
             $providers = ProvidersSetupFlow::for($this->catalog, $this->writer, $app, SettingsLayerEnum::Project === $scope);
             $extensions = clone $this->extensions;
             $extensions->layer = $scope;

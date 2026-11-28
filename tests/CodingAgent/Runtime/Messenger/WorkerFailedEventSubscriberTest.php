@@ -257,7 +257,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $active->loadRecovered(new RunState($runId, RunStatus::Running, version: 3, turnNo: 2, model: 'test-model'));
         $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
         $seed = static function (ToolBatchStoreInterface $batches, string $runId, int $turnNo, string $stepId): void {
-            $register = new RegisterToolBatchDTO($runId, $turnNo, $stepId, [], [], [], [], 2);
+            $register = new RegisterToolBatchDTO($runId, $turnNo, $stepId, [], [], [], []);
             $batches->prepareChanges([$register], new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => [$register]]))();
             $finalize = new FinalizeToolBatchDTO($runId, $turnNo, $stepId, pendingQueue: [], inFlight: [], awaitingHumanInput: [], finalized: true);
             $batches->prepareChanges([$finalize], new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => [$finalize]]))();

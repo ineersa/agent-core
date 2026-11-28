@@ -40,25 +40,21 @@ final readonly class ChildExtensionsConfigDTO
             throw new \InvalidArgumentException(\sprintf('Invalid key for %s: "enabled" is not supported (use frontmatter extensions or always_on).', $path));
         }
 
-        $allowed = ['always_on'];
-        if ($acceptEnabled) {
-            $allowed[] = 'enabled';
-        }
+        $allowed = $acceptEnabled ? ['enabled'] : ['always_on'];
         $unknown = array_diff(array_keys($raw), $allowed);
         if ([] !== $unknown) {
             throw new \InvalidArgumentException(\sprintf('Invalid key for %s: "%s" is not supported.', $path, reset($unknown)));
         }
 
-        $alwaysOn = self::parseClassList($raw, 'always_on', $path.'.always_on');
         if (!$acceptEnabled) {
-            return new self(alwaysOn: $alwaysOn);
+            return new self(alwaysOn: self::parseClassList($raw, 'always_on', $path.'.always_on'));
         }
 
         $enabled = \array_key_exists('enabled', $raw)
             ? self::parseClassList($raw, 'enabled', $path.'.enabled')
             : [];
 
-        return new self(alwaysOn: $alwaysOn, enabled: $enabled);
+        return new self(enabled: $enabled);
     }
 
     /**

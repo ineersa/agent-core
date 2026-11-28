@@ -18,7 +18,7 @@
 #   ~                     Home directory
 #   relative paths        Resolved against the settings file's containing directory
 
-# Choose the default model, reasoning and HTTP behavior.
+# Choose the default model and reasoning.
 ai:
     # Model used when starting a new session.
     default_model: null
@@ -26,17 +26,6 @@ ai:
     default_reasoning: null
     # Ordered list of favorite provider/model references.
     favorite_models: []
-    http:
-        # Idle request timeout in seconds.
-        timeout: null
-        # Total request duration limit in seconds.
-        max_duration: null
-        # Maximum number of attempts after a transient error.
-        max_retries: null
-        # Initial retry delay in milliseconds.
-        base_delay_ms: null
-        # Maximum retry delay in milliseconds.
-        max_delay_ms: null
 
 tui:
     # Color theme used by the terminal interface.
@@ -84,7 +73,7 @@ compaction:
     auto_enabled: true
 
     # Flat token threshold for auto-compaction trigger.
-    compact_after_tokens: 120000
+    compact_after_tokens: 250000
 
     # Approximate number of newest tokens to retain raw after compaction.
     # Messages are kept whole — the cut never splits a message, so the actual
@@ -151,34 +140,14 @@ context_budget_reminders:
 # Tools
 # ---------------------------------------------------------------------------
 #
-# Tool execution defaults control scheduling policy and timeout metadata.
-# Output capping persists oversized text output under tools.output_cap.path and
+# Tool execution modes come from registration; parallel batches have no numeric cap.
+# Blocking tools own their deadlines; there is no global tool timeout.
+# Output capping persists oversized text output under .hatfield/tmp/output-cap and
 # replaces it with a model-facing capped notice containing inspection hints.
 #
 # Override any value here in your home or project settings.
 #
 tools:
-    execution:
-        # Default execution mode: sequential (one tool at a time) or parallel.
-        # Parallel calls run concurrently as Fibers in the single shared tool
-        # consumer; MCP-backed calls stay serialized on the mcp consumer.
-        default_mode: sequential
-
-        # No global tool timeout setting. Potentially blocking tools must own and enforce
-        # their own deadline (Bash tools.bash.*, subagent agents.subagent_tool_timeout_seconds,
-        # MCP transport timeout, per-tool ToolDefinitionDTO/ToolRegistrationDTO budgets).
-        # ToolExecutor never rewrites a successful late result into a timeout failure.
-
-        # Maximum parallelism: how many calls of one tool batch are admitted
-        # concurrently. It is a per-batch admission limit, not a worker count;
-        # the controller always launches one tool consumer.
-        max_parallelism: 4
-
-        # Execution mode per tool is set at registration time by the tool
-        # author/provider in ToolDefinitionDTO, not from settings overrides.
-        # File-mutation tools (write, edit) are explicitly registered as
-        # Sequential in their HatfieldToolProviderInterface::definition().
-
     image:
         # Maximum image file size in bytes (default: 10 MB).
         max_bytes: 10485760
@@ -189,50 +158,14 @@ tools:
         # Maximum image height in pixels (rejection limit).
         max_height: 2000
 
-        # Maximum pixel dimension for resize-to-fit (default: 2000).
-        # Images exceeding this are scaled down to fit within a
-        # max_dimension × max_dimension bounding box, preserving aspect
-        # ratio. This is the resize target, not a rejection limit.
-        max_dimension: 2000
-
-        # Maximum allowed base64-encoded payload length in bytes.
-        # Default 4.5 MiB — safe below Anthropic and OpenAI 5 MiB limits.
-        # The processor reduces quality and/or dimensions to stay under
-        # this limit.
-        encoded_max_bytes: 4718592
-
-        # Starting JPEG/WebP compression quality (1–100).
-        jpeg_quality: 80
-
-        # Minimum JPEG/WebP quality the processor may attempt (1–100).
-        # The processor descends from jpeg_quality down to this minimum
-        # in steps of ~15 before reducing dimensions.
-        jpeg_min_quality: 40
-
     output_cap:
-        # Storage root for ephemeral run-scoped oversized output. Each run uses
-        # a SHA-256-derived child directory; relative paths resolve against CWD.
-        path: .hatfield/tmp/output-cap
-
         # Default character cap for non-doc paths (code files).
         default_cap: 20000
 
         # Character cap for doc-like paths (.md, .txt, .toon).
         doc_cap: 50000
 
-        # Orphan fallback retention in seconds (default 24 hours). Controller
-        # session lifecycle cleanup removes owned artifacts earlier.
-        retention: 86400
-
-
     background_process:
-        # Storage directory for background process log files.
-        # Relative paths resolve against the active project CWD.
-        path: .hatfield/tmp/bg
-
-        # Grace period in seconds for SIGTERM before SIGKILL on stop.
-        stop_grace_seconds: 5
-
         # Maximum characters returned by bg_status log action.
         log_tail_chars: 5000
 
@@ -243,9 +176,6 @@ tools:
         # Maximum allowed timeout that a model can request.
         # Timeouts above this are rejected with a validation error.
         max_timeout_seconds: null
-
-        # Supervision loop poll interval in microseconds.
-        poll_interval_micros: 100000
 
         # Maximum characters to read from the background process log
         # for returning as final/partial command output.
@@ -377,19 +307,6 @@ logging:
 prompts: []
 
 # ---------------------------------------------------------------------------
-# Runtime
-# ---------------------------------------------------------------------------
-#
-# Controller-owned runtime knobs that are not tool policy and not agent
-# discovery policy. Distinct from tools.execution.max_parallelism.
-runtime:
-    # Same-process Fiber admission limit for the single llm consumer
-    # (`hatfield:messenger:consume-llm`). Positive integer only. Default 10.
-    # Distinct from tools.execution.max_parallelism and the Amp HTTP host
-    # connection pool (maxHostConnections=6).
-    llm_concurrency: 10
-
-# ---------------------------------------------------------------------------
 # Agent definitions
 # ---------------------------------------------------------------------------
 #
@@ -474,11 +391,9 @@ forks:
     # Reasoning effort for forks, or null to inherit from the parent.
     thinking_level: null
     # Child-run extension selection for forks.
-    # Effective allowlist = always_on ∪ enabled (stable first-seen).
+    # One allowlist for this kind of child session.
     # Does not inherit optional entries from global extensions.enabled.
     extensions:
-        # Extensions always available in this kind of child session.
-        always_on:
+        # Extension classes available to forks.
+        enabled:
             - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
-        # Optional extension classes available to forks.
-        enabled: []

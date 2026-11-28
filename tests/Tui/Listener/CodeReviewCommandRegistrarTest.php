@@ -28,6 +28,8 @@ use Ineersa\Tui\Listener\CodeReviewCommandRegistrar;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 final class CodeReviewCommandRegistrarTest extends TestCase
 {
@@ -117,6 +119,7 @@ final class CodeReviewCommandRegistrarTest extends TestCase
             resources: new AppResourceLocator(\dirname(__DIR__, 3)),
             filesystem: new Filesystem(),
             frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
+            lockFactory: new LockFactory(new InMemoryStore()),
         );
 
         return new CodeReviewCommandRegistrar($discovery, new SkillsContextBuilder(

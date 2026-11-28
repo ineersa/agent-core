@@ -240,13 +240,18 @@ final class AgentsConfigTest extends TestCase
     {
         $forks = ForksConfigDTO::fromRaw([
             'extensions' => [
-                'always_on' => ['A\\Safe'],
                 'enabled' => ['B\\Castor'],
             ],
         ]);
 
-        $this->assertSame(['A\\Safe'], $forks->extensions->alwaysOn);
         $this->assertSame(['B\\Castor'], $forks->extensions->enabled);
+    }
+
+    public function testForksRejectsRemovedAlwaysOnSelection(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('always_on');
+        ForksConfigDTO::fromRaw(['extensions' => ['always_on' => ['A\\Safe']]]);
     }
 
     public function testForksFromRawRejectsNonListEnabled(): void

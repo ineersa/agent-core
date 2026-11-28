@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
 use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\AgentCore\Contract\Tool\Exception\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
@@ -21,6 +20,7 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
@@ -36,8 +36,6 @@ use Symfony\Component\Clock\ClockInterface;
 
 final class ToolExecutor implements ToolExecutorInterface
 {
-    private ToolExecutionPolicyResolver $policyResolver;
-
     /** @var list<ToolResultProcessorInterface> */
     private readonly array $toolResultProcessors;
 
@@ -47,8 +45,6 @@ final class ToolExecutor implements ToolExecutorInterface
      * @param iterable<ToolResultProcessorInterface> $toolResultProcessors
      */
     public function __construct(
-        string $defaultMode,
-        int $maxParallelism,
         private readonly ToolExecutionResultStore $resultStore,
         private readonly ToolboxInterface $toolbox,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -57,37 +53,10 @@ final class ToolExecutor implements ToolExecutorInterface
         private readonly RunTracer $tracer,
         iterable $toolResultProcessors = [],
     ) {
-        $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $maxParallelism);
         $this->toolResultProcessors = \is_array($toolResultProcessors)
             ? array_values($toolResultProcessors)
             : iterator_to_array($toolResultProcessors, false);
         $this->clock = $clock;
-    }
-
-    /**
-     * @param iterable<ToolResultProcessorInterface> $toolResultProcessors
-     */
-    public static function fromSettings(
-        ToolExecutionSettingsInterface $settings,
-        ToolExecutionResultStore $resultStore,
-        ToolboxInterface $toolbox,
-        StackToolExecutionContextAccessor $contextAccessor,
-        ToolSetResolverInterface $toolSetResolver,
-        ClockInterface $clock,
-        RunTracer $tracer,
-        iterable $toolResultProcessors = [],
-    ): self {
-        return new self(
-            defaultMode: $settings->defaultMode(),
-            maxParallelism: $settings->maxParallelism(),
-            resultStore: $resultStore,
-            toolbox: $toolbox,
-            contextAccessor: $contextAccessor,
-            toolSetResolver: $toolSetResolver,
-            toolResultProcessors: $toolResultProcessors,
-            clock: $clock,
-            tracer: $tracer,
-        );
     }
 
     public function execute(ToolCall $toolCall): ToolResult
@@ -379,18 +348,15 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private function resolvePolicy(ToolCall $toolCall): ToolExecutionPolicy
     {
-        $resolved = $this->policyResolver->resolve($toolCall->toolName);
-
         $timeoutSeconds = null !== $toolCall->timeoutSeconds && $toolCall->timeoutSeconds > 0
             ? max(1, $toolCall->timeoutSeconds)
             : null;
 
         return new ToolExecutionPolicy(
-            mode: $toolCall->mode ?? $resolved->mode,
+            mode: $toolCall->mode ?? ToolExecutionMode::Sequential,
             // Explicit/per-tool budget only (ToolCall.timeoutSeconds from ActiveToolSet).
             // Null means no ambient deadline. ToolExecutor never rewrites success by elapsed time.
             timeoutSeconds: $timeoutSeconds,
-            maxParallelism: max(1, (int) ($toolCall->context['max_parallelism'] ?? $resolved->maxParallelism)),
         );
     }
 
@@ -500,7 +466,6 @@ final class ToolExecutor implements ToolExecutorInterface
 
         $details['mode'] = $policy->mode->value;
         $details['timeout_seconds'] = $policy->timeoutSeconds;
-        $details['max_parallelism'] = $policy->maxParallelism;
 
         if (null !== $toolIdempotencyKey && '' !== $toolIdempotencyKey) {
             $details['tool_idempotency_key'] = $toolIdempotencyKey;

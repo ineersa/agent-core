@@ -133,7 +133,7 @@ final class ExtensionsSetupFlow
                 }
             }
             $changes = [];
-            foreach (['extensions.enabled', 'extensions.project_extensions', 'forks.extensions.enabled', 'forks.extensions.always_on', 'agents.extensions.always_on'] as $listPath) {
+            foreach (['extensions.enabled', 'extensions.project_extensions', 'forks.extensions.enabled', 'agents.extensions.always_on'] as $listPath) {
                 $list = $this->value($local, $listPath);
                 if (null === $list) {
                     continue;
@@ -196,7 +196,7 @@ final class ExtensionsSetupFlow
             : 'Base enablement (replacement in this scope)';
         $this->members = [
             'parent' => $in('extensions.enabled') ? 'true' : 'false',
-            'forks' => $in('forks.extensions.always_on') ? 'always_on' : ($in('forks.extensions.enabled') ? 'enabled' : 'off'),
+            'forks' => $in('forks.extensions.enabled') ? 'enabled' : 'off',
             'agents' => $in('agents.extensions.always_on') ? 'true' : 'false',
         ];
         if (SettingsLayerEnum::Project === $this->layer) {
@@ -251,7 +251,6 @@ final class ExtensionsSetupFlow
         $remove = [];
         $membership = [
             'extensions.enabled' => 'true' === $this->members['parent'],
-            'forks.extensions.always_on' => 'always_on' === $this->members['forks'],
             'forks.extensions.enabled' => 'enabled' === $this->members['forks'],
             'agents.extensions.always_on' => 'true' === $this->members['agents'],
         ];
@@ -259,7 +258,7 @@ final class ExtensionsSetupFlow
             $membership['extensions.project_extensions'] = 'true' === $this->members['addition'];
         }
         $parentEnabled = $membership['extensions.enabled'] || ($membership['extensions.project_extensions'] ?? false);
-        if (!$parentEnabled && ($membership['forks.extensions.always_on'] || $membership['forks.extensions.enabled'] || $membership['agents.extensions.always_on'])) {
+        if (!$parentEnabled && ($membership['forks.extensions.enabled'] || $membership['agents.extensions.always_on'])) {
             throw new \RuntimeException('Enable the parent extension before selecting it for forks or agents.');
         }
         foreach ($membership as $path => $enabled) {

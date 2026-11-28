@@ -22,7 +22,7 @@ use Ineersa\CodingAgent\Compaction\SessionCompactor;
 final readonly class CompactionConfig
 {
     public const bool DEFAULT_AUTO_ENABLED = true;
-    public const int DEFAULT_COMPACT_AFTER_TOKENS = 120000;
+    public const int DEFAULT_COMPACT_AFTER_TOKENS = 250000;
     public const int DEFAULT_KEEP_RECENT_TOKENS = 20000;
 
     /**

@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
-use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
@@ -300,45 +299,6 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         yield 'generic same reports still sum' => ['generic', [$usage(10), $usage(20)], 300000, 50];
     }
 
-    public function testCustomHttpConfigIsAcceptedByFactory(): void
-    {
-        $deepseek = new AiProviderConfig(
-            id: 'deepseek',
-            type: 'generic',
-            enabled: true,
-            baseUrl: 'https://api.deepseek.com',
-            apiKey: 'dummy-key',
-            models: [
-                'deepseek-v4-pro' => new AiModelDefinition(
-                    id: 'deepseek-v4-pro',
-                    toolCalling: true,
-                    reasoning: true,
-                ),
-            ],
-        );
-
-        $http = new AiHttpConfig(timeout: 15, maxDuration: 60);
-        $aiConfig = new AiConfig(
-            defaultModel: 'deepseek/deepseek-v4-pro',
-            http: $http,
-            providers: ['deepseek' => $deepseek],
-        );
-
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'cyberpunk'),
-            logging: new LoggingConfig(),
-            catalog: new HatfieldModelCatalog($aiConfig),
-        );
-
-        $factory = new SymfonyAiProviderFactory(
-            $appConfig,
-            $this->createStub(EventDispatcherInterface::class),
-        );
-
-        $providers = $factory->createProviders();
-        $this->assertArrayHasKey('deepseek', $providers);
-    }
-
     public function testCaptureDisabledByDefaultDoesNotCreateFile(): void
     {
         // Ensure env is not set
@@ -504,7 +464,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $this->assertSame($sentinel, $providers['custom']);
     }
 
-    public function testInjectedTransportDoesNotStackRetriesWhenAiHttpMaxRetriesConfigured(): void
+    public function testInjectedTransportDoesNotStackApplicationRetries(): void
     {
         $requests = 0;
         $transport = new MockHttpClient(static function () use (&$requests): MockResponse {
@@ -523,7 +483,6 @@ final class SymfonyAiProviderFactoryTest extends TestCase
             },
         );
         $ai = new AiConfig(
-            http: new AiHttpConfig(maxRetries: 2, baseDelayMs: 0),
             providers: ['test' => new AiProviderConfig(id: 'test', type: 'custom', enabled: true)],
         );
         $factory = new SymfonyAiProviderFactory(
@@ -534,7 +493,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         );
 
         $factory->createProviders();
-        // Count transport calls through any decorators: configured retries must not be stacked.
+        // Count transport calls through any decorators: application retries must not be stacked.
         $this->assertSame(1, $requests);
     }
 

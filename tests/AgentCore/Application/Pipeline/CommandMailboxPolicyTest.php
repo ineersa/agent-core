@@ -500,7 +500,6 @@ final class CommandMailboxPolicyTest extends TestCase
                     toolSetResolver: PlatformCollaborators::toolSetResolver(),
                     toolbox: $this->createStub(ToolboxInterface::class),
                     tracer: new RunTracer(new NullLogger()),
-                    toolExecutionSettings: PlatformCollaborators::toolSettings(1),
                     launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
                 ),
                 new ToolCallResultHandler(

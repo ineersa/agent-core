@@ -43,7 +43,6 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
             $batch->inFlight,
             array_fill_keys(array_keys($batch->results), true),
             $batch->finalized,
-            $batch->maxParallelism,
             $batch->awaitingHumanInput,
         );
     }
@@ -185,8 +184,7 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
         if (null !== $existing) {
             if ($existing->expectedOrder !== $action->expectedOrder
                 || $existing->pendingQueue !== $action->pendingQueue
-                || $existing->inFlight !== $action->inFlight
-                || $existing->maxParallelism !== $action->maxParallelism) {
+                || $existing->inFlight !== $action->inFlight) {
                 throw new \LogicException('Conflicting prepared tool batch membership.');
             }
             $this->applied[$key] = $transition->identity;
@@ -200,7 +198,6 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
             inFlight: $action->inFlight,
             results: [],
             finalized: false,
-            maxParallelism: max(1, $action->maxParallelism),
             awaitingHumanInput: [],
         );
         $this->applied[$key] = $transition->identity;

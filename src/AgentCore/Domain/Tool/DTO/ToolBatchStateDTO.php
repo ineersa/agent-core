@@ -35,8 +35,6 @@ final class ToolBatchStateDTO
         #[SerializedName('result_data')]
         public array $results,
         public bool $finalized,
-        #[Assert\GreaterThanOrEqual(1)]
-        public int $maxParallelism,
         public array $awaitingHumanInput = [],
     ) {
     }

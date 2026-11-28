@@ -11,8 +11,9 @@ namespace Ineersa\CodingAgent\Config;
  * maximum image dimensions (width and height). Images exceeding any
  * of these limits are rejected with a clear error message.
  *
- * Hydrated by Symfony Serializer/Denormalizer from the merged Hatfield
- * config array (defaults.yaml → home settings → project settings).
+ * Symfony Serializer hydrates only input byte/width/height limits from settings.
+ * Resize dimensions, encoded payload budget and quality are internal policy;
+ * AppConfig excludes those fields from the user-settings boundary.
  */
 final readonly class ImageToolConfig
 {

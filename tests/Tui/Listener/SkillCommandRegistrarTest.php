@@ -29,6 +29,8 @@ use Ineersa\Tui\Listener\SlashCommandCatalogRegistrar;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 final class SkillCommandRegistrarTest extends TestCase
 {
@@ -168,6 +170,7 @@ final class SkillCommandRegistrarTest extends TestCase
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
             frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
+            lockFactory: new LockFactory(new InMemoryStore()),
         );
 
         $contextBuilder = new SkillsContextBuilder(

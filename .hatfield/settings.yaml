@@ -1,7 +1,5 @@
 tui:
     theme: oh-p-dark
-runtime:
-    llm_concurrency: 10
 tools:
     # Set bash.max_timeout_seconds to a positive integer to impose an operator cap.
     code_mode:
@@ -46,7 +44,6 @@ forks:
     thinking_level: low
     extensions:
         enabled: {}
-        always_on: {}
 context_budget_reminders:
     early_input_tokens: 200000
     urgent_remaining_tokens: 20000
@@ -64,14 +61,12 @@ ai:
             base_url: https://api.openai.com
             completions_path: /v1/responses
             compatibility:
-                supports_developer_role: true
                 supports_reasoning_effort: false
                 thinking_format: chatgpt
         llama_cpp_test:
             type: generic
             enabled: true
             base_url: 'http://10.0.0.89:9052/v1'
-            api: openai-completions
             api_key: dummy
             completions_path: /chat/completions
             embeddings_path: /embeddings

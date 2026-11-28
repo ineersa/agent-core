@@ -234,7 +234,6 @@ services:
       $resources: '@Ineersa\CodingAgent\Config\AppResourceLocator'
       $denormalizer: '@Symfony\Component\Serializer\SerializerInterface'
       $cwd: '%app.cwd%'
-      $validator: '@validator'
 
   Ineersa\CodingAgent\Config\CompactionConfig:
     factory: ['Ineersa\CodingAgent\Config\CompactionConfig', 'fromAppConfig']
@@ -614,7 +613,6 @@ services:
       $routableBus: '@messenger.routable_message_bus'
       $receiverLocator: '@Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeReceiverLocator'
       $eventDispatcher: '@event_dispatcher'
-      $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
       $logger: '@logger'
 
   Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber:
@@ -678,6 +676,10 @@ services:
     arguments:
       - '@hatfield.extension_update.lock_store'
 
+  Ineersa\CodingAgent\Skills\SkillDiscovery:
+    arguments:
+      $lockFactory: '@hatfield.extension_update.lock_factory'
+
   Ineersa\CodingAgent\Extension\ExtensionUpdateService:
     arguments:
       $lockFactory: '@hatfield.extension_update.lock_factory'
@@ -734,9 +736,7 @@ services:
     alias: Ineersa\CodingAgent\Runtime\Stream\LlmRequestRetryDispatchObserver
 
   Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy:
-    factory: ['Ineersa\CodingAgent\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicyFactory', 'fromAppConfig']
-    arguments:
-      - '@Ineersa\CodingAgent\Config\AppConfig'
+    ~
 
   # RuntimeEventMapper uses an explicit dispatch table.
   # EventDispatcher is still passed for extension subscribers that observe the
@@ -848,9 +848,7 @@ services:
     arguments:
       $serializer: '@serializer'
 
-  Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler:
-    arguments:
-      $toolExecutionSettings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
+  Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler: ~
 
   # ─── System prompt builder ───
   Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer: ~
@@ -1075,19 +1073,7 @@ services:
 
   # ─── TOOLS-00 Tool cancellation context bridge ───
 
-  # ToolSettings resolves tools.execution defaults from typed AppConfig DTOs.
-  Ineersa\CodingAgent\Config\ToolSettings:
-    factory: ['Ineersa\CodingAgent\Config\ToolSettings', 'fromAppConfig']
-    arguments:
-      - '@Ineersa\CodingAgent\Config\AppConfig'
-
-  Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface:
-    alias: Ineersa\CodingAgent\Config\ToolSettings
-
-  # Tool executor wiring: read execution defaults from merged Hatfield settings.
-  # The toolbox wires to RegistryBackedToolbox; toolSetResolver to CodingAgentToolSetResolver.
-  # Execution mode per tool is set at registration time by the tool author/provider
-  # in ToolDefinitionDTO, not from settings overrides.
+  # Tool execution mode is registered by the tool author/provider.
   Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor:
     tags:
       - { name: agent_core.tool_result_processor, priority: 100 }
@@ -1102,9 +1088,7 @@ services:
       - { name: agent_core.transform_context_hook, priority: 0 }
 
   Ineersa\AgentCore\Application\Handler\ToolExecutor:
-    factory: ['Ineersa\AgentCore\Application\Handler\ToolExecutor', 'fromSettings']
     arguments:
-      $settings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
       $toolbox: '@Symfony\AI\Agent\Toolbox\ToolboxInterface'
       $contextAccessor: '@Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor'
       $toolSetResolver: '@Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface'

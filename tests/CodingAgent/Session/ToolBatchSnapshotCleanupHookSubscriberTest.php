@@ -59,9 +59,9 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     public function testDeletesExactBatchAfterToolBatchCommitted(): void
     {
         $store = $this->createStore();
-        $finalized = new ToolBatchStateDTO([], [], [], [], [], true, 2);
+        $finalized = new ToolBatchStateDTO([], [], [], [], [], true);
         $this->seedBatch($store, 'run-1', 3, 'step-x', $finalized);
-        $this->seedBatch($store, 'run-1', 3, 'step-other', new ToolBatchStateDTO([], [], [], [], [], false, 2));
+        $this->seedBatch($store, 'run-1', 3, 'step-other', new ToolBatchStateDTO([], [], [], [], [], false));
 
         $subscriber = $this->subscriber($store);
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
@@ -86,8 +86,8 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     public function testTerminalAgentEndDeletesAllRemainingSnapshots(): void
     {
         $store = $this->createStore();
-        $this->seedBatch($store, 'run-1', 1, 's1', new ToolBatchStateDTO([], [], [], [], [], true, 2));
-        $this->seedBatch($store, 'run-1', 2, 's2', new ToolBatchStateDTO([], [], [], [], [], true, 2));
+        $this->seedBatch($store, 'run-1', 1, 's1', new ToolBatchStateDTO([], [], [], [], [], true));
+        $this->seedBatch($store, 'run-1', 2, 's2', new ToolBatchStateDTO([], [], [], [], [], true));
 
         $subscriber = $this->subscriber($store);
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
@@ -106,7 +106,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     public function testCleanupInvokedAfterSuccessfulRunCommit(): void
     {
         $store = $this->createStore();
-        $finalized = new ToolBatchStateDTO([], [], [], [], [], true, 2);
+        $finalized = new ToolBatchStateDTO([], [], [], [], [], true);
         $this->seedBatch($store, 'run-1', 1, 'step-1', $finalized);
 
         $activeRunContext = new TestActiveRunContext();
@@ -183,7 +183,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             $call = new ExecuteToolCall('run-1', 1, $step, 1, $step, $step, 'fork', [], 0);
             $this->seedBatch($store, 'run-1', 1, $step, new ToolBatchStateDTO(
                 [$step => 0], [$step => $call], 'queued' === $step ? [$step] : [],
-                'inflight' === $step ? [$step => true] : [], [], 'unfinished' !== $step, 1,
+                'inflight' === $step ? [$step => true] : [], [], 'unfinished' !== $step,
                 'human' === $step ? [$step => 'question'] : [],
             ));
         }
@@ -247,7 +247,6 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             $batch->expectedOrder,
             array_values($batch->pendingQueue),
             $batch->inFlight,
-            $batch->maxParallelism,
         )], new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(),
             ['run_id' => $runId, 'actions' => []],
         ))();
