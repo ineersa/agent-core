@@ -70,7 +70,6 @@ final class LlmStepResultHandlerTest extends TestCase
             toolSetResolver: PlatformCollaborators::toolSetResolver(),
             toolbox: $this->createStub(ToolboxInterface::class),
             tracer: new RunTracer(new NullLogger()),
-            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
             launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
@@ -167,7 +166,6 @@ final class LlmStepResultHandlerTest extends TestCase
             toolSetResolver: PlatformCollaborators::toolSetResolver(),
             toolbox: $this->createStub(ToolboxInterface::class),
             tracer: new RunTracer(new NullLogger()),
-            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
             launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
@@ -266,7 +264,6 @@ final class LlmStepResultHandlerTest extends TestCase
             toolSetResolver: PlatformCollaborators::toolSetResolver(),
             toolbox: $this->createStub(ToolboxInterface::class),
             tracer: new RunTracer(new NullLogger()),
-            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
             launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
@@ -356,7 +353,6 @@ final class LlmStepResultHandlerTest extends TestCase
             toolSetResolver: PlatformCollaborators::toolSetResolver(),
             toolbox: $this->createStub(ToolboxInterface::class),
             tracer: new RunTracer(new NullLogger()),
-            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
             launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
@@ -436,7 +432,6 @@ final class LlmStepResultHandlerTest extends TestCase
             toolSetResolver: PlatformCollaborators::toolSetResolver(),
             toolbox: $this->createStub(ToolboxInterface::class),
             tracer: new RunTracer(new NullLogger()),
-            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
             launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
@@ -537,7 +532,6 @@ final class LlmStepResultHandlerTest extends TestCase
             toolSetResolver: PlatformCollaborators::toolSetResolver(),
             toolbox: $this->createStub(ToolboxInterface::class),
             tracer: new RunTracer(new NullLogger()),
-            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
             launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
@@ -612,7 +606,6 @@ final class LlmStepResultHandlerTest extends TestCase
             toolSetResolver: PlatformCollaborators::toolSetResolver(),
             toolbox: $this->createStub(ToolboxInterface::class),
             tracer: new RunTracer(new NullLogger()),
-            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
             launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
@@ -701,7 +694,6 @@ final class LlmStepResultHandlerTest extends TestCase
             toolSetResolver: PlatformCollaborators::toolSetResolver(),
             toolbox: $this->createStub(ToolboxInterface::class),
             tracer: new RunTracer(new NullLogger()),
-            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
             launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
@@ -757,7 +749,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertCount(0, $commandBus->messages);
     }
 
-    public function testParallelToolCallsCarryConfiguredMaxParallelism(): void
+    public function testParallelToolCallsCarryRegisteredModeAndExecutedModel(): void
     {
         $executionBus = new TestMessageBus();
         $stepDispatcher = new StepDispatcher($executionBus, $executionBus, new TestLogger(), events: new EventDispatcher());
@@ -789,7 +781,6 @@ final class LlmStepResultHandlerTest extends TestCase
             toolSetResolver: $toolSetResolver,
             toolbox: $this->createStub(ToolboxInterface::class),
             tracer: new RunTracer(new NullLogger()),
-            toolExecutionSettings: PlatformCollaborators::toolSettings(4),
             launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
@@ -829,7 +820,6 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertCount(2, $executionBus->messages);
         foreach ($executionBus->messages as $dispatched) {
             $this->assertInstanceOf(ExecuteToolCall::class, $dispatched);
-            $this->assertSame(4, $dispatched->maxParallelism);
             $this->assertSame('parallel', $dispatched->mode);
             // Tool-launched children inherit the executed result model, not the
             // historical RunState model.
@@ -885,7 +875,6 @@ final class LlmStepResultHandlerTest extends TestCase
             toolSetResolver: $toolSetResolver,
             toolbox: $this->createStub(ToolboxInterface::class),
             tracer: new RunTracer(new NullLogger()),
-            toolExecutionSettings: PlatformCollaborators::toolSettings(3),
             launchInputStore: $inputStore,
         );
 
@@ -967,7 +956,6 @@ final class LlmStepResultHandlerTest extends TestCase
             toolSetResolver: PlatformCollaborators::toolSetResolver(),
             toolbox: $this->createStub(ToolboxInterface::class),
             tracer: new RunTracer(new NullLogger()),
-            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
             launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 
@@ -1050,7 +1038,6 @@ final class LlmStepResultHandlerTest extends TestCase
             toolSetResolver: PlatformCollaborators::toolSetResolver(),
             toolbox: $this->createStub(ToolboxInterface::class),
             tracer: new RunTracer(new NullLogger()),
-            toolExecutionSettings: PlatformCollaborators::toolSettings(1),
             launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
         );
 

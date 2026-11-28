@@ -93,11 +93,11 @@ DB-only renames and pending coordination cannot. A new provider cache key is
 created when its original database metadata is lost. New session paths use atomic
 exclusive creation and refuse occupied files/directories/symlinks.
 
-Output-cap artifacts live under `tools.output_cap.path/run-<sha256(run_id)>/`.
+Output-cap artifacts live under `<cwd>/.hatfield/tmp/output-cap/run-<sha256(run_id)>/`.
 `OutputCapControllerSessionLifecycleListener` cleans owned parent/child scopes
 on every controller start (including resume) and shutdown; ordinary turn
 completion/cancellation does not. Replay never reads these artifacts. A
-first-use stale sweep older than `tools.output_cap.retention` (default 24 hours)
+first-use stale sweep older than the internal 24-hour retention
 is a crash fallback, not archival storage. It removes only hashed run scopes and
 legacy `YYYYMMDD-<hex>.txt` files; unknown root entries and symlinks are left for
 operator review.

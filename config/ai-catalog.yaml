@@ -1,14 +1,14 @@
 # Bundled AI provider catalog (authoritative for model presence; entries are complete).
 # Copied to ~/.hatfield/ai-catalog.yaml on first run. providers:update rebases that
 # user copy onto this default and syncs model metadata from models.dev.
-# Connection settings (base_url/api/paths/auth) are NEVER taken from models.dev.
+# Connection settings (base_url/paths/auth) are NEVER taken from models.dev.
 #
 # Known-provider settings in ~/.hatfield or project .hatfield stay sparse:
 #   ai.providers.zai: { enabled: true, api_key: env:ZAI_API_KEY }
 # Refresh: hatfield providers:update
 # Interactive setup: bin/console setup
 
-version: 20
+version: 21
 
 providers:
     mistral:
@@ -18,13 +18,11 @@ providers:
         enabled: false
         base_url: https://api.mistral.ai
         api_key: env:MISTRAL_API_KEY
-        api: openai-completions
         completions_path: /v1/chat/completions
         supports_completions: true
         supports_embeddings: false
         supports_thinking_levels: true
         compatibility:
-            supports_developer_role: false
             supports_reasoning_effort: true
             thinking_format: mistral
         auth_command: null
@@ -72,7 +70,6 @@ providers:
         type: generic
         enabled: false
         base_url: https://api.deepseek.com
-        api: openai-completions
         completions_path: /chat/completions
         supports_completions: true
         supports_embeddings: false
@@ -101,7 +98,6 @@ providers:
         base_url: https://opencode.ai/zen/go/v1
         api_key: env:OPENCODE_API_KEY
         # Default route for three models; Muse uses /responses in the Go builder.
-        api: openai-completions
         completions_path: /chat/completions
         supports_completions: true
         supports_embeddings: false
@@ -154,12 +150,10 @@ providers:
         type: generic
         enabled: false
         base_url: https://api.z.ai/api/coding/paas/v4
-        api: openai-completions
         completions_path: /chat/completions
         supports_completions: true
         supports_embeddings: false
         compatibility:
-            supports_developer_role: false
             supports_reasoning_effort: false
             thinking_format: zai
         auth_command: null
@@ -203,13 +197,11 @@ providers:
         type: chatgpt
         enabled: false
         base_url: https://api.openai.com
-        api: openai-responses
         completions_path: /v1/responses
         supports_completions: true
         supports_embeddings: false
         supports_thinking_levels: true
         compatibility:
-            supports_developer_role: true
             supports_reasoning_effort: false
             thinking_format: chatgpt
         auth_command: 'auth:chatgpt'
@@ -339,13 +331,11 @@ providers:
         type: grok
         enabled: false
         base_url: 'https://cli-chat-proxy.grok.com'
-        api: openai-responses
         completions_path: /v1/responses
         supports_completions: true
         supports_embeddings: false
         supports_thinking_levels: true
         compatibility:
-            supports_developer_role: false
         auth_command: 'auth:grok'
         models:
             grok-composer-2.5-fast:

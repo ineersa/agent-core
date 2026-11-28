@@ -27,7 +27,6 @@ final readonly class DeferredToolCompletionCorrelation
         public ?string $toolIdempotencyKey = null,
         public ?string $mode = null,
         public ?int $timeoutSeconds = null,
-        public ?int $maxParallelism = null,
         public ?array $argSchema = null,
         public ?string $toolsRef = null,
     ) {

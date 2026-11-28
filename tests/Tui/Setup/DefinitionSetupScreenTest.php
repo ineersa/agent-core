@@ -28,7 +28,7 @@ final class DefinitionSetupScreenTest extends PerMethodIsolatedKernelTestCase
 {
     protected const bool ISOLATE_HOME = true;
 
-    public function testBundledAgentWarningStaysStyledThroughSave(): void
+    public function testBundledAgentCanEditBodyAndDelete(): void
     {
         $home = $this->isolatedHome();
         $this->assertSame($home.'/.hatfield', realpath($home.'/.hatfield'));
@@ -50,7 +50,7 @@ final class DefinitionSetupScreenTest extends PerMethodIsolatedKernelTestCase
             $terminal->clearOutput();
             $tui->requestRender(force: true);
             $tui->processRender();
-            $this->assertStringNotContainsString('Delete definition', AnsiUtils::stripAnsiCodes($terminal->getOutput()));
+            $this->assertStringContainsString('Delete definition', AnsiUtils::stripAnsiCodes($terminal->getOutput()));
             $terminal->simulateInput("\r"); // Edit.
             [$heading, $metadata, $warning, $status] = $pane->all();
             $this->assertInstanceOf(TextWidget::class, $heading);
@@ -59,7 +59,7 @@ final class DefinitionSetupScreenTest extends PerMethodIsolatedKernelTestCase
             $this->assertInstanceOf(TextWidget::class, $status);
             $this->assertSame($theme->color(ThemeColorEnum::Accent, 'scout'), $heading->getText());
             $this->assertSame($theme->muted('Source: '.$path.' · Owner: user · Built-in'), $metadata->getText());
-            $expected = $theme->warning('Built-in: edits can be overwritten on refresh or rematerialization. Deletion is disabled.');
+            $expected = $theme->warning('Changes apply to the installed user copy, not the bundled resource.');
             $this->assertSame($expected, $warning->getText());
             $terminal->simulateInput("\x1b[B"); // Description.
             $terminal->simulateInput("\r");
@@ -68,6 +68,56 @@ final class DefinitionSetupScreenTest extends PerMethodIsolatedKernelTestCase
             $this->assertStringContainsString('Fixture updated', (string) file_get_contents($path));
             $this->assertSame($theme->success('Saved frontmatter to '.$path), $status->getText());
             $this->assertSame($expected, $warning->getText());
+            $terminal->simulateInput("\x1b"); // Back to details.
+            $terminal->simulateInput("\x1b[B"); // Edit body.
+            $terminal->simulateInput("\r");
+            $terminal->simulateInput("\x01Updated ");
+            $terminal->simulateInput("\r");
+            $this->assertStringContainsString("---\nUpdated Body\n", (string) file_get_contents($path));
+            $terminal->simulateInput("\x1b[B");
+            $terminal->simulateInput("\x1b[B"); // Delete.
+            $terminal->simulateInput("\r\x1b[B\r"); // Confirm.
+            $this->assertFileDoesNotExist($path);
+        } finally {
+            $tui->stop();
+        }
+    }
+
+    public function testToolAndSkillPickersPreserveUnavailableEntries(): void
+    {
+        $home = $this->isolatedHome();
+        $this->assertSame($home.'/.hatfield', realpath($home.'/.hatfield'));
+        $this->assertFalse(is_link($home.'/.hatfield/agents'));
+        $this->assertFalse(is_link($home.'/.hatfield/skills'));
+        $this->assertFalse(is_link($home.'/.hatfield/skills/example'));
+        $agent = $home.'/.hatfield/agents/picker.md';
+        $fs = new Filesystem();
+        $fs->dumpFile($agent, "---\nname: picker\ndescription: Fixture\ntools: 'mcp:missing_*'\nskills: [missing]\n---\nBody\n");
+        $fs->dumpFile($home.'/.hatfield/skills/example/SKILL.md', "---\nname: example\ndescription: Fixture\n---\nBody\n");
+        $service = self::getContainer()->get(DefinitionSetupService::class);
+        $terminal = new VirtualTerminal(columns: 130, rows: 35);
+        $tui = new Tui(terminal: $terminal);
+        $pane = new ContainerWidget();
+        $tui->add($pane);
+        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
+        (new DefinitionSetupScreen($service, SettingsLayerEnum::User, new NullLogger(), $theme, skill: false))->mount($tui, $pane, $tui->stop(...));
+        $tui->start();
+        try {
+            $terminal->simulateInput("\r\r");
+            $tui->requestRender(force: true);
+            $tui->processRender();
+            $this->assertStringContainsString('Inherit parent / default', AnsiUtils::stripAnsiCodes($terminal->getOutput()));
+            $this->assertArrayNotHasKey('model', $service->fields($fs->readFile($agent)));
+            foreach ([2 => ['tools', 'mcp:missing_*', 'mcp:*'], 5 => ['skills', 'missing', 'example']] as $index => [$field, $unavailable, $known]) {
+                $form = $tui->getFocus();
+                $this->assertInstanceOf(SettingsListWidget::class, $form);
+                $terminal->simulateInput(str_repeat("\x1b[B", $index)."\r");
+                $picker = $form->all()[0];
+                $this->assertInstanceOf(SelectListWidget::class, $picker);
+                $this->assertSame($unavailable.' (current; unavailable)', $picker->getSelectedItem()['label'] ?? null);
+                $terminal->simulateInput("\x1b[B \r");
+                $this->assertSame([$unavailable, $known], $service->fields($fs->readFile($agent))[$field]);
+            }
         } finally {
             $tui->stop();
         }

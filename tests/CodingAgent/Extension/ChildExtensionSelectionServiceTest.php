@@ -56,7 +56,6 @@ final class ChildExtensionSelectionServiceTest extends TestCase
 
         $service = $this->service(
             agentsAlwaysOn: [$always, $optional],
-            forksAlwaysOn: [$always],
             forksEnabled: [],
             globallyEnabled: [$always, $optional, $globalOnly],
         );
@@ -79,8 +78,7 @@ final class ChildExtensionSelectionServiceTest extends TestCase
 
         $service = $this->service(
             agentsAlwaysOn: [$always],
-            forksAlwaysOn: [$always],
-            forksEnabled: [$workflow],
+            forksEnabled: [$always, $workflow, $always],
             globallyEnabled: [$always, $workflow, $globalOnly],
         );
 
@@ -92,7 +90,6 @@ final class ChildExtensionSelectionServiceTest extends TestCase
         $always = 'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension';
         $service = $this->service(
             agentsAlwaysOn: [$always],
-            forksAlwaysOn: [$always],
             forksEnabled: [],
             globallyEnabled: [],
         );
@@ -107,7 +104,6 @@ final class ChildExtensionSelectionServiceTest extends TestCase
         $failing = ChildExtensionSelectionFailingExtension::class;
         $service = $this->service(
             agentsAlwaysOn: [$failing],
-            forksAlwaysOn: [$failing],
             forksEnabled: [],
             globallyEnabled: [$failing],
         );
@@ -122,7 +118,6 @@ final class ChildExtensionSelectionServiceTest extends TestCase
         $ok = ChildExtensionSelectionOkExtension::class;
         $service = $this->service(
             agentsAlwaysOn: [$ok],
-            forksAlwaysOn: [$ok],
             forksEnabled: [],
             globallyEnabled: [$ok],
         );
@@ -133,13 +128,11 @@ final class ChildExtensionSelectionServiceTest extends TestCase
 
     /**
      * @param list<string> $agentsAlwaysOn
-     * @param list<string> $forksAlwaysOn
      * @param list<string> $forksEnabled
      * @param list<string> $globallyEnabled
      */
     private function service(
         array $agentsAlwaysOn,
-        array $forksAlwaysOn,
         array $forksEnabled,
         array $globallyEnabled,
     ): ChildExtensionSelectionService {
@@ -147,9 +140,7 @@ final class ChildExtensionSelectionServiceTest extends TestCase
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
             extensions: new ExtensionsConfig(enabled: $globallyEnabled),
-            forks: new ForksConfigDTO(
-                extensions: new ChildExtensionsConfigDTO(alwaysOn: $forksAlwaysOn, enabled: $forksEnabled),
-            ),
+            forks: new ForksConfigDTO(extensions: new ChildExtensionsConfigDTO(enabled: $forksEnabled)),
             agents: new AgentsConfig(
                 extensions: new ChildExtensionsConfigDTO(alwaysOn: $agentsAlwaysOn),
             ),

@@ -270,9 +270,6 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
     protected function extraSettingsYaml(): string
     {
         return <<<'YAML'
-tools:
-    execution:
-        max_parallelism: 1
 YAML;
     }
 

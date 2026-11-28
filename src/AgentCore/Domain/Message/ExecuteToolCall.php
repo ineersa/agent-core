@@ -29,7 +29,6 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
         public ?string $toolIdempotencyKey = null,
         public ?string $mode = null,
         public ?int $timeoutSeconds = null,
-        public ?int $maxParallelism = null,
         public ?array $argSchema = null,
         public ?string $toolsRef = null,
         #[Assert\Valid]
@@ -56,7 +55,6 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
             toolIdempotencyKey: $this->toolIdempotencyKey,
             mode: $this->mode,
             timeoutSeconds: $this->timeoutSeconds,
-            maxParallelism: $this->maxParallelism,
             argSchema: $this->argSchema,
             toolsRef: $this->toolsRef,
             humanInputAnswer: $answer,
@@ -83,7 +81,6 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
             toolIdempotencyKey: $this->toolIdempotencyKey,
             mode: $this->mode,
             timeoutSeconds: $this->timeoutSeconds,
-            maxParallelism: $this->maxParallelism,
             argSchema: $this->argSchema,
             toolsRef: $this->toolsRef,
             humanInputAnswer: $answer,

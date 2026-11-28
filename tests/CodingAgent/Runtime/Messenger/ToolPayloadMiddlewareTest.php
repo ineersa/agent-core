@@ -288,8 +288,8 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
     {
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('owner prepared code_mode');
-        $code = new ExecuteToolCall($run, 1, 'step', 1, 'key', 'code-call', 'code_mode', ['script' => 'return 1;'], 0, mode: 'parallel', maxParallelism: 2);
-        $other = new ExecuteToolCall($run, 1, 'step', 1, 'other-key', 'echo-call', 'echo', ['text' => 'hi'], 1, mode: 'parallel', maxParallelism: 2);
+        $code = new ExecuteToolCall($run, 1, 'step', 1, 'key', 'code-call', 'code_mode', ['script' => 'return 1;'], 0, mode: 'parallel');
+        $other = new ExecuteToolCall($run, 1, 'step', 1, 'other-key', 'echo-call', 'echo', ['text' => 'hi'], 1, mode: 'parallel');
         $batches = $container->get(ToolBatchStoreInterface::class);
         $admitted = TestToolBatchRegistration::register(
             new ToolBatchCollector($batches),
@@ -399,7 +399,7 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         if (null === $batches) {
             $batches = $this->createStub(ToolBatchStoreInterface::class);
             $batches->method('loadCallReference')->willReturn($this->reference('call'));
-            $batches->method('loadSchedule')->willReturn(new ToolBatchScheduleDTO(['call' => 0], ['call' => 'sequential'], [], ['call' => true], [], false, 1));
+            $batches->method('loadSchedule')->willReturn(new ToolBatchScheduleDTO(['call' => 0], ['call' => 'sequential'], [], ['call' => true], [], false));
         }
         if (null === $registry) {
             $registry = $this->createStub(ActiveRunContextInterface::class);

@@ -20,7 +20,6 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Tests\Support\PlatformCollaborators;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
-use Ineersa\CodingAgent\Config\ToolSettings;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
@@ -451,11 +450,7 @@ final class ViewImageToolTest extends TestCase
         $tokenCancelledFirst = $this->createStub(CancellationTokenInterface::class);
         $tokenCancelledFirst->method('isCancellationRequested')->willReturn(false);
 
-        $executor = ToolExecutor::fromSettings(
-            settings: new ToolSettings(
-                mode: 'sequential',
-                maxParallelism: 1,
-            ),
+        $executor = new ToolExecutor(
             resultStore: $resultStore,
             toolbox: $toolbox,
             contextAccessor: $contextAccessor,
@@ -598,7 +593,6 @@ final class ViewImageToolTest extends TestCase
                     'raw_result' => $regularResult,
                     'mode' => 'sequential',
                     'timeout_seconds' => 30,
-                    'max_parallelism' => 1,
                 ],
                 'tool_idempotency_key' => null,
                 'mode' => null,

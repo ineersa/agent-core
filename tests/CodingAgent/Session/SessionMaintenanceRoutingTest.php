@@ -1126,7 +1126,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             $call = $this->executionMessage($container->get('messenger.transport.tool')->getSent()[$i + ($completedOrdinaryTool ? 1 : 0)]);
             $container->get(DeferredToolCompletionRepositoryInterface::class)->registerPending(new DeferredToolCompletionCorrelation(
                 $lifecycle, $run, $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->toolName, $call->args, $call->orderIndex,
-                $call->toolIdempotencyKey, $call->mode, $call->timeoutSeconds, $call->maxParallelism, argSchema: $call->argSchema, toolsRef: $call->toolsRef,
+                $call->toolIdempotencyKey, $call->mode, $call->timeoutSeconds, argSchema: $call->argSchema, toolsRef: $call->toolsRef,
             ));
             $identity = $factory->childIdentity($run, $toolId, 1);
             $childIds[] = $child = $identity['childRunId'];

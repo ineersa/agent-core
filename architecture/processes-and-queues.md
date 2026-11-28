@@ -48,7 +48,7 @@ connection to `.hatfield/state.sqlite`.
 | Consumer process | Queues / responsibility |
 |---|---|
 | `run_control` | Serialized commands, results, canonical transitions and lifecycle metadata |
-| `llm` | `ExecuteLlmStep` and `ExecuteCompactionStep`; `runtime.llm_concurrency` defaults to **10** |
+| `llm` | `ExecuteLlmStep` and `ExecuteCompactionStep`; internal admission limit of **10** |
 | Shared `tool` | `tool`, `agent` and `code_mode_requests` queues: tools, direct shell, code-mode tool requests, child launch/resume, recurring extension jobs |
 | `mcp` | MCP initialize/refresh/disconnect and MCP-backed tool calls; one consumer per session, serialized |
 | `extension_agent` | Ordinary extension-agent job dispatch; launched only if handlers are registered |
@@ -119,8 +119,8 @@ flowchart TB
 
 - LLM capacity counts active handlers, not child runs or HTTP connections. The
   LLM fetch size equals that limit.
-- The shared tool consumer has no worker admission cap.
-  `tools.execution.max_parallelism` separately bounds each tool batch. A tool
+- The shared tool consumer and parallel batches have no numeric admission cap.
+  Sequential and Interrupt calls retain exclusive ordering barriers. A tool
   consumer also opens a per-slot code-mode reply receiver.
 - Deferred child launch returns before child completion. Later child LLM/tool
   work uses the same consumers.

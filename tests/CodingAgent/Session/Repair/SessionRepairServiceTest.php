@@ -453,7 +453,6 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             inFlight: [],
             results: [],
             finalized: false,
-            maxParallelism: 1,
             awaitingHumanInput: ['call-human' => 'question-1'],
         ));
         $this->persistActiveToolBatchEvents($runId, $stepId, waitingHuman: true);

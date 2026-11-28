@@ -205,7 +205,8 @@ YAML);
         $source = $catalog->readBundledCatalog();
         $this->assertNotNull($source);
         $this->assertSame('apikey', $source['providers']['opencode-go']['kind']);
-        $this->assertSame('openai-completions', $source['providers']['opencode-go']['api']);
+        $this->assertArrayNotHasKey('api', $source['providers']['opencode-go']);
+        $this->assertArrayNotHasKey('supports_developer_role', $source['providers']['opencode-go']['compatibility']);
 
         $ai = AiConfig::fromArray($catalog->loadProviders()['ai']);
         $go = $ai->providers['opencode-go'];

@@ -13,6 +13,8 @@ use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -29,8 +31,8 @@ use Symfony\Component\Yaml\Yaml;
  *
  * Built-in skills shipped under AppResourceLocator::getBuiltinSkillsPath()
  * are mirrored into ~/.hatfield/skills/<name>/ immediately before scanning
- * (including when --no-skills suppresses the scan). Hatfield owns those
- * destinations and rewrites them; sibling user skills are left untouched.
+ * (including when --no-skills suppresses the scan). Only pristine installed
+ * copies are upgraded; modified or deleted copies stay under user control.
  *
  * Each path is scanned recursively for SKILL.md files. When a directory
  * contains SKILL.md, that directory is treated as a skill root and its
@@ -286,55 +288,149 @@ final class SkillDiscovery
     }
 
     /**
-     * Mirror every direct bundled skill directory into ~/.hatfield/skills/<name>/.
+     * Serialize setup mutations with bundled skill materialization.
      *
-     * Only direct children of the bundled skills root that contain SKILL.md are
-     * treated as built-ins. Nested reference files stay inside those skill trees.
-     * Owned destinations are removed before mirror so a previous PHAR/materialization
-     * that left files mode 0444 cannot block whole-directory replacement. Sibling
-     * user skill directories under ~/.hatfield/skills are left untouched.
-     * Concurrent same-version copies are accepted as idempotent; an interrupted
-     * write is repaired on the next discover().
+     * @template T
+     *
+     * @param callable(): T $mutation
+     *
+     * @return T
+     */
+    public function mutateInstalledSkill(string $path, callable $mutation, bool $deleting = false): mixed
+    {
+        $root = rtrim($this->pathResolver->getHomeDir(), '/').'/.hatfield/skills';
+        $directory = \dirname($path);
+        $name = basename($directory);
+        if (\dirname($directory) !== $root || !is_file($this->resources->getBuiltinSkillsPath().'/'.$name.'/SKILL.md')) {
+            return $mutation();
+        }
+
+        return $this->withInstallLock($root, function () use ($root, $name, $mutation, $deleting): mixed {
+            $result = $mutation();
+            if ($deleting) {
+                // The copy can predate the receipt; remember a successful setup deletion.
+                $receipt = $this->readInstallReceipt($root);
+                $receipt[$name] = null;
+                $this->writeInstallReceipt($root, $receipt);
+            }
+
+            return $result;
+        });
+    }
+
+    /**
+     * Install bundled copies and update only fingerprint-proven pristine trees.
+     * Modified, unrecognized legacy and deleted copies remain user-owned. A null
+     * receipt opts a tree out of automatic replacement, including after deletion.
      */
     private function materializeBuiltinSkills(string $homeDir): void
     {
         $sourceRoot = $this->resources->getBuiltinSkillsPath();
-        if (!is_dir($sourceRoot)) {
-            return;
-        }
-
-        $entries = scandir($sourceRoot);
-        if (false === $entries) {
+        if (!is_dir($sourceRoot) || false === $entries = scandir($sourceRoot)) {
             return;
         }
 
         $destinationRoot = rtrim($homeDir, '/').'/.hatfield/skills';
-
-        foreach ($entries as $entry) {
-            if ('.' === $entry || '..' === $entry) {
-                continue;
+        $this->withInstallLock($destinationRoot, function () use ($entries, $sourceRoot, $destinationRoot): void {
+            $receipt = $this->readInstallReceipt($destinationRoot);
+            foreach ($entries as $entry) {
+                $source = $sourceRoot.'/'.$entry;
+                if ('.' === $entry || '..' === $entry || !is_file($source.'/SKILL.md')) {
+                    continue;
+                }
+                $target = $destinationRoot.'/'.$entry;
+                if (is_link($target) || (file_exists($target) && !is_dir($target))) {
+                    continue;
+                }
+                $tracked = \array_key_exists($entry, $receipt);
+                if ($tracked && (!is_dir($target) || null === $receipt[$entry])) {
+                    continue;
+                }
+                $packaged = $this->treeFingerprint($source);
+                if (null === $packaged) {
+                    continue;
+                }
+                $installed = is_dir($target) ? $this->treeFingerprint($target) : null;
+                if (is_dir($target) && !$tracked) {
+                    // Without an old baseline only an exact match is known pristine.
+                    $receipt[$entry] = $installed === $packaged ? $packaged : null;
+                } elseif ($installed !== $packaged) {
+                    if ($tracked && $installed !== $receipt[$entry]) {
+                        continue;
+                    }
+                    // Replacement also handles read-only files copied by PHAR extraction.
+                    $this->filesystem->remove($target);
+                    $this->filesystem->mirror($source, $target);
+                    $receipt[$entry] = $packaged;
+                } else {
+                    continue;
+                }
+                $this->writeInstallReceipt($destinationRoot, $receipt);
             }
+        });
+    }
 
-            $sourceDir = $sourceRoot.'/'.$entry;
-            if (!is_dir($sourceDir) || !is_file($sourceDir.'/SKILL.md')) {
-                continue;
-            }
-
-            // Hatfield owns ~/.hatfield/skills/<name>/ for each built-in. Remove the
-            // whole destination first: mirror(override/delete) cannot rewrite read-only
-            // files left by PHAR extraction (mode 0444).
-            $destinationDir = $destinationRoot.'/'.$entry;
-            if ($this->filesystem->exists($destinationDir)) {
-                $this->filesystem->remove($destinationDir);
-            }
-
-            $this->filesystem->mirror(
-                $sourceDir,
-                $destinationDir,
-                null,
-                ['override' => true, 'delete' => true],
-            );
+    /**
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function withInstallLock(string $root, callable $operation): mixed
+    {
+        $lock = (new LockFactory(new FlockStore()))->createLock('hatfield:builtin-skills:'.$root);
+        $lock->acquire(true);
+        try {
+            return $operation();
+        } finally {
+            $lock->release();
         }
+    }
+
+    /** @return array<string, string|null> */
+    private function readInstallReceipt(string $root): array
+    {
+        $path = $root.'/.builtin-installs.yaml';
+
+        return is_file($path) ? Yaml::parse($this->filesystem->readFile($path)) : [];
+    }
+
+    /** @param array<string, string|null> $receipt */
+    private function writeInstallReceipt(string $root, array $receipt): void
+    {
+        $this->filesystem->dumpFile($root.'/.builtin-installs.yaml', Yaml::dump($receipt));
+    }
+
+    private function treeFingerprint(string $directory): ?string
+    {
+        $entries = scandir($directory);
+        if (false === $entries) {
+            return null;
+        }
+        $nodes = [];
+        foreach ($entries as $name) {
+            if ('.' === $name || '..' === $name) {
+                continue;
+            }
+            $path = $directory.'/'.$name;
+            if (is_link($path)) {
+                return null;
+            }
+            if (is_dir($path)) {
+                $hash = $this->treeFingerprint($path);
+                $kind = 'directory';
+            } else {
+                $hash = is_file($path) ? hash('sha256', $this->filesystem->readFile($path)) : null;
+                $kind = 'file';
+            }
+            if (null === $hash) {
+                return null;
+            }
+            $nodes[] = [$name, $kind, $hash];
+        }
+
+        return hash('sha256', serialize($nodes));
     }
 
     /**

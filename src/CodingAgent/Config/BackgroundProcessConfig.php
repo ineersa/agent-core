@@ -14,14 +14,15 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * character cap.
  *
  * Hydrated from the tools.background_process section of Hatfield merged
- * config via Symfony Serializer. The storageDir is made absolute by
- * {@see AppConfigLoader::load()} before DTO construction.
+ * config via Symfony Serializer. The storage directory is derived by {@see AppConfig} from the canonical cwd.
  */
 final readonly class BackgroundProcessConfig
 {
+    public const string STORAGE_PATH = '.hatfield/tmp/bg';
+
     public function __construct(
         #[SerializedName('path')]
-        public string $storageDir = '.hatfield/tmp/bg',
+        public string $storageDir = self::STORAGE_PATH,
 
         public int $stopGraceSeconds = 5,
 

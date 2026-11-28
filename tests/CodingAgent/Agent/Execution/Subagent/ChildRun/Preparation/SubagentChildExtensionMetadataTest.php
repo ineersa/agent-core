@@ -56,7 +56,6 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
         $registry = new ToolRegistry();
         $registry->registerTool(name: 'subagent', description: 'launch', parametersJsonSchema: [], handler: $handler, promptLine: 'subagent');
         $executor = new ToolExecutor(
-            defaultMode: 'sequential', maxParallelism: 1,
             resultStore: new ToolExecutionResultStore(), toolbox: new RegistryBackedToolbox(
                 $registry,
                 new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),

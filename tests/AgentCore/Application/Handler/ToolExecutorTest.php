@@ -92,7 +92,7 @@ final class ToolExecutorTest extends TestCase
                 return $result;
             });
             $store = new ToolExecutionResultStore();
-            $executor = new ToolExecutor(defaultMode: 'parallel', maxParallelism: 4, resultStore: $store, toolbox: $toolbox, contextAccessor: $accessor, toolSetResolver: PlatformCollaborators::toolSetResolver(), clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger()), toolResultProcessors: [$processor]);
+            $executor = new ToolExecutor(resultStore: $store, toolbox: $toolbox, contextAccessor: $accessor, toolSetResolver: PlatformCollaborators::toolSetResolver(), clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger()), toolResultProcessors: [$processor]);
             foreach (['fixture_report' => false, 'view_image' => true] as $name => $isImage) {
                 $call = ToolCallBuilder::create($name)->withToolName($name)->withRunId('run')->build();
                 $result = $executor->execute($call);
@@ -128,8 +128,6 @@ final class ToolExecutorTest extends TestCase
         $processor->expects($this->once())->method('process')->willThrowException(new ToolCallException("bad \xFF"));
         $accessor = new StackToolExecutionContextAccessor();
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: $accessor,
@@ -159,8 +157,6 @@ final class ToolExecutorTest extends TestCase
     {
         $toolbox = new Toolbox([new InterruptTool()]);
         $executor = new ToolExecutor(
-            defaultMode: 'sequential',
-            maxParallelism: 2,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -186,8 +182,6 @@ final class ToolExecutorTest extends TestCase
     {
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -220,8 +214,6 @@ final class ToolExecutorTest extends TestCase
     {
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -261,8 +253,6 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new Toolbox([new SymfonySearchTool()], eventDispatcher: $dispatcher);
 
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -287,8 +277,6 @@ final class ToolExecutorTest extends TestCase
         $accessor = new StackToolExecutionContextAccessor();
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: $accessor,
@@ -330,8 +318,6 @@ final class ToolExecutorTest extends TestCase
 
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -371,8 +357,6 @@ final class ToolExecutorTest extends TestCase
 
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -410,8 +394,6 @@ final class ToolExecutorTest extends TestCase
 
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -440,8 +422,6 @@ final class ToolExecutorTest extends TestCase
     {
         $toolbox = new ThrowingToolCallExceptionToolbox(false, 'Something went wrong', 'Try again with different input');
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -468,8 +448,6 @@ final class ToolExecutorTest extends TestCase
     {
         $toolbox = new ThrowingToolCallExceptionToolbox(true, 'Temporary failure');
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -494,8 +472,6 @@ final class ToolExecutorTest extends TestCase
     {
         $toolbox = new ThrowingToolCallExceptionToolbox(false, 'Boom!', null, false);
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -522,8 +498,6 @@ final class ToolExecutorTest extends TestCase
     public function testMissingToolRemainsAnErrorWhenItsResultIsReused(): void
     {
         $executor = new ToolExecutor(
-            defaultMode: 'sequential',
-            maxParallelism: 1,
             resultStore: new ToolExecutionResultStore(),
             toolbox: new Toolbox([new SymfonySearchTool()]),
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -567,8 +541,6 @@ final class ToolExecutorTest extends TestCase
             schemaFactory: new Factory(new MapToolArgumentsDescriber()),
         );
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -616,8 +588,6 @@ final class ToolExecutorTest extends TestCase
             }
         };
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -680,8 +650,6 @@ final class ToolExecutorTest extends TestCase
             schemaFactory: new Factory(new MapToolArgumentsDescriber()),
         );
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -720,7 +688,7 @@ final class ToolExecutorTest extends TestCase
             schemaFactory: new Factory(new MapToolArgumentsDescriber()),
             logger: $logger,
         );
-        $executor = new ToolExecutor(defaultMode: 'parallel', maxParallelism: 4, resultStore: new ToolExecutionResultStore(), toolbox: $toolbox, contextAccessor: new StackToolExecutionContextAccessor(), toolSetResolver: PlatformCollaborators::toolSetResolver(), clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger()));
+        $executor = new ToolExecutor(resultStore: new ToolExecutionResultStore(), toolbox: $toolbox, contextAccessor: new StackToolExecutionContextAccessor(), toolSetResolver: PlatformCollaborators::toolSetResolver(), clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger()));
         $result = $executor->execute(ToolCallBuilder::create('call-diagnostic')->withToolName('fixture')->withArguments([])->build());
 
         $this->assertTrue($result->isError);
@@ -761,8 +729,6 @@ final class ToolExecutorTest extends TestCase
             schemaFactory: new Factory(new MapToolArgumentsDescriber()),
         );
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -808,7 +774,7 @@ final class ToolExecutorTest extends TestCase
             schemaFactory: new Factory(new MapToolArgumentsDescriber()),
             eventDispatcher: $dispatcher,
         );
-        $executor = new ToolExecutor('parallel', 4, new ToolExecutionResultStore(), $toolbox, contextAccessor: new StackToolExecutionContextAccessor(), toolSetResolver: PlatformCollaborators::toolSetResolver(), clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger()));
+        $executor = new ToolExecutor(new ToolExecutionResultStore(), $toolbox, contextAccessor: new StackToolExecutionContextAccessor(), toolSetResolver: PlatformCollaborators::toolSetResolver(), clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger()));
 
         $result = $executor->execute(ToolCallBuilder::create('call-invalid-label')
             ->withToolName('label')
@@ -839,8 +805,6 @@ final class ToolExecutorTest extends TestCase
             schemaFactory: new Factory(new MapToolArgumentsDescriber()),
         );
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -871,8 +835,6 @@ final class ToolExecutorTest extends TestCase
         $accessor = new StackToolExecutionContextAccessor();
         $toolbox = new ContextCheckingToolbox($accessor);
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: $accessor,
@@ -904,8 +866,6 @@ final class ToolExecutorTest extends TestCase
         $clock = new MockClock();
         $toolbox = new ClockAdvancingToolbox($clock, 301);
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 2,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),
@@ -933,8 +893,6 @@ final class ToolExecutorTest extends TestCase
         $clock = new MockClock();
         $toolbox = new ClockAdvancingToolbox($clock, 2);
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 2,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),

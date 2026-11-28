@@ -7,12 +7,16 @@ description: Agent definitions, discovery, subagent execution, retrieval, and li
 
 The **Agents** tab in `hatfield setup` lists definitions with their source path
 and shadowing information. Use **F2** to switch to the owning scope before
-editing frontmatter or deleting a definition. Custom-path and managed definitions
-are read-only. Setup preserves the Markdown body and asks for confirmation before
+editing frontmatter, editing the prompt body, or deleting a definition. Definitions
+outside the owning scope remain read-only. Setup preserves the body on metadata edits and asks for confirmation before
 deletion, showing the exact target and any definition that would become active.
 Deleting an agent removes only its definition file.
-Bundled agents installed by `agents:init` can be edited in User scope, but not
-deleted from setup. Running `agents:init --force` can overwrite those edits.
+Bundled agents installed by `agents:init` can be edited or deleted in User scope.
+Discovery does not recreate deleted agent files. Explicitly running `agents:init`
+can reinstall missing files; `agents:init --force` can overwrite edits. Bundled
+agents do not pin a model or reasoning level; installed user overrides are preserved.
+Known tools, skills and extensions use multiselects, retaining unavailable current
+entries. Raw tool selectors remain available for custom/MCP expressions.
 
 Named child-agent roles live in Markdown files with YAML frontmatter. The
 model-visible `subagent` tool launches one child per call. Submit independent
@@ -214,7 +218,7 @@ default `tool` transport (see repository `architecture/tools-and-mcp.md`).
 | Purpose | Named roles, exploration/review, parallel tasks | Isolated implementation handoff |
 | Context | Child system prompt from agent Markdown | Inherits compacted parent messages |
 | Nested children | Nested `subagent`/`fork` **stripped** on every child | Nested `fork` **rejected**; children also lack `subagent` |
-| Extensions | `agents.extensions.always_on` ∪ definition `extensions` | `forks.extensions.always_on` ∪ `forks.extensions.enabled` |
+| Extensions | `agents.extensions.always_on` ∪ definition `extensions` | `forks.extensions.enabled` |
 | Model/thinking | Definition `model`/`thinking` when set | explicit args → `forks.model` / `forks.thinking_level` → parent |
 | Concurrency | Independent single-child tool calls use normal parallel scheduling | Prefer ≤3 concurrent forks; never same worktree |
 

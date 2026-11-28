@@ -41,6 +41,12 @@ final class SetupScreen
     private const PHASE_CUSTOM = 'custom';
     private const PHASE_SUMMARY = 'summary';
 
+    private const array CUSTOM_SECTIONS = [
+        'connection' => 'Connection',
+        'models' => 'Models',
+        'advanced' => 'Advanced compatibility',
+    ];
+
     private Tui $tui;
     private TextWidget $titleWidget;
     private ContainerWidget $panelWidget;
@@ -70,6 +76,8 @@ final class SetupScreen
     private ?string $error = null;
 
     private ?\Closure $back = null;
+
+    private string $customSection = 'connection';
 
     public function __construct(
         private readonly ProvidersSetupFlowInterface $flow,
@@ -178,8 +186,8 @@ final class SetupScreen
         try {
             $action();
         } catch (\Throwable $error) {
-            $this->logger->notice('provider.setup.refused', ['component' => 'setup', 'event_type' => 'provider.setup.refused', 'exception_class' => $error::class]);
-            $this->error = 'Action failed. Check provider configuration and the target YAML.';
+            $this->logger->notice('provider.setup.refused', ['component' => 'setup', 'event_type' => 'provider.setup.refused', 'exception' => $error]);
+            $this->error = $error->getMessage();
             $this->refreshError();
         }
     }
@@ -481,13 +489,11 @@ final class SetupScreen
             'apiKey' => $definition['apiKey'],
             // ponytail: edit keeps existing models; no per-model delete UI — remove+re-add to drop one.
             'models' => $definition['models'],
-            'supportsDeveloperRole' => $definition['supportsDeveloperRole'],
             'thinkingFormat' => $definition['thinkingFormat'],
             'editing' => true,
             'modelId' => '',
             'modelName' => '',
             'contextWindow' => '128000',
-            'maxTokens' => '8192',
             'modalities' => 'text',
             'reasoning' => 'no',
         ];
@@ -505,13 +511,11 @@ final class SetupScreen
             'completionsPath' => '/v1/chat/completions',
             'apiKey' => null,
             'models' => [],
-            'supportsDeveloperRole' => false,
             'thinkingFormat' => '',
             'editing' => false,
             'modelId' => 'default',
             'modelName' => 'default',
             'contextWindow' => '128000',
-            'maxTokens' => '8192',
             'modalities' => 'text',
             'reasoning' => 'no',
         ];
@@ -524,8 +528,14 @@ final class SetupScreen
         $this->phase = self::PHASE_CUSTOM;
         $this->formKind = '';
         $this->error = null;
+        $this->showCustomSection('connection');
+    }
+
+    private function showCustomSection(string $section): void
+    {
+        $this->customSection = $section;
         $this->applyChrome();
-        $this->hintWidget->setText('Confirm fields to apply changes. Esc goes back.');
+        $this->hintWidget->setText('Changes are written only on Save. Esc cancels.');
         // Remove before reassign — ContainerWidget::remove() no-ops on a fresh
         // unattached instance, which would orphan the previously mounted form.
         $this->panelWidget->remove($this->settingsWidget);
@@ -590,12 +600,14 @@ final class SetupScreen
             submenu: static fn (string $_, callable $done): SettingsTextInputWidget => new SettingsTextInputWidget($done, secret: true),
         );
         $items[] = new SettingItem('clearApiKey', 'Clear API key', '', values: ['clear']);
+        $connection = $items;
+        $items = [];
         $items[] = new SettingItem(
             'modelsSaved',
             'Saved models',
             $modelsDisplay,
             'Select an existing model to edit, or enter a new model ID below.',
-            submenu: true === ($this->formState['editing'] ?? false) ? fn (): SelectListWidget => new SelectListWidget(array_map(static fn ($id): array => ['value' => (string) $id, 'label' => (string) $id], array_keys($this->formState['models']))) : null,
+            submenu: [] !== $modelIds ? fn (): SelectListWidget => new SelectListWidget(array_map(static fn ($id): array => ['value' => (string) $id, 'label' => (string) $id], array_keys($this->formState['models']))) : null,
         );
         $items[] = new SettingItem(
             'modelId',
@@ -619,13 +631,6 @@ final class SetupScreen
             submenu: $this->textSubmenu(...),
         );
         $items[] = new SettingItem(
-            'maxTokens',
-            'Max output tokens',
-            (string) ($this->formState['maxTokens'] ?? '8192'),
-            'The most text the model can produce in one reply.',
-            submenu: $this->textSubmenu(...),
-        );
-        $items[] = new SettingItem(
             'modalities',
             'Modalities',
             (string) ($this->formState['modalities'] ?? 'text'),
@@ -639,27 +644,32 @@ final class SetupScreen
             'Whether this model shows its thinking before answering.',
             values: ['yes', 'no'],
         );
-        $items[] = new SettingItem(
-            'supportsDeveloperRole',
-            'Developer role',
-            true === ($this->formState['supportsDeveloperRole'] ?? false) ? 'yes' : 'no',
-            'Whether the server accepts \'developer\' role messages. Some clones only accept \'system\' — pick No then.',
-            values: ['yes', 'no'],
-        );
-        $items[] = new SettingItem(
+        $items[] = new SettingItem('add_model', 'Apply model to draft', '↵', 'Keep this model in the draft and start another.', values: ['↵']);
+        $models = $items;
+        $format = (string) ($this->formState['thinkingFormat'] ?? '');
+        $advanced = [new SettingItem(
             'thinkingFormat',
             'Reasoning format',
-            (string) ($this->formState['thinkingFormat'] ?? ''),
-            'Label the server uses to return thinking output, if any. Leave blank if it doesn\'t.',
-            submenu: $this->textSubmenu(...),
-        );
-        $items[] = new SettingItem(
-            'add_model',
-            true === $this->formState['editing'] ? 'Apply model' : 'Create server with this model',
-            '↵',
-            'Confirm the model fields above.',
-            values: ['↵'],
-        );
+            $format,
+            'Select the server’s reasoning protocol. Default uses the standard format.',
+            submenu: static fn (): SelectListWidget => new SelectListWidget(array_map(
+                static fn (string $choice): array => ['value' => $choice, 'label' => $choice],
+                array_unique(array_filter(['Default', 'llama_cpp', 'zai', 'deepseek', 'mistral', $format], static fn (string $choice): bool => '' !== $choice)),
+            )),
+        )];
+        $items = match ($this->customSection) {
+            'connection' => $connection,
+            'models' => $models,
+            'advanced' => $advanced,
+            default => throw new \LogicException('Unknown custom provider section: '.$this->customSection),
+        };
+        foreach (self::CUSTOM_SECTIONS as $section => $label) {
+            if ($section !== $this->customSection) {
+                $items[] = new SettingItem('section_'.$section, $label, '↵', values: ['↵']);
+            }
+        }
+        $items[] = new SettingItem('save', $editing ? 'Save changes' : 'Save and enable', '↵', values: ['↵']);
+        $items[] = new SettingItem('cancel', 'Cancel', '↵', values: ['↵']);
 
         return $items;
     }
@@ -675,6 +685,16 @@ final class SetupScreen
     private function onCustomSettingChange(string $id, string $value): void
     {
         $this->error = null;
+        if (str_starts_with($id, 'section_')) {
+            $this->showCustomSection(substr($id, 8));
+
+            return;
+        }
+        if ('cancel' === $id) {
+            $this->discardCustomForm();
+
+            return;
+        }
         $before = $this->formState;
         try {
             match ($id) {
@@ -687,36 +707,20 @@ final class SetupScreen
                 'modelId' => $this->setModelId($value),
                 'modelName' => $this->formState['modelName'] = trim($value),
                 'contextWindow' => $this->formState['contextWindow'] = $this->normalizePositiveInt($value, 'Context window', '128000'),
-                'maxTokens' => $this->formState['maxTokens'] = $this->normalizePositiveInt($value, 'Max tokens', '8192'),
                 'modalities' => $this->formState['modalities'] = $value,
                 'reasoning' => $this->formState['reasoning'] = $value,
-                'supportsDeveloperRole' => $this->formState['supportsDeveloperRole'] = 'yes' === $value,
-                'thinkingFormat' => $this->formState['thinkingFormat'] = trim($value),
+                'thinkingFormat' => $this->formState['thinkingFormat'] = 'Default' === $value ? '' : trim($value),
+                'save' => $this->saveCustomForm(),
                 'add_model' => $this->confirmModel(),
                 default => null,
             };
-            if (true === $before['editing'] && $before !== $this->formState && 'add_model' !== $id) {
-                $path = match ($id) {
-                    'baseUrl' => 'base_url',
-                    'completionsPath' => 'completions_path',
-                    'apiKey', 'clearApiKey' => 'api_key',
-                    'supportsDeveloperRole' => 'compatibility.supports_developer_role',
-                    'thinkingFormat' => 'compatibility.thinking_format',
-                    default => null,
-                };
-                if (null !== $path) {
-                    $this->flow->updateProviderField($before['id'], $path, $this->formState['clearApiKey' === $id ? 'apiKey' : $id]);
-                    $key = 'clearApiKey' === $id ? 'apiKey' : $id;
-                    $this->initialFormState[$key] = $this->formState[$key];
-                }
-            }
         } catch (\InvalidArgumentException $e) {
             $this->formState = $before;
             $this->error = $e->getMessage();
         } catch (\Throwable $error) {
             $this->formState = $before;
-            $this->logger->notice('provider.setup.refused', ['component' => 'setup', 'event_type' => 'provider.setup.refused', 'exception_class' => $error::class]);
-            $this->error = 'Not saved. Check the target YAML.';
+            $this->logger->notice('provider.setup.refused', ['component' => 'setup', 'event_type' => 'provider.setup.refused', 'exception' => $error]);
+            $this->error = $error->getMessage();
         }
         if (self::PHASE_CUSTOM !== $this->phase) {
             $this->refreshError();
@@ -726,14 +730,19 @@ final class SetupScreen
         if (null !== $this->error) {
             // Vendor submenu writes the rejected value onto the item before onChange;
             // restore from formState so the row stays coherent without a rebuild.
-            if (!\in_array($id, ['add_model', 'modalities', 'reasoning'], true)) {
+            if (!\in_array($id, ['save', 'add_model', 'modalities', 'reasoning'], true)) {
                 $this->settingsWidget->updateValue($id, $this->displayForSetting($id, $value));
             }
             $this->refreshError();
 
             return;
         }
-        if (\in_array($id, ['add_model', 'modelsSaved'], true)) {
+        if ('add_model' === $id) {
+            $this->showCustomSection('models');
+
+            return;
+        }
+        if ('modelsSaved' === $id) {
             $this->refreshCustomFormValuesAfterModelCommit();
             $this->refreshError();
 
@@ -753,7 +762,7 @@ final class SetupScreen
         // error-path restores beat the raw vendor event value.
         return match ($id) {
             'apiKey' => $this->apiKeyDisplay(),
-            'supportsDeveloperRole' => true === ($this->formState['supportsDeveloperRole'] ?? false) ? 'yes' : 'no',
+            'thinkingFormat' => '' !== ($this->formState['thinkingFormat'] ?? '') ? $this->formState['thinkingFormat'] : 'Default',
             default => (string) ($this->formState[$id] ?? $value),
         };
     }
@@ -775,7 +784,6 @@ final class SetupScreen
         $this->settingsWidget->updateValue('modelId', (string) $this->formState['modelId']);
         $this->settingsWidget->updateValue('modelName', (string) $this->formState['modelName']);
         $this->settingsWidget->updateValue('contextWindow', (string) $this->formState['contextWindow']);
-        $this->settingsWidget->updateValue('maxTokens', (string) $this->formState['maxTokens']);
         $this->settingsWidget->updateValue('modalities', (string) $this->formState['modalities']);
         $this->settingsWidget->updateValue('reasoning', (string) $this->formState['reasoning']);
     }
@@ -796,12 +804,11 @@ final class SetupScreen
         $this->formState['modelId'] = $id;
         $this->formState['modelName'] = (string) ($model['name'] ?? $id);
         $this->formState['contextWindow'] = (string) ($model['context_window'] ?? 128000);
-        $this->formState['maxTokens'] = (string) ($model['max_tokens'] ?? 8192);
         $this->formState['modalities'] = \in_array('image', $model['input'] ?? [], true) ? 'text+image' : 'text';
         $this->formState['reasoning'] = true === ($model['reasoning'] ?? false) ? 'yes' : 'no';
         $this->modelBaseline = $this->draftModelPayload($id);
         $this->selectedModel = $id;
-        foreach (['modelId', 'modelName', 'contextWindow', 'maxTokens', 'modalities', 'reasoning'] as $key) {
+        foreach (['modelId', 'modelName', 'contextWindow', 'modalities', 'reasoning'] as $key) {
             $this->initialFormState[$key] = $this->formState[$key];
         }
     }
@@ -868,19 +875,11 @@ final class SetupScreen
         return (string) $n;
     }
 
-    private function commitDraftModel(): void
+    private function resetDraftModel(): void
     {
-        $modelId = trim((string) ($this->formState['modelId'] ?? ''));
-        if ('' === $modelId) {
-            throw new \InvalidArgumentException('Model id is required to add a model.');
-        }
-        $models = \is_array($this->formState['models'] ?? null) ? $this->formState['models'] : [];
-        $models[$modelId] = $this->draftModelPayload($modelId);
-        $this->formState['models'] = $models;
         $this->formState['modelId'] = '';
         $this->formState['modelName'] = '';
         $this->formState['contextWindow'] = '128000';
-        $this->formState['maxTokens'] = '8192';
         $this->formState['modalities'] = 'text';
         $this->formState['reasoning'] = 'no';
     }
@@ -899,7 +898,6 @@ final class SetupScreen
         return [
             'name' => $name,
             'context_window' => (int) ($this->formState['contextWindow'] ?? 128000),
-            'max_tokens' => (int) ($this->formState['maxTokens'] ?? 8192),
             'input' => 'text+image' === ($this->formState['modalities'] ?? 'text') ? ['text', 'image'] : ['text'],
             'tool_calling' => true,
             'reasoning' => $reasoning,
@@ -915,11 +913,6 @@ final class SetupScreen
 
     private function confirmModel(): void
     {
-        if (true !== $this->formState['editing']) {
-            $this->saveCustomForm();
-
-            return;
-        }
         $id = (string) $this->formState['modelId'];
         if ('' === $id || (isset($this->formState['models'][$id]) && $id !== $this->selectedModel)) {
             throw new \InvalidArgumentException('Enter a new model ID.');
@@ -932,13 +925,9 @@ final class SetupScreen
         } else {
             $models[$id] = $payload;
         }
-        if ($models !== $this->formState['models']) {
-            $this->flow->updateProviderField($this->formState['id'], 'models', $models);
-        }
-        $this->commitDraftModel();
+        $this->resetDraftModel();
         $this->formState['models'] = $models;
         $this->selectedModel = null;
-        $this->initialFormState = $this->formState;
     }
 
     private function saveCustomForm(): void
@@ -946,7 +935,8 @@ final class SetupScreen
         $models = \is_array($this->formState['models'] ?? null) ? $this->formState['models'] : [];
         $draftId = trim((string) ($this->formState['modelId'] ?? ''));
         if ('' !== $draftId) {
-            $models[$draftId] = $this->draftModelPayload($draftId);
+            $this->confirmModel();
+            $models = $this->formState['models'];
         }
         if ([] === $models) {
             throw new \InvalidArgumentException('Add at least one model.');
@@ -958,17 +948,19 @@ final class SetupScreen
             throw new \InvalidArgumentException('Server URL is required.');
         }
 
-        $apiKey = $this->formState['apiKey'] ?? null;
-        $this->flow->saveCustom(
-            $id,
-            $baseUrl,
-            (string) ($this->formState['completionsPath'] ?? '/v1/chat/completions'),
-            \is_string($apiKey) && '' !== $apiKey ? $apiKey : null,
-            $models,
-            (bool) ($this->formState['supportsDeveloperRole'] ?? false),
-            (string) ($this->formState['thinkingFormat'] ?? ''),
-        );
-        $verb = true === ($this->formState['editing'] ?? false) ? 'updated' : 'added';
+        $editing = true === $this->formState['editing'];
+        if ($editing) {
+            $fields = [];
+            foreach (['baseUrl' => 'base_url', 'completionsPath' => 'completions_path', 'apiKey' => 'api_key', 'thinkingFormat' => 'compatibility.thinking_format', 'models' => 'models'] as $key => $field) {
+                if ($this->formState[$key] !== $this->initialFormState[$key]) {
+                    $fields[$field] = $this->formState[$key];
+                }
+            }
+            $this->flow->updateProviderFields($id, $fields);
+        } else {
+            $this->flow->saveCustom($id, $baseUrl, $this->formState['completionsPath'], $this->formState['apiKey'], $models, $this->formState['thinkingFormat']);
+        }
+        $verb = $editing ? 'updated' : 'added';
         $this->askContinue(\sprintf('%s %s.', $id, $verb));
     }
 
@@ -1279,7 +1271,7 @@ final class SetupScreen
                 true === ($this->formState['editing'] ?? false) ? 'Edit your server' : 'Add your own server'
             );
             $this->stepWidget->setText(
-                (new Style(dim: true))->apply('Connection and model settings')
+                (new Style(dim: true))->apply(self::CUSTOM_SECTIONS[$this->customSection])
             );
 
             return;

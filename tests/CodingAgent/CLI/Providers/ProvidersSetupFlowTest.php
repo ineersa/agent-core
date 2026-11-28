@@ -184,6 +184,25 @@ YAML);
     }
 
     #[Test]
+    public function togglesPreserveExistingProviderOverrides(): void
+    {
+        $flow = $this->createFlow();
+        $path = $flow->settingsPath();
+        $this->assertSame(realpath($this->homeDir.'/.hatfield'), realpath(\dirname($path)));
+        $this->assertStringStartsWith(realpath($this->tmpDir).'/', realpath(\dirname($path)).'/');
+        $this->assertFalse(is_link($path));
+        $overrides = ['base_url' => 'https://override.example', 'models' => ['custom' => ['reasoning' => true]], 'unknown' => 'preserve'];
+        file_put_contents($path, Yaml::dump(['ai' => ['providers' => ['zai' => $overrides, 'openai-codex' => $overrides]]]));
+
+        $flow->enableApiKey('zai', 'env:TEST_KEY');
+        $flow->enableOauth('openai-codex');
+        $this->assertSame($overrides + ['enabled' => true, 'api_key' => 'env:TEST_KEY'], $this->parseUserSettings()['ai']['providers']['zai']);
+        $this->assertSame($overrides + ['enabled' => true], $this->parseUserSettings()['ai']['providers']['openai-codex']);
+        $flow->disable('zai');
+        $this->assertSame($overrides + ['enabled' => false, 'api_key' => 'env:TEST_KEY'], $this->parseUserSettings()['ai']['providers']['zai']);
+    }
+
+    #[Test]
     public function presetRawKeyWritesSparseApiKey(): void
     {
         $flow = $this->createFlow();
@@ -235,7 +254,6 @@ YAML);
                     'cost' => ['input' => 0, 'output' => 0, 'cache_read' => 0, 'cache_write' => 0],
                 ],
             ],
-            false,
             '',
         );
         $flow->setDefaultModel('local-llm/my-model');
@@ -246,12 +264,11 @@ YAML);
         $this->assertTrue($provider['enabled']);
         $this->assertSame('http://127.0.0.1:8080', $provider['base_url']);
         $this->assertSame('/v1/chat/completions', $provider['completions_path']);
-        $this->assertSame('openai-completions', $provider['api']);
+        $this->assertArrayNotHasKey('api', $provider);
         $this->assertArrayHasKey('my-model', $provider['models']);
         $this->assertSame(['text'], $provider['models']['my-model']['input']);
         $this->assertFalse($provider['models']['my-model']['reasoning']);
         $this->assertSame(0, $provider['models']['my-model']['cost']['input']);
-        $this->assertFalse($provider['compatibility']['supports_developer_role']);
         $this->assertSame('local-llm/my-model', $settings['ai']['default_model'] ?? null);
     }
 
@@ -549,7 +566,6 @@ YAML);
                     'cost' => ['input' => 0, 'output' => 0, 'cache_read' => 0, 'cache_write' => 0],
                 ],
             ],
-            false,
             '',
         );
 
@@ -591,7 +607,6 @@ YAML);
                     'cost' => ['input' => 0, 'output' => 0, 'cache_read' => 0, 'cache_write' => 0],
                 ],
             ],
-            false,
             '',
         );
         $this->assertNotSame([], $flow->customProviderRows());
@@ -625,7 +640,6 @@ YAML);
                     'cost' => ['input' => 0, 'output' => 0, 'cache_read' => 0, 'cache_write' => 0],
                 ],
             ],
-            true,
             'reasoning_content',
         );
 
@@ -639,7 +653,6 @@ YAML);
         $this->assertSame('http://127.0.0.1:9000', $provider['base_url']);
         $this->assertSame('env:LOCAL_KEY', $provider['api_key']);
         $this->assertArrayHasKey('my-model', $provider['models']);
-        $this->assertTrue($provider['compatibility']['supports_developer_role']);
         $this->assertSame('reasoning_content', $provider['compatibility']['thinking_format']);
 
         $flow->enableCustom('local-llm');

@@ -19,8 +19,6 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\AmpRetryClock;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\DTO\RuntimeConfigDTO;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
@@ -76,7 +74,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
 
     public function testLlmWorkerStillBoundsSimultaneouslyBlockedHandlers(): void
     {
-        $this->assertWorkerAdmission('llm', 12, 6);
+        $this->assertWorkerAdmission('llm', 12, 10);
     }
 
     public function testWorkerReleasesDeliveryIdentityOnPlainFailure(): void
@@ -207,9 +205,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
                 $handled[] = $event->getReceiverName();
             });
             $buses = new ServiceLocator(['default' => static fn () => $bus]);
-            $config = clone self::getContainer()->get(AppConfig::class);
-            $config->runtime = new RuntimeConfigDTO();
-            $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $config, $logger);
+            $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $logger);
             // Earlier kernels in this PHPUnit process are outside the worker's
             // lease/drain contract; do not let their retained memory stop it.
             $input = new ArrayInput(['--transport' => 'tool', '--keepalive' => 1, '--memory-limit' => (string) (memory_get_usage(true) + 64 * 1024 * 1024)]);
@@ -266,11 +262,6 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
 
         /** @var LlmFiberConsumeCommand $command */
         $command = $container->get(LlmFiberConsumeCommand::class);
-        /** @var AppConfig $appConfig */
-        $appConfig = $container->get(AppConfig::class);
-        $runtime = $appConfig->runtime;
-        $this->assertSame(10, $runtime->llmConcurrency);
-        $this->assertSame(RuntimeConfigDTO::DEFAULT_LLM_CONCURRENCY, $runtime->llmConcurrency);
 
         $platform = $container->get(LlmPlatformAdapter::class);
         $retryClock = (new \ReflectionProperty($platform, 'clock'))->getValue($platform);
@@ -313,9 +304,9 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         $this->assertTrue($found, 'LlmFiberConsumeWaitSubscriber must be registered on the event dispatcher.');
     }
 
-    public function testExecuteUsesRuntimeConcurrencyForStrategy(): void
+    public function testExecuteUsesFixedLlmAdmissionLimit(): void
     {
-        $concurrency = 6;
+        $concurrency = 10;
         $receiver = new class implements ReceiverInterface {
             public function get(): iterable
             {
@@ -394,13 +385,10 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             },
         );
 
-        $appConfig = clone self::getContainer()->get(AppConfig::class);
-        $appConfig->runtime = new RuntimeConfigDTO(llmConcurrency: $concurrency);
         $command = new LlmFiberConsumeCommand(
             new RoutableMessageBus($buses, $bus),
             $receivers,
             $dispatcher,
-            $appConfig,
         );
 
         $output = new BufferedOutput();
@@ -534,10 +522,8 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
                 $event->getWorker()->stop();
             }
         });
-        $config = clone self::getContainer()->get(AppConfig::class);
-        $config->runtime = new RuntimeConfigDTO(llmConcurrency: 6);
         $buses = new ServiceLocator(['default' => static fn () => $bus]);
-        $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), new ServiceLocator($factories), $dispatcher, $config);
+        $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), new ServiceLocator($factories), $dispatcher);
         $input = new ArrayInput(['--transport' => $role, '--memory-limit' => (string) (memory_get_usage(true) + 64 * 1024 * 1024)]);
         $input->bind($command->getDefinition());
         $output = new BufferedOutput();
@@ -555,7 +541,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             $this->assertSame(0, $receiver->keepalives, 'Settled deliveries must no longer receive keepalives.');
         }
         // The banner wraps at the terminal width (80 columns without a TTY).
-        $this->assertStringContainsString('Fiber concurrency '.('tool' === $role ? 'unlimited' : '6'), (string) preg_replace('/\s+/', ' ', $output->fetch()));
+        $this->assertStringContainsString('Fiber concurrency '.('tool' === $role ? 'unlimited' : '10'), (string) preg_replace('/\s+/', ' ', $output->fetch()));
     }
 
     private function runSnapshotConsumer(int $messages, EventDispatcher $dispatcher, \Closure $handle): int
@@ -604,8 +590,6 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
                 $event->getWorker()->stop();
             }
         });
-        $config = clone self::getContainer()->get(AppConfig::class);
-        $config->runtime = new RuntimeConfigDTO();
         $empty = new class implements ReceiverInterface {
             public function get(): iterable
             {
@@ -622,7 +606,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         };
         $receivers = new ServiceLocator(['tool' => static fn () => $receiver, 'agent' => static fn () => $empty, 'code_mode_requests' => static fn () => $empty]);
         $buses = new ServiceLocator(['default' => static fn () => $bus]);
-        $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $config);
+        $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher);
         // PHPUnit's earlier kernels can already exceed the production limit.
         // This proof measures the identity map, not the suite process's RSS.
         $input = new ArrayInput(['--transport' => 'tool', '--memory-limit' => (string) (memory_get_usage(true) + 64 * 1024 * 1024)]);

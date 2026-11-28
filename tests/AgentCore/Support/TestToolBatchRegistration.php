@@ -52,7 +52,6 @@ final class TestToolBatchRegistration
             toolIdempotencyKey: $correlation->toolIdempotencyKey,
             mode: $correlation->mode,
             timeoutSeconds: $correlation->timeoutSeconds,
-            maxParallelism: $correlation->maxParallelism,
             argSchema: $correlation->argSchema,
             toolsRef: $correlation->toolsRef,
         ), [$correlation, ...$siblings]);

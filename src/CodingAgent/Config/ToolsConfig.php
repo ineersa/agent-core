@@ -12,8 +12,6 @@ namespace Ineersa\CodingAgent\Config;
 final readonly class ToolsConfig
 {
     public function __construct(
-        public ToolExecutionConfig $execution = new ToolExecutionConfig(),
-
         public OutputCapConfig $outputCap = new OutputCapConfig(),
 
         public BackgroundProcessConfig $backgroundProcess = new BackgroundProcessConfig(),

@@ -8,10 +8,8 @@ use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
-use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ChildLaunchToolName;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
@@ -45,7 +43,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         private ToolSetResolverInterface $toolSetResolver,
         private ToolboxInterface $toolbox,
         private RunTracer $tracer,
-        private ToolExecutionSettingsInterface $toolExecutionSettings,
         private ToolLaunchInputStoreInterface $launchInputStore,
     ) {
     }
@@ -283,7 +280,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 toolIdempotencyKey: $toolCall['tool_idempotency_key'],
                 mode: $policy['mode']->value,
                 timeoutSeconds: $policy['timeout_seconds'],
-                maxParallelism: $policy['max_parallelism'],
                 argSchema: $toolSchemas[$toolCall['name']] ?? null,
                 toolsRef: $message->toolsRef,
                 // The parent model inherited by tool-launched children must
@@ -425,13 +421,12 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
      * Per-tool timeout overrides come from ActiveToolSet.timeoutSeconds when set.
      * Absent overrides mean no per-call cooperative timeout budget (null).
      *
-     * @return array{mode: ToolExecutionMode, timeout_seconds: ?int, max_parallelism: int}
+     * @return array{mode: ToolExecutionMode, timeout_seconds: ?int}
      */
     private function resolveToolPolicy(string $toolName, ?ActiveToolSet $activeSet = null): array
     {
         $mode = ToolExecutionMode::Sequential;
         $timeoutSeconds = null;
-        $maxParallelism = ToolExecutionPolicyResolver::fromSettings($this->toolExecutionSettings)->resolve($toolName)->maxParallelism;
 
         if (null !== $activeSet) {
             $modeValue = $activeSet->executionModes[$toolName] ?? ToolExecutionMode::Sequential->value;
@@ -444,7 +439,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         return [
             'mode' => $mode,
             'timeout_seconds' => null !== $timeoutSeconds && $timeoutSeconds > 0 ? max(1, $timeoutSeconds) : null,
-            'max_parallelism' => max(1, $maxParallelism),
         ];
     }
 

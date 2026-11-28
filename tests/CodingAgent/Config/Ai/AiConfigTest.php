@@ -175,7 +175,6 @@ class AiConfigTest extends TestCase
         $provider = $ai->providers['zai'] ?? null;
         $this->assertNotNull($provider);
         $this->assertNotNull($provider->compatibility);
-        $this->assertFalse($provider->compatibility->supportsDeveloperRole);
         $this->assertFalse($provider->compatibility->supportsReasoningEffort);
         $this->assertSame('zai', $provider->compatibility->thinkingFormat);
         $this->assertFalse($provider->compatibility->zaiToolStream);
@@ -321,7 +320,6 @@ class AiConfigTest extends TestCase
     public function testCompatibilityFromEmptyArray(): void
     {
         $compatibility = AiCompatibility::fromArray([]);
-        $this->assertFalse($compatibility->supportsDeveloperRole);
         $this->assertTrue($compatibility->supportsReasoningEffort);
         $this->assertNull($compatibility->thinkingFormat);
         $this->assertFalse($compatibility->zaiToolStream);
@@ -339,7 +337,6 @@ class AiConfigTest extends TestCase
         ]);
 
         // Non-boolean values fall back to constructor defaults (false, true)
-        $this->assertFalse($compatibility->supportsDeveloperRole);
         $this->assertTrue($compatibility->supportsReasoningEffort);
         $this->assertSame('zai', $compatibility->thinkingFormat);
         $this->assertFalse($compatibility->requiresReasoningContentOnAssistantMessages, 'non-bool falls back to false');
@@ -356,7 +353,6 @@ class AiConfigTest extends TestCase
             'requires_reasoning_content_on_assistant_messages' => true,
         ]);
 
-        $this->assertFalse($compatibility->supportsDeveloperRole);
         $this->assertTrue($compatibility->supportsReasoningEffort);
         $this->assertSame('deepseek', $compatibility->thinkingFormat);
         $this->assertTrue($compatibility->zaiToolStream);

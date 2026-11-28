@@ -14,9 +14,6 @@ namespace Ineersa\CodingAgent\Config\Ai;
 final readonly class AiCompatibility
 {
     /**
-     * @param bool        $supportsDeveloperRole                       Whether the provider supports the OpenAI
-     *                                                                 developer role. false means only
-     *                                                                 system/user/assistant/tool roles.
      * @param bool        $supportsReasoningEffort                     Whether the provider accepts
      *                                                                 reasoning_effort. true means standard
      *                                                                 OpenAI reasoning_effort is supported;
@@ -45,7 +42,6 @@ final readonly class AiCompatibility
      *                                                                 while models.dev reports the raw window)
      */
     public function __construct(
-        public bool $supportsDeveloperRole = false,
         public bool $supportsReasoningEffort = true,
         public bool $supportsReasoningEffortExplicit = false,
         public ?string $thinkingFormat = null,
@@ -66,7 +62,6 @@ final readonly class AiCompatibility
     public static function fromArray(array $data): self
     {
         return new self(
-            supportsDeveloperRole: self::boolOrDefault($data['supports_developer_role'] ?? null, false),
             supportsReasoningEffort: self::boolOrDefault($data['supports_reasoning_effort'] ?? null, true),
             supportsReasoningEffortExplicit: \array_key_exists('supports_reasoning_effort', $data),
             thinkingFormat: isset($data['thinking_format']) && \is_string($data['thinking_format']) ? $data['thinking_format'] : null,

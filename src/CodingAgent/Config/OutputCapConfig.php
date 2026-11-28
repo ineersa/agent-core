@@ -15,14 +15,15 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * the explicit runtime run ID, never a configured filename prefix.
  *
  * Hydrated from the tools.output_cap section of Hatfield merged config
- * via Symfony Serializer. The storageDir is made absolute by
- * {@see AppConfigLoader::load()} before DTO construction.
+ * via Symfony Serializer. The storage directory is derived by {@see AppConfig} from the canonical cwd.
  */
 final readonly class OutputCapConfig
 {
+    public const string STORAGE_PATH = '.hatfield/tmp/output-cap';
+
     public function __construct(
         #[SerializedName('path')]
-        public string $storageDir = '.hatfield/tmp/output-cap',
+        public string $storageDir = self::STORAGE_PATH,
         public int $defaultCap = 20000,
         public int $docCap = 50000,
         #[SerializedName('retention')]

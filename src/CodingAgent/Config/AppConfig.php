@@ -7,10 +7,7 @@ namespace Ineersa\CodingAgent\Config;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
-use Ineersa\CodingAgent\Config\DTO\RuntimeConfigDTO;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
-use Symfony\Component\Validator\Exception\ValidationFailedException;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Resolved Hatfield application configuration.
@@ -32,7 +29,6 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  *  - context_budget_reminders ContextBudgetReminderConfig (early_input_tokens, urgent_remaining_tokens, disable_for_main, disable_for_forks, disable_for_subagents)
  *  - agents     AgentsConfig (enabled, paths)
  *  - forks      ForksConfigDTO (enabled, model, thinking_level, extensions)
- *  - runtime    RuntimeConfigDTO (llm_concurrency)
  *
  * The raw array is kept for forward compatibility with config keys
  * that do not yet have a typed DTO. Production consumers must use
@@ -53,7 +49,6 @@ final class AppConfig
         public ContextBudgetReminderConfig $contextBudgetReminders = new ContextBudgetReminderConfig(),
         public ForksConfigDTO $forks = new ForksConfigDTO(),
         public AgentsConfig $agents = new AgentsConfig(),
-        public RuntimeConfigDTO $runtime = new RuntimeConfigDTO(),
         /** @var array<string, mixed> Raw merged data for forward compatibility */
         public array $raw = [],
         public ?HatfieldModelCatalog $catalog = null,
@@ -87,15 +82,14 @@ final class AppConfig
         AppResourceLocator $resources,
         DenormalizerInterface $denormalizer,
         string $cwd,
-        ValidatorInterface $validator,
     ): self {
         $data = $loader->load($resources->getDefaultsPath(), $cwd)->effective;
 
-        return self::fromSettingsData($data, $denormalizer, $cwd, $validator);
+        return self::fromSettingsData($data, $denormalizer, $cwd);
     }
 
     /** @param array<string, mixed> $data */
-    public static function fromSettingsData(array $data, DenormalizerInterface $denormalizer, string $cwd, ValidatorInterface $validator): self
+    public static function fromSettingsData(array $data, DenormalizerInterface $denormalizer, string $cwd): self
     {
         [$ai, $catalog, $staleDefaultModel] = self::resolveAiDefaultModel($data);
 
@@ -117,7 +111,7 @@ final class AppConfig
                 ExtensionsConfig::class,
             ),
             tools: $denormalizer->denormalize(
-                (array) ($data['tools'] ?? []),
+                self::toolSettings((array) ($data['tools'] ?? []), $cwd),
                 ToolsConfig::class,
             ),
             ai: $ai,
@@ -138,7 +132,6 @@ final class AppConfig
             agents: \array_key_exists('agents', $data)
                 ? AgentsConfig::fromRaw($data['agents'])
                 : new AgentsConfig(),
-            runtime: self::denormalizeAndValidateRuntimeConfig($data, $denormalizer, $validator),
             raw: $data,
             catalog: $catalog,
             cwd: $cwd,
@@ -147,29 +140,23 @@ final class AppConfig
     }
 
     /**
-     * Denormalize runtime config and enforce Symfony Validator attributes
-     * (e.g. runtime.llm_concurrency must be a positive integer) via the
-     * container validator.
+     * @param array<string, mixed> $tools
      *
-     * @param array<string, mixed> $data
+     * @return array<string, mixed>
      */
-    private static function denormalizeAndValidateRuntimeConfig(
-        array $data,
-        DenormalizerInterface $denormalizer,
-        ValidatorInterface $validator,
-    ): RuntimeConfigDTO {
-        $runtime = $denormalizer->denormalize(
-            (array) ($data['runtime'] ?? []),
-            RuntimeConfigDTO::class,
-        );
-
-        $violations = $validator->validate($runtime);
-
-        if (\count($violations) > 0) {
-            throw new ValidationFailedException($runtime, $violations);
-        }
-
-        return $runtime;
+    private static function toolSettings(array $tools, string $cwd): array
+    {
+        // Only operator settings cross the serializer boundary; storage roots
+        // are derived from the same cwd used to resolve all application paths.
+        return [
+            'output_cap' => array_intersect_key((array) ($tools['output_cap'] ?? []), array_flip(['default_cap', 'doc_cap']))
+                + ['path' => $cwd.'/'.OutputCapConfig::STORAGE_PATH],
+            'background_process' => array_intersect_key((array) ($tools['background_process'] ?? []), ['log_tail_chars' => true])
+                + ['path' => $cwd.'/'.BackgroundProcessConfig::STORAGE_PATH],
+            'image' => array_intersect_key((array) ($tools['image'] ?? []), array_flip(['max_bytes', 'max_width', 'max_height'])),
+            'bash' => array_intersect_key((array) ($tools['bash'] ?? []), array_flip(['default_timeout_seconds', 'max_timeout_seconds', 'log_tail_chars'])),
+            'code_mode' => (array) ($tools['code_mode'] ?? []),
+        ];
     }
 
     /**

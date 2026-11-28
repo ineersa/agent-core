@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\CLI\Setup;
 use Ineersa\CodingAgent\CLI\Setup\DefinitionSetupService;
 use Ineersa\CodingAgent\CLI\Setup\Exception\DefinitionSetupRefusalException;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
+use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Yaml\Yaml;
@@ -92,7 +93,7 @@ final class DefinitionSetupServiceTest extends PerMethodIsolatedKernelTestCase
         $service->delete(false, SettingsLayerEnum::Project, $path, $after);
     }
 
-    public function testBuiltInSkillCanOnlyBeEditedInOwningScopeAndCannotBeDeleted(): void
+    public function testBuiltInSkillCanBeEditedAndDeletedOnlyInOwningScope(): void
     {
         $path = $this->fixture($this->isolatedHome(), '.hatfield/skills/subagents/SKILL.md');
         $raw = "---\nname: subagents\ndescription: Fixture\n---\nBody\n";
@@ -111,9 +112,10 @@ final class DefinitionSetupServiceTest extends PerMethodIsolatedKernelTestCase
         $this->assertSame($raw, $service->read($path));
         $after = $service->save(true, $user, $path, $raw, 'description', 'Changed');
         $this->assertSame($after, $service->read($path));
-        $this->expectException(DefinitionSetupRefusalException::class);
-        $this->expectExceptionMessage('Built-in definitions cannot be deleted');
         $service->delete(true, $user, $path, $after);
+        $this->assertFileDoesNotExist($path);
+        self::getContainer()->get(SkillDiscovery::class)->discover();
+        $this->assertFileDoesNotExist($path);
     }
 
     public function testClearingSoleSkillFieldKeepsValidFrontmatterAndExactBody(): void

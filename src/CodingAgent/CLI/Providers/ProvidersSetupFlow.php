@@ -35,7 +35,6 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
      *     completionsPath: string,
      *     apiKey: ?string,
      *     models: array<string, array<string, mixed>>,
-     *     supportsDeveloperRole: bool,
      *     thinkingFormat: string
      * }>
      */
@@ -137,7 +136,6 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             $models[$modelId] = [
                 'name' => $model->name ?? $modelId,
                 'context_window' => $model->contextWindow ?? 128000,
-                'max_tokens' => $model->maxTokens ?? 8192,
                 'input' => $model->input,
                 'tool_calling' => $model->toolCalling,
                 'reasoning' => $model->reasoning,
@@ -163,7 +161,6 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             'completionsPath' => $provider->completionsPath ?? '/v1/chat/completions',
             'apiKey' => $provider->apiKey,
             'models' => $models,
-            'supportsDeveloperRole' => null !== $compatibility && $compatibility->supportsDeveloperRole,
             'thinkingFormat' => null !== $compatibility && null !== $compatibility->thinkingFormat
                 ? $compatibility->thinkingFormat
                 : '',
@@ -188,33 +185,43 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             ? $provider['auth_command']
             : null;
 
-        $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id, [
-            'enabled' => true,
-        ]);
+        $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id.'.enabled', true);
         $this->markEnabled($id, $this->modelIdsFromProvider($provider), $authCommand);
     }
 
     public function updateProviderField(string $id, string $field, mixed $value): void
     {
-        $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id.'.'.$field, $value);
+        $this->updateProviderFields($id, [$field => $value]);
+    }
+
+    public function updateProviderFields(string $id, array $fields): void
+    {
+        $values = [];
+        $definition = $this->customDefinition($id);
+        foreach ($fields as $field => $value) {
+            $values['ai.providers.'.$id.'.'.$field] = $value;
+            if (null !== $definition) {
+                $key = match ($field) {
+                    'base_url' => 'baseUrl',
+                    'completions_path' => 'completionsPath',
+                    'api_key' => 'apiKey',
+                    'compatibility.thinking_format' => 'thinkingFormat',
+                    'models' => 'models',
+                    default => throw new \LogicException('Unsupported provider field.'),
+                };
+                $definition[$key] = $value;
+            }
+        }
+        if ([] === $values) {
+            return;
+        }
+        $this->settingsWriter->setMany($this->layer, $this->cwd, $values);
         $this->wroteSomething = true;
-        if (null !== ($definition = $this->customDefinition($id))) {
-            $key = match ($field) {
-                'base_url' => 'baseUrl',
-                'completions_path' => 'completionsPath',
-                'api_key' => 'apiKey',
-                'compatibility.supports_developer_role' => 'supportsDeveloperRole',
-                'compatibility.thinking_format' => 'thinkingFormat',
-                'models' => 'models',
-                default => throw new \LogicException('Unsupported provider field.'),
-            };
-            $definition[$key] = $value;
+        if (null !== $definition) {
             $this->customDefinitionsThisRun[$id] = $definition;
-            if ('models' === $field) {
-                foreach ($this->configured as &$row) {
-                    if ($row['id'] === $id) {
-                        $row['models'] = array_keys($definition['models']);
-                    }
+            foreach ($this->configured as &$row) {
+                if ($row['id'] === $id) {
+                    $row['models'] = array_keys($definition['models']);
                 }
             }
         }
@@ -223,9 +230,9 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
     public function enableApiKey(string $id, string $apiKey): void
     {
         $provider = $this->requireCatalogProvider($id);
-        $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id, [
-            'enabled' => true,
-            'api_key' => $apiKey,
+        $this->settingsWriter->setMany($this->layer, $this->cwd, [
+            'ai.providers.'.$id.'.enabled' => true,
+            'ai.providers.'.$id.'.api_key' => $apiKey,
         ]);
         $this->markEnabled($id, $this->modelIdsFromProvider($provider), null);
     }
@@ -240,33 +247,13 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             throw new \InvalidArgumentException(\sprintf('Unknown custom provider "%s".', $id));
         }
 
-        // Full rewrite — sparse {enabled:true} would wipe base_url/models for customs.
-        $this->writeCustomDefinition($definition, enabled: true);
+        $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id.'.enabled', true);
         $this->markEnabled($id, array_keys($definition['models']), null);
     }
 
     public function disable(string $id): void
     {
-        if (!isset($this->catalog[$id])) {
-            $definition = $this->customDefinition($id);
-            if (null !== $definition) {
-                // Preserve wizard-defined fields; hand-added extras like embeddingsPath are reset on rewrite.
-                $this->writeCustomDefinition($definition, enabled: false);
-                $this->enabledThisRun[$id] = false;
-                $this->wroteSomething = true;
-                $this->configured = array_values(array_filter(
-                    $this->configured,
-                    static fn (array $row): bool => $row['id'] !== $id,
-                ));
-
-                return;
-            }
-        }
-
-        // Catalog providers: sparse overlay is correct (connection fields stay in catalog).
-        $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id, [
-            'enabled' => false,
-        ]);
+        $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id.'.enabled', false);
         $this->enabledThisRun[$id] = false;
         $this->wroteSomething = true;
         $this->configured = array_values(array_filter(
@@ -308,7 +295,6 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
         string $completionsPath,
         ?string $apiKey,
         array $models,
-        bool $supportsDeveloperRole,
         string $thinkingFormat,
     ): void {
         // ponytail: hand-edited ids that fail the regex make Edit loop at the last step; escape is Remove + re-add.
@@ -335,7 +321,6 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             'completionsPath' => $completionsPath,
             'apiKey' => null !== $apiKey && '' !== $apiKey ? $apiKey : null,
             'models' => $models,
-            'supportsDeveloperRole' => $supportsDeveloperRole,
             'thinkingFormat' => trim($thinkingFormat),
         ];
         $this->writeCustomDefinition($payload, enabled: true);
@@ -441,7 +426,6 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
      *     completionsPath: string,
      *     apiKey: ?string,
      *     models: array<string, array<string, mixed>>,
-     *     supportsDeveloperRole: bool,
      *     thinkingFormat: string
      * } $payload
      */
@@ -452,7 +436,6 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             'type' => 'generic',
             'enabled' => $enabled,
             'base_url' => $payload['baseUrl'],
-            'api' => 'openai-completions',
             'completions_path' => $payload['completionsPath'],
             'supports_completions' => true,
             'supports_embeddings' => false,
@@ -462,11 +445,9 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
             $definition['api_key'] = $payload['apiKey'];
         }
 
-        $compatibility = ['supports_developer_role' => $payload['supportsDeveloperRole']];
         if ('' !== $payload['thinkingFormat']) {
-            $compatibility['thinking_format'] = $payload['thinkingFormat'];
+            $definition['compatibility'] = ['thinking_format' => $payload['thinkingFormat']];
         }
-        $definition['compatibility'] = $compatibility;
 
         $this->settingsWriter->set($this->layer, $this->cwd, 'ai.providers.'.$id, $definition);
         unset($this->removedCustomIds[$id]);

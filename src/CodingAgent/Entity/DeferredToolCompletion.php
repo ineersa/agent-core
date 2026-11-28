@@ -63,9 +63,6 @@ class DeferredToolCompletion
     #[ORM\Column(name: 'timeout_seconds', type: 'integer', nullable: true)]
     public ?int $timeoutSeconds = null;
 
-    #[ORM\Column(name: 'max_parallelism', type: 'integer', nullable: true)]
-    public ?int $maxParallelism = null;
-
     #[ORM\Column(name: 'tools_ref', type: 'string', length: 255, nullable: true)]
     public ?string $toolsRef = null;
 

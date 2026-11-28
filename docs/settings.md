@@ -18,10 +18,16 @@ In Settings, confirming a valid edit saves it to the selected scope immediately.
 means it does not. The markers describe where the setting is written, not
 which value takes precedence. When the footer shows **d**, press it to choose
 an override to remove from that scope.
-Use one-line YAML for collections, for example `[~/team/prompts]`.
-Providers and Extensions also save confirmed edits immediately. To create a
-custom server, fill in its connection and first model, then choose **Create server with this model**.
-Esc cancels an open editor or unfinished creation. Package installations still require confirmation. Saving rewrites YAML and
+Defaults are shown in field help; editors distinguish the effective source from
+the value in the scope being edited. Extension selections and favorite models use
+multiselects: **Space** toggles, **Enter** confirms, **Esc** cancels. Open-ended
+collections such as extra prompt paths still accept one-line YAML, for example
+`[~/team/prompts]`.
+Catalog-provider and Extension actions save when confirmed. Custom providers use
+**Connection**, **Models**, and **Advanced compatibility** sections with an explicit
+**Save changes** or **Save and enable** action. **Apply model to draft** stages a model
+without saving the provider. Enable/disable changes preserve other provider overrides.
+Esc cancels an open editor or unsaved provider draft. Package installations still require confirmation. Saving rewrites YAML and
 does not preserve comments or formatting. Start a new session to load changes.
 
 ## Precedence
@@ -118,7 +124,7 @@ ChatGPT sends the selected reasoning level through request-level `reasoning.effo
 | Key | Meaning | Default |
 |---|---|---|
 | `compaction.auto_enabled` | Automatic compaction (manual `/compact` is always available) | `true` |
-| `compaction.compact_after_tokens` | Threshold | `120000` |
+| `compaction.compact_after_tokens` | Absolute token threshold | `250000` |
 | `compaction.keep_recent_tokens` | Retained tail | `20000` |
 | `compaction.model` / `thinking_level` | Compaction model selection; `null` uses the session's | `null` |
 | `compaction.provider_overrides` / `model_overrides` | Sparse overrides | empty |
@@ -137,15 +143,12 @@ Full compaction behavior: [compaction.md](compaction.md).
 
 Parent reminders are off by default. Fork and subagent reminders remain on by default. Each flag affects only its run kind. Reminder flags and thresholds do not control automatic compaction or context-limit enforcement.
 
-### Runtime
+### Runtime policy
 
-| Key | Meaning | Default |
-|---|---|---|
-| `runtime.llm_concurrency` | Same-process Fiber admission limit for the single llm consumer | `10` |
-
-The LLM limit must be a positive integer. `tools.execution.max_parallelism` remains the
-per-batch admission limit (default `4`), not a worker count. The Amp HTTP host
-connection pool is independent of the LLM admission limit.
+The LLM consumer has an internal ten-slot admission limit. Eligible parallel tool
+calls have no numeric batch limit; registered sequential and interrupt barriers
+still apply. These are runtime policy, not user settings. The Amp HTTP host
+connection pool is independent of LLM admission.
 
 The shared tool consumer reads both `tool` and `agent` queues, including retained
 agent messages after a controller restart. It has no worker-level concurrency cap.
@@ -171,18 +174,17 @@ a successful late result into a timeout failure.
 
 | Key | Meaning | Default |
 |---|---|---|
-| `tools.execution.default_mode` | `sequential` or `parallel` | `sequential` |
-| `tools.execution.max_parallelism` | Maximum concurrently admitted calls per tool batch (not a worker count) | `4` |
 | `forks.enabled` | Make the `fork` tool visible and callable; independent of named subagents | `true` |
 
 ### Output cap
 
 | Key | Meaning | Default |
 |---|---|---|
-| `tools.output_cap.path` | Root for ephemeral SHA-256 run-scoped oversized output | `.hatfield/tmp/output-cap` |
 | `tools.output_cap.default_cap` | Non-doc char cap | `20000` |
 | `tools.output_cap.doc_cap` | Doc-like char cap | `50000` |
-| `tools.output_cap.retention` | Orphan fallback stale-artifact seconds (lifecycle cleanup is earlier) | `86400` |
+
+Artifacts use `.hatfield/tmp/output-cap` under the active project CWD. Orphan
+cleanup uses an internal 24-hour retention; lifecycle cleanup runs earlier.
 
 ### Images
 
@@ -191,10 +193,9 @@ a successful late result into a timeout failure.
 | `tools.image.max_bytes` | `10485760` |
 | `tools.image.max_width` | `4096` |
 | `tools.image.max_height` | `2000` |
-| `tools.image.max_dimension` | `2000` |
-| `tools.image.encoded_max_bytes` | `4718592` |
-| `tools.image.jpeg_quality` | `80` |
-| `tools.image.jpeg_min_quality` | `40` |
+
+Resize/encoding policy is internal: 2000-pixel target, 4.5 MiB encoded budget,
+initial quality 80 and minimum quality 40. Input rejection limits remain configurable.
 
 ### Bash / background
 
@@ -202,11 +203,28 @@ a successful late result into a timeout failure.
 |---|---|
 | `tools.bash.default_timeout_seconds` | `30` |
 | `tools.bash.max_timeout_seconds` | `null` (uncapped; set a positive integer for an operator cap) |
-| `tools.bash.poll_interval_micros` | `100000` (supervision poll interval in microseconds) |
 | `tools.bash.log_tail_chars` | `20000` (maximum log characters returned as command output) |
-| `tools.background_process.path` | `.hatfield/tmp/bg` |
-| `tools.background_process.stop_grace_seconds` | `5` |
 | `tools.background_process.log_tail_chars` | `5000` |
+
+Background logs use `.hatfield/tmp/bg` under the active project CWD. Supervision
+cadence (100 ms) and graceful-stop allowance (5 seconds) are internal policy.
+
+### Removed settings
+
+`tools.execution.*`, `runtime.llm_concurrency` and `ai.http.*` are no longer
+supported settings. Tool scheduling and HTTP reliability are application policy.
+The former image encoding/resize, Bash polling, artifact path/retention and
+background stop-grace keys described above are also no longer configurable.
+Remove these keys from existing overrides; Hatfield does not rewrite settings on startup.
+For forks, combine the former `extensions.always_on` selection into
+`forks.extensions.enabled`. Named agents retain their separate always-on baseline.
+Provider `api` and `compatibility.supports_developer_role` controls are removed;
+model `max_tokens` may remain descriptive catalog metadata but is not an enforced
+output limit or an editable setup control.
+
+Compaction and early reminder thresholds remain absolute, independently
+configurable values (250000 and 200000 tokens). Transcript preview lengths and
+thinking style remain configurable.
 
 ### code_mode
 

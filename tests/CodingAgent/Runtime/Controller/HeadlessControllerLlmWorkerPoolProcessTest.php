@@ -77,9 +77,6 @@ final class HeadlessControllerLlmWorkerPoolProcessTest extends ControllerReplayE
 logging:
     # This test reads launch records. Do not inherit the product log threshold.
     level: info
-tools:
-    execution:
-        max_parallelism: 1
 YAML;
     }
 

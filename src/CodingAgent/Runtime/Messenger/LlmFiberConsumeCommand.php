@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
-use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeStandaloneRepliesService;
 use Ineersa\SqliteQueue\Messenger\Transport;
 use Psr\Container\ContainerInterface;
@@ -46,6 +45,8 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
 
     public const string MEMORY_LIMIT = '256M';
 
+    private const int LLM_ADMISSION_LIMIT = 10;
+
     private bool $shouldStop = false;
 
     private ?Worker $worker = null;
@@ -59,7 +60,6 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         private readonly RoutableMessageBus $routableBus,
         private readonly ContainerInterface $receiverLocator,
         private readonly EventDispatcherInterface $eventDispatcher,
-        private readonly AppConfig $appConfig,
         private readonly ?LoggerInterface $logger = null,
         private readonly ?CodeModeStandaloneRepliesService $codeModeReplies = null,
     ) {
@@ -143,7 +143,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         }
         $concurrency = 'tool' === $transport
             ? null
-            : $this->appConfig->runtime->llmConcurrency;
+            : self::LLM_ADMISSION_LIMIT;
         // Symfony stops receiving before its forced drain. Unblock reply waiters
         // then, but keep the transport open for in-flight acknowledgements.
         $strategy = new FiberMessageExecutionStrategy($this->routableBus, $concurrency,

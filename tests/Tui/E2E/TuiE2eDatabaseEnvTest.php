@@ -91,7 +91,6 @@ final class TuiE2eDatabaseEnvTest extends TestCase
 
             $yaml = file_get_contents($project);
             $this->assertIsString($yaml);
-            $this->assertStringContainsString('max_parallelism: 1', $yaml);
             $this->assertSame($yaml, file_get_contents($home));
         } finally {
             TestDirectoryIsolation::removeDirectory($dir);

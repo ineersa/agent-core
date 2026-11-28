@@ -524,7 +524,7 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertSame([], $skills);
     }
 
-    public function testMaterializesBuiltinSkillsIntoHomeAndRewritesStaleFiles(): void
+    public function testMaterializesBuiltinSkillsWithoutOverwritingLegacyTrees(): void
     {
         $appRoot = $this->tmpDir.'/app';
         $homeDir = $this->tmpDir.'/home';
@@ -569,16 +569,16 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertArrayNotHasKey('nested', $byName);
 
         $this->assertSame($homeDir.'/.hatfield/skills/alpha', $byName['alpha']->skillDirectory);
-        $this->assertSame('Alpha built-in', $byName['alpha']->description);
-        $this->assertFileExists($homeDir.'/.hatfield/skills/alpha/notes.md');
-        $this->assertFileDoesNotExist($homeDir.'/.hatfield/skills/alpha/obsolete.txt');
-        $this->assertStringContainsString('Alpha body', (string) file_get_contents($homeDir.'/.hatfield/skills/alpha/SKILL.md'));
+        $this->assertSame('stale', $byName['alpha']->description);
+        $this->assertFileDoesNotExist($homeDir.'/.hatfield/skills/alpha/notes.md');
+        $this->assertFileExists($homeDir.'/.hatfield/skills/alpha/obsolete.txt');
+        $this->assertStringContainsString('Stale body', (string) file_get_contents($homeDir.'/.hatfield/skills/alpha/SKILL.md'));
         $this->assertSame('User owned', $byName['user-skill']->description);
         $this->assertSame($userSkillDir, $byName['user-skill']->skillDirectory);
         $this->assertSame($userBodyBefore, (string) file_get_contents($userSkillDir.'/SKILL.md'));
     }
 
-    public function testMaterializedBuiltinIsSuppressedByNoSkillsButStillRewritten(): void
+    public function testMaterializedBuiltinIsSuppressedByNoSkillsWithoutOverwritingExistingFiles(): void
     {
         $appRoot = $this->tmpDir.'/app';
         $homeDir = $this->tmpDir.'/home';
@@ -599,8 +599,41 @@ final class SkillDiscoveryTest extends TestCase
         $skills = $discovery->discover();
 
         $this->assertSame([], $skills);
-        $this->assertStringContainsString('Alpha built-in', (string) file_get_contents($homeDir.'/.hatfield/skills/alpha/SKILL.md'));
-        $this->assertFileDoesNotExist($homeDir.'/.hatfield/skills/alpha/obsolete.txt');
+        $this->assertStringContainsString('stale', (string) file_get_contents($homeDir.'/.hatfield/skills/alpha/SKILL.md'));
+        $this->assertFileExists($homeDir.'/.hatfield/skills/alpha/obsolete.txt');
+    }
+
+    public function testTracksPristineUpdatesButPreservesEditedAndDeletedInstalls(): void
+    {
+        $appRoot = $this->tmpDir.'/app';
+        $homeDir = $this->tmpDir.'/home';
+        $cwd = $this->tmpDir.'/project';
+        mkdir($cwd, 0777, true);
+        $source = $appRoot.'/src/CodingAgent/Resources/skills/alpha';
+        $target = $homeDir.'/.hatfield/skills/alpha';
+        $fs = new Filesystem();
+        $discover = fn () => $this->createDiscovery(cwd: $cwd, homeDir: $homeDir, appRoot: $appRoot)->discover();
+        $original = "---\nname: alpha\ndescription: original\n---\nOriginal";
+        $fs->dumpFile($source.'/SKILL.md', $original);
+        $fs->dumpFile($source.'/asset.md', 'original asset');
+        $this->assertCount(1, $discover());
+        $this->assertSame($original, $fs->readFile($target.'/SKILL.md'));
+
+        $updated = str_replace('original', 'updated', $original);
+        $fs->dumpFile($source.'/SKILL.md', $updated);
+        $fs->remove($source.'/asset.md');
+        $this->assertCount(1, $discover());
+        $this->assertSame($updated, $fs->readFile($target.'/SKILL.md'));
+        $this->assertFileDoesNotExist($target.'/asset.md');
+
+        $fs->dumpFile($target.'/user-asset.md', 'mine');
+        $fs->dumpFile($source.'/SKILL.md', $original);
+        $this->assertCount(1, $discover());
+        $this->assertSame($updated, $fs->readFile($target.'/SKILL.md'));
+        $this->assertSame('mine', $fs->readFile($target.'/user-asset.md'));
+        $fs->remove($target);
+        $this->assertSame([], $discover());
+        $this->assertDirectoryDoesNotExist($target);
     }
 
     public function testBundledSubagentsSkillStaysUnderCharacterBudget(): void
