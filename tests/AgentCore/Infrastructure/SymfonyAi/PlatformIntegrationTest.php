@@ -242,7 +242,6 @@ final class PlatformIntegrationTest extends TestCase
             id: 'flash',
             name: 'flash',
             contextWindow: 8000,
-            maxTokens: 4096,
             input: ['text'],
             toolCalling: false,
             reasoning: false,

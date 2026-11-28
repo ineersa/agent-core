@@ -772,7 +772,6 @@ class ReasoningOptionsResolverTest extends TestCase
             compatibility: $overrides['compatibility'] ?? null,
             name: $overrides['name'] ?? null,
             contextWindow: $overrides['contextWindow'] ?? null,
-            maxTokens: $overrides['maxTokens'] ?? null,
             input: $overrides['input'] ?? [],
             toolCalling: $overrides['toolCalling'] ?? false,
         );

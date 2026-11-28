@@ -112,7 +112,6 @@ class AiConfigTest extends TestCase
         $this->assertSame('deepseek-v4-pro', $model->id);
         $this->assertSame('DeepSeek V4 Pro', $model->name);
         $this->assertSame(1000000, $model->contextWindow);
-        $this->assertSame(384000, $model->maxTokens);
         $this->assertSame(['text'], $model->input);
         $this->assertTrue($model->toolCalling);
         $this->assertTrue($model->reasoning);
@@ -231,7 +230,6 @@ class AiConfigTest extends TestCase
         $this->assertSame([], $model->thinkingLevelMap);
         $this->assertSame(['text', 'image'], $model->input);
         $this->assertSame(200000, $model->contextWindow);
-        $this->assertSame(65536, $model->maxTokens);
         $this->assertTrue($model->toolCalling);
     }
 

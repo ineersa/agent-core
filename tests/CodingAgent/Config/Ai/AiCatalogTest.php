@@ -92,12 +92,13 @@ YAML);
 
     public function testBundledGpt62ModelsPreserveCuratedMetadata(): void
     {
-        $ai = AiConfig::fromArray((new AiCatalog(\dirname(__DIR__, 4).'/config/ai-catalog.yaml', $this->homeDir))->loadProviders()['ai']);
+        $raw = (new AiCatalog(\dirname(__DIR__, 4).'/config/ai-catalog.yaml', $this->homeDir))->loadProviders()['ai'];
+        $ai = AiConfig::fromArray($raw);
         foreach (['astra' => [8.0, 40.0, 0.4, 10.0], 'sol' => [2.0, 10.0, 0.1, 2.5]] as $family => $cost) {
             $model = $ai->providers['openai-codex']->models['gpt-6.2-'.$family];
             $this->assertSame('GPT-6.2 '.ucfirst($family), $model->name);
             $this->assertSame(272000, $model->contextWindow);
-            $this->assertSame(128000, $model->maxTokens);
+            $this->assertSame(128000, $raw['providers']['openai-codex']['models']['gpt-6.2-'.$family]['max_tokens']);
             $this->assertSame(['text', 'image'], $model->input);
             $this->assertTrue($model->reasoning);
             $this->assertTrue($model->toolCalling);
@@ -126,7 +127,7 @@ YAML);
         $glmFlash = $ai->providers['zai']->models['glm-5.3-flash'];
         $this->assertSame(['text', 'image', 'video', 'pdf'], $glmFlash->input);
         $this->assertSame(1000000, $glmFlash->contextWindow);
-        $this->assertSame(131072, $glmFlash->maxTokens);
+        $this->assertSame(131072, $catalog->loadProviders()['ai']['providers']['zai']['models']['glm-5.3-flash']['max_tokens']);
         $this->assertSame($glm->thinkingLevelMap, $glmFlash->thinkingLevelMap);
         $this->assertTrue($glmFlash->compatibility?->supportsReasoningEffort);
         $this->assertTrue($glmFlash->compatibility?->zaiToolStream);
@@ -135,7 +136,7 @@ YAML);
         $this->assertSame('GLM 5.4', $glm54->name);
         $this->assertSame(['text', 'image', 'video', 'pdf'], $glm54->input);
         $this->assertSame(1000000, $glm54->contextWindow);
-        $this->assertSame(131072, $glm54->maxTokens);
+        $this->assertSame(131072, $catalog->loadProviders()['ai']['providers']['zai']['models']['glm-5.4']['max_tokens']);
         $this->assertSame($glm->thinkingLevelMap, $glm54->thinkingLevelMap);
         $this->assertTrue($glm54->compatibility?->supportsReasoningEffort);
         $this->assertTrue($glm54->compatibility?->zaiToolStream);
@@ -146,7 +147,7 @@ YAML);
 
         $astra = $ai->providers['openai-codex']->models['gpt-6-astra'];
         $this->assertSame(272000, $astra->contextWindow);
-        $this->assertSame(128000, $astra->maxTokens);
+        $this->assertSame(128000, $catalog->loadProviders()['ai']['providers']['openai-codex']['models']['gpt-6-astra']['max_tokens']);
         $this->assertSame(
             ['minimal' => null, 'low' => 'low', 'medium' => 'medium', 'high' => 'high', 'xhigh' => 'xhigh', 'max' => 'max'],
             $astra->thinkingLevelMap,
@@ -155,7 +156,7 @@ YAML);
 
         $sol61 = $ai->providers['openai-codex']->models['gpt-6.1-sol'];
         $this->assertSame(272000, $sol61->contextWindow);
-        $this->assertSame(128000, $sol61->maxTokens);
+        $this->assertSame(128000, $catalog->loadProviders()['ai']['providers']['openai-codex']['models']['gpt-6.1-sol']['max_tokens']);
         $this->assertSame(['text', 'image'], $sol61->input);
         $this->assertSame(
             ['minimal' => null, 'low' => 'low', 'medium' => 'medium', 'high' => 'high', 'xhigh' => 'xhigh', 'max' => 'max'],
@@ -171,7 +172,7 @@ YAML);
 
         $sol = $ai->providers['openai-codex']->models['gpt-6-sol'];
         $this->assertSame(272000, $sol->contextWindow);
-        $this->assertSame(128000, $sol->maxTokens);
+        $this->assertSame(128000, $catalog->loadProviders()['ai']['providers']['openai-codex']['models']['gpt-6-sol']['max_tokens']);
         $this->assertSame(['text', 'image'], $sol->input);
         $this->assertSame(
             ['off' => 'none', 'minimal' => 'low', 'low' => 'low', 'medium' => 'medium', 'high' => 'high', 'xhigh' => 'xhigh', 'max' => 'max'],
@@ -187,7 +188,7 @@ YAML);
 
         $luna = $ai->providers['openai-codex']->models['gpt-6-luna'];
         $this->assertSame(272000, $luna->contextWindow);
-        $this->assertSame(128000, $luna->maxTokens);
+        $this->assertSame(128000, $catalog->loadProviders()['ai']['providers']['openai-codex']['models']['gpt-6-luna']['max_tokens']);
         $this->assertSame(['text', 'image'], $luna->input);
         $this->assertSame($sol->thinkingLevelMap, $luna->thinkingLevelMap);
         $this->assertTrue($luna->compatibility?->pinContextWindow);

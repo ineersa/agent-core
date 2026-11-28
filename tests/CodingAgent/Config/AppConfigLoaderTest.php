@@ -547,10 +547,10 @@ YAML
     public function testPathMapRejectsScalarIntermediateNode(): void
     {
         try {
-            $this->loader->resolveLayers($this->tmpDir, [], [], ['tools' => ['output_cap' => 'not a mapping']]);
+            $this->loader->resolveLayers($this->tmpDir, [], [], ['logging' => 'not a mapping']);
             $this->fail('Expected malformed config to be rejected.');
         } catch (\InvalidArgumentException $exception) {
-            $this->assertStringContainsString('Invalid value for tools.output_cap', $exception->getMessage());
+            $this->assertStringContainsString('Invalid value for logging', $exception->getMessage());
             $this->assertInstanceOf(UnexpectedTypeException::class, $exception->getPrevious());
         }
     }
