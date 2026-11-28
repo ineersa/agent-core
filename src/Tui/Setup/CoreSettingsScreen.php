@@ -86,7 +86,7 @@ final class CoreSettingsScreen
                     ."\nEnter applies · Esc cancels");
                 if (\in_array($key, ['forks.extensions.enabled', 'agents.extensions.always_on', 'ai.favorite_models'], true)) {
                     $selected = \is_array($edit->value) ? $edit->value : [];
-                    $available = 'ai.favorite_models' === $key ? $providers->configuredModelRefs() : $this->settings->loadConfig()->extensions->enabledClasses();
+                    $available = 'ai.favorite_models' === $key ? $providers->configuredModelRefs() : $this->settings->loadConfig($layer)->extensions->enabledClasses();
                     $items = [];
                     foreach (array_unique([...$selected, ...$available]) as $value) {
                         $items[] = ['value' => $value, 'label' => StringUtils::stripControlBytes($value).(\in_array($value, $available, true) ? '' : ' (current; unavailable)'), 'checked' => \in_array($value, $selected, true)];

@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Setup;
 
 use Ineersa\CodingAgent\CLI\Setup\DefinitionSetupService;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
+use Ineersa\CodingAgent\Utility\CommaSeparatedListParser;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Psr\Log\LoggerInterface;
@@ -155,7 +156,7 @@ final class DefinitionSetupScreen
             $label = ucfirst(strtolower(str_replace('-', ' ', (string) preg_replace('/(?<!^)[A-Z]/', ' $0', $key))));
             $submenu = match (true) {
                 'extensions' === $key => fn (string $_, callable $done): SelectListWidget => $this->listPicker($current, $this->service->availableExtensions(), $done, 'No optional extensions available'),
-                'skills' === $key => fn (string $_, callable $done): SelectListWidget => $this->listPicker($current, $this->service->availableSkills(), $done, 'No skills available'),
+                'skills' === $key => fn (string $_, callable $done): SelectListWidget => $this->listPicker(\is_string($current) ? CommaSeparatedListParser::parse($current) : $current, $this->service->availableSkills(), $done, 'No skills available'),
                 'tools' === $key => fn (string $_, callable $done): SelectListWidget => $this->listPicker(\is_string($current) ? array_map(trim(...), explode(',', $current)) : $current, $this->service->availableTools(), $done, 'No tools available', requireNonempty: true),
                 'bool' === $type || \in_array($key, ['model', 'thinking', 'systemPromptMode'], true) => fn (): SelectListWidget => $this->picker($key, $text, $this->service->choices($key, $type, $fields)),
                 default => static fn (string $_, callable $done): SettingsTextInputWidget => new SettingsTextInputWidget($done, $text, cancelUnchanged: true),

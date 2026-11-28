@@ -14,6 +14,7 @@ use Ineersa\Tui\Setup\DefinitionSetupScreen;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
@@ -83,7 +84,16 @@ final class DefinitionSetupScreenTest extends PerMethodIsolatedKernelTestCase
         }
     }
 
-    public function testToolAndSkillPickersPreserveUnavailableEntries(): void
+    /** @return iterable<string, array{string, list<string>}> */
+    public static function skillSelections(): iterable
+    {
+        yield 'list' => ['[missing]', ['missing']];
+        yield 'comma-separated' => ['missing, absent', ['missing', 'absent']];
+    }
+
+    /** @param list<string> $selectedSkills */
+    #[DataProvider('skillSelections')]
+    public function testToolAndSkillPickersPreserveUnavailableEntries(string $skills, array $selectedSkills): void
     {
         $home = $this->isolatedHome();
         $this->assertSame($home.'/.hatfield', realpath($home.'/.hatfield'));
@@ -92,7 +102,7 @@ final class DefinitionSetupScreenTest extends PerMethodIsolatedKernelTestCase
         $this->assertFalse(is_link($home.'/.hatfield/skills/example'));
         $agent = $home.'/.hatfield/agents/picker.md';
         $fs = new Filesystem();
-        $fs->dumpFile($agent, "---\nname: picker\ndescription: Fixture\ntools: 'mcp:missing_*'\nskills: [missing]\n---\nBody\n");
+        $fs->dumpFile($agent, "---\nname: picker\ndescription: Fixture\ntools: 'mcp:missing_*'\nskills: ".$skills."\n---\nBody\n");
         $fs->dumpFile($home.'/.hatfield/skills/example/SKILL.md', "---\nname: example\ndescription: Fixture\n---\nBody\n");
         $service = self::getContainer()->get(DefinitionSetupService::class);
         $terminal = new VirtualTerminal(columns: 130, rows: 35);
@@ -114,15 +124,21 @@ final class DefinitionSetupScreenTest extends PerMethodIsolatedKernelTestCase
             $this->assertInstanceOf(SelectListWidget::class, $tui->getFocus()->all()[0]);
             $terminal->simulateInput("\x1b");
             $terminal->simulateInput("\x1b[A\x1b[A");
-            foreach ([2 => ['tools', 'mcp:missing_*', 'mcp:*'], 5 => ['skills', 'missing', 'example']] as $index => [$field, $unavailable, $known]) {
+            foreach ([2 => ['tools', ['mcp:missing_*'], 'mcp:*'], 5 => ['skills', $selectedSkills, 'example']] as $index => [$field, $selected, $known]) {
                 $form = $tui->getFocus();
                 $this->assertInstanceOf(SettingsListWidget::class, $form);
                 $terminal->simulateInput(str_repeat("\x1b[B", $index)."\r");
                 $picker = $form->all()[0];
                 $this->assertInstanceOf(SelectListWidget::class, $picker);
-                $this->assertSame($unavailable.' (current; unavailable)', $picker->getSelectedItem()['label'] ?? null);
-                $terminal->simulateInput("\x1b[B \r");
-                $this->assertSame([$unavailable, $known], $service->fields($fs->readFile($agent))[$field]);
+                $this->assertSame($selected[0].' (current; unavailable)', $picker->getSelectedItem()['label'] ?? null);
+                $this->assertSame($selected, array_column($picker->getSelectedItems(), 'value'));
+                $before = $fs->readFile($agent);
+                $terminal->simulateInput("\r"); // Unchanged confirmation preserves scalar spelling.
+                $this->assertSame($before, $fs->readFile($agent));
+                $terminal->simulateInput("\r".str_repeat("\x1b[B", \count($selected))." \x1b");
+                $this->assertSame($before, $fs->readFile($agent)); // Cancel preserves selections.
+                $terminal->simulateInput("\r".str_repeat("\x1b[B", \count($selected))." \r");
+                $this->assertSame([...$selected, $known], $service->fields($fs->readFile($agent))[$field]);
             }
         } finally {
             $tui->stop();

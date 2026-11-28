@@ -20,6 +20,7 @@ use Ineersa\Tui\Setup\SetupScreen;
 use Ineersa\Tui\Setup\UnifiedSetupScreen;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -355,16 +356,32 @@ final class UnifiedSetupScreenTest extends PerMethodIsolatedKernelTestCase
         $this->assertEquals($previous->ai, $current->ai);
     }
 
-    public function testExtensionMultiselectShowsDefaultsAndPersistsOnlyOnConfirm(): void
+    /** @return iterable<string, array{SettingsLayerEnum, string, string}> */
+    public static function extensionScopes(): iterable
+    {
+        foreach ([SettingsLayerEnum::User, SettingsLayerEnum::Project] as $scope) {
+            yield $scope->value.' forks' => [$scope, 'forks', 'enabled'];
+            yield $scope->value.' agents' => [$scope, 'agents', 'always_on'];
+        }
+    }
+
+    #[DataProvider('extensionScopes')]
+    public function testExtensionMultiselectShowsDefaultsAndPersistsOnlyOnConfirm(SettingsLayerEnum $scope, string $group, string $selection): void
     {
         $container = self::getContainer();
         $cwd = $this->isolatedCwd();
         $writer = $container->get(SettingsOverrideWriter::class);
-        $path = $writer->layerPath(SettingsLayerEnum::Project, $cwd);
-        $this->assertSame($cwd.'/.hatfield', realpath(\dirname($path)));
+        $path = $writer->layerPath($scope, $cwd);
+        $this->assertSame((SettingsLayerEnum::User === $scope ? $this->isolatedHome() : $cwd).'/.hatfield', realpath(\dirname($path)));
         $this->assertFalse(is_link($path));
-        $writer->set(SettingsLayerEnum::Project, $cwd, 'extensions.enabled', ['Example\\First', 'Example\\Second']);
-        $writer->set(SettingsLayerEnum::Project, $cwd, 'forks.extensions.enabled', ['Example\\First']);
+        $this->assertSame($cwd.'/.hatfield', realpath($cwd.'/.hatfield'));
+        $this->assertFalse(is_link($writer->layerPath(SettingsLayerEnum::Project, $cwd)));
+        $this->assertSame($this->isolatedHome().'/.hatfield', realpath($this->isolatedHome().'/.hatfield'));
+        $this->assertFalse(is_link($writer->layerPath(SettingsLayerEnum::User, $cwd)));
+        $writer->set(SettingsLayerEnum::User, $cwd, 'extensions.enabled', ['Example\\First', 'Example\\Second']);
+        $writer->set(SettingsLayerEnum::Project, $cwd, 'extensions.project_extensions', ['Example\\ProjectOnly']);
+        $key = $group.'.extensions.'.$selection;
+        $writer->set($scope, $cwd, $key, ['Example\\First']);
         $before = file_get_contents($path);
         $terminal = new VirtualTerminal(columns: 160, rows: 35);
         $tui = new Tui(terminal: $terminal);
@@ -372,28 +389,33 @@ final class UnifiedSetupScreenTest extends PerMethodIsolatedKernelTestCase
         $tui->add($pane);
         $flow = ProvidersSetupFlow::for($container->get(AiCatalog::class), $writer, $container->get(AppConfig::class));
         $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
-        $container->get(CoreSettingsScreen::class)->mount($tui, $pane, SettingsLayerEnum::Project, $flow, $tui->stop(...), static fn (string $text) => new TextWidget($text), $theme, static fn () => null);
+        $container->get(CoreSettingsScreen::class)->mount($tui, $pane, $scope, $flow, $tui->stop(...), static fn (string $text) => new TextWidget($text), $theme, static fn () => null);
         $tui->start();
         try {
-            $this->select($tui, 'forks');
+            $this->select($tui, $group);
             $this->assertStringContainsString('Default:', $this->render($tui, $terminal));
-            $this->field($tui, 'forks.extensions.enabled');
+            $this->field($tui, $key);
+            if (SettingsLayerEnum::User === $scope) {
+                $this->assertStringNotContainsString('Example\\ProjectOnly', $this->render($tui, $terminal));
+            } else {
+                $this->assertStringContainsString('Example\\ProjectOnly', $this->render($tui, $terminal));
+            }
             $this->assertStringContainsString('Space toggles', $this->render($tui, $terminal));
             $this->assertStringContainsString('[x]', $this->render($tui, $terminal));
             $terminal->simulateInput(' ');
             $terminal->simulateInput("\x1b");
             $this->assertSame($before, file_get_contents($path));
-            $this->field($tui, 'forks.extensions.enabled');
+            $this->field($tui, $key);
             $terminal->simulateInput("\x1b[B");
             $terminal->simulateInput(' ');
             $terminal->simulateInput("\r");
-            $this->assertSame(['Example\\First', 'Example\\Second'], Yaml::parseFile($path)['forks']['extensions']['enabled']);
-            $this->field($tui, 'forks.extensions.enabled');
+            $this->assertSame(['Example\\First', 'Example\\Second'], Yaml::parseFile($path)[$group]['extensions'][$selection]);
+            $this->field($tui, $key);
             $terminal->simulateInput(' ');
             $terminal->simulateInput("\x1b[B");
             $terminal->simulateInput(' ');
             $terminal->simulateInput("\r");
-            $this->assertSame([], Yaml::parseFile($path)['forks']['extensions']['enabled']);
+            $this->assertSame([], Yaml::parseFile($path)[$group]['extensions'][$selection]);
         } finally {
             $tui->stop();
         }
