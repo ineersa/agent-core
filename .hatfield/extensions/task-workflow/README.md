@@ -249,12 +249,16 @@ QA-report object or permanent task-level validation-passed flag.
   submitted-SHA checkpoint. It is not merge authorization or a review bypass.
 
 `/tasks`, `/tasks-todo`, `/tasks-in-progress`, `/tasks-code-review`, `/tasks-done`
-accept an optional page. Closed issues with active Workflow await finalization.
-`/tasks-init` initializes the project. The bundled skill covers all workflow endpoints.
+accept an optional page. Native closure with active Workflow is displayed as
+awaiting finalization. `/tasks-init` is deliberate project initialization.
+The bundled skill covers planning-only, implementation-only, review, feedback
+iteration and completion endpoints; separate project task prompts are unnecessary.
 Main owns task administration and transitions. Implement directly, resume a
 relevant child, or delegate substantial bounded work to a fresh `general-purpose`
 subagent. Give it the task, checkout, and finalized requirements; keep one writer
-per checkout. Hooks own the full gate. Honor project review and explicit merge authorization.
+per checkout. Hooks own the full validation gate; honor project review and explicit
+merge authorization rather than repeating that gate as a separate ceremony or
+inferring permission to merge.
 
 ## Transition order
 
