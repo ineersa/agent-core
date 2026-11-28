@@ -59,8 +59,9 @@ Both support text/image input, function tools, and API reasoning efforts
 `minimal` omits the effort option; it does not disable reasoning or send
 `none`/`minimal` to the API.
 
-Hatfield pins both context windows to the curated **272,000-token** pricing tier
-and caps output at **128,000 tokens**. The upstream API model pages advertise a
+Hatfield pins both context windows to the curated **272,000-token** pricing tier.
+The catalog records **128,000 tokens** of output metadata; this is not an enforced
+request output limit. The upstream API model pages advertise a
 raw 1.05M-token window and premium pricing above 272K; these are not Hatfield's
 configured limits. Codex metadata also differs (Astra 272K, Sol 500K), so neither
 upstream API nor Codex windows should replace the curated cap during updates.
@@ -172,11 +173,15 @@ ChatGPT sends the selected reasoning level as request-level `reasoning.effort` o
 efforts. Selecting `off` or `minimal` sends no effort value; neither disables
 reasoning.
 
-## HTTP client (`ai.http`)
+## HTTP reliability policy
 
-Controls outbound LLM HTTP timeouts and the **application** retry budget for one platform invocation. ChatGPT generation overrides the shared defaults with 300 seconds idle and `max_duration: 0`; there is no hard total generation deadline. OAuth operations have separate bounded budgets. Known permanent ChatGPT subscription-limit errors are terminal and are not retried.
+Outbound LLM timeouts and the **application** retry budget are internal policy,
+not settings. ChatGPT generation uses 300 seconds idle and no total deadline;
+other providers use the shared policy below. OAuth operations and explicit
+operation-specific budgets remain separate. Known permanent ChatGPT
+subscription-limit errors are terminal and are not retried.
 
-| Key | Default | Meaning |
+| Policy | Value | Meaning |
 |---|---|---|
 | `timeout` | `30` | Idle timeout per HTTP request (seconds) |
 | `max_duration` | `0` | Total request duration budget (seconds); `0` = no total limit |
@@ -186,7 +191,10 @@ Controls outbound LLM HTTP timeouts and the **application** retry budget for one
 
 `timeout` is the SSE/body idle timeout while waiting for the next chunk after headers. A silent HTTP 200 stream therefore fails over through `LlmRequestRetryExecutor` at `timeout`. User cancel during that wait aborts the in-flight request through the HTTP progress hook instead of waiting for the timer.
 
-`max_duration` caps the whole request, including a stream that is still producing reasoning or output. It is `0` (off) by default so that long generations are not cut off; set a positive number only to force a total wall budget on every provider.
+Total duration is fixed at `0` (off) for ordinary generation so that long
+responses are not cut off while still producing reasoning or output.
+Idle timeouts still detect stalled connections. The former `ai.http` overrides
+are unsupported and should be removed from settings.
 
 `LlmRequestRetryExecutor` owns the single bounded budget, including HTTP status errors, idle timeouts, failed stream chunks, and thinking-only recoveries. Outbound LLM HTTP clients apply only `timeout` / `max_duration`; they are not wrapped in Symfony `RetryableHttpClient`. Retry progress is emitted as transient `llm.request_retrying` (seq=`0`) for the TUI working status. User cancellation stops further attempts and backoff. Failed partial streams are discarded before the next attempt; tool side effects are not replayed.
 
@@ -209,14 +217,12 @@ ai:
       type: generic
       enabled: true
       base_url: https://api.deepseek.com
-      api: openai-completions
       api_key: env:DEEPSEEK_API_KEY
       supports_completions: true
       models:
         deepseek-v4-pro:
           name: DeepSeek V4 Pro
           context_window: 1000000
-          max_tokens: 384000
           input: [text]
           tool_calling: true
           reasoning: true

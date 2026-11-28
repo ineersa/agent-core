@@ -20,6 +20,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 /**
  * Tests for SkillDiscovery.
@@ -426,6 +428,7 @@ final class SkillDiscoveryTest extends TestCase
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
             frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
+            lockFactory: new LockFactory(new InMemoryStore()),
         );
 
         $this->expectException(\RuntimeException::class);
@@ -524,7 +527,7 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertSame([], $skills);
     }
 
-    public function testMaterializesBuiltinSkillsIntoHomeAndRewritesStaleFiles(): void
+    public function testMaterializesBuiltinSkillsWithoutOverwritingLegacyTrees(): void
     {
         $appRoot = $this->tmpDir.'/app';
         $homeDir = $this->tmpDir.'/home';
@@ -569,16 +572,16 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertArrayNotHasKey('nested', $byName);
 
         $this->assertSame($homeDir.'/.hatfield/skills/alpha', $byName['alpha']->skillDirectory);
-        $this->assertSame('Alpha built-in', $byName['alpha']->description);
-        $this->assertFileExists($homeDir.'/.hatfield/skills/alpha/notes.md');
-        $this->assertFileDoesNotExist($homeDir.'/.hatfield/skills/alpha/obsolete.txt');
-        $this->assertStringContainsString('Alpha body', (string) file_get_contents($homeDir.'/.hatfield/skills/alpha/SKILL.md'));
+        $this->assertSame('stale', $byName['alpha']->description);
+        $this->assertFileDoesNotExist($homeDir.'/.hatfield/skills/alpha/notes.md');
+        $this->assertFileExists($homeDir.'/.hatfield/skills/alpha/obsolete.txt');
+        $this->assertStringContainsString('Stale body', (string) file_get_contents($homeDir.'/.hatfield/skills/alpha/SKILL.md'));
         $this->assertSame('User owned', $byName['user-skill']->description);
         $this->assertSame($userSkillDir, $byName['user-skill']->skillDirectory);
         $this->assertSame($userBodyBefore, (string) file_get_contents($userSkillDir.'/SKILL.md'));
     }
 
-    public function testMaterializedBuiltinIsSuppressedByNoSkillsButStillRewritten(): void
+    public function testMaterializedBuiltinIsSuppressedByNoSkillsWithoutOverwritingExistingFiles(): void
     {
         $appRoot = $this->tmpDir.'/app';
         $homeDir = $this->tmpDir.'/home';
@@ -599,8 +602,94 @@ final class SkillDiscoveryTest extends TestCase
         $skills = $discovery->discover();
 
         $this->assertSame([], $skills);
-        $this->assertStringContainsString('Alpha built-in', (string) file_get_contents($homeDir.'/.hatfield/skills/alpha/SKILL.md'));
-        $this->assertFileDoesNotExist($homeDir.'/.hatfield/skills/alpha/obsolete.txt');
+        $this->assertStringContainsString('stale', (string) file_get_contents($homeDir.'/.hatfield/skills/alpha/SKILL.md'));
+        $this->assertFileExists($homeDir.'/.hatfield/skills/alpha/obsolete.txt');
+    }
+
+    public function testTracksPristineUpdatesButPreservesEditedAndDeletedInstalls(): void
+    {
+        $appRoot = $this->tmpDir.'/app';
+        $homeDir = $this->tmpDir.'/home';
+        $cwd = $this->tmpDir.'/project';
+        mkdir($cwd, 0777, true);
+        $source = $appRoot.'/src/CodingAgent/Resources/skills/alpha';
+        $target = $homeDir.'/.hatfield/skills/alpha';
+        $fs = new Filesystem();
+        $discover = fn () => $this->createDiscovery(cwd: $cwd, homeDir: $homeDir, appRoot: $appRoot)->discover();
+        $original = "---\nname: alpha\ndescription: original\n---\nOriginal";
+        $fs->dumpFile($source.'/SKILL.md', $original);
+        $fs->dumpFile($source.'/asset.md', 'original asset');
+        $this->assertCount(1, $discover());
+        $this->assertSame($original, $fs->readFile($target.'/SKILL.md'));
+
+        $updated = str_replace('original', 'updated', $original);
+        $fs->dumpFile($source.'/SKILL.md', $updated);
+        $fs->remove($source.'/asset.md');
+        $this->assertCount(1, $discover());
+        $this->assertSame($updated, $fs->readFile($target.'/SKILL.md'));
+        $this->assertFileDoesNotExist($target.'/asset.md');
+
+        $fs->dumpFile($target.'/user-asset.md', 'mine');
+        $fs->dumpFile($source.'/SKILL.md', $original);
+        $this->assertCount(1, $discover());
+        $this->assertSame($updated, $fs->readFile($target.'/SKILL.md'));
+        $this->assertSame('mine', $fs->readFile($target.'/user-asset.md'));
+        $fs->remove($target);
+        $this->assertSame([], $discover());
+        $this->assertDirectoryDoesNotExist($target);
+    }
+
+    public function testInterruptedRenameAndReceiptRecovery(): void
+    {
+        $source = $this->tmpDir.'/app/src/CodingAgent/Resources/skills/alpha';
+        $home = $this->tmpDir.'/home';
+        $target = $home.'/.hatfield/skills/alpha';
+        $fs = new Filesystem();
+        $discover = fn (?Filesystem $filesystem = null) => $this->createDiscovery(homeDir: $home, appRoot: $this->tmpDir.'/app', filesystem: $filesystem)->discover();
+        $fs->dumpFile($source.'/SKILL.md', "---\nname: alpha\ndescription: Original\n---\nOriginal");
+        $this->assertSame('Original', $discover()[0]->description);
+        foreach (['Moved old tree', 'Installed new tree'] as $description) {
+            $fs->dumpFile($source.'/SKILL.md', "---\nname: alpha\ndescription: $description\n---\nNew");
+            $failing = $this->createPartialMock(Filesystem::class, ['rename']);
+            $interrupted = false;
+            $failing->expects($this->exactly('Moved old tree' === $description ? 2 : 3))->method('rename')->willReturnCallback(static function (string $origin, string $destination, bool $overwrite = false) use ($fs, $target, $description, &$interrupted): void {
+                $fs->rename($origin, $destination, $overwrite);
+                if ('Moved old tree' === $description ? $target === $origin : $target === $destination) {
+                    $interrupted = true;
+                    throw new \RuntimeException('Injected interruption after rename');
+                }
+            });
+            try {
+                $discover($failing);
+            } catch (\RuntimeException $e) {
+                $this->assertSame('Injected interruption after rename', $e->getMessage());
+            }
+            $this->assertTrue($interrupted);
+            $this->assertSame($description, $discover()[0]->description);
+        }
+        $fs->dumpFile($source.'/SKILL.md', "---\nname: alpha\ndescription: Next upgrade\n---\nNew");
+        $this->assertSame('Next upgrade', $discover()[0]->description, 'The recovered receipt permits the next upgrade.');
+    }
+
+    public function testUnverifiableInstalledTreeDoesNotBlockOtherSkills(): void
+    {
+        $home = $this->tmpDir.'/home';
+        $appRoot = $this->tmpDir.'/app';
+        $source = $appRoot.'/src/CodingAgent/Resources/skills';
+        $target = $home.'/.hatfield/skills/alpha';
+        $fs = new Filesystem();
+        $logger = new TestLogger();
+        $discover = fn () => $this->createDiscovery(homeDir: $home, appRoot: $appRoot, logger: $logger)->discover();
+        $alpha = "---\nname: alpha\ndescription: Original\n---\nOriginal";
+        $fs->dumpFile($source.'/alpha/SKILL.md', $alpha);
+        $this->assertCount(1, $discover());
+        $fs->symlink($this->tmpDir.'/missing', $target.'/unverifiable');
+        $fs->dumpFile($source.'/alpha/SKILL.md', str_replace('Original', 'Upgrade', $alpha));
+        $fs->dumpFile($source.'/beta/SKILL.md', str_replace('alpha', 'beta', $alpha));
+        $this->assertCount(2, $discover());
+        $this->assertSame($alpha, $fs->readFile($target.'/SKILL.md'));
+        $this->assertTrue(is_link($target.'/unverifiable'));
+        $this->assertSame('Symbolic links are not managed', $logger->records[0]['context']['error']);
     }
 
     public function testBundledSubagentsSkillStaysUnderCharacterBudget(): void
@@ -632,6 +721,7 @@ final class SkillDiscoveryTest extends TestCase
         ?string $homeDir = null,
         ?string $appRoot = null,
         LoggerInterface $logger = new NullLogger(),
+        ?Filesystem $filesystem = null,
     ): SkillDiscovery {
         $projectDir = $this->tmpDir;
         $resolvedHomeDir = $homeDir ?? $this->tmpDir.'/home';
@@ -652,8 +742,9 @@ final class SkillDiscoveryTest extends TestCase
             ),
             extractor: new MarkdownFrontmatterExtractor(),
             resources: new AppResourceLocator($resolvedAppRoot),
-            filesystem: new Filesystem(),
+            filesystem: $filesystem ?? new Filesystem(),
             frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
+            lockFactory: new LockFactory(new InMemoryStore()),
             logger: $logger,
         );
     }

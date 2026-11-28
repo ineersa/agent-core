@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Config\Ai;
 /**
  * A model definition from the Hatfield model catalog.
  *
- * Owns all model metadata the agent needs: context window, max tokens,
+ * Owns runtime model metadata: context window,
  * input modalities, tool-calling, reasoning, thinking-level map,
  * cost, and provider-specific compatibility quirks.
  */
@@ -17,7 +17,6 @@ final readonly class AiModelDefinition
      * @param string                     $id               Model name used in API requests (e.g. glm-5.1, deepseek-v4-pro)
      * @param string|null                $name             Human-readable display name (e.g. "GLM 5.1")
      * @param int|null                   $contextWindow    Max context window in tokens
-     * @param int|null                   $maxTokens        Max output tokens
      * @param list<string>               $input            Accepted input modalities (text, image, etc.)
      * @param bool                       $toolCalling      Whether this model supports tool/function calling
      * @param bool                       $reasoning        Whether this model supports reasoning/thinking
@@ -30,7 +29,6 @@ final readonly class AiModelDefinition
         public string $id,
         public ?string $name = null,
         public ?int $contextWindow = null,
-        public ?int $maxTokens = null,
         public array $input = [],
         public bool $toolCalling = false,
         public bool $reasoning = false,
@@ -49,7 +47,6 @@ final readonly class AiModelDefinition
             id: $modelId,
             name: $data['name'] ?? null,
             contextWindow: isset($data['context_window']) && \is_int($data['context_window']) ? $data['context_window'] : null,
-            maxTokens: isset($data['max_tokens']) && \is_int($data['max_tokens']) ? $data['max_tokens'] : null,
             input: \is_array($data['input'] ?? null) ? array_values(array_map('\strval', $data['input'])) : [],
             toolCalling: (bool) ($data['tool_calling'] ?? false),
             reasoning: (bool) ($data['reasoning'] ?? false),

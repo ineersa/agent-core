@@ -484,11 +484,6 @@ abstract class ControllerE2eTestCase extends TestCase
         ));
         $toolCalling = $modelConfig['tool_calling'] ? 'true' : 'false';
 
-        // Keep one LLM consumer. HeadlessControllerLlmWorkerPoolProcessTest proves the topology.
-        // Likewise force tools.execution.max_parallelism=1: these E2Es use at
-        // most one active generic tool; production default 4 tool consumers is
-        // contention-only overhead. Multi-tool worker topology remains covered
-        // by HeadlessController*ProcessTest cases that set the same override.
         $settings = <<<YAML
 ai:
     default_model: llama_cpp_test/test
@@ -517,9 +512,6 @@ ai:
                     reasoning: false
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
 
-tools:
-    execution:
-        max_parallelism: 1
 
 extensions:
     enabled:

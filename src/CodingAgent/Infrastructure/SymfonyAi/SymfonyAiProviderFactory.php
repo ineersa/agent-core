@@ -104,16 +104,15 @@ class SymfonyAiProviderFactory
      * Applies timeout/max-duration options to the injected or default transport.
      * Optional per-call overrides replace both budgets when supplied.
      * Application {@see LlmRequestRetryExecutor}
-     * owns retries from `ai.http.max_retries`; this method does not wrap
+     * owns retries; this method does not wrap
      * {@see RetryableHttpClient}.
      */
     private function getHttpClient(
         ?int $budgetSeconds = null,
     ): HttpClientInterface {
-        $http = $this->appConfig->ai?->http;
         $options = new LlmHttpClientOptions(
-            timeout: $budgetSeconds ?? $http?->timeout,
-            maxDuration: $budgetSeconds ?? $http?->maxDuration,
+            timeout: $budgetSeconds,
+            maxDuration: $budgetSeconds,
         );
 
         $client = ($this->httpClient ?? HttpClient::create())->withOptions($options->httpClientOptions());

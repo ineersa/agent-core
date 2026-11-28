@@ -25,7 +25,6 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
-use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolInvoker;
@@ -448,7 +447,7 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
             $command = new LlmFiberConsumeCommand(
                 new RoutableMessageBus(new ServiceLocator([]), $shutdownBus),
                 new ServiceLocator(['tool' => static fn () => $toolReceiver, 'agent' => $newTransport, 'code_mode_requests' => $newTransport]),
-                $events, $container->get(AppConfig::class), codeModeReplies: $replyService,
+                $events, codeModeReplies: $replyService,
             );
             putenv('HATFIELD_CODE_MODE_REPLY_SLOT=tool-shutdown-test');
             $guard = EventLoop::delay(3, static fn () => throw new \RuntimeException('Shutdown drain did not release the pending reply.'));

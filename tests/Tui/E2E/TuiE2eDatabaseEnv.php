@@ -92,34 +92,6 @@ final class TuiE2eDatabaseEnv
     }
 
     /**
-     * Replay fixtures use a process-local FIFO cursor inside each llm worker.
-     * Production now launches one llm Fiber consumer; keep that single-consumer
-     * topology for TUI replay isolation (same rationale as ControllerReplayE2eTestCase).
-     * Also force tools.execution.max_parallelism=1: TUI replay cases do not need
-     * four idle tool consumers under contention.
-     *
-     * @param array<string, mixed> $settings
-     *
-     * @return array<string, mixed>
-     */
-    public static function withSingleLlmWorkerForReplay(array $settings): array
-    {
-        $tools = $settings['tools'] ?? [];
-        if (!\is_array($tools)) {
-            $tools = [];
-        }
-        $execution = $tools['execution'] ?? [];
-        if (!\is_array($execution)) {
-            $execution = [];
-        }
-        $execution['max_parallelism'] = 1;
-        $tools['execution'] = $execution;
-        $settings['tools'] = $tools;
-
-        return $settings;
-    }
-
-    /**
      * Canonical replay settings used by the dominant TUI E2E scaffolds.
      *
      * Tests apply shallow per-key overrides / plain array edits on top.
@@ -195,7 +167,7 @@ final class TuiE2eDatabaseEnv
      */
     public static function writeReplaySettings(string $testProjectDir, array $settings): void
     {
-        $yaml = Yaml::dump(self::withSingleLlmWorkerForReplay($settings), 6, 4);
+        $yaml = Yaml::dump($settings, 6, 4);
         file_put_contents($testProjectDir.'/.hatfield/settings.yaml', $yaml);
 
         @mkdir($testProjectDir.'/home/.hatfield', 0o777, true);

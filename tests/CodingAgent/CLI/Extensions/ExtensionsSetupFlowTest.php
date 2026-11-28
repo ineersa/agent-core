@@ -79,7 +79,7 @@ final class ExtensionsSetupFlowTest extends PerMethodIsolatedKernelTestCase
                 (new Process([$fixture->composer, 'install', '--no-interaction', '--no-scripts', '--no-plugins'], $root, ExtensionUpdateService::environment($root), timeout: 10))->mustRun();
                 $fixture->filesystem->dumpFile($scope.'/settings.yaml', Yaml::dump([
                     'extensions' => ['enabled' => [$class, SafeGuardExtension::class], 'settings' => ['observational_memory' => ['librarian' => ['url' => 'https://fixture.invalid']], 'safe_guard' => ['auto_deny_in_noninteractive' => true]]],
-                    'forks' => ['extensions' => ['always_on' => [$class]]],
+                    'forks' => ['extensions' => ['enabled' => [$class]]],
                     'agents' => ['extensions' => ['always_on' => [$class]]],
                 ], 8));
             }
@@ -127,7 +127,7 @@ final class ExtensionsSetupFlowTest extends PerMethodIsolatedKernelTestCase
             $settings = Yaml::parseFile($projectSettings);
             $this->assertSame([SafeGuardExtension::class], $settings['extensions']['enabled']);
             $this->assertSame(['safe_guard' => ['auto_deny_in_noninteractive' => true]], $settings['extensions']['settings']);
-            $this->assertSame([], $settings['forks']['extensions']['always_on']);
+            $this->assertSame([], $settings['forks']['extensions']['enabled']);
             $this->assertSame([], $settings['agents']['extensions']['always_on']);
             $this->assertSame($before, file_get_contents($homeSettings));
             $this->assertDirectoryExists($roots[1].'/vendor/'.$package);
@@ -251,7 +251,7 @@ final class ExtensionsSetupFlowTest extends PerMethodIsolatedKernelTestCase
     {
         $flow = self::getContainer()->get(ExtensionsSetupFlow::class);
         $flow->select('safe_guard');
-        $this->assertSame(['parent' => 'true', 'forks' => 'always_on', 'agents' => 'true', 'addition' => 'false'], $flow->members);
+        $this->assertSame(['parent' => 'true', 'forks' => 'enabled', 'agents' => 'true', 'addition' => 'false'], $flow->members);
         $flow->members['parent'] = 'false';
 
         $this->expectException(\RuntimeException::class);

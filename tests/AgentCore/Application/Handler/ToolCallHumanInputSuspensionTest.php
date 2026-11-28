@@ -91,7 +91,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         };
         $store = new ToolExecutionResultStore();
         $envelope = (new ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(),
-            new ToolExecutor('parallel', 2, $store, toolbox: $toolbox, contextAccessor: new StackToolExecutionContextAccessor(), toolSetResolver: PlatformCollaborators::toolSetResolver(), clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger())),
+            new ToolExecutor($store, toolbox: $toolbox, contextAccessor: new StackToolExecutionContextAccessor(), toolSetResolver: PlatformCollaborators::toolSetResolver(), clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger())),
             new InMemoryDeferredToolCompletionRepository(),
             $store,
             new NullRunOperationalStatusReader(), tracer: new RunTracer(new NullLogger()), eventDispatcher: new EventDispatcher(), launchInputStore: $this->createStub(ToolLaunchInputStoreInterface::class),
@@ -105,7 +105,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
     public function testBatchAdmissionIsIdempotentAndFreesDispatchCapacity(): void
     {
-        $collector = new ToolBatchCollector($store = new TestToolBatchStore(), 1);
+        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $store, 'run-b', 1, 'step-b', [
             $this->call('run-b', 'step-b', 'call-1', 0),
             $this->call('run-b', 'step-b', 'call-2', 1),
@@ -178,10 +178,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
     public function testOrdinarySiblingResultWhileSuspendedPreservesWaitingHumanWithoutBatchCommit(): void
     {
-        $collector = new ToolBatchCollector($store = new TestToolBatchStore(), 2);
+        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $store, 'run-par', 1, 'step-par', [
-            $this->call('run-par', 'step-par', 'call-1', 0, mode: 'parallel', maxParallelism: 2),
-            $this->call('run-par', 'step-par', 'call-2', 1, mode: 'parallel', maxParallelism: 2),
+            $this->call('run-par', 'step-par', 'call-1', 0, mode: 'parallel'),
+            $this->call('run-par', 'step-par', 'call-2', 1, mode: 'parallel'),
         ]);
 
         $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer());
@@ -198,7 +198,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
         $suspend = $handler->handle(
             ToolCallResultFactory::fromExecuteToolCallAndHumanInputSuspension(
-                $this->call('run-par', 'step-par', 'call-1', 0, mode: 'parallel', maxParallelism: 2),
+                $this->call('run-par', 'step-par', 'call-1', 0, mode: 'parallel'),
                 new ToolExecutionHumanInputSuspension(PendingHumanInputRequestDTO::toolCallFromPayload(
                     ['question_id' => 'q-shared', 'prompt' => 'Allow call-1?'],
                     ['run_id' => 'run-par', 'turn_no' => 1, 'step_id' => 'step-par', 'tool_call_id' => 'call-1'],
@@ -237,7 +237,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
     public function testResumeRequeuesExactCallWithoutModelMessage(): void
     {
-        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 1);
+        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
         $call = $this->call('run-r', 'step-r', 'call-r', 0, 1);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-r', 1, 'step-r', [$call]);
         TestToolBatchCoordination::suspend($collector, $batchStore, 'run-r', 1, 'step-r', 'call-r', 'q-r');
@@ -489,8 +489,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         int $orderIndex,
         int $turnNo = 1,
         string $mode = 'sequential',
-        int $maxParallelism = 1,
     ): ExecuteToolCall {
-        return new ExecuteToolCall($runId, $turnNo, $stepId, 1, 'exec-'.$toolCallId, $toolCallId, 'bash', [], $orderIndex, mode: $mode, maxParallelism: $maxParallelism);
+        return new ExecuteToolCall($runId, $turnNo, $stepId, 1, 'exec-'.$toolCallId, $toolCallId, 'bash', [], $orderIndex, mode: $mode);
     }
 }

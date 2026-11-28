@@ -116,7 +116,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         // Sanitize details: strip raw_result (full output) to prevent leakage
         // through canonical ToolResult details, AgentMessage history, and TUI.
         // Preserve attachment_refs if the original result carried any, and keep
-        // only safe structured metadata (mode, timeout_seconds, max_parallelism, etc.).
+        // only safe structured metadata (mode, timeout_seconds, etc.).
         $originalDetails = \is_array($result->details) ? $result->details : [];
         $safeDetails = $this->safeDetailsFromOriginal($originalDetails);
 

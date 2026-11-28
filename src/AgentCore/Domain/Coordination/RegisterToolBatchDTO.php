@@ -29,7 +29,6 @@ final readonly class RegisterToolBatchDTO
         public array $expectedOrder,
         public array $pendingQueue,
         public array $inFlight,
-        public int $maxParallelism,
     ) {
     }
 }

@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
 use Ineersa\Hatfield\ExtensionApi\Path\PathResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -29,8 +30,8 @@ use Symfony\Component\Yaml\Yaml;
  *
  * Built-in skills shipped under AppResourceLocator::getBuiltinSkillsPath()
  * are mirrored into ~/.hatfield/skills/<name>/ immediately before scanning
- * (including when --no-skills suppresses the scan). Hatfield owns those
- * destinations and rewrites them; sibling user skills are left untouched.
+ * (including when --no-skills suppresses the scan). Only pristine installed
+ * copies are upgraded; modified or deleted copies stay under user control.
  *
  * Each path is scanned recursively for SKILL.md files. When a directory
  * contains SKILL.md, that directory is treated as a skill root and its
@@ -54,6 +55,8 @@ final class SkillDiscovery
         '%s/.hatfield/skills',
         '%s/.agents/skills',
     ];
+
+    private const string UPDATE_DIRECTORY = '.builtin-skill-updates';
 
     private const MAX_RECURSION_DEPTH = 20;
 
@@ -80,6 +83,7 @@ final class SkillDiscovery
         private readonly AppResourceLocator $resources,
         private readonly Filesystem $filesystem,
         private readonly SkillFrontmatterValidator $frontmatterValidator,
+        private readonly LockFactory $lockFactory,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -286,55 +290,221 @@ final class SkillDiscovery
     }
 
     /**
-     * Mirror every direct bundled skill directory into ~/.hatfield/skills/<name>/.
+     * Serialize setup mutations with bundled skill materialization.
      *
-     * Only direct children of the bundled skills root that contain SKILL.md are
-     * treated as built-ins. Nested reference files stay inside those skill trees.
-     * Owned destinations are removed before mirror so a previous PHAR/materialization
-     * that left files mode 0444 cannot block whole-directory replacement. Sibling
-     * user skill directories under ~/.hatfield/skills are left untouched.
-     * Concurrent same-version copies are accepted as idempotent; an interrupted
-     * write is repaired on the next discover().
+     * @template T
+     *
+     * @param callable(): T $mutation
+     *
+     * @return T
+     */
+    public function mutateInstalledSkill(string $path, callable $mutation, bool $deleting = false): mixed
+    {
+        $root = rtrim($this->pathResolver->getHomeDir(), '/').'/.hatfield/skills';
+        $directory = \dirname($path);
+        $name = basename($directory);
+        if (\dirname($directory) !== $root || !is_file($this->resources->getBuiltinSkillsPath().'/'.$name.'/SKILL.md')) {
+            return $mutation();
+        }
+
+        return $this->withInstallLock($root, function () use ($root, $name, $directory, $mutation, $deleting): mixed {
+            $receipt = $this->readInstallReceipt($root);
+            $this->recoverInstall($root, $name, $directory, $root.'/'.self::UPDATE_DIRECTORY.'/'.$name, $receipt);
+            $result = $mutation();
+            if ($deleting) {
+                // The copy can predate the receipt; remember a successful setup deletion.
+                $receipt[$name] = null;
+                $this->writeInstallReceipt($root, $receipt);
+            }
+
+            return $result;
+        });
+    }
+
+    /**
+     * Install bundled copies and update only fingerprint-proven pristine trees.
+     * Modified, unrecognized legacy and deleted copies remain user-owned. A null
+     * receipt opts a tree out of automatic replacement, including after deletion.
      */
     private function materializeBuiltinSkills(string $homeDir): void
     {
         $sourceRoot = $this->resources->getBuiltinSkillsPath();
-        if (!is_dir($sourceRoot)) {
-            return;
-        }
-
-        $entries = scandir($sourceRoot);
-        if (false === $entries) {
+        if (!is_dir($sourceRoot) || false === $entries = scandir($sourceRoot)) {
             return;
         }
 
         $destinationRoot = rtrim($homeDir, '/').'/.hatfield/skills';
+        $this->withInstallLock($destinationRoot, function () use ($entries, $sourceRoot, $destinationRoot): void {
+            $receipt = $this->readInstallReceipt($destinationRoot);
+            foreach ($entries as $entry) {
+                $source = $sourceRoot.'/'.$entry;
+                if ('.' === $entry || '..' === $entry || !is_file($source.'/SKILL.md')) {
+                    continue;
+                }
+                $target = $destinationRoot.'/'.$entry;
+                // Stage on the same filesystem as the target. Discovery skips this state directory.
+                $transaction = $destinationRoot.'/'.self::UPDATE_DIRECTORY.'/'.$entry;
+                if (!$this->recoverInstall($destinationRoot, $entry, $target, $transaction, $receipt)) {
+                    continue;
+                }
+                if (is_link($target) || (file_exists($target) && !is_dir($target))) {
+                    continue;
+                }
+                $tracked = \array_key_exists($entry, $receipt);
+                if ($tracked && (!is_dir($target) || null === $receipt[$entry])) {
+                    continue;
+                }
+                $packaged = $this->treeFingerprint($source);
+                if (null === $packaged) {
+                    continue;
+                }
+                $installed = is_dir($target) ? $this->treeFingerprint($target) : null;
+                if (is_dir($target) && null === $installed) {
+                    continue;
+                }
+                if (is_dir($target) && !$tracked) {
+                    // Without an old baseline only an exact match is known pristine.
+                    $receipt[$entry] = $installed === $packaged ? $packaged : null;
+                } elseif ($installed !== $packaged) {
+                    if ($tracked && $installed !== $receipt[$entry]) {
+                        continue;
+                    }
+                    // Until the journal exists, only the stage can have changed. Once it
+                    // exists, keep the previous tree until the receipt is committed.
+                    $stage = $transaction.'/stage';
+                    $this->filesystem->remove($stage);
+                    $this->filesystem->mirror($source, $stage);
+                    if ($this->treeFingerprint($stage) !== $packaged) {
+                        continue;
+                    }
+                    $this->filesystem->dumpFile($transaction.'/pending', $packaged);
+                    if (is_dir($target)) {
+                        $this->filesystem->rename($target, $transaction.'/previous');
+                    }
+                    $this->filesystem->rename($stage, $target);
+                    $receipt[$entry] = $packaged;
+                    $this->writeInstallReceipt($destinationRoot, $receipt);
+                    $this->clearInstallTransaction($transaction);
 
-        foreach ($entries as $entry) {
-            if ('.' === $entry || '..' === $entry) {
-                continue;
+                    continue;
+                } else {
+                    continue;
+                }
+                $this->writeInstallReceipt($destinationRoot, $receipt);
             }
+        });
+    }
 
-            $sourceDir = $sourceRoot.'/'.$entry;
-            if (!is_dir($sourceDir) || !is_file($sourceDir.'/SKILL.md')) {
-                continue;
-            }
-
-            // Hatfield owns ~/.hatfield/skills/<name>/ for each built-in. Remove the
-            // whole destination first: mirror(override/delete) cannot rewrite read-only
-            // files left by PHAR extraction (mode 0444).
-            $destinationDir = $destinationRoot.'/'.$entry;
-            if ($this->filesystem->exists($destinationDir)) {
-                $this->filesystem->remove($destinationDir);
-            }
-
-            $this->filesystem->mirror(
-                $sourceDir,
-                $destinationDir,
-                null,
-                ['override' => true, 'delete' => true],
-            );
+    /** @param array<string, string|null> $receipt */
+    private function recoverInstall(string $root, string $name, string $target, string $transaction, array &$receipt): bool
+    {
+        $pending = $transaction.'/pending';
+        if (!is_file($pending)) {
+            return true;
         }
+        $next = $this->filesystem->readFile($pending);
+        $previous = $transaction.'/previous';
+        if (!\array_key_exists($name, $receipt) || (null !== $receipt[$name] && $receipt[$name] !== $next)) {
+            if (!is_link($target) && is_dir($target) && $this->treeFingerprint($target) === $next) {
+                // Promotion finished; only the atomic receipt write was interrupted.
+                $receipt[$name] = $next;
+                $this->writeInstallReceipt($root, $receipt);
+            } elseif (!file_exists($target) && !is_link($target) && is_dir($previous)) {
+                // The old tree was moved, but promotion did not finish. Restore it
+                // before re-evaluating the currently packaged version.
+                $this->filesystem->rename($previous, $target);
+            } elseif (is_dir($previous)) {
+                // Something else occupies the target; never overwrite it or discard the backup.
+                return false;
+            }
+        }
+        $this->clearInstallTransaction($transaction);
+
+        return true;
+    }
+
+    private function clearInstallTransaction(string $transaction): void
+    {
+        // Remove the journal last: cleanup itself can be interrupted.
+        $this->filesystem->remove([$transaction.'/stage', $transaction.'/previous']);
+        $this->filesystem->remove($transaction.'/pending');
+        $this->filesystem->remove($transaction);
+    }
+
+    /**
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function withInstallLock(string $root, callable $operation): mixed
+    {
+        $lock = $this->lockFactory->createLock('hatfield:builtin-skills:'.$root);
+        $lock->acquire(true);
+        try {
+            return $operation();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /** @return array<string, string|null> */
+    private function readInstallReceipt(string $root): array
+    {
+        $path = $root.'/.builtin-installs.yaml';
+
+        return is_file($path) ? Yaml::parse($this->filesystem->readFile($path)) : [];
+    }
+
+    /** @param array<string, string|null> $receipt */
+    private function writeInstallReceipt(string $root, array $receipt): void
+    {
+        $this->filesystem->dumpFile($root.'/.builtin-installs.yaml', Yaml::dump($receipt));
+    }
+
+    private function treeFingerprint(string $directory): ?string
+    {
+        $entries = @scandir($directory);
+        if (false === $entries) {
+            return $this->fingerprintFailure($directory, error_get_last()['message'] ?? 'Unable to list directory');
+        }
+        $nodes = [];
+        foreach ($entries as $name) {
+            if ('.' === $name || '..' === $name) {
+                continue;
+            }
+            $path = $directory.'/'.$name;
+            if (is_link($path)) {
+                return $this->fingerprintFailure($path, 'Symbolic links are not managed');
+            }
+            if (is_dir($path)) {
+                $hash = $this->treeFingerprint($path);
+                $kind = 'directory';
+            } else {
+                if (!is_file($path)) {
+                    return $this->fingerprintFailure($path, 'Not a regular file');
+                }
+                $hash = @hash_file('sha256', $path);
+                if (false === $hash) {
+                    return $this->fingerprintFailure($path, error_get_last()['message'] ?? 'Unable to hash file');
+                }
+                $kind = 'file';
+            }
+            if (null === $hash) {
+                return null;
+            }
+            $nodes[] = [$name, $kind, $hash];
+        }
+
+        return hash('sha256', serialize($nodes));
+    }
+
+    private function fingerprintFailure(string $path, string $error): null
+    {
+        $this->logger?->warning('skill.install.fingerprint_failed', ['component' => 'skill_discovery', 'event_type' => 'skill.install.fingerprint_failed', 'path' => $path, 'error' => $error]);
+
+        return null;
     }
 
     /**
@@ -381,7 +551,7 @@ final class SkillDiscovery
 
             $childPath = $realDir.'/'.$entry;
 
-            if (!is_dir($childPath)) {
+            if (self::UPDATE_DIRECTORY === $entry || !is_dir($childPath)) {
                 continue;
             }
 
@@ -407,11 +577,11 @@ final class SkillDiscovery
             return null;
         }
 
-        $content = file_get_contents($skillFile);
+        $content = @file_get_contents($skillFile);
 
         if (false === $content) {
             if (null !== $this->logger) {
-                $this->logger->warning('Failed to read SKILL.md at {path}', ['path' => $skillFile]);
+                $this->logger->warning('Failed to read SKILL.md at {path}: {error}', ['path' => $skillFile, 'error' => error_get_last()['message'] ?? 'Unable to read skill']);
             }
 
             return null;

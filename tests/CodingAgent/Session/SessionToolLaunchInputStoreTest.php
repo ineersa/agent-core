@@ -64,8 +64,8 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             $body = $serializer->encode(new Envelope($call))['body'];
             $this->assertStringNotContainsString('PRIVATE_LAUNCH_BODY', $body);
             $readCall = new ExecuteToolCall($runId, 1, 'step-'.$count, 1, 'read-key', 'read', 'read', ['path' => 'x'], 1);
-            $batch = new ToolBatchStateDTO(expectedOrder: [$callId => 0, 'read' => 1], calls: [$callId => $call, 'read' => $readCall], pendingQueue: [$callId], inFlight: [], results: [], finalized: false, maxParallelism: 2);
-            $register = new RegisterToolBatchDTO($runId, 1, 'step-'.$count, [$call, $readCall], $batch->expectedOrder, $batch->pendingQueue, $batch->inFlight, $batch->maxParallelism);
+            $batch = new ToolBatchStateDTO(expectedOrder: [$callId => 0, 'read' => 1], calls: [$callId => $call, 'read' => $readCall], pendingQueue: [$callId], inFlight: [], results: [], finalized: false);
+            $register = new RegisterToolBatchDTO($runId, 1, 'step-'.$count, [$call, $readCall], $batch->expectedOrder, $batch->pendingQueue, $batch->inFlight);
             $verified = new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => [$register]]);
             $batchStore->prepareChanges([$register], $verified)();
             $schedule = self::getContainer()->get(Connection::class)->fetchAssociative(

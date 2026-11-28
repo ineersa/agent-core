@@ -14,15 +14,16 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * retention duration for stale-file cleanup. Persisted output is scoped by
  * the explicit runtime run ID, never a configured filename prefix.
  *
- * Hydrated from the tools.output_cap section of Hatfield merged config
- * via Symfony Serializer. The storageDir is made absolute by
- * {@see AppConfigLoader::load()} before DTO construction.
+ * Only character caps are hydrated from tools.output_cap settings. Retention
+ * is internal policy; AppConfig derives storage from the canonical cwd.
  */
 final readonly class OutputCapConfig
 {
+    public const string STORAGE_PATH = '.hatfield/tmp/output-cap';
+
     public function __construct(
         #[SerializedName('path')]
-        public string $storageDir = '.hatfield/tmp/output-cap',
+        public string $storageDir = self::STORAGE_PATH,
         public int $defaultCap = 20000,
         public int $docCap = 50000,
         #[SerializedName('retention')]

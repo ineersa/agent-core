@@ -1,7 +1,5 @@
 ---
 name: reviewer
-model: openai-codex/gpt-6.2-astra
-thinking: high
 description: Fresh defect review (correctness, lifecycle, wiring, architecture, security, performance) producing evidence-backed candidates for independent verification
 tools:
   - read

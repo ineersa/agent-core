@@ -9,8 +9,6 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Config\ToolExecutionConfig;
-use Ineersa\CodingAgent\Config\ToolsConfig;
 use ShipMonk\PHPStan\DeadCode\Provider\ReflectionBasedMemberUsageProvider;
 use ShipMonk\PHPStan\DeadCode\Provider\VirtualUsageData;
 
@@ -43,13 +41,6 @@ final class SymfonyExpressionServiceCallUsageProvider extends ReflectionBasedMem
             'ai' => AiConfig::class,
             'catalog' => null,
             'cwd' => null,
-            'tools' => ToolsConfig::class,
-        ],
-        ToolsConfig::class => [
-            'execution' => ToolExecutionConfig::class,
-        ],
-        ToolExecutionConfig::class => [
-            'maxParallelism' => null,
         ],
         LoggingConfig::class => [
             'logDir' => null,

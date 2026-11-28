@@ -71,7 +71,6 @@ final class ToolCallResultFactory
             toolIdempotencyKey: $call->toolIdempotencyKey,
             mode: $call->mode,
             timeoutSeconds: $call->timeoutSeconds,
-            maxParallelism: $call->maxParallelism,
             argSchema: $call->argSchema,
             toolsRef: $call->toolsRef,
         );

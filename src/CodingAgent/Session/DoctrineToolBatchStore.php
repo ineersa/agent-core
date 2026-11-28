@@ -51,7 +51,7 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         $calls = $store->loadCalls($runId, $turnNo, $stepId);
         $results = $store->loadResults($runId, $turnNo, $stepId);
 
-        return new ToolBatchStateDTO($schedule->expectedOrder, $calls, $schedule->pendingQueue, $schedule->inFlight, $results, $schedule->finalized, $schedule->maxParallelism, $schedule->awaitingHumanInput);
+        return new ToolBatchStateDTO($schedule->expectedOrder, $calls, $schedule->pendingQueue, $schedule->inFlight, $results, $schedule->finalized, $schedule->awaitingHumanInput);
     }
 
     public function loadSchedule(string $runId, int $turnNo, string $stepId): ?ToolBatchScheduleDTO
@@ -210,7 +210,7 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
                     // Registration redelivery never resets collected siblings or admission.
                     $calls[$key] = $stored;
                 } else {
-                    $schedule = new ToolBatchScheduleDTO($action->expectedOrder, $modes, $action->pendingQueue, $action->inFlight, [], false, max(1, $action->maxParallelism));
+                    $schedule = new ToolBatchScheduleDTO($action->expectedOrder, $modes, $action->pendingQueue, $action->inFlight, [], false);
                     $calls[$key] = $registered;
                     foreach ($registered as $id => $call) {
                         $callWrites[$key][$id] = $this->encodeCall($call);
@@ -392,7 +392,7 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         $awaiting = $this->decodeJson($record['awaiting_human_input_json']);
         $schedule = new ToolBatchScheduleDTO(
             $order, $modes, $pending, array_fill_keys($inFlight, true), $completed,
-            (bool) $record['finalized'], max(1, (int) $record['max_parallelism']), $awaiting,
+            (bool) $record['finalized'], $awaiting,
         );
         $this->validateSchedule($schedule);
 
@@ -444,7 +444,6 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
             'run_id' => $runId,
             'turn_no' => $turnNo,
             'step_id' => $stepId,
-            'max_parallelism' => $schedule->maxParallelism,
             'finalized' => $schedule->finalized ? 1 : 0,
             'expected_order_json' => $this->encodeJson($schedule->expectedOrder),
             'pending_queue_json' => $this->encodeJson($schedule->pendingQueue),

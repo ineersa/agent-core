@@ -160,7 +160,7 @@ final class ExtensionsSetupScreen
     {
         $items = [
             new SettingItem('parent', $this->flow->parentLabel, $this->flow->members['parent'], values: ['true', 'false']),
-            new SettingItem('forks', 'Fork selection', $this->flow->members['forks'], values: ['off', 'enabled', 'always_on']),
+            new SettingItem('forks', 'Enabled for forks', $this->flow->members['forks'], values: ['off', 'enabled']),
             new SettingItem('agents', 'Always on for agents', $this->flow->members['agents'], values: ['true', 'false']),
         ];
         if (isset($this->flow->members['addition'])) {

@@ -186,7 +186,6 @@ final class ToolCallResultHandlerTest extends TestCase
                     toolName: 'alpha',
                     args: [],
                     orderIndex: 0,
-                    maxParallelism: 1,
                 ),
                 new ExecuteToolCall(
                     runId: 'run-tool-handler-1',
@@ -198,7 +197,6 @@ final class ToolCallResultHandlerTest extends TestCase
                     toolName: 'beta',
                     args: [],
                     orderIndex: 1,
-                    maxParallelism: 1,
                 ),
             ],
         );
@@ -494,7 +492,6 @@ final class ToolCallResultHandlerTest extends TestCase
                     args: [],
                     orderIndex: 0,
                     mode: 'parallel',
-                    maxParallelism: 2,
                 ),
                 new ExecuteToolCall(
                     runId: 'run-cancel-partial',
@@ -507,7 +504,6 @@ final class ToolCallResultHandlerTest extends TestCase
                     args: ['path' => './f.txt'],
                     orderIndex: 1,
                     mode: 'parallel',
-                    maxParallelism: 2,
                 ),
             ],
         );
@@ -619,7 +615,7 @@ final class ToolCallResultHandlerTest extends TestCase
             $calls[] = ['id' => $id, 'name' => 'web_search', 'arguments' => [], 'order_index' => $index];
         }
         $calls[] = ['id' => 'c', 'name' => 'web_search', 'arguments' => [], 'order_index' => 2];
-        $batch = new ToolBatchStateDTO(['a' => 0, 'b' => 1, 'c' => 2], [], [], ['c' => true], $results, false, 3);
+        $batch = new ToolBatchStateDTO(['a' => 0, 'b' => 1, 'c' => 2], [], [], ['c' => true], $results, false);
         $store = $this->createMock(ToolBatchStoreInterface::class);
         // One ordered sibling read; only finalization hydrates the full batch.
         $store->expects($this->once())->method('loadResults')->with('cancel-batch', 1, 'tools')->willReturn($results);
@@ -662,7 +658,6 @@ final class ToolCallResultHandlerTest extends TestCase
                     args: [],
                     orderIndex: 0,
                     mode: 'parallel',
-                    maxParallelism: 2,
                 ),
                 new ExecuteToolCall(
                     runId: 'run-cancel-preserve',
@@ -675,7 +670,6 @@ final class ToolCallResultHandlerTest extends TestCase
                     args: [],
                     orderIndex: 1,
                     mode: 'parallel',
-                    maxParallelism: 2,
                 ),
             ],
         );
@@ -898,7 +892,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testFinalizedRedeliveryAfterCanonicalCommitIsIdempotentNoOp(): void
     {
         $store = $this->createSessionToolBatchStore();
-        $collector = new ToolBatchCollector($store, 4);
+        $collector = new ToolBatchCollector($store);
 
         TestToolBatchRegistration::register($collector, $store, 'run-redeliver-post', 1, 'step-1', [
             new ExecuteToolCall(
@@ -911,7 +905,6 @@ final class ToolCallResultHandlerTest extends TestCase
                 toolName: 'read',
                 args: [],
                 orderIndex: 0,
-                maxParallelism: 1,
             ),
         ]);
 
@@ -962,7 +955,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testFinalizedRedeliveryBeforeCanonicalCommitRecoversOnce(): void
     {
         $store = $this->createSessionToolBatchStore();
-        $collector = new ToolBatchCollector($store, 4);
+        $collector = new ToolBatchCollector($store);
 
         TestToolBatchRegistration::register($collector, $store, 'run-redeliver-pre', 1, 'step-1', [
             new ExecuteToolCall(
@@ -975,7 +968,6 @@ final class ToolCallResultHandlerTest extends TestCase
                 toolName: 'read',
                 args: [],
                 orderIndex: 0,
-                maxParallelism: 1,
             ),
         ]);
 
@@ -1102,7 +1094,7 @@ final class ToolCallResultHandlerTest extends TestCase
         $fork = new ExecuteToolCall(
             runId: $runId, turnNo: 1, stepId: 'tools', attempt: 1,
             idempotencyKey: 'fork-execution', toolCallId: 'fork-call', toolName: 'fork', args: [],
-            orderIndex: 1, mode: 'parallel', maxParallelism: 2,
+            orderIndex: 1, mode: 'parallel',
             launchContext: new ToolLaunchInputReferenceDTO(
                 kind: 'fork', producingRunId: $runId, producingTurnNo: 1, producingModel: 'test-model',
                 producingStepId: 'tools', toolCallId: 'fork-call', sha256: str_repeat('a', 64), bytes: 100,
@@ -1112,7 +1104,7 @@ final class ToolCallResultHandlerTest extends TestCase
             new ExecuteToolCall(
                 runId: $runId, turnNo: 1, stepId: 'tools', attempt: 1,
                 idempotencyKey: 'read-execution', toolCallId: 'read-call', toolName: 'read',
-                args: ['path' => 'file.txt'], orderIndex: 0, mode: 'parallel', maxParallelism: 2,
+                args: ['path' => 'file.txt'], orderIndex: 0, mode: 'parallel',
             ),
             $fork,
         ]);

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Migrations;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Schema\Schema;
+use Doctrine\DBAL\Types\Types;
 use DoctrineMigrations\Version20261102143815;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -23,6 +24,13 @@ final class Version20261102143815Test extends IsolatedKernelTestCase
     {
         $container = self::getContainer();
         $db = $container->get(Connection::class);
+        // This historical rebuild predates removal of the deferred batch cap.
+        // Restore that column in the isolated fixture before exercising its SQL.
+        $manager = $db->createSchemaManager();
+        $currentSchema = $manager->introspectSchema();
+        $historicalSchema = clone $currentSchema;
+        $historicalSchema->getTable('tool_deferred_completion')->addColumn('max_parallelism', Types::INTEGER, ['notnull' => false]);
+        $manager->migrateSchema($historicalSchema);
         $root = $container->get(HatfieldSessionStore::class)->createSession('migration');
         $container->get(DeferredSubagentBatchRepository::class)->reserveBatch(
             lifecycleId: 'migration-batch', parentRunId: $root, parentTurnNo: 1,
@@ -55,5 +63,6 @@ final class Version20261102143815Test extends IsolatedKernelTestCase
         }
         $this->assertArrayHasKey('idx_child_active', $db->createSchemaManager()->listTableIndexes('deferred_subagent_child'));
         $this->assertArrayHasKey('idx_deferred_active_tool', $db->createSchemaManager()->listTableIndexes('tool_deferred_completion'));
+        $manager->migrateSchema($currentSchema);
     }
 }

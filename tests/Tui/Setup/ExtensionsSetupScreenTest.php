@@ -107,7 +107,7 @@ final class ExtensionsSetupScreenTest extends PerMethodIsolatedKernelTestCase
             $this->assertSame('(configured)', $settings->getValue('allow_command_patterns'));
             $saved = Yaml::parseFile($this->isolatedCwd().'/.hatfield/settings.yaml');
             $this->assertSame([SchedulingExtension::class], $saved['extensions']['enabled']);
-            $this->assertSame([SchedulingExtension::class], $saved['forks']['extensions']['always_on']);
+            $this->assertSame([SchedulingExtension::class], $saved['forks']['extensions']['enabled']);
             $this->assertSame([SchedulingExtension::class], $saved['agents']['extensions']['always_on']);
             $this->assertFalse($saved['extensions']['settings']['safe_guard']['auto_deny_in_noninteractive']);
             $this->assertSame(['fixture-command'], $saved['extensions']['settings']['safe_guard']['allow_command_patterns']);
@@ -119,7 +119,7 @@ final class ExtensionsSetupScreenTest extends PerMethodIsolatedKernelTestCase
                 $this->isolatedCwd(),
             );
             $this->assertNotContains(SafeGuardExtension::class, $layers->effective['extensions']['enabled']);
-            $this->assertNotContains(SafeGuardExtension::class, $layers->effective['forks']['extensions']['always_on']);
+            $this->assertNotContains(SafeGuardExtension::class, $layers->effective['forks']['extensions']['enabled']);
             $this->assertNotContains(SafeGuardExtension::class, $layers->effective['agents']['extensions']['always_on']);
         } finally {
             $tui->stop();
@@ -207,7 +207,7 @@ final class ExtensionsSetupScreenTest extends PerMethodIsolatedKernelTestCase
                 'enabled' => [SafeGuardExtension::class, SchedulingExtension::class],
                 'settings' => ['safe_guard' => ['auto_deny_in_noninteractive' => false, 'allow_command_patterns' => ['fixture-command']]],
             ],
-            'forks' => ['extensions' => ['always_on' => [SafeGuardExtension::class, SchedulingExtension::class]]],
+            'forks' => ['extensions' => ['enabled' => [SafeGuardExtension::class, SchedulingExtension::class]]],
             'agents' => ['extensions' => ['always_on' => [SafeGuardExtension::class, SchedulingExtension::class]]],
             'logging' => ['path' => '.hatfield/unchanged-log'],
         ], 6));

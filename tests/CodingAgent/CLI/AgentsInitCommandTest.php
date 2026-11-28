@@ -131,38 +131,36 @@ final class AgentsInitCommandTest extends TestCase
             $this->assertSame($name, $dto->name);
             $this->assertNotSame('', $dto->description);
             $this->assertNotSame('', trim($dto->instructions));
+            $this->assertNull($dto->model);
+            $this->assertNull($dto->thinking);
         }
     }
 
     #[Test]
-    public function reviewAgentsUsePinnedModelsWithExplicitInspectionTools(): void
+    public function reviewAgentsUseExplicitInspectionTools(): void
     {
         // Only the verifier stays offline: it checks candidates against the checkout and needs no fetched content.
         $offline = ['read', 'bash', 'mcp:-'];
         $web = ['read', 'bash', 'mcp:websearch_search', 'mcp:websearch_open', 'mcp:websearch_find'];
         $expected = [
-            'reviewer' => ['openai-codex/gpt-6.2-astra', $web],
-            'auditor' => ['opencode-go/deepseek-v4.1-flash', $web],
-            'verifier' => ['opencode-go/deepseek-v4.1-flash', $offline],
+            'reviewer' => $web,
+            'auditor' => $web,
+            'verifier' => $offline,
         ];
 
-        foreach ($expected as $name => [$model, $tools]) {
+        foreach ($expected as $name => $tools) {
             $agent = $this->createParser()->parseFile($this->sourceDir.'/'.$name.'.md');
 
-            $this->assertSame($model, $agent->model, $name);
-            $this->assertSame('high', $agent->thinking, $name);
             $this->assertSame($tools, $agent->tools, $name);
             $this->assertTrue($agent->inheritProjectContext, $name);
         }
     }
 
     #[Test]
-    public function generalPurposePinsExecutionDefaultsAndUsesItsOwnPrompt(): void
+    public function generalPurposeInheritsToolsAndUsesItsOwnPrompt(): void
     {
         $agent = $this->createParser()->parseFile($this->sourceDir.'/general-purpose.md');
 
-        $this->assertSame('openai-codex/gpt-6.2-sol', $agent->model);
-        $this->assertSame('low', $agent->thinking);
         $this->assertNull($agent->tools);
         $this->assertTrue($agent->inheritProjectContext);
         $this->assertSame(SystemPromptModeEnum::Replace, $agent->systemPromptMode);

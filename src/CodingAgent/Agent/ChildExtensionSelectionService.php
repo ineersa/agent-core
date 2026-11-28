@@ -13,7 +13,7 @@ use Ineersa\CodingAgent\Runtime\Contract\LoadedExtensionItemDTO;
  * Resolves effective child-run extension allowlists and validates availability.
  *
  * Subagent effective = agents.extensions.always_on ∪ frontmatter.extensions
- * Fork effective     = forks.extensions.always_on ∪ forks.extensions.enabled
+ * Fork effective     = forks.extensions.enabled
  * Stable first-seen dedup. Never inherits global extensions.enabled optionals.
  *
  * @internal
@@ -46,7 +46,7 @@ final readonly class ChildExtensionSelectionService
     {
         $forks = $this->appConfig->forks->extensions;
 
-        return $this->unionStable($forks->alwaysOn, $forks->enabled);
+        return $this->unionStable([], $forks->enabled);
     }
 
     /**

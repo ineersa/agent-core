@@ -11,7 +11,6 @@ use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
-use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
@@ -103,7 +102,7 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
         $this->assertCount(2, $seen);
         $this->assertSame(300.0, (float) $seen[0]['max_duration']);
         $this->assertSame(300.0, (float) $seen[0]['timeout']);
-        $this->assertSame(120.0, (float) ($seen[1]['max_duration'] ?? 0));
+        $this->assertSame(0.0, (float) ($seen[1]['max_duration'] ?? 0));
         $this->assertSame(30.0, (float) ($seen[1]['timeout'] ?? 0));
         $defaultBody = $this->decodeBody($seen[1]);
         $this->assertArrayNotHasKey('max_duration', $defaultBody);
@@ -265,7 +264,6 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
         }
 
         $ai = new AiConfig(
-            http: new AiHttpConfig(timeout: 30, maxDuration: 120),
             providers: $providers,
         );
         $appConfig = new AppConfig(

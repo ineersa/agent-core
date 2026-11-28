@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDiscovery;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterDTO;
 use Ineersa\CodingAgent\Agent\Definition\SystemPromptModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
 use Ineersa\CodingAgent\CLI\Setup\Exception\DefinitionSetupRefusalException;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
@@ -19,6 +20,7 @@ use Ineersa\CodingAgent\Skills\DTO\SkillFrontmatterDTO;
 use Ineersa\CodingAgent\Skills\Exception\SkillFrontmatterValidationException;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\Validation\SkillFrontmatterValidator;
+use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints\Choice;
@@ -42,6 +44,8 @@ final readonly class DefinitionSetupService
         private ValidatorInterface $validator,
         private SetupSettingsService $settings,
         private SkillFrontmatterValidator $skillValidator,
+        private ToolRegistryInterface $tools,
+        private AgentToolPolicyResolver $toolPolicy,
     ) {
     }
 
@@ -124,6 +128,30 @@ final readonly class DefinitionSetupService
         return $this->settings->loadConfig()->extensions->enabledClasses();
     }
 
+    /** @return list<string> */
+    public function availableSkills(): array
+    {
+        $names = [];
+        foreach ($this->skills->sources() as $source) {
+            $names[strtolower($source['name'])] ??= $source['name'];
+        }
+
+        return array_values($names);
+    }
+
+    /** @return list<string> */
+    public function availableTools(): array
+    {
+        $names = ['mcp:*', 'mcp:-'];
+        foreach ($this->tools->activeToolDefinitions() as $tool) {
+            if (null === $tool->extensionOwnerClass && $this->toolPolicy->isChildEligible($tool->name)) {
+                $names[] = $tool->name;
+            }
+        }
+
+        return $names;
+    }
+
     public function fieldHelp(bool $skill, string $field): ?string
     {
         // Match the frontmatter reference in docs/agents.md and docs/skills.md.
@@ -162,6 +190,63 @@ final readonly class DefinitionSetupService
     }
 
     public function save(bool $skill, SettingsLayerEnum $scope, string $path, string $expected, string $field, string $value): string
+    {
+        $mutation = fn (): string => $this->saveFrontmatter($skill, $scope, $path, $expected, $field, $value);
+
+        return $skill ? $this->skills->mutateInstalledSkill($path, $mutation) : $mutation();
+    }
+
+    public function body(string $raw): string
+    {
+        $extracted = $this->extractor->extract($raw, preserveBody: true);
+
+        return $extracted['hasClosingDelimiter'] ? $extracted['body'] : $raw;
+    }
+
+    public function saveBody(bool $skill, SettingsLayerEnum $scope, string $path, string $expected, string $body): void
+    {
+        $mutation = function () use ($skill, $scope, $path, $expected, $body): void {
+            $this->requireEditable($skill, $scope, $path, $expected);
+            $previous = $this->body($expected);
+            if ($body === $previous) {
+                return;
+            }
+            $prefix = substr($expected, 0, \strlen($expected) - \strlen($previous));
+            if ('' !== $prefix && !str_ends_with($prefix, "\n") && !str_ends_with($prefix, "\r")) {
+                $prefix .= "\n";
+            }
+            $candidate = $prefix.$body;
+            // A body-only edit may not introduce or change frontmatter.
+            if ($this->fields($candidate) !== $this->fields($expected)) {
+                throw new DefinitionSetupRefusalException('Edit frontmatter separately from the prompt body.');
+            }
+            if (!$skill) {
+                $this->agentParser->parseContent($candidate, $path);
+            }
+            $this->filesystem->dumpFile($path, $candidate);
+        };
+        if ($skill) {
+            $this->skills->mutateInstalledSkill($path, $mutation);
+        } else {
+            $mutation();
+        }
+    }
+
+    public function delete(bool $skill, SettingsLayerEnum $scope, string $path, string $expected): void
+    {
+        $mutation = function () use ($skill, $scope, $path, $expected): void {
+            $this->requireEditable($skill, $scope, $path, $expected);
+            // Filesystem::remove unlinks symlink entries; it never follows them recursively.
+            $this->filesystem->remove($skill ? \dirname($path) : $path);
+        };
+        if ($skill) {
+            $this->skills->mutateInstalledSkill($path, $mutation, deleting: true);
+        } else {
+            $mutation();
+        }
+    }
+
+    private function saveFrontmatter(bool $skill, SettingsLayerEnum $scope, string $path, string $expected, string $field, string $value): string
     {
         $this->requireEditable($skill, $scope, $path, $expected);
         $fields = $this->fields($expected, preserveYamlTypes: true);
@@ -203,13 +288,6 @@ final readonly class DefinitionSetupService
         $this->filesystem->dumpFile($path, $candidate);
 
         return $candidate;
-    }
-
-    public function delete(bool $skill, SettingsLayerEnum $scope, string $path, string $expected): void
-    {
-        $this->requireEditable($skill, $scope, $path, $expected, deleting: true);
-        // Filesystem::remove unlinks symlink entries; it never follows them recursively.
-        $this->filesystem->remove($skill ? \dirname($path) : $path);
     }
 
     /**
@@ -255,14 +333,11 @@ final readonly class DefinitionSetupService
         return 'outside supported roots';
     }
 
-    private function requireEditable(bool $skill, SettingsLayerEnum $scope, string $path, string $expected, bool $deleting = false): void
+    private function requireEditable(bool $skill, SettingsLayerEnum $scope, string $path, string $expected): void
     {
         $entry = $this->entries($skill, $scope)[$path] ?? null;
         if (null === $entry || !$entry['editable'] || $scope->value !== $this->owner($path, $skill) || $expected !== $this->read($path)) {
             throw new DefinitionSetupRefusalException('Definition is not editable in this scope or changed on disk. Reopen it before editing.');
-        }
-        if ($deleting && $entry['builtIn']) {
-            throw new DefinitionSetupRefusalException('Built-in definitions cannot be deleted in setup.');
         }
     }
 }

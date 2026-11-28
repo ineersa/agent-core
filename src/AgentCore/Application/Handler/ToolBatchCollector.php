@@ -34,7 +34,6 @@ final class ToolBatchCollector
 {
     public function __construct(
         private readonly ToolBatchStoreInterface $store,
-        private readonly int $defaultMaxParallelism = 4,
     ) {
     }
 
@@ -55,13 +54,10 @@ final class ToolBatchCollector
 
         $expectedOrder = [];
         $callsById = [];
-        $maxParallelism = $this->defaultMaxParallelism;
         foreach ($toolCalls as $toolCall) {
             $expectedOrder[$toolCall->toolCallId] = $toolCall->orderIndex;
             $callsById[$toolCall->toolCallId] = $toolCall;
-            $maxParallelism = max(1, $toolCall->maxParallelism ?? $maxParallelism);
         }
-        $maxParallelism = max(1, $maxParallelism);
 
         $existing = $this->loadBatch($runId, $turnNo, $stepId);
         if (null !== $existing) {
@@ -85,7 +81,6 @@ final class ToolBatchCollector
                 $existing->expectedOrder,
                 array_values($existing->pendingQueue),
                 $existing->inFlight,
-                $existing->maxParallelism,
             );
         }
 
@@ -96,7 +91,6 @@ final class ToolBatchCollector
             inFlight: [],
             results: [],
             finalized: false,
-            maxParallelism: $maxParallelism,
             awaitingHumanInput: [],
         );
         $this->dispatchableCalls($batch);
@@ -109,7 +103,6 @@ final class ToolBatchCollector
             $expectedOrder,
             array_values($batch->pendingQueue),
             $batch->inFlight,
-            $maxParallelism,
         );
     }
 
@@ -181,7 +174,7 @@ final class ToolBatchCollector
      *
      * Duplicate same question_id is idempotent. Conflicting question_id fails.
      * May return ordinary later ExecuteToolCall effects when removing the call
-     * from inFlight frees dispatch capacity under current mode/maxParallelism.
+     * from inFlight lets the scheduler reconsider ordering barriers.
      */
     public function prepareHumanInputSuspension(
         string $runId,
@@ -202,7 +195,7 @@ final class ToolBatchCollector
     /**
      * Inverse of {@see prepareHumanInputSuspension}: attach the typed human answer to the
      * exact stored call, clear the awaiting marker, and requeue through the existing
-     * pendingQueue + dispatchableCalls/maxParallelism path.
+     * pendingQueue + dispatchableCalls path.
      *
      * Idempotent when the call is already inFlight/queued with an identical answer:
      * returns the same ExecuteToolCall effect so post-commit redispatch survives CAS
@@ -513,7 +506,7 @@ final class ToolBatchCollector
         foreach ($batch->calls as $id => $call) {
             $modes[$id] = (ToolExecutionMode::tryFrom((string) ($call->mode ?? ToolExecutionMode::Sequential->value)) ?? ToolExecutionMode::Sequential)->value;
         }
-        $schedule = new ToolBatchScheduleDTO($batch->expectedOrder, $modes, $batch->pendingQueue, $batch->inFlight, array_fill_keys(array_keys($batch->results), true), $batch->finalized, $batch->maxParallelism, $batch->awaitingHumanInput);
+        $schedule = new ToolBatchScheduleDTO($batch->expectedOrder, $modes, $batch->pendingQueue, $batch->inFlight, array_fill_keys(array_keys($batch->results), true), $batch->finalized, $batch->awaitingHumanInput);
         $dispatch = $this->dispatchFromSchedule($schedule, static fn (string $id): ExecuteToolCall => $batch->calls[$id]);
         $batch->pendingQueue = $schedule->pendingQueue;
         $batch->inFlight = $schedule->inFlight;
@@ -522,7 +515,7 @@ final class ToolBatchCollector
     }
 
     /**
-     * Hydrate a call only after scalar mode/capacity checks admit it.
+     * Hydrate a call only after scalar ordering checks admit it.
      *
      * @param callable(string): ExecuteToolCall $loadCall
      *
@@ -530,6 +523,14 @@ final class ToolBatchCollector
      */
     private function dispatchFromSchedule(ToolBatchScheduleDTO $batch, callable $loadCall): array
     {
+        // A barrier already running must also block later parallel work when
+        // another delivery causes the schedule to be reconsidered.
+        foreach ($batch->inFlight as $id => $_) {
+            if (ToolExecutionMode::Parallel->value !== $batch->callModes[$id]) {
+                return [];
+            }
+        }
+
         $dispatch = [];
 
         while ([] !== $batch->pendingQueue) {
@@ -548,9 +549,7 @@ final class ToolBatchCollector
                 $batch->inFlight[$id] = true;
                 break;
             }
-            if (\count($batch->inFlight) >= $batch->maxParallelism) {
-                break;
-            }
+
             $dispatch[] = $loadCall($id);
             array_shift($batch->pendingQueue);
             $batch->inFlight[$id] = true;

@@ -149,7 +149,6 @@ final readonly class ExecuteToolCallWorker
                     'turn_no' => $message->turnNo(),
                     'step_id' => $message->stepId(),
                     'arg_schema' => $message->argSchema,
-                    'max_parallelism' => $message->maxParallelism,
                     'cancel_token' => $cancelToken,
                     'tools_ref' => $message->toolsRef,
                     'human_input_answer' => $message->humanInputAnswer,

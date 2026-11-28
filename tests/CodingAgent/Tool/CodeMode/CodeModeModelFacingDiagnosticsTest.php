@@ -225,8 +225,6 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
             AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
 
         return new ToolExecutor(
-            defaultMode: 'sequential',
-            maxParallelism: 1,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: new StackToolExecutionContextAccessor(),

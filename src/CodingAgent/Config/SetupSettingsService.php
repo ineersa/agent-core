@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Yaml\Yaml;
 
 final readonly class SetupSettingsService
@@ -16,7 +15,6 @@ final readonly class SetupSettingsService
         private AppConfig $app,
         private SettingsOverrideWriter $writer,
         private DenormalizerInterface $denormalizer,
-        private ValidatorInterface $validator,
         public SettingsValueResolver $resolver,
         private SettingsDescriptions $descriptions,
     ) {
@@ -27,9 +25,14 @@ final readonly class SetupSettingsService
         return $this->loader->load($this->resources->getDefaultsPath(), $this->app->cwd);
     }
 
-    public function loadConfig(): AppConfig
+    public function loadConfig(SettingsLayerEnum $scope = SettingsLayerEnum::Project): AppConfig
     {
-        return AppConfig::fromSettingsData($this->load()->effective, $this->denormalizer, $this->app->cwd, $this->validator);
+        $snapshot = $this->load();
+        if (SettingsLayerEnum::User === $scope) {
+            $snapshot = $this->loader->resolveLayers($this->app->cwd, $snapshot->defaultsRaw, $snapshot->userRaw, []);
+        }
+
+        return AppConfig::fromSettingsData($snapshot->effective, $this->denormalizer, $this->app->cwd);
     }
 
     /** @return array<string, array<string, array{sample: mixed, help: string}>> */
@@ -97,11 +100,11 @@ final readonly class SetupSettingsService
             return false;
         }
         $resolved = $this->resolve($before, $layer, $candidate);
-        AppConfig::fromSettingsData($resolved->effective, $this->denormalizer, $this->app->cwd, $this->validator);
+        AppConfig::fromSettingsData($resolved->effective, $this->denormalizer, $this->app->cwd);
         // Validate user edits even if a project masks them.
         if (SettingsLayerEnum::User === $layer && [] !== $before->projectRaw) {
             $user = $this->loader->resolveLayers($this->app->cwd, $before->defaultsRaw, $candidate, []);
-            AppConfig::fromSettingsData($user->effective, $this->denormalizer, $this->app->cwd, $this->validator);
+            AppConfig::fromSettingsData($user->effective, $this->denormalizer, $this->app->cwd);
         }
         $this->writer->setMany($layer, $this->app->cwd, $values, $remove);
 

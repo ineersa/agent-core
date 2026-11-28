@@ -80,8 +80,6 @@ final class AppConfigLoader
         '[tui][theme_paths]' => 'list',
         '[sessions][path]' => 'string',
         '[logging][path]' => 'string',
-        '[tools][output_cap][path]' => 'string',
-        '[tools][background_process][path]' => 'string',
         '[prompts]' => 'strict-list',
         '[agents][paths]' => 'strict-list',
     ];

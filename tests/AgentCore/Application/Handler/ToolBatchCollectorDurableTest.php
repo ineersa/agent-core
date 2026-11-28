@@ -61,7 +61,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testRegisterAndCollectWithStore(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector($store, 4);
+        $collector = new ToolBatchCollector($store);
 
         $initial = TestToolBatchRegistration::register($collector, $store, 'run-1', 1, 'step-1', [
             $this->executeToolCall('run-1', 'step-1', 'call-1', 0, 'sequential'),
@@ -94,16 +94,16 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testCrossProcessRecoveryWithStore(): void
     {
         $store = $this->createStore();
-        $registrar = new ToolBatchCollector($store, 4);
+        $registrar = new ToolBatchCollector($store);
 
         $initial = TestToolBatchRegistration::register($registrar, $store, 'run-2', 1, 'step-1', [
-            $this->executeToolCall('run-2', 'step-1', 'call-1', 0, 'parallel', maxParallelism: 2),
-            $this->executeToolCall('run-2', 'step-1', 'call-2', 1, 'parallel', maxParallelism: 2),
+            $this->executeToolCall('run-2', 'step-1', 'call-1', 0, 'parallel'),
+            $this->executeToolCall('run-2', 'step-1', 'call-2', 1, 'parallel'),
         ]);
         $this->assertCount(2, $initial);
         unset($registrar);
 
-        $recovering = new ToolBatchCollector($store, 4);
+        $recovering = new ToolBatchCollector($store);
         $firstOutcome = TestToolBatchCoordination::collect($recovering, $store, $this->toolResult('run-2', 'step-1', 'call-1', 0));
         $this->assertTrue($firstOutcome->accepted);
         $this->assertFalse($firstOutcome->complete);
@@ -114,25 +114,38 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $this->assertTrue($secondOutcome->complete);
     }
 
+    public function testAdmitsAllParallelCallsBeforeNextBarrier(): void
+    {
+        $store = $this->createStore();
+        $calls = [];
+        foreach (range(0, 5) as $order) {
+            $calls[] = $this->executeToolCall('run-wide', 'step-1', 'call-'.$order, $order, 'parallel');
+        }
+        $calls[] = $this->executeToolCall('run-wide', 'step-1', 'barrier', 6, 'interrupt');
+        $calls[] = $this->executeToolCall('run-wide', 'step-1', 'after', 7, 'parallel');
+        $initial = TestToolBatchRegistration::register(new ToolBatchCollector($store), $store, 'run-wide', 1, 'step-1', $calls);
+        $this->assertSame(\array_slice(array_map(static fn (ExecuteToolCall $call): string => $call->toolCallId, $calls), 0, 6), array_map(static fn (ExecuteToolCall $call): string => $call->toolCallId, $initial));
+    }
+
     public function testCrossProcessRecoveryDispatchesPendingCalls(): void
     {
         $store = $this->createStore();
-        $registrar = new ToolBatchCollector($store, 2);
+        $registrar = new ToolBatchCollector($store);
 
         $initial = TestToolBatchRegistration::register($registrar, $store, 'run-3', 1, 'step-1', [
-            $this->executeToolCall('run-3', 'step-1', 'call-1', 0, 'parallel', maxParallelism: 2),
-            $this->executeToolCall('run-3', 'step-1', 'call-2', 1, 'parallel', maxParallelism: 2),
-            $this->executeToolCall('run-3', 'step-1', 'call-3', 2, 'parallel', maxParallelism: 2),
+            $this->executeToolCall('run-3', 'step-1', 'call-1', 0, 'sequential'),
+            $this->executeToolCall('run-3', 'step-1', 'call-2', 1, 'interrupt'),
+            $this->executeToolCall('run-3', 'step-1', 'call-3', 2, 'parallel'),
         ]);
-        $this->assertCount(2, $initial);
+        $this->assertCount(1, $initial);
         unset($registrar);
 
-        $recovering = new ToolBatchCollector($store, 2);
+        $recovering = new ToolBatchCollector($store);
         $firstOutcome = TestToolBatchCoordination::collect($recovering, $store, $this->toolResult('run-3', 'step-1', 'call-1', 0));
         $this->assertTrue($firstOutcome->accepted);
         $this->assertFalse($firstOutcome->complete);
         $this->assertCount(1, $firstOutcome->effectsToDispatch);
-        $this->assertSame('call-3', $firstOutcome->effectsToDispatch[0]->toolCallId);
+        $this->assertSame('call-2', $firstOutcome->effectsToDispatch[0]->toolCallId);
     }
 
     public function testRejectedWhenStoreIsEmpty(): void
@@ -147,7 +160,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testDuplicateResultWithStore(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector($store, 4);
+        $collector = new ToolBatchCollector($store);
         TestToolBatchRegistration::register($collector, $store, 'run-4', 1, 'step-1', [
             $this->executeToolCall('run-4', 'step-1', 'call-1', 0, 'sequential'),
         ]);
@@ -164,16 +177,16 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testCrossProcessParallelDispatchRecovery(): void
     {
         $store = $this->createStore();
-        $registrar = new ToolBatchCollector($store, 4);
+        $registrar = new ToolBatchCollector($store);
         $initial = TestToolBatchRegistration::register($registrar, $store, 'run-5', 1, 'step-1', [
             $this->executeToolCall('run-5', 'step-1', 'call-1', 0, 'sequential'),
-            $this->executeToolCall('run-5', 'step-1', 'call-2', 1, 'parallel', maxParallelism: 4),
-            $this->executeToolCall('run-5', 'step-1', 'call-3', 2, 'parallel', maxParallelism: 4),
+            $this->executeToolCall('run-5', 'step-1', 'call-2', 1, 'parallel'),
+            $this->executeToolCall('run-5', 'step-1', 'call-3', 2, 'parallel'),
         ]);
         $this->assertCount(1, $initial);
         unset($registrar);
 
-        $recovering = new ToolBatchCollector($store, 4);
+        $recovering = new ToolBatchCollector($store);
         $firstOutcome = TestToolBatchCoordination::collect($recovering, $store, $this->toolResult('run-5', 'step-1', 'call-1', 0));
         $this->assertTrue($firstOutcome->accepted);
         $this->assertFalse($firstOutcome->complete);
@@ -253,7 +266,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
             }
         };
 
-        $collector = new ToolBatchCollector($store, 4);
+        $collector = new ToolBatchCollector($store);
         TestToolBatchRegistration::register($collector, $store, 'run-6', 1, 'step-1', [
             $this->executeToolCall('run-6', 'step-1', 'call-1', 0, 'sequential'),
         ]);
@@ -273,10 +286,33 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $this->assertTrue($retryOutcome->complete);
     }
 
+    public function testParallelResumeWaitsBehindInFlightSequentialCall(): void
+    {
+        $store = $this->createStore();
+        $collector = new ToolBatchCollector($store);
+        TestToolBatchRegistration::register($collector, $store, 'run-barrier', 1, 'step', [
+            $this->executeToolCall('run-barrier', 'step', 'waiting', 0, 'parallel'),
+            $this->executeToolCall('run-barrier', 'step', 'barrier', 1, 'sequential'),
+        ]);
+        $admitted = TestToolBatchCoordination::suspend($collector, $store, 'run-barrier', 1, 'step', 'waiting', 'q-1');
+        $this->assertSame('barrier', $admitted[0]->toolCallId);
+
+        $answer = new ToolCallHumanInputAnswerDTO(
+            questionId: 'q-1',
+            answer: 'Allow',
+            continuationRef: ['run_id' => 'run-barrier', 'turn_no' => 1, 'step_id' => 'step', 'tool_call_id' => 'waiting'],
+            requestPayload: ['question_id' => 'q-1', 'prompt' => 'Allow?'],
+        );
+        $this->assertSame([], TestToolBatchCoordination::resume($collector, $store, 'run-barrier', 1, 'step', 'waiting', 'q-1', $answer));
+        $outcome = TestToolBatchCoordination::collect($collector, $store, $this->toolResult('run-barrier', 'step', 'barrier', 1));
+        $this->assertCount(1, $outcome->effectsToDispatch);
+        $this->assertSame('waiting', $outcome->effectsToDispatch[0]->toolCallId);
+    }
+
     public function testDurableHumanInputAdmitResumeRedrivePersistsThroughMutate(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector($store, 1);
+        $collector = new ToolBatchCollector($store);
         TestToolBatchRegistration::register($collector, $store, 'run-hi', 1, 'step-hi', [
             $this->executeToolCall('run-hi', 'step-hi', 'call-1', 0, 'sequential'),
         ]);
@@ -312,7 +348,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testDurableHumanInputMissingBatchPreservesExactErrors(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector($store, 1);
+        $collector = new ToolBatchCollector($store);
 
         $cases = [
             [
@@ -353,7 +389,6 @@ final class ToolBatchCollectorDurableTest extends TestCase
         string $toolCallId,
         int $orderIndex,
         string $mode,
-        int $maxParallelism = 4,
     ): ExecuteToolCall {
         return new ExecuteToolCall(
             runId: $runId,
@@ -366,7 +401,6 @@ final class ToolBatchCollectorDurableTest extends TestCase
             args: [],
             orderIndex: $orderIndex,
             mode: $mode,
-            maxParallelism: $maxParallelism,
         );
     }
 

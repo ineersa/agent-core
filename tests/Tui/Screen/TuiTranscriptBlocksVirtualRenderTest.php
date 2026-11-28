@@ -434,8 +434,6 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $registry = new ToolRegistry();
         $registry->registerTool(name: 'bash', description: 'Test command', parametersJsonSchema: [], handler: $handler, promptLine: 'bash');
         $executor = new ToolExecutor(
-            defaultMode: 'sequential',
-            maxParallelism: 1,
             resultStore: new ToolExecutionResultStore(),
             toolbox: new RegistryBackedToolbox(
                 $registry,

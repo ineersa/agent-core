@@ -22,6 +22,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 /**
  * Tests for SkillsContextBuilder.
@@ -274,6 +276,7 @@ ARCH_BODY_UNIQUE');
             resources: new AppResourceLocator($this->tmpDir),
             filesystem: new Filesystem(),
             frontmatterValidator: new SkillFrontmatterValidator(...AttributeSerializerValidatorTestFactory::create()),
+            lockFactory: new LockFactory(new InMemoryStore()),
         );
 
         return new SkillsContextBuilder(

@@ -7,8 +7,6 @@ tools:
   - mcp:websearch_search
   - mcp:websearch_open
   - mcp:websearch_find
-model: openai-codex/gpt-6-luna
-thinking: medium
 ---
 
 You are a specialized WEB-Research agent. 

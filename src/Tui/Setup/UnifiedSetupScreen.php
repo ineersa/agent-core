@@ -53,9 +53,11 @@ final readonly class UnifiedSetupScreen
         $tabs = null;
         $focus = [];
         $providerInputPending = static fn (): bool => false;
-        $load = function (?int $index) use ($tui, $tabSlot, $target, $notice, $build, $removeHint, &$layer, &$tabs, &$focus, &$providerInputPending): void {
+        $definitionBodyOpen = static fn (): bool => false;
+        $load = function (?int $index) use ($tui, $tabSlot, $target, $notice, $build, $removeHint, &$layer, &$tabs, &$focus, &$providerInputPending, &$definitionBodyOpen): void {
             [$path, $settings, $flow, $providers, $extensions, $skills, $agents] = $build($layer);
             $providerInputPending = $providers->hasUnsubmittedInput(...);
+            $definitionBodyOpen = static fn (): bool => $skills->hasOpenBodyEditor() || $agents->hasOpenBodyEditor();
             $exit = $tui->stop(...);
             $target->setText($this->theme->color(ThemeColorEnum::Accent, $layer->name).' scope  ·  '.$path);
             $notice->setText('');
@@ -89,7 +91,7 @@ final readonly class UnifiedSetupScreen
         };
         $load(null);
         $keys = new Keybindings(['setup_next' => [Key::TAB], 'setup_previous' => ['shift+tab'], 'setup_scope' => [Key::F2]]);
-        $tui->addListener(function (InputEvent $event) use ($tui, $keys, $load, $notice, &$tabs, &$focus, &$layer, &$providerInputPending): void {
+        $tui->addListener(function (InputEvent $event) use ($tui, $keys, $load, $notice, &$tabs, &$focus, &$layer, &$providerInputPending, &$definitionBodyOpen): void {
             $key = $event->getData();
             $scope = $keys->matches($key, 'setup_scope');
             $next = $keys->matches($key, 'setup_next');
@@ -101,7 +103,9 @@ final readonly class UnifiedSetupScreen
             $index = $tabs->getActiveTabIndex();
             // Symfony detaches and closes a SettingsList submenu when its tab is hidden.
             $editing = $current instanceof SettingsListWidget && [] !== $current->all();
-            if ($editing || ($scope && $providerInputPending())) {
+            if ($definitionBodyOpen()) {
+                $notice->setText($this->theme->warning('Finish editing the definition body first (check Skills or Agents if hidden). Enter saves · Esc cancels.'));
+            } elseif ($editing || ($scope && $providerInputPending())) {
                 $notice->setText($this->theme->warning('Confirm or cancel the open editor first (check the Providers tab if it is hidden).'));
             } elseif ($scope) {
                 $layer = SettingsLayerEnum::User === $layer ? SettingsLayerEnum::Project : SettingsLayerEnum::User;

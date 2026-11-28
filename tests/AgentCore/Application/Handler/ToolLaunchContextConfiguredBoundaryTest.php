@@ -115,7 +115,6 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
             inFlight: [],
             results: [],
             finalized: false,
-            maxParallelism: 2,
             awaitingHumanInput: ['fork-1' => 'q-fork'],
         );
 
@@ -196,8 +195,6 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
         $processor = $this->createMock(ToolResultProcessorInterface::class);
         $processor->expects($this->never())->method('process');
         $executor = new ToolExecutor(
-            defaultMode: 'parallel',
-            maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox,
             contextAccessor: $accessor,

@@ -114,7 +114,6 @@ final class OutputCapTest extends TestCase
         };
         $processor = new OutputCapToolResultProcessor($cap, AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
         $executor = new ToolExecutor(
-            defaultMode: 'parallel', maxParallelism: 4,
             resultStore: new ToolExecutionResultStore(),
             toolbox: $toolbox, contextAccessor: $accessor, toolSetResolver: PlatformCollaborators::toolSetResolver(), clock: new MonotonicClock(), tracer: new RunTracer(new NullLogger()), toolResultProcessors: [$processor],
         );

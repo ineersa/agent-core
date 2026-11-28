@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Setup;
 
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\CodingAgent\CLI\Providers\ProvidersSetupFlowInterface;
-use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsResolutionDTO;
 use Ineersa\CodingAgent\Config\SettingsValueDTO;
@@ -15,6 +13,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ThinkingLevelEnum;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use Ineersa\Tui\Theme\TuiTheme;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Tui\Event\MultiSelectEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SettingChangeEvent;
 use Symfony\Component\Tui\Input\Keybindings;
@@ -24,18 +23,11 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\SettingItem;
 use Symfony\Component\Tui\Widget\TextWidget;
 use Symfony\Component\Tui\Widget\Util\StringUtils;
+use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
 final class CoreSettingsScreen
 {
-    private const HTTP = [
-        'ai.http.timeout' => [AiHttpConfig::DEFAULT_TIMEOUT, 'seconds'],
-        'ai.http.max_duration' => [AiHttpConfig::DEFAULT_MAX_DURATION, 'seconds'],
-        'ai.http.max_retries' => [LlmRequestRetryPolicy::DEFAULT_MAX_RETRIES, 'retries'],
-        'ai.http.base_delay_ms' => [LlmRequestRetryPolicy::DEFAULT_BASE_DELAY_MS, 'milliseconds'],
-        'ai.http.max_delay_ms' => [LlmRequestRetryPolicy::DEFAULT_MAX_DELAY_MS, 'milliseconds'],
-    ];
-
     public function __construct(
         private readonly SetupSettingsService $settings,
         private readonly LoggerInterface $logger,
@@ -73,25 +65,43 @@ final class CoreSettingsScreen
             $local[$key] = $this->localValue($snapshot, $layer, $key)->exists;
             $label = self::label(str_replace($group.'.', '', $key));
             $edit = $this->settings->editValue($snapshot, $layer, $key);
+            $default = $this->settings->resolver->resolve(new SettingsResolutionDTO([], [], [], $snapshot->defaultsRaw), $key);
+            $help = 'Default: '.self::display($key, $default).' · '.$help;
             $choices = fn (): array => match ($key) {
                 'tui.theme' => $this->themes->getNames(),
+                'logging.level' => ['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'],
                 'ai.default_model', 'compaction.model', 'forks.model' => [self::inherit($key), ...$providers->configuredModelRefs()],
                 'ai.default_reasoning', 'compaction.thinking_level', 'forks.thinking_level' => [self::inherit($key), ...ThinkingLevelEnum::values()],
                 default => [],
             };
-            $submenu = \is_bool($sample) ? null : function (string $_, callable $done) use ($label, $help, $context, $choices, $key, $sample, $layer, $removeHint, $tui): SelectListWidget|SettingsTextInputWidget {
+            $submenu = \is_bool($sample) ? null : function (string $_, callable $done) use ($label, $help, $context, $choices, $key, $sample, $layer, $removeHint, $tui, $providers): SelectListWidget|SettingsTextInputWidget {
                 $removeHint(false);
-                $context->setText($label."\n".$help.(isset(self::HTTP[$key]) ? ' Unit: '.self::HTTP[$key][1].'.' : '')."\nEnter applies · Esc cancels");
                 $options = $choices();
-                $edit = $this->settings->editValue($this->settings->load(), $layer, $key);
-                if ([] !== $options) {
+                $current = $this->settings->load();
+                $edit = $this->settings->editValue($current, $layer, $key);
+                $effective = $this->settings->resolver->resolve($current, $key);
+                $context->setText($label."\n".$help."\nEffective: ".self::display($key, $effective)
+                    .' ('.($effective->layer->value ?? 'merged layers').')'
+                    .' · Editing '.$layer->value.': '.self::display($key, $edit)
+                    ."\nEnter applies · Esc cancels");
+                if (\in_array($key, ['forks.extensions.enabled', 'agents.extensions.always_on', 'ai.favorite_models'], true)) {
+                    $selected = \is_array($edit->value) ? $edit->value : [];
+                    $available = 'ai.favorite_models' === $key ? $providers->configuredModelRefs() : $this->settings->loadConfig($layer)->extensions->enabledClasses();
+                    $items = [];
+                    foreach (array_unique([...$selected, ...$available]) as $value) {
+                        $items[] = ['value' => $value, 'label' => StringUtils::stripControlBytes($value).(\in_array($value, $available, true) ? '' : ' (current; unavailable)'), 'checked' => \in_array($value, $selected, true)];
+                    }
+                    $editor = new SelectListWidget($items, maxVisible: 10, multiselect: true);
+                    $editor->on(MultiSelectEvent::class, static fn (MultiSelectEvent $event) => $done(trim(Yaml::dump($event->getValues(), 0))));
+                    $context->setText($context->getText().' · Space toggles selection');
+                } elseif ([] !== $options) {
                     $editor = new SelectListWidget(array_map(static fn (string $choice): array => ['value' => $choice, 'label' => $choice], $options));
                     $index = array_search(self::display($key, $edit), $options, true);
                     if (false !== $index) {
                         $editor->setSelectedIndex($index);
                     }
                 } else {
-                    $value = $edit->value ?? (self::HTTP[$key][0] ?? null);
+                    $value = $edit->value;
                     $secret = self::masked($key);
                     $initial = $secret || (\is_array($sample) && !$this->localValue($this->settings->load(), $layer, $key)->exists) ? '' : self::encode($value, $sample);
                     $editor = new SettingsTextInputWidget($done, $initial, secret: $secret, cancelUnchanged: true);
@@ -108,7 +118,7 @@ final class CoreSettingsScreen
                 return $editor;
             };
             $items[] = new SettingItem($key, $label, self::display($key, \is_bool($sample) ? $edit : $effective),
-                $help.(\is_bool($sample) && SettingsLayerEnum::User === $layer && SettingsLayerEnum::Project === $effective->layer ? ' Project override masks this value.' : ''),
+                (SettingsLayerEnum::User === $layer && SettingsLayerEnum::Project === $effective->layer ? 'Project override masks this value. ' : '').$help,
                 values: \is_bool($sample) ? ['Off', 'On'] : [], submenu: $submenu);
         }
         $widget = new ScopedSettingsListWidget($items, $theme);
@@ -134,8 +144,12 @@ final class CoreSettingsScreen
                     default => 'Effective source: '.($effective->layer->value ?? 'merged layers').'.',
                 });
             } catch (\Throwable $error) {
+                if (self::masked($key) && $error instanceof ParseException) {
+                    // Keep the parser reason and line, but never echo hidden input.
+                    $error->setSnippet('');
+                }
                 $this->logger->notice('settings.setup.refused', ['component' => 'setup', 'event_type' => 'settings.setup.refused', 'exception_class' => $error::class]);
-                $status->setText('Not saved. Check the value and target settings.');
+                $status->setText('Not saved: '.StringUtils::stripControlBytes($error->getMessage()));
             }
             $widget->setLocal($key, $this->localValue($snapshot, $layer, $key)->exists);
             $removeHint($tui->getFocus() === $widget && $widget->canRemove());
@@ -234,12 +248,6 @@ final class CoreSettingsScreen
 
     private static function display(string $key, SettingsValueDTO $value): string
     {
-        if (isset(self::HTTP[$key])) {
-            [$default, $unit] = self::HTTP[$key];
-
-            return (\is_int($value->value) ? $value->value : $default).' '.$unit.(null === $value->value ? ' (default)' : '');
-        }
-
         return match (true) {
             !$value->exists => 'Unset',
             self::masked($key) => [] === $value->value ? 'Empty' : 'Configured · hidden',

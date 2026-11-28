@@ -27,14 +27,14 @@ final readonly class LoggingConfig
      *                               Defaults to {@see <CWD>/.hatfield/logs}.
      * @param string|Level $level    Minimum log level. Accepts a PSR-3 level
      *                               name (e.g. 'info', 'debug') or a Monolog
-     *                               Level enum. Defaults to Level::Info.
+     *                               Level enum. Defaults to Level::Warning.
      * @param int          $maxFiles Maximum rotated log files to retain
      */
     public function __construct(
         #[SerializedName('path')]
         public string $logDir = '',
-        public string|Level $level = Level::Info,
-        public int $maxFiles = 14,
+        public string|Level $level = Level::Warning,
+        public int $maxFiles = 2,
     ) {
     }
 
