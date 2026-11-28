@@ -41,7 +41,7 @@ Child extensions: effective allowlist = `agents.extensions.always_on` ∪ option
 
 | Key | Meaning |
 |---|---|
-| `forks.enabled` | Expose the `fork` tool (default `true`). Set to `false` to prevent new fork launches without disabling named subagents. |
+| `forks.enabled` | Retained setting (default `true`). Fork launches are currently unavailable regardless of this setting. Named subagents are unaffected. |
 | `forks.model` | Fallback model when the `fork` tool omits `model`; if unset, parent model |
 | `forks.thinking_level` | Fallback thinking when the tool omits `thinking`; if unset, parent reasoning |
 | `forks.extensions.always_on` | Extension classes always loaded for fork children |

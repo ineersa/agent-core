@@ -173,7 +173,7 @@ a successful late result into a timeout failure.
 |---|---|---|
 | `tools.execution.default_mode` | `sequential` or `parallel` | `sequential` |
 | `tools.execution.max_parallelism` | Maximum concurrently admitted calls per tool batch (not a worker count) | `4` |
-| `forks.enabled` | Make the `fork` tool visible and callable; independent of named subagents | `true` |
+| `forks.enabled` | Retained setting. Fork launches are currently unavailable and no setting can re-enable them. Named subagents are unaffected. | `true` |
 
 ### Output cap
 

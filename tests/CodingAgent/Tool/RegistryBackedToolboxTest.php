@@ -10,7 +10,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
 use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
-use Ineersa\CodingAgent\Config\ForksConfigDTO;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
@@ -846,7 +845,7 @@ final class RegistryBackedToolboxTest extends TestCase
             );
         }
 
-        $filters = new ToolFilterRuntimeConfig(forksConfig: new ForksConfigDTO(enabled: false));
+        $filters = new ToolFilterRuntimeConfig();
         $filters->applyFromCli('fork,subagent,agent_resume', '', $registry);
 
         $this->assertSame(['subagent', 'agent_resume'], $registry->activeToolNames());

@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
 use Ineersa\CodingAgent\Config\CodeModeConfig;
-use Ineersa\CodingAgent\Config\ForksConfigDTO;
 use Ineersa\CodingAgent\Utility\CommaSeparatedListParser;
 use Ineersa\CodingAgent\Utility\EnvironmentVariableReader;
 
@@ -16,7 +15,7 @@ use Ineersa\CodingAgent\Utility\EnvironmentVariableReader;
  * Populated by AgentCommand from CLI options, forwarded to controller argv + env,
  * and reapplied after extension loading in controller/worker processes.
  *
- * Settings-disabled tools join the effective denylist even if explicitly allowlisted.
+ * Unavailable tools join the effective denylist even if explicitly allowlisted.
  *
  * @internal
  */
@@ -35,7 +34,6 @@ final class ToolFilterRuntimeConfig
 
     public function __construct(
         private readonly CodeModeConfig $codeModeConfig = new CodeModeConfig(),
-        private readonly ForksConfigDTO $forksConfig = new ForksConfigDTO(),
     ) {
     }
 
@@ -77,19 +75,15 @@ final class ToolFilterRuntimeConfig
 
     public function applyToRegistry(ToolRegistryInterface $toolRegistry): void
     {
-        $excluded = $this->effectiveExcludedToolNames();
-
         if ('' !== $this->tools) {
             $toolRegistry->setAllowedToolNames(self::parseToolNameList($this->tools));
         }
 
-        if ([] !== $excluded) {
-            $toolRegistry->setExcludedToolNames($excluded);
-        }
+        $toolRegistry->setExcludedToolNames($this->effectiveExcludedToolNames());
     }
 
     /**
-     * Dedicated controller argv fragments. Empty filters omit their options.
+     * Dedicated controller argv fragments, including mandatory exclusions.
      *
      * @return list<string>
      */
@@ -100,10 +94,7 @@ final class ToolFilterRuntimeConfig
             $args[] = '--tools='.$this->tools;
         }
 
-        $excluded = $this->effectiveExcludedToolNames();
-        if ([] !== $excluded) {
-            $args[] = '--tools-excluded='.implode(',', $excluded);
-        }
+        $args[] = '--tools-excluded='.implode(',', $this->effectiveExcludedToolNames());
 
         return $args;
     }
@@ -120,10 +111,7 @@ final class ToolFilterRuntimeConfig
             $env['HATFIELD_TOOLS'] = $this->tools;
         }
 
-        $excluded = $this->effectiveExcludedToolNames();
-        if ([] !== $excluded) {
-            $env['HATFIELD_TOOLS_EXCLUDED'] = implode(',', $excluded);
-        }
+        $env['HATFIELD_TOOLS_EXCLUDED'] = implode(',', $this->effectiveExcludedToolNames());
 
         return $env;
     }
@@ -150,9 +138,8 @@ final class ToolFilterRuntimeConfig
         if (!$this->codeModeConfig->enabled) {
             $excluded[] = CodeModeTool::NAME;
         }
-        if (!$this->forksConfig->enabled) {
-            $excluded[] = ForkToolHandler::NAME;
-        }
+        // Fork launches are temporarily unavailable regardless of settings.
+        $excluded[] = ForkToolHandler::NAME;
 
         return array_values(array_unique($excluded));
     }

@@ -84,10 +84,8 @@ PHP);
         parent::tearDown();
     }
 
-    public function testEmptyFiltersOmitArgvAndEnv(): void
+    public function testEmptyCliFiltersStillExcludeFork(): void
     {
-        // Default tools.code_mode.enabled=false still injects code_mode into the
-        // effective denylist. Empty CLI filters alone do not mean empty argv.
         $dump = $this->startAndCapture(
             tools: '',
             toolsExcluded: '',
@@ -98,18 +96,18 @@ PHP);
         $this->assertContains('--controller', $dump['argv']);
         foreach ($dump['argv'] as $arg) {
             $this->assertStringStartsNotWith('--tools=', $arg);
-            $this->assertStringStartsNotWith('--tools-excluded=', $arg);
         }
         $this->assertNull($dump['env']['HATFIELD_TOOLS']);
-        $this->assertNull($dump['env']['HATFIELD_TOOLS_EXCLUDED']);
+        $this->assertContains('--tools-excluded=fork', $dump['argv']);
+        $this->assertSame('fork', $dump['env']['HATFIELD_TOOLS_EXCLUDED']);
     }
 
     public function testDefaultDisabledCodeModeAppearsInExcludedArgvAndEnv(): void
     {
         $dump = $this->startAndCapture(tools: '', toolsExcluded: '');
 
-        $this->assertContains('--tools-excluded=code_mode', $dump['argv']);
-        $this->assertSame('code_mode', $dump['env']['HATFIELD_TOOLS_EXCLUDED']);
+        $this->assertContains('--tools-excluded=code_mode,fork', $dump['argv']);
+        $this->assertSame('code_mode,fork', $dump['env']['HATFIELD_TOOLS_EXCLUDED']);
         foreach ($dump['argv'] as $arg) {
             $this->assertStringStartsNotWith('--tools=', $arg);
         }
@@ -130,9 +128,9 @@ PHP);
         $first = $this->waitForDump($firstDumpFile);
 
         $this->assertContains('--tools=read,bash', $first['argv']);
-        $this->assertContains('--tools-excluded=bash', $first['argv']);
+        $this->assertContains('--tools-excluded=bash,fork', $first['argv']);
         $this->assertSame('read,bash', $first['env']['HATFIELD_TOOLS']);
-        $this->assertSame('bash', $first['env']['HATFIELD_TOOLS_EXCLUDED']);
+        $this->assertSame('bash,fork', $first['env']['HATFIELD_TOOLS_EXCLUDED']);
 
         // Second client shares the same ToolFilterRuntimeConfig and proves
         // immutable config reuse at the common spawnProcess() seam. This does
